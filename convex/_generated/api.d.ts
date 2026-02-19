@@ -20,57 +20,33 @@ import type { GenericId as Id } from "convex/values";
  * ```
  */
 export declare const api: {
-  authPassword: {
-    getViewer: FunctionReference<
-      "action",
-      "public",
-      { sessionToken: string },
-      null | { email: string; name?: string; userId: Id<"users"> }
-    >;
+  auth: {
+    isAuthenticated: FunctionReference<"query", "public", {}, any>;
     signIn: FunctionReference<
       "action",
       "public",
-      { email: string; password: string },
-      | {
-          email: string;
-          name?: string;
-          ok: true;
-          sessionToken: string;
-          userId: Id<"users">;
-        }
-      | { error: string; ok: false }
+      {
+        calledBy?: string;
+        params?: any;
+        provider?: string;
+        refreshToken?: string;
+        verifier?: string;
+      },
+      any
     >;
-    signOut: FunctionReference<
-      "action",
-      "public",
-      { sessionToken: string },
-      null
-    >;
-    signUp: FunctionReference<
-      "action",
-      "public",
-      { email: string; name?: string; password: string },
-      | {
-          email: string;
-          name?: string;
-          ok: true;
-          sessionToken: string;
-          userId: Id<"users">;
-        }
-      | { error: string; ok: false }
-    >;
+    signOut: FunctionReference<"action", "public", {}, any>;
   };
   jobApplications: {
     apply: FunctionReference<
       "mutation",
       "public",
-      { coverLetter?: string; jobId: Id<"jobs">; userId: Id<"users"> },
+      { coverLetter?: string; jobId: Id<"jobs"> },
       Id<"jobApplications">
     >;
-    listByUser: FunctionReference<
+    listMine: FunctionReference<
       "query",
       "public",
-      { userId: Id<"users"> },
+      {},
       Array<{
         _creationTime: number;
         _id: Id<"jobApplications">;
@@ -125,6 +101,14 @@ export declare const api: {
       }>
     >;
   };
+  viewer: {
+    me: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | { email?: string; name?: string; userId: Id<"users"> }
+    >;
+  };
 };
 
 /**
@@ -136,41 +120,72 @@ export declare const api: {
  * ```
  */
 export declare const internal: {
-  authPasswordDb: {
-    _createSession: FunctionReference<
+  auth: {
+    store: FunctionReference<
       "mutation",
       "internal",
-      { expiresAt: number; tokenHash: string; userId: Id<"users"> },
-      null
-    >;
-    _createUserWithPasswordHash: FunctionReference<
-      "mutation",
-      "internal",
-      { email: string; name?: string; passwordHash: string },
-      Id<"users">
-    >;
-    _getUserWithPasswordByEmail: FunctionReference<
-      "query",
-      "internal",
-      { email: string },
-      null | {
-        email: string;
-        name?: string;
-        passwordHash: string;
-        userId: Id<"users">;
-      }
-    >;
-    _getViewerByTokenHash: FunctionReference<
-      "query",
-      "internal",
-      { tokenHash: string },
-      null | { email: string; name?: string; userId: Id<"users"> }
-    >;
-    _revokeSessionByTokenHash: FunctionReference<
-      "mutation",
-      "internal",
-      { tokenHash: string },
-      null
+      {
+        args:
+          | {
+              generateTokens: boolean;
+              sessionId?: Id<"authSessions">;
+              type: "signIn";
+              userId: Id<"users">;
+            }
+          | { type: "signOut" }
+          | { refreshToken: string; type: "refreshSession" }
+          | {
+              allowExtraProviders: boolean;
+              generateTokens: boolean;
+              params: any;
+              provider?: string;
+              type: "verifyCodeAndSignIn";
+              verifier?: string;
+            }
+          | { type: "verifier" }
+          | { signature: string; type: "verifierSignature"; verifier: string }
+          | {
+              profile: any;
+              provider: string;
+              providerAccountId: string;
+              signature: string;
+              type: "userOAuth";
+            }
+          | {
+              accountId?: Id<"authAccounts">;
+              allowExtraProviders: boolean;
+              code: string;
+              email?: string;
+              expirationTime: number;
+              phone?: string;
+              provider: string;
+              type: "createVerificationCode";
+            }
+          | {
+              account: { id: string; secret?: string };
+              profile: any;
+              provider: string;
+              shouldLinkViaEmail?: boolean;
+              shouldLinkViaPhone?: boolean;
+              type: "createAccountFromCredentials";
+            }
+          | {
+              account: { id: string; secret?: string };
+              provider: string;
+              type: "retrieveAccountWithCredentials";
+            }
+          | {
+              account: { id: string; secret: string };
+              provider: string;
+              type: "modifyAccount";
+            }
+          | {
+              except?: Array<Id<"authSessions">>;
+              type: "invalidateSessions";
+              userId: Id<"users">;
+            };
+      },
+      any
     >;
   };
 };

@@ -1,11 +1,15 @@
 "use client";
 
 import * as React from "react";
+import { useMutation } from "convex/react";
 
+import { api } from "@convex-config/_generated/api";
+import type { Id } from "@convex-config/_generated/dataModel";
 import { Button } from "~/components/ui/button";
 import { Textarea } from "~/components/ui/textarea";
 
 export function ApplyJobClient(props: { jobId: string }) {
+  const applyToJob = useMutation(api.jobApplications.apply);
   const [coverLetter, setCoverLetter] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -17,27 +21,16 @@ export function ApplyJobClient(props: { jobId: string }) {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/jobs/${props.jobId}/apply`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ coverLetter }),
+      await applyToJob({
+        jobId: props.jobId as Id<"jobs">,
+        coverLetter,
       });
-      if (res.status === 401) {
-        window.location.assign(
-          `/sign-in?return_to=${encodeURIComponent(`/jobs/${props.jobId}/apply`)}`,
-        );
-        return;
-      }
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
-      if (!res.ok) {
-        setError(json?.error ?? "Unable to submit application.");
-        return;
-      }
       setSuccess(true);
     } catch {
-      setError("Unable to submit application.");
+      // Most common case is unauthenticated; middleware will also protect the route.
+      window.location.assign(
+        `/sign-in?return_to=${encodeURIComponent(`/jobs/${props.jobId}/apply`)}`,
+      );
     } finally {
       setSubmitting(false);
     }

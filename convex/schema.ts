@@ -1,26 +1,21 @@
 import { defineSchema, defineTable } from "convex/server";
+
+import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
 export default defineSchema({
-  users: defineTable({
-    email: v.string(),
-    name: v.optional(v.string()),
-    // Stored in bcrypt format. Never return this from queries.
-    passwordHash: v.string(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  }).index("by_email", ["email"]),
+  ...authTables,
 
-  authSessions: defineTable({
-    userId: v.id("users"),
-    // sha256(base64url(sessionToken))
-    tokenHash: v.string(),
-    createdAt: v.number(),
-    expiresAt: v.number(),
-    revokedAt: v.optional(v.number()),
-  })
-    .index("by_tokenHash", ["tokenHash"])
-    .index("by_userId", ["userId"]),
+  // Customize the Convex Auth `users` table to store a name from password sign-up.
+  users: defineTable({
+    name: v.optional(v.string()),
+    image: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    phone: v.optional(v.string()),
+    phoneVerificationTime: v.optional(v.number()),
+    isAnonymous: v.optional(v.boolean()),
+  }).index("email", ["email"]),
 
   jobs: defineTable({
     title: v.string(),

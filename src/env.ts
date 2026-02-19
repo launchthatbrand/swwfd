@@ -9,10 +9,7 @@ export const env = createEnv({
       .enum(["development", "production", "test"])
       .default("development"),
   },
-  server: {
-    // Optional override if you want to rename the cookie.
-    SWWFD_SESSION_COOKIE_NAME: z.string().min(1).optional(),
-  },
+  server: {},
 
   client: {
     NEXT_PUBLIC_CONVEX_URL: z.url(),

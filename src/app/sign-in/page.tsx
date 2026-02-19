@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useAuthActions } from "@convex-dev/auth/react";
 
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -18,6 +19,7 @@ const safeReturnTo = (raw: string | null): string => {
 export default function SignInPage() {
   const searchParams = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get("return_to"));
+  const { signIn } = useAuthActions();
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -30,18 +32,11 @@ export default function SignInPage() {
     setError(null);
     setSubmitting(true);
     try {
-      const res = await fetch("/api/auth/sign-in", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const json = (await res.json().catch(() => null)) as
-        | { ok?: boolean; error?: string }
-        | null;
-      if (!res.ok) {
-        setError(json?.error ?? "Unable to sign in.");
-        return;
-      }
+      const formData = new FormData();
+      formData.set("email", email);
+      formData.set("password", password);
+      formData.set("flow", "signIn");
+      await signIn("password", formData);
       window.location.assign(returnTo);
     } catch {
       setError("Unable to sign in.");

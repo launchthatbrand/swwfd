@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 
 import StandardLayout from "@acme/ui/layout/StandardLayout";
+import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { Providers } from "./providers";
 import { TRPCReactProvider } from "~/trpc/react";
 import { ThemeProvider } from "@acme/ui/theme";
@@ -94,28 +95,32 @@ export default async function RootLayout(props: {
           geistMono.variable,
         )}
       >
-        <Providers host={host}>
-          <ThemeProvider>
-            <TRPCReactProvider>
-              <StandardLayout
-                appName="SWWFD"
-                sidebar={showSidebar ? props.sidebar : undefined}
-                header={showHeader ? props.header : null}
-                footer={props.footer}
-                showSidebar={showSidebar}
-                className={cn(
-                  "shadow-[-12px_0_10px_-3px_rgba(0,0,0,0.3)] max-h-screen dark:shadow-[0_4px_6px_-1px_rgba(255,255,255,0.15),0_2px_4px_-2px_rgba(255,255,255,0.1)] rounded-3xl!",
-                  showSidebar ? "ml-0!" : "m-2!",
-                )}
-                sidebarOpenOnHover={true}
-                sidebarDefaultOpen={false}
-              >
-                <div className="flex min-w-0 flex-1">{props.children}</div>
-              </StandardLayout>
-            </TRPCReactProvider>
-            <Toaster />
-          </ThemeProvider>
-        </Providers>
+        {await ConvexAuthNextjsServerProvider({
+          children: (
+            <Providers host={host}>
+              <ThemeProvider>
+                <TRPCReactProvider>
+                  <StandardLayout
+                    appName="SWWFD"
+                    sidebar={showSidebar ? props.sidebar : undefined}
+                    header={showHeader ? props.header : null}
+                    footer={props.footer}
+                    showSidebar={showSidebar}
+                    className={cn(
+                      "shadow-[-12px_0_10px_-3px_rgba(0,0,0,0.3)] max-h-screen dark:shadow-[0_4px_6px_-1px_rgba(255,255,255,0.15),0_2px_4px_-2px_rgba(255,255,255,0.1)] rounded-3xl!",
+                      showSidebar ? "ml-0!" : "m-2!",
+                    )}
+                    sidebarOpenOnHover={true}
+                    sidebarDefaultOpen={false}
+                  >
+                    <div className="flex min-w-0 flex-1">{props.children}</div>
+                  </StandardLayout>
+                </TRPCReactProvider>
+                <Toaster />
+              </ThemeProvider>
+            </Providers>
+          ),
+        })}
       </body>
     </html>
   );
