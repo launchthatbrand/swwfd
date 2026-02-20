@@ -13,11 +13,11 @@
     "with-env": "dotenv -e ../../.env --"
   },
   "dependencies": {
-    "@acme/activepieces-backend-adapter": "workspace:*",
-    "@acme/activepieces-convex": "workspace:*",
-    "@acme/activepieces-next": "workspace:*",
-    "@acme/activepieces-ui": "workspace:*",
-    "@acme/activepieces-validation": "workspace:*",
+    "@acme/activepieces-backend-adapter": "^0.1.0",
+    "@acme/activepieces-convex": "^0.1.0",
+    "@acme/activepieces-next": "^0.0.1",
+    "@acme/activepieces-ui": "^0.1.0",
+    "@acme/activepieces-validation": "^0.0.1",
     "@acme/api": "workspace:*",
     "@acme/db": "workspace:*",
     "@acme/dnd": "workspace:^",
