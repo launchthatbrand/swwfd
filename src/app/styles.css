@@ -1,7 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@acme/tailwind-config/theme";
-@import "@launchthatbrand/activepieces-ui/styles.css";
 
 @source "../../../../packages/ui/src/*.{ts,tsx}";
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
