@@ -10,6 +10,7 @@
    1) vendored source in local dev, and
    2) installed package dist files in deployed builds (no vendor path). */
 @source "../../../../vendor/t3-activepieces/packages/activepieces-ui/src/**/*.{ts,tsx}";
+@source "../../../../node_modules/@launchthatbrand/activepieces-ui/src/**/*.{ts,tsx}";
 @source "../../../../node_modules/@launchthatbrand/activepieces-ui/dist/**/*.{js,mjs,cjs}";
 
 @custom-variant dark (&:where(.dark, .dark *));
