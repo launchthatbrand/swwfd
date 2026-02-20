@@ -12,6 +12,10 @@
 @source "../../../../vendor/t3-activepieces/packages/activepieces-ui/src/**/*.{ts,tsx}";
 @source "../../../../node_modules/@launchthatbrand/activepieces-ui/src/**/*.{ts,tsx}";
 @source "../../../../node_modules/@launchthatbrand/activepieces-ui/dist/**/*.{js,mjs,cjs}";
+@source "../../vendor/t3-activepieces/packages/activepieces-ui/src/**/*.{ts,tsx}";
+@source "./node_modules/@launchthatbrand/activepieces-ui/src/**/*.{ts,tsx}";
+@source "./node_modules/@launchthatbrand/activepieces-ui/dist/**/*.{js,mjs,cjs}";
+@source inline("pt-28");
 
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
