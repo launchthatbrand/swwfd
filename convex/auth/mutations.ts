@@ -1,11 +1,11 @@
-import { createAuthWrappers } from "@acme/activepieces-convex/app-wrappers";
+import { createAuthWrappers } from "@launchthatbrand/activepieces-convex/app-wrappers";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { mutation } from "../_generated/server";
 
 const wrappers = createAuthWrappers(components);
 
-// These are called by @acme/activepieces-convex to switch the active platform /
+// These are called by @launchthatbrand/activepieces-convex to switch the active platform /
 // project. For now, we keep a single platform/project, so these are no-ops.
 // If/when we add multi-tenant projects, persist these to a user/session doc.
 

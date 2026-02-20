@@ -10,12 +10,12 @@ const config = {
   /** Enables hot reloading for local packages without a build step */
   transpilePackages: [
     "@acme/api",
-    "@acme/activepieces-backend-adapter",
-    "@acme/activepieces-convex",
-    "@acme/activepieces-next",
-    "@acme/activepieces-pieces",
-    "@acme/activepieces-ui",
-    "@acme/activepieces-validation",
+    "@launchthatbrand/activepieces-backend-adapter",
+    "@launchthatbrand/activepieces-convex",
+    "@launchthatbrand/activepieces-next",
+    "@launchthatbrand/activepieces-pieces",
+    "@launchthatbrand/activepieces-ui",
+    "@launchthatbrand/activepieces-validation",
     "@acme/db",
     "@acme/konva",
     "@acme/ui",

@@ -1,4 +1,4 @@
-import { createFlowRunsWrappers } from "@acme/activepieces-convex/app-wrappers";
+import { createFlowRunsWrappers } from "@launchthatbrand/activepieces-convex/app-wrappers";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { query } from "../_generated/server";

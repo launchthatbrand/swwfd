@@ -1,4 +1,4 @@
-import { createSampleDataWrappers } from "@acme/activepieces-convex/app-wrappers";
+import { createSampleDataWrappers } from "@launchthatbrand/activepieces-convex/app-wrappers";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { query } from "../_generated/server";

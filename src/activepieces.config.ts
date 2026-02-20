@@ -1,4 +1,4 @@
-import { buildActivepiecesConfig } from "@acme/activepieces-ui";
+import { buildActivepiecesConfig } from "@launchthatbrand/activepieces-ui";
 import { env } from "~/env";
 
 const config = buildActivepiecesConfig({

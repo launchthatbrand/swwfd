@@ -1,4 +1,4 @@
-import { createActivepiecesRouteHandler } from "@acme/activepieces-next";
+import { createActivepiecesRouteHandler } from "@launchthatbrand/activepieces-next";
 import { api } from "@convex-config/_generated/api";
 import { fetchMutation, fetchQuery } from "convex/nextjs";
 import { NextResponse } from "next/server";

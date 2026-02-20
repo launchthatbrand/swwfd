@@ -10,7 +10,7 @@ type ActivepiecesPageComponent = ComponentType<{
 }>;
 
 const ActivepiecesPage = dynamic(async () => {
-  const mod = await import("@acme/activepieces-ui");
+  const mod = await import("@launchthatbrand/activepieces-ui");
   return mod.ActivepiecesPage as unknown as ActivepiecesPageComponent;
 }, { ssr: false }) as unknown as ActivepiecesPageComponent;
 

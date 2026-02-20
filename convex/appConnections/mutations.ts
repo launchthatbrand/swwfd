@@ -1,4 +1,4 @@
-import { createAppConnectionsWrappers } from "@acme/activepieces-convex/app-wrappers";
+import { createAppConnectionsWrappers } from "@launchthatbrand/activepieces-convex/app-wrappers";
 import { v } from "convex/values";
 import { components } from "../_generated/api";
 import { mutation } from "../_generated/server";

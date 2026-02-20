@@ -1,6 +1,6 @@
 import { defineApp } from "convex/server";
 import workflow from "@convex-dev/workflow/convex.config";
-import activepieces from "@acme/activepieces-convex/convex.config";
+import activepieces from "@launchthatbrand/activepieces-convex/convex.config";
 import launchthat_access from "../../../packages/launchthat-plugin-access/src/convex/component/convex.config";
 import launchthat_affiliates from "../../../packages/launchthat-plugin-affiliates/src/convex/component/convex.config";
 import launchthat_core_tenant from "../../../packages/launchthat-plugin-core-tenant/src/convex/component/convex.config";
