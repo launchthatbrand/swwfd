@@ -156,7 +156,35 @@ export const { GET, POST, PUT, PATCH, DELETE, OPTIONS } =
         const session = (await getSessionContext()) as
           | { roles?: { project?: string | null } }
           | null;
-        return json(session?.roles?.project ?? null);
+        const projectRole = session?.roles?.project ?? null;
+        if (!projectRole) {
+          return json(null);
+        }
+
+        // Activepieces UI expects a ProjectRole-like object (with permissions),
+        // not just a role name string. Returning only "ADMIN" causes checkAccess()
+        // to fail and hides write-gated controls like "Create flow".
+        const permissionSets: Record<string, string[]> = {
+          ADMIN: [
+            "WRITE_FLOW",
+            "WRITE_FOLDER",
+            "WRITE_PROJECT_RELEASE",
+            "WRITE_PROJECT_MEMBER",
+            "WRITE_ALERT",
+          ],
+          EDITOR: ["WRITE_FLOW", "WRITE_FOLDER", "WRITE_ALERT"],
+          OPERATOR: ["WRITE_FLOW"],
+          VIEWER: [],
+        };
+        const permissions =
+          permissionSets[projectRole] ?? permissionSets.ADMIN;
+
+        return json({
+          id: `default-${projectRole.toLowerCase()}`,
+          name: projectRole,
+          permissions,
+          type: "DEFAULT",
+        });
       }
 
       if (method === "POST" && path === "/v1/authentication/switch-platform") {
