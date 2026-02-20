@@ -9,7 +9,15 @@ export const env = createEnv({
       .enum(["development", "production", "test"])
       .default("development"),
   },
-  server: {},
+  server: {
+    // DEV-only convenience for browser automation and local tooling.
+    SWWFD_DEV_AUTH_BYPASS_ENABLED: z
+      .enum(["true", "false"])
+      .optional()
+      .default("false"),
+    SWWFD_DEV_AUTH_BYPASS_EMAIL: z.string().email().optional(),
+    SWWFD_DEV_AUTH_BYPASS_PASSWORD: z.string().min(8).optional(),
+  },
 
   client: {
     NEXT_PUBLIC_CONVEX_URL: z.url(),

@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 
 const isAuthPage = createRouteMatcher(["/sign-in", "/sign-up"]);
 const isProtectedApplyRoute = createRouteMatcher(["/jobs/:jobId/apply(.*)"]);
+const isProtectedDashboardRoute = createRouteMatcher(["/dashboard(.*)"]);
+const isProtectedAdminRoute = createRouteMatcher(["/admin(.*)"]);
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {
@@ -19,6 +21,14 @@ export default convexAuthNextjsMiddleware(
     }
 
     if (isProtectedApplyRoute(request) && !isAuthed) {
+      const returnTo = request.nextUrl.pathname + request.nextUrl.search;
+      const url = request.nextUrl.clone();
+      url.pathname = "/sign-in";
+      url.searchParams.set("return_to", returnTo);
+      return NextResponse.redirect(url);
+    }
+
+    if ((isProtectedDashboardRoute(request) || isProtectedAdminRoute(request)) && !isAuthed) {
       const returnTo = request.nextUrl.pathname + request.nextUrl.search;
       const url = request.nextUrl.clone();
       url.pathname = "/sign-in";

@@ -1,9 +1,15 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "@acme/tailwind-config/theme";
+@import "@acme/activepieces-ui/styles.css";
 
 @source "../../../../packages/ui/src/*.{ts,tsx}";
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+/* Activepieces UI is shipped as a library, but uses Tailwind utility classes.
+   We need to include its sources in Tailwind's scan list so utilities like
+   `w-full`/`min-h-svh`/`has-[...]` generate CSS in this host app. */
+@source "../../../../vendor/t3-activepieces/packages/activepieces-ui/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
@@ -177,6 +183,22 @@
   }
 }
 
+/* Temporary diagnostic override:
+   in embedded Activepieces builder, a full-canvas SVG rect is capturing clicks.
+   Ensure React Flow background rect never intercepts pointer events. */
+/* .react-flow__background {
+  background-color: var(
+    --xy-background-color,
+    var(--xy-background-color-props, var(--xy-background-color-default))
+  ) !important;
+  pointer-events: none !important;
+  z-index: -1 !important;
+} */
+
+/* .react-flow__background rect {
+  pointer-events: none !important;
+} */
+
 /* LaunchThatBot: global card elevation & glass treatment
    Targets the `data-slot="card"` attribute emitted by @acme/ui Card.
    Must use @layer utilities + !important to override Tailwind utilities. */
@@ -212,14 +234,6 @@
     background-color: rgba(255, 255, 255, 0.06) !important;
     box-shadow: 0 6px 32px rgba(0, 0, 0, 0.35) !important;
   }
-}
-
-.light body {
-  background-color: #000000;
-}
-
-.dark body {
-  background-color: #ffffff;
 }
 
 /* @theme inline {

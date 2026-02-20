@@ -75,7 +75,7 @@ export default async function RootLayout(props: {
   let showSidebar = fallbackShowSidebar;
   if (hasPathnameHeader) {
     showHeader = true;
-    showSidebar = firstSegment === "platform";
+    showSidebar = firstSegment === "admin" || firstSegment === "dashboard";
     if (
       firstSegment === "sign-in" ||
       firstSegment === "sign-up" ||
@@ -113,7 +113,12 @@ export default async function RootLayout(props: {
                     sidebarOpenOnHover={true}
                     sidebarDefaultOpen={false}
                   >
-                    <div className="flex min-w-0 flex-1">{props.children}</div>
+                    {/* Next.js may insert an extra wrapper <div> around route segments.
+                        Make our immediate children lay out in a column so that wrapper
+                        stretches to full width (instead of sizing to its content). */}
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      {props.children}
+                    </div>
                   </StandardLayout>
                 </TRPCReactProvider>
                 <Toaster />

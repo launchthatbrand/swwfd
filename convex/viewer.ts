@@ -10,6 +10,7 @@ export const me = query({
       userId: v.id("users"),
       email: v.optional(v.string()),
       name: v.optional(v.string()),
+      isAdmin: v.optional(v.boolean()),
     }),
   ),
   handler: async (ctx) => {
@@ -17,7 +18,7 @@ export const me = query({
     if (!userId) return null;
     const user = await ctx.db.get(userId);
     if (!user) return null;
-    return { userId: user._id, email: user.email, name: user.name };
+    return { userId: user._id, email: user.email, name: user.name, isAdmin: user.isAdmin };
   },
 });
 

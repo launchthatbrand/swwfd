@@ -1,4 +1,6 @@
 import { defineApp } from "convex/server";
+import workflow from "@convex-dev/workflow/convex.config";
+import activepieces from "@acme/activepieces-convex/convex.config";
 import launchthat_access from "../../../packages/launchthat-plugin-access/src/convex/component/convex.config";
 import launchthat_affiliates from "../../../packages/launchthat-plugin-affiliates/src/convex/component/convex.config";
 import launchthat_core_tenant from "../../../packages/launchthat-plugin-core-tenant/src/convex/component/convex.config";
@@ -15,6 +17,10 @@ import launchthat_push from "../../../packages/launchthat-plugin-push/src/convex
 import launchthat_shortlinks from "../../../packages/launchthat-plugin-shortlinks/src/convex/component/convex.config";
 
 const app = defineApp();
+
+// Durable workflow runtime used by Activepieces.
+app.use(workflow);
+app.use(activepieces);
 
 app.use(launchthat_core_tenant);
 app.use(launchthat_notifications);

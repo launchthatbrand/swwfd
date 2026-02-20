@@ -15,7 +15,10 @@ export default defineSchema({
     phone: v.optional(v.string()),
     phoneVerificationTime: v.optional(v.number()),
     isAnonymous: v.optional(v.boolean()),
-  }).index("email", ["email"]),
+    isAdmin: v.optional(v.boolean()),
+  })
+    .index("email", ["email"])
+    .index("by_isAdmin", ["isAdmin"]),
 
   jobs: defineTable({
     title: v.string(),

@@ -229,6 +229,7 @@ export type DataModel = {
       email?: string;
       emailVerificationTime?: number;
       image?: string;
+      isAdmin?: boolean;
       isAnonymous?: boolean;
       name?: string;
       phone?: string;
@@ -242,6 +243,7 @@ export type DataModel = {
       | "email"
       | "emailVerificationTime"
       | "image"
+      | "isAdmin"
       | "isAnonymous"
       | "name"
       | "phone"
@@ -249,6 +251,7 @@ export type DataModel = {
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
+      by_isAdmin: ["isAdmin", "_creationTime"];
       email: ["email", "_creationTime"];
     };
     searchIndexes: {};

@@ -20,8 +20,96 @@ import type { GenericId as Id } from "convex/values";
  * ```
  */
 export declare const api: {
+  admin: {
+    ensureFirstAdmin: FunctionReference<
+      "mutation",
+      "public",
+      {},
+      { becameAdmin: boolean; isAdmin: boolean }
+    >;
+    listAdmins: FunctionReference<
+      "query",
+      "public",
+      {},
+      Array<{
+        _id: Id<"users">;
+        email?: string;
+        isAdmin?: boolean;
+        name?: string;
+      }>
+    >;
+  };
+  appConnections: {
+    mutations: {
+      deleteConnection: FunctionReference<
+        "mutation",
+        "public",
+        { id: string },
+        any
+      >;
+      upsertConnection: FunctionReference<
+        "mutation",
+        "public",
+        {
+          displayName: string;
+          externalId: string;
+          pieceName: string;
+          projectId: string;
+          projectIds?: Array<string>;
+          secret_text?: string;
+          type: string;
+          value?: any;
+        },
+        any
+      >;
+    };
+    queries: {
+      getConnectionToken: FunctionReference<
+        "query",
+        "public",
+        { externalId: string; projectId: string },
+        any
+      >;
+      listConnections: FunctionReference<
+        "query",
+        "public",
+        {
+          cursor?: string;
+          limit?: number;
+          pieceName?: string;
+          projectId: string;
+        },
+        any
+      >;
+    };
+  };
   auth: {
     isAuthenticated: FunctionReference<"query", "public", {}, any>;
+    mutations: {
+      provisionCurrentUser: FunctionReference<"mutation", "public", {}, any>;
+      switchPlatform: FunctionReference<
+        "mutation",
+        "public",
+        { platformId: string },
+        any
+      >;
+      switchProject: FunctionReference<
+        "mutation",
+        "public",
+        { projectId: string },
+        any
+      >;
+    };
+    queries: {
+      getSessionContext: FunctionReference<"query", "public", {}, any>;
+      listProjectsForCurrentPlatform: FunctionReference<
+        "query",
+        "public",
+        {},
+        any
+      >;
+      listUserPlatforms: FunctionReference<"query", "public", {}, any>;
+    };
     signIn: FunctionReference<
       "action",
       "public",
@@ -35,6 +123,128 @@ export declare const api: {
       any
     >;
     signOut: FunctionReference<"action", "public", {}, any>;
+  };
+  devAuthBypass: {
+    ensureViewerAdmin: FunctionReference<
+      "mutation",
+      "public",
+      { expectedEmail?: string },
+      boolean
+    >;
+  };
+  flags: {
+    mutations: {
+      updateFlags: FunctionReference<
+        "mutation",
+        "public",
+        { patch: any; platformId: string },
+        any
+      >;
+    };
+    queries: {
+      getFlags: FunctionReference<
+        "query",
+        "public",
+        { platformId?: string },
+        any
+      >;
+    };
+  };
+  flowRuns: {
+    mutations: {
+      cancelRun: FunctionReference<
+        "mutation",
+        "public",
+        { runId: string },
+        any
+      >;
+      createRun: FunctionReference<
+        "mutation",
+        "public",
+        {
+          flowId: string;
+          flowVersionId: string;
+          projectId: string;
+          triggerOutput?: any;
+        },
+        any
+      >;
+      testFlow: FunctionReference<
+        "mutation",
+        "public",
+        { flowId?: string; flowVersionId: string; projectId?: string },
+        any
+      >;
+    };
+    queries: {
+      deriveOrderedSteps: FunctionReference<
+        "query",
+        "public",
+        { flowVersion: any },
+        any
+      >;
+      getOutput: FunctionReference<"query", "public", { id: string }, any>;
+      getRun: FunctionReference<"query", "public", { runId?: string }, any>;
+      getStepRuns: FunctionReference<"query", "public", { runId: string }, any>;
+      listRuns: FunctionReference<
+        "query",
+        "public",
+        { flowId?: any; limit?: number; projectId: string; status?: string },
+        any
+      >;
+    };
+  };
+  flows: {
+    mutations: {
+      changeFlowStatus: FunctionReference<
+        "mutation",
+        "public",
+        { flowId: string; status: string },
+        any
+      >;
+      createFlow: FunctionReference<
+        "mutation",
+        "public",
+        { displayName: string; folderId?: string; projectId: string },
+        any
+      >;
+      deleteFlow: FunctionReference<"mutation", "public", { id: string }, any>;
+      publishFlow: FunctionReference<
+        "mutation",
+        "public",
+        { flowId: string },
+        any
+      >;
+      updateFlow: FunctionReference<
+        "mutation",
+        "public",
+        { flowId: string; operation: string; request: any },
+        any
+      >;
+    };
+    queries: {
+      getFlow: FunctionReference<"query", "public", { id: string }, any>;
+      getFlowVersion: FunctionReference<"query", "public", { id: string }, any>;
+      listFlows: FunctionReference<
+        "query",
+        "public",
+        {
+          connectionExternalIds?: Array<string>;
+          cursor?: string;
+          folderId?: string;
+          limit?: number;
+          projectId?: string;
+          status?: Array<string>;
+        },
+        any
+      >;
+      listVersions: FunctionReference<
+        "query",
+        "public",
+        { flowId: string; limit?: number },
+        any
+      >;
+    };
   };
   jobApplications: {
     apply: FunctionReference<
@@ -101,12 +311,203 @@ export declare const api: {
       }>
     >;
   };
+  pieces: {
+    queries: {
+      count: FunctionReference<"query", "public", {}, any>;
+      get: FunctionReference<
+        "query",
+        "public",
+        { locale?: string; name: string; version: string },
+        any
+      >;
+      getById: FunctionReference<"query", "public", { id: string }, any>;
+      getPiece: FunctionReference<
+        "query",
+        "public",
+        { locale?: string; name: string; version: string },
+        any
+      >;
+      list: FunctionReference<
+        "query",
+        "public",
+        { cursor?: string; limit?: number; search?: string },
+        any
+      >;
+      listByCategory: FunctionReference<
+        "query",
+        "public",
+        { category: string; limit?: number },
+        any
+      >;
+      listPieces: FunctionReference<
+        "query",
+        "public",
+        { cursor?: string; limit?: number; search?: string },
+        any
+      >;
+    };
+  };
+  platform: {
+    mutations: {
+      addUserToPlatform: FunctionReference<
+        "mutation",
+        "public",
+        { platformId: string; role: string; userId: string },
+        any
+      >;
+      backfillProjectMembers: FunctionReference<"mutation", "public", {}, any>;
+      createPlatform: FunctionReference<
+        "mutation",
+        "public",
+        { displayName?: string; id: string },
+        any
+      >;
+      createProject: FunctionReference<
+        "mutation",
+        "public",
+        { displayName: string; id: string; platformId: string },
+        any
+      >;
+      deletePlatform: FunctionReference<
+        "mutation",
+        "public",
+        { id: string },
+        any
+      >;
+      deleteProject: FunctionReference<
+        "mutation",
+        "public",
+        { id: string; platformId: string },
+        any
+      >;
+      removeUserFromPlatform: FunctionReference<
+        "mutation",
+        "public",
+        { platformId: string; userId: string },
+        any
+      >;
+      updatePlatform: FunctionReference<
+        "mutation",
+        "public",
+        {
+          id: string;
+          patch: {
+            displayName?: string;
+            filteredPieceNames?: Array<string>;
+            flags?: {
+              SHOW_BILLING?: boolean;
+              SHOW_COMMUNITY?: boolean;
+              apiKeysEnabled?: boolean;
+              customAppearanceEnabled?: boolean;
+              embeddingEnabled?: boolean;
+              environmentsEnabled?: boolean;
+              managePiecesEnabled?: boolean;
+              projectRolesEnabled?: boolean;
+            };
+            pinnedPieces?: Array<string>;
+          };
+        },
+        any
+      >;
+      updateProject: FunctionReference<
+        "mutation",
+        "public",
+        {
+          id: string;
+          patch: { displayName?: string; limits?: any };
+          platformId: string;
+        },
+        any
+      >;
+      updateUserRole: FunctionReference<
+        "mutation",
+        "public",
+        { platformId: string; role: string; userId: string },
+        any
+      >;
+    };
+    queries: {
+      getPlatform: FunctionReference<"query", "public", { id: string }, any>;
+      getProject: FunctionReference<"query", "public", { id: string }, any>;
+      listPlatforms: FunctionReference<"query", "public", any, any>;
+      listPlatformUsers: FunctionReference<
+        "query",
+        "public",
+        { platformId: string },
+        any
+      >;
+      listProjects: FunctionReference<
+        "query",
+        "public",
+        { platformId: string },
+        any
+      >;
+    };
+  };
+  sampleData: {
+    mutations: {
+      deleteSampleDataForFlowVersion: FunctionReference<
+        "mutation",
+        "public",
+        { flowVersionId: string },
+        any
+      >;
+      deleteSampleDataForStep: FunctionReference<
+        "mutation",
+        "public",
+        { flowVersionId: string; stepName: string },
+        any
+      >;
+      getSampleDataMutation: FunctionReference<
+        "mutation",
+        "public",
+        { flowVersionId: string; stepName: string; type: string },
+        any
+      >;
+      saveSampleData: FunctionReference<
+        "mutation",
+        "public",
+        {
+          flowVersionId: string;
+          payload: any;
+          projectId: string;
+          stepName: string;
+          type: string;
+        },
+        any
+      >;
+    };
+    queries: {
+      getAllSampleDataForFlowVersion: FunctionReference<
+        "query",
+        "public",
+        { flowVersionId: string },
+        any
+      >;
+      getSampleData: FunctionReference<
+        "query",
+        "public",
+        {
+          flowVersionId: string;
+          sampleDataFileId?: string;
+          stepName: string;
+          type: string;
+        },
+        any
+      >;
+    };
+  };
   viewer: {
     me: FunctionReference<
       "query",
       "public",
       {},
-      null | { email?: string; name?: string; userId: Id<"users"> }
+      null | {
+        email?: string;
+        isAdmin?: boolean;
+        name?: string;
+        userId: Id<"users">;
+      }
     >;
   };
 };
@@ -191,6 +592,1104 @@ export declare const internal: {
 };
 
 export declare const components: {
+  workflow: {
+    event: {
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        { name: string; workflowId: string },
+        string
+      >;
+      send: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          eventId?: string;
+          name?: string;
+          result:
+            | { kind: "success"; returnValue: any }
+            | { error: string; kind: "failed" }
+            | { kind: "canceled" };
+          workflowId?: string;
+          workpoolOptions?: {
+            defaultRetryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            logLevel?: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism?: number;
+            retryActionsByDefault?: boolean;
+          };
+        },
+        string
+      >;
+    };
+    journal: {
+      load: FunctionReference<
+        "query",
+        "internal",
+        { shortCircuit?: boolean; workflowId: string },
+        {
+          blocked?: boolean;
+          journalEntries: Array<{
+            _creationTime: number;
+            _id: string;
+            step:
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  functionType: "query" | "mutation" | "action";
+                  handle: string;
+                  inProgress: boolean;
+                  kind?: "function";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  handle: string;
+                  inProgress: boolean;
+                  kind: "workflow";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workflowId?: string;
+                }
+              | {
+                  args: { eventId?: string };
+                  argsSize: number;
+                  completedAt?: number;
+                  eventId?: string;
+                  inProgress: boolean;
+                  kind: "event";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                };
+            stepNumber: number;
+            workflowId: string;
+          }>;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+          ok: boolean;
+          workflow: {
+            _creationTime: number;
+            _id: string;
+            args: any;
+            generationNumber: number;
+            logLevel?: any;
+            name?: string;
+            onComplete?: { context?: any; fnHandle: string };
+            runResult?:
+              | { kind: "success"; returnValue: any }
+              | { error: string; kind: "failed" }
+              | { kind: "canceled" };
+            startedAt?: any;
+            state?: any;
+            workflowHandle: string;
+          };
+        }
+      >;
+      startSteps: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          generationNumber: number;
+          steps: Array<{
+            retry?:
+              | boolean
+              | { base: number; initialBackoffMs: number; maxAttempts: number };
+            schedulerOptions?: { runAt?: number } | { runAfter?: number };
+            step:
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  functionType: "query" | "mutation" | "action";
+                  handle: string;
+                  inProgress: boolean;
+                  kind?: "function";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  handle: string;
+                  inProgress: boolean;
+                  kind: "workflow";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workflowId?: string;
+                }
+              | {
+                  args: { eventId?: string };
+                  argsSize: number;
+                  completedAt?: number;
+                  eventId?: string;
+                  inProgress: boolean;
+                  kind: "event";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                };
+          }>;
+          workflowId: string;
+          workpoolOptions?: {
+            defaultRetryBehavior?: {
+              base: number;
+              initialBackoffMs: number;
+              maxAttempts: number;
+            };
+            logLevel?: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+            maxParallelism?: number;
+            retryActionsByDefault?: boolean;
+          };
+        },
+        Array<{
+          _creationTime: number;
+          _id: string;
+          step:
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                functionType: "query" | "mutation" | "action";
+                handle: string;
+                inProgress: boolean;
+                kind?: "function";
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                startedAt: number;
+                workId?: string;
+              }
+            | {
+                args: any;
+                argsSize: number;
+                completedAt?: number;
+                handle: string;
+                inProgress: boolean;
+                kind: "workflow";
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                startedAt: number;
+                workflowId?: string;
+              }
+            | {
+                args: { eventId?: string };
+                argsSize: number;
+                completedAt?: number;
+                eventId?: string;
+                inProgress: boolean;
+                kind: "event";
+                name: string;
+                runResult?:
+                  | { kind: "success"; returnValue: any }
+                  | { error: string; kind: "failed" }
+                  | { kind: "canceled" };
+                startedAt: number;
+              };
+          stepNumber: number;
+          workflowId: string;
+        }>
+      >;
+    };
+    workflow: {
+      cancel: FunctionReference<
+        "mutation",
+        "internal",
+        { workflowId: string },
+        null
+      >;
+      cleanup: FunctionReference<
+        "mutation",
+        "internal",
+        { workflowId: string },
+        boolean
+      >;
+      complete: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          generationNumber: number;
+          runResult:
+            | { kind: "success"; returnValue: any }
+            | { error: string; kind: "failed" }
+            | { kind: "canceled" };
+          workflowId: string;
+        },
+        null
+      >;
+      create: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          maxParallelism?: number;
+          onComplete?: { context?: any; fnHandle: string };
+          startAsync?: boolean;
+          workflowArgs: any;
+          workflowHandle: string;
+          workflowName: string;
+        },
+        string
+      >;
+      getStatus: FunctionReference<
+        "query",
+        "internal",
+        { workflowId: string },
+        {
+          inProgress: Array<{
+            _creationTime: number;
+            _id: string;
+            step:
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  functionType: "query" | "mutation" | "action";
+                  handle: string;
+                  inProgress: boolean;
+                  kind?: "function";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workId?: string;
+                }
+              | {
+                  args: any;
+                  argsSize: number;
+                  completedAt?: number;
+                  handle: string;
+                  inProgress: boolean;
+                  kind: "workflow";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                  workflowId?: string;
+                }
+              | {
+                  args: { eventId?: string };
+                  argsSize: number;
+                  completedAt?: number;
+                  eventId?: string;
+                  inProgress: boolean;
+                  kind: "event";
+                  name: string;
+                  runResult?:
+                    | { kind: "success"; returnValue: any }
+                    | { error: string; kind: "failed" }
+                    | { kind: "canceled" };
+                  startedAt: number;
+                };
+            stepNumber: number;
+            workflowId: string;
+          }>;
+          logLevel: "DEBUG" | "TRACE" | "INFO" | "REPORT" | "WARN" | "ERROR";
+          workflow: {
+            _creationTime: number;
+            _id: string;
+            args: any;
+            generationNumber: number;
+            logLevel?: any;
+            name?: string;
+            onComplete?: { context?: any; fnHandle: string };
+            runResult?:
+              | { kind: "success"; returnValue: any }
+              | { error: string; kind: "failed" }
+              | { kind: "canceled" };
+            startedAt?: any;
+            state?: any;
+            workflowHandle: string;
+          };
+        }
+      >;
+      listSteps: FunctionReference<
+        "query",
+        "internal",
+        {
+          order: "asc" | "desc";
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+          workflowId: string;
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            args: any;
+            completedAt?: number;
+            eventId?: string;
+            kind: "function" | "workflow" | "event";
+            name: string;
+            nestedWorkflowId?: string;
+            runResult?:
+              | { kind: "success"; returnValue: any }
+              | { error: string; kind: "failed" }
+              | { kind: "canceled" };
+            startedAt: number;
+            stepId: string;
+            stepNumber: number;
+            workId?: string;
+            workflowId: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+    };
+  };
+  activepieces: {
+    appCapabilities: {
+      mutations: {
+        register: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            category: string;
+            config: any;
+            description: string;
+            displayName: string;
+            enabled?: boolean;
+            inputSchema: any;
+            name: string;
+            outputSchema?: any;
+            projectId: string;
+            type: "trigger" | "action";
+          },
+          any
+        >;
+        remove: FunctionReference<"mutation", "internal", { id: string }, any>;
+        update: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            category?: string;
+            config?: any;
+            description?: string;
+            displayName?: string;
+            enabled?: boolean;
+            id: string;
+            inputSchema?: any;
+            outputSchema?: any;
+          },
+          any
+        >;
+      };
+      queries: {
+        get: FunctionReference<
+          "query",
+          "internal",
+          { name: string; projectId: string },
+          any
+        >;
+        list: FunctionReference<
+          "query",
+          "internal",
+          { projectId: string; type?: "trigger" | "action" },
+          any
+        >;
+      };
+    };
+    appConnections: {
+      mutations: {
+        deleteConnection: FunctionReference<
+          "mutation",
+          "internal",
+          { id: string },
+          any
+        >;
+        upsertConnection: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            displayName: string;
+            encryptionKey: string;
+            externalId: string;
+            pieceName: string;
+            projectId: string;
+            projectIds?: Array<string>;
+            secret_text?: string;
+            type: string;
+            value?: any;
+          },
+          any
+        >;
+      };
+      queries: {
+        getConnectionToken: FunctionReference<
+          "query",
+          "internal",
+          { encryptionKey?: string; externalId: string; projectId: string },
+          any
+        >;
+        listConnections: FunctionReference<
+          "query",
+          "internal",
+          {
+            cursor?: string;
+            limit?: number;
+            pieceName?: string;
+            projectId: string;
+          },
+          any
+        >;
+      };
+    };
+    appEvents: {
+      mutations: {
+        emit: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            eventType: string;
+            metadata?: any;
+            payload: any;
+            projectId: string;
+            source?: string;
+          },
+          any
+        >;
+      };
+      queries: {
+        getById: FunctionReference<
+          "query",
+          "internal",
+          { eventId: string },
+          any
+        >;
+        list: FunctionReference<
+          "query",
+          "internal",
+          {
+            limit?: number;
+            projectId: string;
+            status?: "pending" | "processing" | "completed" | "failed";
+          },
+          any
+        >;
+      };
+    };
+    auth: {
+      mutations: {
+        provisionCurrentUser: FunctionReference<
+          "mutation",
+          "internal",
+          {},
+          any
+        >;
+        switchPlatform: FunctionReference<
+          "mutation",
+          "internal",
+          { platformId: string },
+          any
+        >;
+        switchProject: FunctionReference<
+          "mutation",
+          "internal",
+          { projectId: string },
+          any
+        >;
+      };
+      queries: {
+        getSessionContext: FunctionReference<"query", "internal", {}, any>;
+        listProjectsForCurrentPlatform: FunctionReference<
+          "query",
+          "internal",
+          {},
+          any
+        >;
+        listUserPlatforms: FunctionReference<"query", "internal", {}, any>;
+      };
+    };
+    flags: {
+      mutations: {
+        updateFlags: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            patch: {
+              SHOW_BILLING?: boolean;
+              SHOW_COMMUNITY?: boolean;
+              apiKeysEnabled?: boolean;
+              customAppearanceEnabled?: boolean;
+              embeddingEnabled?: boolean;
+              environmentsEnabled?: boolean;
+              managePiecesEnabled?: boolean;
+              projectRolesEnabled?: boolean;
+            };
+            platformId: string;
+          },
+          any
+        >;
+      };
+      queries: {
+        getFlags: FunctionReference<
+          "query",
+          "internal",
+          { platformId?: string },
+          any
+        >;
+      };
+    };
+    flowRuns: {
+      actions: {
+        testStepAction: FunctionReference<
+          "action",
+          "internal",
+          { encryptionKey?: string; flowVersionId: string; stepName: string },
+          any
+        >;
+      };
+      mutations: {
+        cancelRun: FunctionReference<
+          "mutation",
+          "internal",
+          { runId: string },
+          any
+        >;
+        createRun: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            encryptionKey?: string;
+            flowId: string;
+            flowVersionId: string;
+            projectId: string;
+            triggerOutput?: any;
+          },
+          any
+        >;
+        testFlow: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId?: string; flowVersionId: string; projectId?: string },
+          any
+        >;
+        testStep: FunctionReference<
+          "mutation",
+          "internal",
+          { attempt: number; runId: string; status: string; stepName: string },
+          any
+        >;
+      };
+      queries: {
+        getOutput: FunctionReference<"query", "internal", { id: string }, any>;
+        getRun: FunctionReference<"query", "internal", { runId?: string }, any>;
+        getStepRuns: FunctionReference<
+          "query",
+          "internal",
+          { runId: string },
+          any
+        >;
+        listRuns: FunctionReference<
+          "query",
+          "internal",
+          { flowId?: any; limit?: number; projectId: string; status?: string },
+          any
+        >;
+      };
+      workflows: {
+        startFlowExecution: FunctionReference<
+          "action",
+          "internal",
+          { runId: string },
+          any
+        >;
+      };
+    };
+    flows: {
+      mutations: {
+        createFlow: FunctionReference<
+          "mutation",
+          "internal",
+          { displayName: string; folderId?: string; projectId?: string },
+          any
+        >;
+        setWebhookUrl: FunctionReference<
+          "mutation",
+          "internal",
+          { flowVersionId: string; webhookUrl?: string },
+          any
+        >;
+        updateFlow: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string; operation: string; request: any },
+          any
+        >;
+      };
+      queries: {
+        getFlow: FunctionReference<"query", "internal", { id: string }, any>;
+        getFlowVersion: FunctionReference<
+          "query",
+          "internal",
+          { id: string },
+          any
+        >;
+        listFlows: FunctionReference<
+          "query",
+          "internal",
+          {
+            connectionExternalIds?: Array<string>;
+            cursor?: string;
+            folderId?: string;
+            limit?: number;
+            projectId?: string;
+            status?: Array<string>;
+          },
+          any
+        >;
+        listVersions: FunctionReference<
+          "query",
+          "internal",
+          { flowId: string; limit?: number },
+          any
+        >;
+      };
+    };
+    oauth: {
+      mutations: {
+        deleteOAuthAppCredential: FunctionReference<
+          "mutation",
+          "internal",
+          { id: string },
+          any
+        >;
+        upsertOAuthAppCredential: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            clientId?: string;
+            clientSecret?: string;
+            pieceName: string;
+            scope?: Array<string>;
+          },
+          any
+        >;
+      };
+      queries: {
+        listOAuthAppsCredentials: FunctionReference<
+          "query",
+          "internal",
+          { cursor?: string; limit?: number },
+          any
+        >;
+      };
+    };
+    pieces: {
+      actions: {
+        executeActionRecipe: FunctionReference<
+          "action",
+          "internal",
+          {
+            actionName: string;
+            pieceName: string;
+            projectId: string;
+            settings: { auth?: string; input: any };
+          },
+          any
+        >;
+        executePieceAction: FunctionReference<
+          "action",
+          "internal",
+          {
+            actionName: string;
+            inputs: any;
+            pieceName: string;
+            projectId: string;
+            version: string;
+          },
+          any
+        >;
+        pieceOptions: FunctionReference<
+          "action",
+          "internal",
+          {
+            actionOrTriggerName?: string;
+            encryptionKey?: string;
+            flowId?: string;
+            flowVersionId?: string;
+            input?: any;
+            pieceName: string;
+            pieceVersion: string;
+            propertyName: string;
+            searchValue?: string;
+          },
+          any
+        >;
+        testTriggerRecipe: FunctionReference<
+          "action",
+          "internal",
+          {
+            flowId: string;
+            flowVersionId: string;
+            pieceName: string;
+            saveSampleData?: boolean;
+            settings: { auth?: string; input: any };
+            triggerName: string;
+          },
+          any
+        >;
+      };
+      mutations: {
+        importPieces: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            pieces: Array<{
+              actions?: number;
+              categories?: Array<string>;
+              description?: string;
+              detail?: any;
+              displayName?: string;
+              logoUrl?: string;
+              name: string;
+              packageType?: string;
+              pieceType?: string;
+              suggestedActions?: Array<{ displayName?: string; name: string }>;
+              suggestedTriggers?: Array<{ displayName?: string; name: string }>;
+              triggers?: number;
+              version: string;
+            }>;
+          },
+          any
+        >;
+      };
+      queries: {
+        count: FunctionReference<"query", "internal", {}, any>;
+        get: FunctionReference<
+          "query",
+          "internal",
+          { name: string; version: string },
+          any
+        >;
+        getById: FunctionReference<"query", "internal", { id: string }, any>;
+        list: FunctionReference<
+          "query",
+          "internal",
+          { cursor?: string; limit?: number; search?: string },
+          any
+        >;
+        listByCategory: FunctionReference<
+          "query",
+          "internal",
+          { category: string; limit?: number },
+          any
+        >;
+      };
+    };
+    platform: {
+      mutations: {
+        addUserToPlatform: FunctionReference<
+          "mutation",
+          "internal",
+          { platformId: string; role: string; userId: string },
+          any
+        >;
+        backfillProjectMembers: FunctionReference<
+          "mutation",
+          "internal",
+          {},
+          any
+        >;
+        createPlatform: FunctionReference<
+          "mutation",
+          "internal",
+          { displayName?: string; id: string },
+          any
+        >;
+        createProject: FunctionReference<
+          "mutation",
+          "internal",
+          { displayName: string; id: string; platformId: string },
+          any
+        >;
+        deletePlatform: FunctionReference<
+          "mutation",
+          "internal",
+          { id: string },
+          any
+        >;
+        deleteProject: FunctionReference<
+          "mutation",
+          "internal",
+          { id: string; platformId: string },
+          any
+        >;
+        getUserProfile: FunctionReference<"mutation", "internal", {}, any>;
+        removeUserFromPlatform: FunctionReference<
+          "mutation",
+          "internal",
+          { platformId: string; userId: string },
+          any
+        >;
+        updatePlatform: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            id: string;
+            patch: {
+              displayName?: string;
+              filteredPieceNames?: Array<string>;
+              flags?: {
+                SHOW_BILLING?: boolean;
+                SHOW_COMMUNITY?: boolean;
+                apiKeysEnabled?: boolean;
+                customAppearanceEnabled?: boolean;
+                embeddingEnabled?: boolean;
+                environmentsEnabled?: boolean;
+                managePiecesEnabled?: boolean;
+                projectRolesEnabled?: boolean;
+              };
+              pinnedPieces?: Array<string>;
+            };
+          },
+          any
+        >;
+        updateProject: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            id: string;
+            patch: { displayName?: string; limits?: any };
+            platformId: string;
+          },
+          any
+        >;
+        updateUserProfile: FunctionReference<
+          "mutation",
+          "internal",
+          { currentPlatformId?: string; currentProjectId?: string },
+          any
+        >;
+        updateUserRole: FunctionReference<
+          "mutation",
+          "internal",
+          { platformId: string; role: string; userId: string },
+          any
+        >;
+      };
+      queries: {
+        getPlatform: FunctionReference<
+          "query",
+          "internal",
+          { id: string },
+          any
+        >;
+        getProject: FunctionReference<"query", "internal", { id: string }, any>;
+        getUserProfile: FunctionReference<"query", "internal", {}, any>;
+        listPlatforms: FunctionReference<"query", "internal", {}, any>;
+        listPlatformUsers: FunctionReference<
+          "query",
+          "internal",
+          { platformId: string },
+          any
+        >;
+        listProjects: FunctionReference<
+          "query",
+          "internal",
+          { platformId: string },
+          any
+        >;
+      };
+    };
+    sampleData: {
+      mutations: {
+        deleteSampleDataForFlowVersion: FunctionReference<
+          "mutation",
+          "internal",
+          { flowVersionId: string },
+          any
+        >;
+        deleteSampleDataForStep: FunctionReference<
+          "mutation",
+          "internal",
+          { flowVersionId: string; stepName: string },
+          any
+        >;
+        getSampleData: FunctionReference<
+          "mutation",
+          "internal",
+          { flowVersionId: string; stepName: string; type: string },
+          any
+        >;
+        saveSampleData: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            flowVersionId: string;
+            payload: any;
+            projectId: string;
+            stepName: string;
+            type: string;
+          },
+          any
+        >;
+      };
+      queries: {
+        getAllSampleDataForFlowVersion: FunctionReference<
+          "query",
+          "internal",
+          { flowVersionId: string },
+          any
+        >;
+        getSampleData: FunctionReference<
+          "query",
+          "internal",
+          {
+            flowVersionId: string;
+            sampleDataFileId?: string;
+            stepName: string;
+            type: string;
+          },
+          any
+        >;
+      };
+    };
+    triggerEvents: {
+      actions: {
+        testTriggerAction: FunctionReference<
+          "action",
+          "internal",
+          { flowId: string },
+          any
+        >;
+      };
+      mutations: {
+        saveTriggerMock: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string; mockData: any },
+          any
+        >;
+        testTrigger: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string; input: any },
+          any
+        >;
+      };
+      queries: {
+        listTriggerEvents: FunctionReference<
+          "query",
+          "internal",
+          { cursor?: string; flowId: string; limit?: number },
+          any
+        >;
+      };
+    };
+    triggers: {
+      store: {
+        clearAll: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string },
+          any
+        >;
+        get: FunctionReference<
+          "query",
+          "internal",
+          { flowId: string; key: string },
+          any
+        >;
+        put: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string; key: string; value: any },
+          any
+        >;
+        remove: FunctionReference<
+          "mutation",
+          "internal",
+          { flowId: string; key: string },
+          any
+        >;
+      };
+    };
+    userActions: {
+      mutations: {
+        markExecuted: FunctionReference<
+          "mutation",
+          "internal",
+          { actionId: string },
+          any
+        >;
+        queuePublic: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            actionType: string;
+            expiresAt?: number;
+            flowRunId?: string;
+            payload: any;
+            sessionId: string | null;
+            source?: string;
+            userId: string | null;
+          },
+          any
+        >;
+      };
+      queries: {
+        getPending: FunctionReference<
+          "query",
+          "internal",
+          { sessionId?: string; userId?: string },
+          any
+        >;
+        getPendingBySession: FunctionReference<
+          "query",
+          "internal",
+          { sessionId: string },
+          any
+        >;
+      };
+    };
+  };
   launchthat_core_tenant: {
     mutations: {
       acceptOrgInviteByToken: FunctionReference<
