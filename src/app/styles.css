@@ -5,15 +5,6 @@
 @source "../../../../packages/ui/src/*.{ts,tsx}";
 @source "../../../../packages/ui/src/**/*.{ts,tsx}";
 
-/* Activepieces UI is shipped as a library, but uses Tailwind utility classes.
-   Generate those classes from:
-   1) vendored source in local dev, and
-   2) installed package dist files in deployed builds (no vendor path). */
-@source "../../../../vendor/t3-activepieces/packages/activepieces-ui/src/**/*.{ts,tsx}";
-@source "../../node_modules/@launchthatbrand/activepieces-ui/src/**/*.{ts,tsx}";
-@source "../../node_modules/@launchthatbrand/activepieces-ui/dist/**/*.{js,mjs,cjs}";
-@source inline("pt-28");
-
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
 @custom-variant auto (&:where(.auto, .auto *));

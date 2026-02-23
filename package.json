@@ -8,6 +8,7 @@
     "dev": "pnpm with-env next dev --turbo",
     "format": "prettier --check . --ignore-path ../../.gitignore",
     "lint": "NODE_OPTIONS=--experimental-strip-types eslint --flag unstable_native_nodejs_ts_config",
+    "seed:pieces": "pnpm with-env convex run init",
     "start": "pnpm with-env next start",
     "typecheck": "tsc --noEmit",
     "with-env": "dotenv -e ../../.env --"
@@ -27,7 +28,7 @@
     "@launchthatbrand/activepieces-backend-adapter": "^0.1.0",
     "@launchthatbrand/activepieces-convex": "^0.1.0",
     "@launchthatbrand/activepieces-next": "^0.0.1",
-    "@launchthatbrand/activepieces-ui": "^0.1.4",
+    "@launchthatbrand/activepieces-ui": "^0.1.5",
     "@launchthatbrand/activepieces-validation": "^0.0.1",
     "@mdx-js/mdx": "^3.1.1",
     "@radix-ui/react-avatar": "^1.1.11",

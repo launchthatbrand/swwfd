@@ -28,6 +28,14 @@ const config = buildActivepiecesConfig({
   routing: {
     autoSwitchProject: true,
   },
+  pieces: {
+    registry: [
+      {
+        name: "Job Search",
+        description: "Search for jobs",
+      },
+    ],
+  },
 });
 
 export default config;

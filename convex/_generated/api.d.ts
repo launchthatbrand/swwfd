@@ -246,6 +246,14 @@ export declare const api: {
       >;
     };
   };
+  init: {
+    default: FunctionReference<
+      "action",
+      "public",
+      { piecesConfig?: any },
+      null
+    >;
+  };
   jobApplications: {
     apply: FunctionReference<
       "mutation",
@@ -312,6 +320,71 @@ export declare const api: {
     >;
   };
   pieces: {
+    actions: {
+      executeActionRecipe: FunctionReference<
+        "action",
+        "public",
+        {
+          actionName: string;
+          pieceName: string;
+          projectId: string;
+          settings: { auth?: string; input: any };
+        },
+        any
+      >;
+      pieceOptions: FunctionReference<
+        "action",
+        "public",
+        {
+          actionOrTriggerName?: string;
+          flowId?: string;
+          flowVersionId?: string;
+          input?: any;
+          pieceName: string;
+          pieceVersion: string;
+          propertyName: string;
+          searchValue?: string;
+        },
+        any
+      >;
+      testTriggerRecipe: FunctionReference<
+        "action",
+        "public",
+        {
+          flowId: string;
+          flowVersionId: string;
+          pieceName: string;
+          saveSampleData?: boolean;
+          settings: { auth?: string; input: any };
+          triggerName: string;
+        },
+        any
+      >;
+    };
+    mutations: {
+      importPieces: FunctionReference<
+        "mutation",
+        "public",
+        {
+          pieces: Array<{
+            actions?: number;
+            categories?: Array<string>;
+            description?: string;
+            detail?: any;
+            displayName?: string;
+            logoUrl?: string;
+            name: string;
+            packageType?: string;
+            pieceType?: string;
+            suggestedActions?: Array<{ displayName?: string; name: string }>;
+            suggestedTriggers?: Array<{ displayName?: string; name: string }>;
+            triggers?: number;
+            version: string;
+          }>;
+        },
+        any
+      >;
+    };
     queries: {
       count: FunctionReference<"query", "public", {}, any>;
       get: FunctionReference<

@@ -49,15 +49,26 @@ const buildItems = (section: "admin" | "dashboard"): NavItem[] => {
 export function AppSidebar(props: { section: "admin" | "dashboard" }) {
   const pathname = usePathname();
   const items = buildItems(props.section);
+  const stableSidebarVars = {
+    "--sidebar": "oklch(0.145 0 0)",
+    "--sidebar-foreground": "oklch(0.985 0 0)",
+    "--sidebar-primary": "oklch(0.985 0 0)",
+    "--sidebar-primary-foreground": "oklch(0.145 0 0)",
+    "--sidebar-accent": "oklch(0.205 0 0)",
+    "--sidebar-accent-foreground": "oklch(0.985 0 0)",
+    "--sidebar-border": "oklch(1 0 0 / 10%)",
+    "--sidebar-ring": "oklch(0.556 0 0)",
+  } as React.CSSProperties;
 
   return (
     <Sidebar
       variant="inset"
       collapsible="icon"
-      className="overflow-hidden border-border/40 text-sidebar-foreground"
+      className="overflow-hidden border-white/10 text-white"
+      style={stableSidebarVars}
     >
       <SidebarHeader className="p-1">
-        <div className="text-muted-foreground px-4 py-2 text-xs font-semibold uppercase tracking-wide group-data-[collapsible=icon]:hidden">
+        <div className="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white/60 group-data-[collapsible=icon]:hidden">
           {props.section === "admin" ? "Admin" : "Dashboard"}
         </div>
       </SidebarHeader>
@@ -74,15 +85,15 @@ export function AppSidebar(props: { section: "admin" | "dashboard" }) {
                   isActive={active}
                   size="default"
                   className={cn(
-                    "h-11 rounded-xl text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:size-11! [&>svg]:size-6!",
-                    active ? "data-[active=true]:bg-sidebar-accent/60" : "",
+                    "h-11 rounded-xl text-white/85 hover:bg-white/10 hover:text-white group-data-[collapsible=icon]:size-11! [&>svg]:size-6!",
+                    active ? "data-[active=true]:bg-white/15 data-[active=true]:text-white" : "",
                   )}
                 >
                   <Link
                     href={item.href}
                     className="gap-3 font-medium tracking-tight group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                   >
-                    <Icon className="text-sidebar-foreground/70 transition-colors group-hover/menu-button:text-sidebar-foreground" />
+                    <Icon className="text-white/75 transition-colors group-hover/menu-button:text-white" />
                     <span className="group-data-[collapsible=icon]:hidden">{item.label}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -90,7 +101,7 @@ export function AppSidebar(props: { section: "admin" | "dashboard" }) {
             );
           })}
         </SidebarMenu>
-        <SidebarSeparator className="bg-sidebar-border w-[90%]!" />
+        <SidebarSeparator className="w-[90%]! bg-white/15" />
       </SidebarContent>
     </Sidebar>
   );
