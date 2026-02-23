@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import type { ComponentType } from "react";
 import config from "~/activepieces.config";
 import dynamic from "next/dynamic";
@@ -34,6 +35,14 @@ const getAuthToken = async (): Promise<string | null> => {
 };
 
 export default function AdminAutomationsPage() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("ap-hsl-vars");
+    return () => {
+      root.classList.remove("ap-hsl-vars");
+    };
+  }, []);
+
   return <ActivepiecesPage config={config as unknown} getAuthToken={getAuthToken} />;
 }
 
