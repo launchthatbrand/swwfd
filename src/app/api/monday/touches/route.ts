@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { hasMondayConfig, listMondayBoardRecords } from "~/server/monday/client";
+import {
+  hasMondayTouchConfig,
+  listMondayTouchBoardRecords,
+} from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
@@ -34,12 +37,12 @@ export const GET = async (request: Request) => {
     return toJson({ ok: false, error: message }, 401);
   }
 
-  if (!hasMondayConfig()) {
+  if (!hasMondayTouchConfig()) {
     return toJson(
       {
         ok: false,
         error:
-          "Missing Monday configuration. Set MONDAY_API_KEY and MONDAY_BOARD_ID.",
+          "Missing Monday touch configuration. Set MONDAY_API_KEY and MONDAY_CONTACT_TOUCHED_BOARD_ID.",
       },
       400,
     );
@@ -49,48 +52,46 @@ export const GET = async (request: Request) => {
   const cursor = url.searchParams.get("cursor") ?? undefined;
   const limit = parseLimit(url.searchParams.get("limit"));
   const search = url.searchParams.get("search")?.trim().toLowerCase() ?? "";
-  const group = url.searchParams.get("group")?.trim().toLowerCase() ?? "";
-  const status = url.searchParams.get("status")?.trim().toLowerCase() ?? "";
   const owner = url.searchParams.get("owner")?.trim().toLowerCase() ?? "";
   const dateFrom = parseIsoDateOnly(url.searchParams.get("dateFrom"));
   const dateTo = parseIsoDateOnly(url.searchParams.get("dateTo"));
   const startedAt = Date.now();
 
   try {
-    const { records, nextCursor, boardName, appliedFilters } =
-      await listMondayBoardRecords({
-      cursor,
+    console.info("[MondayTouchesRoute] GET start", {
       limit,
-      dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
-      dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
-      owner: owner || undefined,
-      status: status || undefined,
+      hasCursor: !!cursor,
+      owner,
+      dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : null,
+      dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : null,
+      searchLength: search.length,
     });
+    const { records, nextCursor, boardName, appliedFilters } =
+      await listMondayTouchBoardRecords({
+        cursor,
+        limit,
+        dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
+        dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
+        owner: owner || undefined,
+      });
 
+    let droppedBySearch = 0;
+    let droppedByOwner = 0;
+    let droppedByDate = 0;
     const filtered = records.filter((record) => {
       if (search.length > 0) {
         const haystack = [
           record.name,
           record.id,
-          record.groupTitle ?? "",
-          record.statusText ?? "",
           record.peopleText ?? "",
           record.email ?? "",
-          record.address ?? "",
         ]
           .join(" ")
           .toLowerCase();
-        if (!haystack.includes(search)) return false;
-      }
-
-      if (group.length > 0) {
-        const groupValue = (record.groupTitle ?? "").toLowerCase();
-        if (groupValue !== group) return false;
-      }
-
-      if (status.length > 0 && !appliedFilters?.status) {
-        const statusValue = (record.statusText ?? "").toLowerCase();
-        if (statusValue !== status) return false;
+        if (!haystack.includes(search)) {
+          droppedBySearch += 1;
+          return false;
+        }
       }
 
       if (owner.length > 0 && !appliedFilters?.owner) {
@@ -110,24 +111,36 @@ export const GET = async (request: Request) => {
         } else if (peopleTextValue === owner) {
           hasOwnerMatch = true;
         }
-        if (!hasOwnerMatch) return false;
+        if (!hasOwnerMatch) {
+          droppedByOwner += 1;
+          return false;
+        }
       }
 
       if ((dateFrom || dateTo) && !appliedFilters?.date) {
         const createdAt = record.createdAt ? new Date(record.createdAt) : null;
-        if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
-        if (dateFrom && createdAt < dateFrom) return false;
+        if (!createdAt || Number.isNaN(createdAt.getTime())) {
+          droppedByDate += 1;
+          return false;
+        }
+        if (dateFrom && createdAt < dateFrom) {
+          droppedByDate += 1;
+          return false;
+        }
         if (dateTo) {
           const end = new Date(dateTo);
           end.setUTCHours(23, 59, 59, 999);
-          if (createdAt > end) return false;
+          if (createdAt > end) {
+            droppedByDate += 1;
+            return false;
+          }
         }
       }
 
       return true;
     });
 
-    console.info("[MondayRecordsRoute] GET completed", {
+    console.info("[MondayTouchesRoute] GET completed", {
       durationMs: Date.now() - startedAt,
       requestedLimit: limit,
       returnedRows: filtered.length,
@@ -135,7 +148,16 @@ export const GET = async (request: Request) => {
       hasNextCursor: !!nextCursor,
       appliedFilters,
       hasSearch: search.length > 0,
-      hasGroup: group.length > 0,
+      hasOwner: owner.length > 0,
+      droppedBySearch,
+      droppedByOwner,
+      droppedByDate,
+      sampleRecordOwners: records.slice(0, 5).map((record) => ({
+        id: record.id,
+        peopleText: record.peopleText,
+        ownerIds: (record.ownerIds ?? []).slice(0, 3),
+        createdAt: record.createdAt,
+      })),
     });
 
     return toJson({
@@ -146,36 +168,16 @@ export const GET = async (request: Request) => {
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to load Monday records";
-    console.error("[MondayRecordsRoute] GET failed", {
+      error instanceof Error ? error.message : "Failed to load Monday touch records";
+    console.error("[MondayTouchesRoute] GET failed", {
       durationMs: Date.now() - startedAt,
       error: message,
       requestedLimit: limit,
       hasCursor: !!cursor,
       hasSearch: search.length > 0,
-      hasGroup: group.length > 0,
-      hasStatus: status.length > 0,
       hasOwner: owner.length > 0,
     });
     return toJson({ ok: false, error: message }, 500);
   }
 };
 
-export const POST = async (request: Request) => {
-  try {
-    await requireVerifiedMondaySession(request);
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unauthorized Monday session";
-    return toJson({ ok: false, error: message }, 401);
-  }
-
-  return toJson(
-    {
-      ok: false,
-      error:
-        "Archive and delete actions are disabled for this view. Use monday.com directly for write operations.",
-    },
-    405,
-  );
-};

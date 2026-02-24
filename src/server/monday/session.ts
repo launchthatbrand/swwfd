@@ -12,6 +12,76 @@ export interface MondaySessionIdentity {
   expiresAt?: number;
 }
 
+export const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
+const MONDAY_API_URL = "https://api.monday.com/v2";
+
+export const canUseMondayDevBypass = () => {
+  return env.NODE_ENV === "development" && !!env.MONDAY_API_KEY?.trim();
+};
+
+let cachedDevIdentity: MondaySessionIdentity | null = null;
+
+export const getMondayDevBypassIdentity = async (): Promise<MondaySessionIdentity> => {
+  if (!canUseMondayDevBypass()) {
+    throw new Error("Monday dev bypass is disabled");
+  }
+  if (cachedDevIdentity) {
+    return cachedDevIdentity;
+  }
+
+  interface ViewerData {
+    me?: {
+      id?: string | number | null;
+      account?: { id?: string | number | null } | null;
+    } | null;
+  }
+
+  const response = await fetch(MONDAY_API_URL, {
+    method: "POST",
+    headers: {
+      Authorization: env.MONDAY_API_KEY ?? "",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query: `
+        query MondayViewerIdentity {
+          me {
+            id
+            account {
+              id
+            }
+          }
+        }
+      `,
+      variables: {},
+    }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed loading Monday dev identity (${response.status})`);
+  }
+  const json = (await response.json()) as {
+    data?: ViewerData;
+    errors?: Array<{ message?: string }>;
+  };
+  if (json.errors?.length) {
+    throw new Error(
+      json.errors.map((entry) => entry.message).filter(Boolean).join(" | ") ||
+        "Failed loading Monday dev identity",
+    );
+  }
+
+  const userId = json.data?.me?.id != null ? String(json.data.me.id) : null;
+  const accountId =
+    json.data?.me?.account?.id != null ? String(json.data.me.account.id) : null;
+  if (!userId || !accountId) {
+    throw new Error("Monday dev identity response missing me.id/account.id");
+  }
+
+  cachedDevIdentity = { userId, accountId };
+  return cachedDevIdentity;
+};
+
 const getSigningSecret = () => {
   const secret = `${env.MONDAY_SIGNING_SECRET ?? ""}`;
   if (!secret || secret.trim().length === 0) {
@@ -134,7 +204,13 @@ export const getMondaySessionTokenFromRequest = (request: Request) => {
 export const requireVerifiedMondaySession = async (request: Request) => {
   const token = getMondaySessionTokenFromRequest(request);
   if (!token) {
+    if (canUseMondayDevBypass()) {
+      return await getMondayDevBypassIdentity();
+    }
     throw new Error("Missing Monday session token");
+  }
+  if (token === MONDAY_DEV_BYPASS_TOKEN && canUseMondayDevBypass()) {
+    return await getMondayDevBypassIdentity();
   }
   return await verifyMondaySessionToken(token);
 };

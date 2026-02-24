@@ -38,4 +38,62 @@ export default defineSchema({
     .index("by_jobId", ["jobId"])
     .index("by_userId", ["userId"])
     .index("by_jobId_and_userId", ["jobId", "userId"]),
+
+  mondayTouchBackfillJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    workflowId: v.optional(v.string()),
+    sourceTag: v.string(),
+    baselineDate: v.string(),
+    contactBoardId: v.string(),
+    touchBoardId: v.string(),
+    pageSize: v.number(),
+    currentCursor: v.optional(v.union(v.string(), v.null())),
+    processedContacts: v.number(),
+    createdTouches: v.number(),
+    skippedTouches: v.number(),
+    errorsCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"]),
+
+  mondayTouchCsvExportJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    workflowId: v.optional(v.string()),
+    sourceTag: v.string(),
+    baselineDate: v.string(),
+    contactBoardId: v.string(),
+    pageSize: v.number(),
+    currentCursor: v.optional(v.union(v.string(), v.null())),
+    processedContacts: v.number(),
+    rowCount: v.number(),
+    chunkCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"]),
+
+  mondayTouchCsvExportChunks: defineTable({
+    jobId: v.id("mondayTouchCsvExportJobs"),
+    chunkIndex: v.number(),
+    content: v.string(),
+    createdAt: v.number(),
+  }).index("by_jobId_and_chunkIndex", ["jobId", "chunkIndex"]),
+
 });

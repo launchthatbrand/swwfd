@@ -3,6 +3,11 @@ import "server-only";
 import { env } from "~/env";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
+const RETENTION_REFERRED_COLUMN_ID = "dropdown_mkwqcc1w";
+const RETENTION_HIRED_WITH_COLUMN_ID = "dropdown_mkwqm5fb";
+const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
+const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
+const TAGS_COLUMN_ID = "dropdown_mkvw578t";
 
 export interface MondayRecord {
   id: string;
@@ -13,7 +18,13 @@ export interface MondayRecord {
   peopleText: string | null;
   ownerIds: string[];
   email: string | null;
+  phone: string | null;
   address: string | null;
+  referredToContractors: string | null;
+  hiredWithContractor: string | null;
+  hireDate: string | null;
+  retentionPeriod: string | null;
+  tags: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{
@@ -38,6 +49,22 @@ export interface MondayUserProfile {
   name: string | null;
 }
 
+export interface MondayRecordEditOptions {
+  referredToContractors: string[];
+  hiredWithContractor: string[];
+  retentionPeriod: string[];
+  tags: string[];
+}
+
+export interface MondayContactCandidate {
+  id: string;
+  name: string;
+  url: string | null;
+  email: string | null;
+  owner: string | null;
+  updatedAt: string | null;
+}
+
 interface MondayGraphQLResponse<TData> {
   data?: TData;
   errors?: { message?: string }[];
@@ -54,6 +81,15 @@ const getMondayApiEnv = () => {
 const getMondayBoardEnv = () => {
   const api = getMondayApiEnv();
   const boardId = env.MONDAY_BOARD_ID;
+  if (!api.ok || !boardId) {
+    return { ok: false as const, apiKey: null, boardId: null };
+  }
+  return { ok: true as const, apiKey: api.apiKey, boardId };
+};
+
+const getMondayTouchBoardEnv = () => {
+  const api = getMondayApiEnv();
+  const boardId = env.MONDAY_CONTACT_TOUCHED_BOARD_ID;
   if (!api.ok || !boardId) {
     return { ok: false as const, apiKey: null, boardId: null };
   }
@@ -96,6 +132,65 @@ const callMondayGraphQL = async <TData>(
   }
 
   return json.data;
+};
+
+const BOARD_COLUMN_CACHE_TTL_MS = 5 * 60 * 1000;
+const boardColumnCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    statusColumnId: string | null;
+    peopleColumnId: string | null;
+    dateColumnId: string | null;
+  }
+>();
+
+const resolveBoardColumnIds = async (boardId: string) => {
+  const now = Date.now();
+  const cached = boardColumnCache.get(boardId);
+  if (cached && cached.expiresAt > now) {
+    return cached;
+  }
+
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+
+  const query = `
+    query ResolveBoardColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns {
+          id
+          type
+        }
+      }
+    }
+  `;
+
+  const data = await callMondayGraphQL<BoardColumnsData>(query, { boardId });
+  const columns = data.boards?.[0]?.columns ?? [];
+  const statusColumnId =
+    columns.find((column) => column?.type === "status")?.id ?? null;
+  const peopleColumnId =
+    columns.find((column) => column?.type === "people")?.id ?? null;
+  const dateColumnId =
+    columns.find((column) => column?.id === "date1__1")?.id ??
+    columns.find((column) => column?.type === "date")?.id ??
+    null;
+
+  const resolved = {
+    expiresAt: now + BOARD_COLUMN_CACHE_TTL_MS,
+    statusColumnId,
+    peopleColumnId,
+    dateColumnId,
+  };
+  boardColumnCache.set(boardId, resolved);
+  return resolved;
 };
 
 const extractPrimitiveStrings = (input: unknown): string[] => {
@@ -145,11 +240,17 @@ export const hasMondayConfig = () => {
   return getMondayBoardEnv().ok;
 };
 
+export const hasMondayTouchConfig = () => {
+  return getMondayTouchBoardEnv().ok;
+};
+
 export const listMondayBoardRecords = async (args?: {
   cursor?: string;
   limit?: number;
   dateFrom?: string;
   dateTo?: string;
+  owner?: string;
+  status?: string;
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -163,6 +264,8 @@ export const listMondayBoardRecords = async (args?: {
   const dateFromArg = args?.dateFrom;
   const dateToArg = args?.dateTo;
   const cursorArg = args?.cursor ?? null;
+  const ownerArg = args?.owner?.trim() ?? "";
+  const statusArg = args?.status?.trim() ?? "";
   const shouldFilterByDateRange =
     typeof dateFromArg === "string" &&
     dateFromArg.length > 0 &&
@@ -170,46 +273,22 @@ export const listMondayBoardRecords = async (args?: {
     dateToArg.length > 0;
   const isIsoDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-  const listBoardItemsQuery = `
-    query ListBoardItems($boardId: ID!, $limit: Int!, $cursor: String) {
-      boards(ids: [$boardId]) {
-        name
-        items_page(limit: $limit, cursor: $cursor) {
-          cursor
-          items {
-            id
-            name
-            url
-            updated_at
-            group {
-              title
-            }
-            column_values {
-              id
-              type
-              text
-              value
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  const listBoardItemsByDateRangeQuery = (dateFrom: string, dateTo: string) => `
-    query ListBoardItemsByDateRange($boardId: ID!, $limit: Int!) {
+  const buildListBoardItemsQuery = (args: {
+    includeCursor: boolean;
+    rules: string[];
+  }) => `
+    query ListBoardItems($boardId: ID!, $limit: Int!${
+      args.includeCursor ? ", $cursor: String" : ""
+    }) {
       boards(ids: [$boardId]) {
         name
         items_page(
           limit: $limit
-          query_params: {
-            rules: [
-              {
-                column_id: "date1__1"
-                compare_value: ["${dateFrom}", "${dateTo}"]
-                operator: between
-              }
-            ]
+          ${args.includeCursor ? "cursor: $cursor" : ""}
+          ${
+            args.rules.length > 0
+              ? `query_params: { rules: [${args.rules.join("\n")}] }`
+              : ""
           }
         ) {
           cursor
@@ -255,6 +334,11 @@ export const listMondayBoardRecords = async (args?: {
   }
 
   const limit = Math.min(Math.max(args?.limit ?? 100, 1), 500);
+  const appliedFilters = {
+    date: false,
+    owner: false,
+    status: false,
+  };
 
   let boardName: string | null = null;
   const readCreatedAtFromCreationLog = (
@@ -289,6 +373,20 @@ export const listMondayBoardRecords = async (args?: {
     const emailColumn = columns.find(
       (column) => column.id === "email__1" || column.type === "email",
     );
+    const phoneColumn = columns.find(
+      (column) => column.id === "phone____1" || column.type === "phone",
+    );
+    const referredToContractorsColumn = columns.find(
+      (column) => column.id === "dropdown_mkwqcc1w",
+    );
+    const hiredWithContractorColumn = columns.find(
+      (column) => column.id === "dropdown_mkwqm5fb",
+    );
+    const hireDateColumn = columns.find((column) => column.id === "date_mkty234p");
+    const retentionPeriodColumn = columns.find(
+      (column) => column.id === "dropdown_mkwthbh2",
+    );
+    const tagsColumn = columns.find((column) => column.id === "dropdown_mkvw578t");
     const addressLine1 = columns.find((column) => column.id === "text6__1")?.text;
     const addressLine2 = columns.find((column) => column.id === "text60__1")?.text;
     const city = columns.find((column) => column.id === "text1__1")?.text;
@@ -309,6 +407,22 @@ export const listMondayBoardRecords = async (args?: {
           createdAtFromDateColumn = `${parsed.date}T${parsed.time}Z`;
         } else if (parsed.date) {
           createdAtFromDateColumn = `${parsed.date}T00:00:00Z`;
+        }
+      } catch {
+        // Ignore malformed date JSON.
+      }
+    }
+    let hireDateFromColumn: string | null = null;
+    if (hireDateColumn?.value) {
+      try {
+        const parsed = JSON.parse(hireDateColumn.value) as {
+          date?: string;
+          time?: string;
+        };
+        if (parsed.date && parsed.time) {
+          hireDateFromColumn = `${parsed.date}T${parsed.time}Z`;
+        } else if (parsed.date) {
+          hireDateFromColumn = `${parsed.date}T00:00:00Z`;
         }
       } catch {
         // Ignore malformed date JSON.
@@ -347,6 +461,9 @@ export const listMondayBoardRecords = async (args?: {
     if ((emailColumn?.text ?? "").trim().length > 0) {
       primaryDetails.push({ label: "Email", value: emailColumn?.text ?? "" });
     }
+    if ((phoneColumn?.text ?? "").trim().length > 0) {
+      primaryDetails.push({ label: "Phone", value: phoneColumn?.text ?? "" });
+    }
     if ((address ?? "").trim().length > 0) {
       primaryDetails.push({ label: "Address", value: address ?? "" });
     }
@@ -382,6 +499,10 @@ export const listMondayBoardRecords = async (args?: {
     const contactDetails = Array.from(detailsByLabel.entries()).map(
       ([label, value]) => ({ label, value }),
     );
+    const hireDateDisplayValue = toColumnDisplayValue(
+      hireDateColumn?.text,
+      hireDateColumn?.value,
+    );
 
     return {
       id: item.id,
@@ -392,7 +513,25 @@ export const listMondayBoardRecords = async (args?: {
       peopleText: peopleColumn?.text ?? null,
       ownerIds,
       email: emailColumn?.text ?? null,
+      phone: phoneColumn?.text ?? null,
       address,
+      referredToContractors: toColumnDisplayValue(
+        referredToContractorsColumn?.text,
+        referredToContractorsColumn?.value,
+      ) || null,
+      hiredWithContractor:
+        toColumnDisplayValue(
+          hiredWithContractorColumn?.text,
+          hiredWithContractorColumn?.value,
+        ) || null,
+      hireDate:
+        hireDateFromColumn ?? (hireDateDisplayValue.trim().length > 0 ? hireDateDisplayValue : null),
+      retentionPeriod:
+        toColumnDisplayValue(
+          retentionPeriodColumn?.text,
+          retentionPeriodColumn?.value,
+        ) || null,
+      tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       createdAt:
         createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
@@ -400,25 +539,63 @@ export const listMondayBoardRecords = async (args?: {
     };
   };
 
-  const shouldRunDateRuleOnInitialPage =
-    shouldFilterByDateRange &&
-    !cursorArg &&
-    isIsoDateOnly(dateFromArg) &&
-    isIsoDateOnly(dateToArg);
+  const rules: string[] = [];
+  const shouldBuildRules = !cursorArg;
+  if (shouldBuildRules) {
+    try {
+      const columnIds = await resolveBoardColumnIds(mondayBoard.boardId);
+      const dateColumnId = columnIds.dateColumnId ?? "date1__1";
+      if (
+        shouldFilterByDateRange &&
+        isIsoDateOnly(dateFromArg) &&
+        isIsoDateOnly(dateToArg) &&
+        /^[a-zA-Z0-9_]+$/.test(dateColumnId)
+      ) {
+        rules.push(`{
+          column_id: "${dateColumnId}"
+          compare_value: ["${dateFromArg}", "${dateToArg}"]
+          operator: between
+        }`);
+        appliedFilters.date = true;
+      }
 
-  const data = shouldRunDateRuleOnInitialPage
-    ? await callMondayGraphQL<BoardQueryData>(
-        listBoardItemsByDateRangeQuery(dateFromArg, dateToArg),
-        {
-          boardId: mondayBoard.boardId,
-          limit,
-        },
-      )
-    : await callMondayGraphQL<BoardQueryData>(listBoardItemsQuery, {
+      if (
+        statusArg.length > 0 &&
+        columnIds.statusColumnId &&
+        /^[a-zA-Z0-9_]+$/.test(columnIds.statusColumnId)
+      ) {
+        const escapedStatus = JSON.stringify(statusArg);
+        rules.push(`{
+          column_id: "${columnIds.statusColumnId}"
+          compare_value: [${escapedStatus}]
+          operator: any_of
+        }`);
+        appliedFilters.status = true;
+      }
+
+      // NOTE: Monday people-column query_params matching can return false-empty
+      // result sets for valid owner ids in this board setup. Keep owner filtering
+      // in our route-level matcher for now to preserve expected UX.
+      // We intentionally do NOT push owner rules to Monday here.
+      void ownerArg;
+      void columnIds.peopleColumnId;
+    } catch (error) {
+      console.warn("[MondayRecords] Failed to resolve board columns for rules", {
         boardId: mondayBoard.boardId,
-        limit,
-        cursor: cursorArg,
+        error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  const query = buildListBoardItemsQuery({
+    includeCursor: !!cursorArg,
+    rules: cursorArg ? [] : rules,
+  });
+  const data = await callMondayGraphQL<BoardQueryData>(query, {
+    boardId: mondayBoard.boardId,
+    limit,
+    ...(cursorArg ? { cursor: cursorArg } : {}),
+  });
 
   boardName = data.boards?.[0]?.name ?? null;
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
@@ -429,6 +606,347 @@ export const listMondayBoardRecords = async (args?: {
     records,
     nextCursor,
     boardName,
+    appliedFilters,
+  };
+};
+
+export const listMondayTouchBoardRecords = async (args?: {
+  cursor?: string;
+  limit?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  owner?: string;
+}) => {
+  const startedAt = Date.now();
+  const touchBoard = getMondayTouchBoardEnv();
+  if (!touchBoard.ok) {
+    return {
+      records: [] as MondayRecord[],
+      nextCursor: null as string | null,
+      boardName: null as string | null,
+      appliedFilters: {
+        date: false,
+        owner: false,
+      },
+    };
+  }
+
+  const dateFromArg = args?.dateFrom;
+  const dateToArg = args?.dateTo;
+  const cursorArg = args?.cursor ?? null;
+  const ownerArg = args?.owner?.trim() ?? "";
+  const shouldFilterByDateRange =
+    typeof dateFromArg === "string" &&
+    dateFromArg.length > 0 &&
+    typeof dateToArg === "string" &&
+    dateToArg.length > 0;
+  const isIsoDateOnly = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  interface ColumnMeta {
+    id?: string | null;
+    title?: string | null;
+    type?: string | null;
+  }
+  interface ColumnsData {
+    boards?: Array<{ columns?: ColumnMeta[] }>;
+  }
+
+  const columnsData = await callMondayGraphQL<ColumnsData>(
+    `
+      query ResolveTouchBoardColumns($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns {
+            id
+            title
+            type
+          }
+        }
+      }
+    `,
+    { boardId: touchBoard.boardId },
+  );
+  const columns = columnsData.boards?.[0]?.columns ?? [];
+  const findByTitle = (needle: string) =>
+    columns.find((column) =>
+      (column.title ?? "").toLowerCase().includes(needle.toLowerCase()),
+    );
+  const findByType = (type: string) =>
+    columns.find((column) => (column.type ?? "").toLowerCase() === type);
+
+  const touchDateColumnId =
+    findByTitle("touch date")?.id ??
+    findByTitle("touch_date")?.id ??
+    findByType("date")?.id ??
+    null;
+  const ownerIdColumnId =
+    findByTitle("owner_id")?.id ??
+    findByTitle("owner id")?.id ??
+    "text_mm0wb7qt";
+  const ownerPeopleColumnId =
+    findByTitle("touched by")?.id ??
+    findByTitle("owner")?.id ??
+    findByType("people")?.id ??
+    null;
+  const emailColumnId = findByTitle("email")?.id ?? findByType("email")?.id ?? null;
+  const relationColumnId = "board_relation_mm0wbvrb";
+  const sourceColumnId = findByTitle("source")?.id ?? null;
+  console.info("[MondayTouchClient] resolved columns", {
+    boardId: touchBoard.boardId,
+    touchDateColumnId,
+    ownerIdColumnId,
+    ownerPeopleColumnId,
+    emailColumnId,
+    relationColumnId,
+    sourceColumnId,
+    hasOwnerArg: ownerArg.length > 0,
+    ownerArg,
+    dateFromArg,
+    dateToArg,
+  });
+
+  const buildListTouchItemsQuery = (params: {
+    includeCursor: boolean;
+    rules: string[];
+  }) => `
+    query ListTouchBoardItems($boardId: ID!, $limit: Int!${
+      params.includeCursor ? ", $cursor: String" : ""
+    }) {
+      boards(ids: [$boardId]) {
+        name
+        items_page(
+          limit: $limit
+          ${params.includeCursor ? "cursor: $cursor" : ""}
+          ${
+            params.rules.length > 0
+              ? `query_params: { rules: [${params.rules.join("\n")}] }`
+              : ""
+          }
+        ) {
+          cursor
+          items {
+            id
+            name
+            url
+            updated_at
+            column_values {
+              id
+              type
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  interface TouchBoardItem {
+    id: string;
+    name?: string;
+    url?: string;
+    updated_at?: string;
+    column_values?: {
+      id?: string;
+      type?: string;
+      text?: string | null;
+      value?: string | null;
+    }[];
+  }
+
+  interface TouchBoardQueryData {
+    boards?: {
+      name?: string;
+      items_page?: { cursor?: string | null; items?: TouchBoardItem[] };
+    }[];
+  }
+
+  const limit = Math.min(Math.max(args?.limit ?? 100, 1), 500);
+  const appliedFilters = {
+    date: false,
+    owner: false,
+  };
+  const rules: string[] = [];
+
+  if (!cursorArg) {
+    if (
+      shouldFilterByDateRange &&
+      touchDateColumnId &&
+      isIsoDateOnly(dateFromArg) &&
+      isIsoDateOnly(dateToArg) &&
+      /^[a-zA-Z0-9_]+$/.test(touchDateColumnId)
+    ) {
+      rules.push(`{
+        column_id: "${touchDateColumnId}"
+        compare_value: ["${dateFromArg}", "${dateToArg}"]
+        operator: between
+      }`);
+      appliedFilters.date = true;
+    }
+    // NOTE: Monday query_params owner matching is inconsistent for text-based owner columns
+    // (e.g. text_mm0wb7qt / owner_id). Keep owner filtering in route-level matcher.
+    void ownerArg;
+  }
+
+  const fetchTouchItems = async (rulesToApply: string[]) => {
+    const query = buildListTouchItemsQuery({
+      includeCursor: !!cursorArg,
+      rules: cursorArg ? [] : rulesToApply,
+    });
+    const data = await callMondayGraphQL<TouchBoardQueryData>(query, {
+      boardId: touchBoard.boardId,
+      limit,
+      ...(cursorArg ? { cursor: cursorArg } : {}),
+    });
+    return {
+      boardName: data.boards?.[0]?.name ?? null,
+      nextCursor: data.boards?.[0]?.items_page?.cursor ?? null,
+      items: data.boards?.[0]?.items_page?.items ?? [],
+    };
+  };
+
+  let { boardName, nextCursor, items } = await fetchTouchItems(rules);
+  if (!cursorArg && appliedFilters.date && items.length === 0) {
+    console.warn("[MondayTouchClient] date pushdown returned zero rows; retrying without date rule", {
+      boardId: touchBoard.boardId,
+      touchDateColumnId,
+      dateFromArg,
+      dateToArg,
+      ownerArg,
+    });
+    const retry = await fetchTouchItems([]);
+    boardName = retry.boardName;
+    nextCursor = retry.nextCursor;
+    items = retry.items;
+    appliedFilters.date = false;
+  }
+  console.info("[MondayTouchClient] monday response", {
+    boardId: touchBoard.boardId,
+    limit,
+    cursorArg,
+    itemsCount: items.length,
+    hasNextCursor: !!nextCursor,
+    appliedFilters,
+  });
+
+  const records = items.map((item) => {
+    const values = item.column_values ?? [];
+    const valueById = (id: string | null) => values.find((column) => column.id === id);
+
+    const ownerIdRaw = valueById(ownerIdColumnId)?.text?.trim() ?? "";
+    const peopleColumn = valueById(ownerPeopleColumnId);
+    const ownerIdsFromPeople = (() => {
+      if (!peopleColumn?.value) return [] as string[];
+      try {
+        const parsed = JSON.parse(peopleColumn.value) as {
+          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+        };
+        return (parsed.personsAndTeams ?? [])
+          .filter((entry) => entry.kind === "person" && entry.id != null)
+          .map((entry) => String(entry.id))
+          .filter((entry) => entry.trim().length > 0);
+      } catch {
+        return [] as string[];
+      }
+    })();
+    const ownerIds =
+      ownerIdsFromPeople.length > 0
+        ? ownerIdsFromPeople
+        : ownerIdRaw.length > 0
+          ? [ownerIdRaw]
+          : [];
+    const touchDateValue = valueById(touchDateColumnId);
+    const touchDateText = touchDateValue?.text?.trim() ?? null;
+    let touchDateIso: string | null = null;
+    if (touchDateValue?.value) {
+      try {
+        const parsed = JSON.parse(touchDateValue.value) as { date?: string; time?: string };
+        if (parsed.date && parsed.time) {
+          touchDateIso = `${parsed.date}T${parsed.time}Z`;
+        } else if (parsed.date) {
+          touchDateIso = `${parsed.date}T00:00:00Z`;
+        }
+      } catch {
+        touchDateIso = null;
+      }
+    }
+    if (!touchDateIso && touchDateText) {
+      const parsed = Date.parse(touchDateText.replace(" UTC", "Z"));
+      if (!Number.isNaN(parsed)) touchDateIso = new Date(parsed).toISOString();
+    }
+
+    const emailText = valueById(emailColumnId)?.text?.trim() ?? null;
+    const sourceText = sourceColumnId ? valueById(sourceColumnId)?.text?.trim() ?? null : null;
+    const relationValue = valueById(relationColumnId)?.value;
+    let relatedContactId: string | null = null;
+    if (relationValue) {
+      try {
+        const parsed = JSON.parse(relationValue) as {
+          linkedPulseIds?: Array<{ linkedPulseId?: number | string }>;
+        };
+        const linked = parsed.linkedPulseIds?.[0]?.linkedPulseId;
+        if (linked != null) relatedContactId = String(linked);
+      } catch {
+        relatedContactId = null;
+      }
+    }
+
+    const detailEntries: Array<{ label: string; value: string }> = [];
+    for (const column of values) {
+      const id = column.id ?? "";
+      if (!id) continue;
+      const display = toColumnDisplayValue(column.text, column.value);
+      if (!display.trim()) continue;
+      detailEntries.push({ label: id, value: display });
+    }
+    if (relatedContactId) {
+      detailEntries.push({ label: "related_contact_id", value: relatedContactId });
+    }
+    if (sourceText) {
+      detailEntries.push({ label: "source", value: sourceText });
+    }
+
+    return {
+      id: item.id,
+      name: item.name ?? "",
+      url: item.url ?? null,
+      groupTitle: null,
+      statusText: sourceText,
+      peopleText:
+        peopleColumn?.text?.trim() ??
+        (ownerIds.length > 0 ? ownerIds.join(", ") : null),
+      ownerIds,
+      email: emailText,
+      phone: null,
+      address: null,
+      referredToContractors: null,
+      hiredWithContractor: null,
+      hireDate: null,
+      retentionPeriod: null,
+      tags: null,
+      createdAt: touchDateIso ?? item.updated_at ?? null,
+      updatedAt: item.updated_at ?? touchDateIso ?? null,
+      contactDetails: detailEntries,
+    } satisfies MondayRecord;
+  });
+
+  console.info("[MondayTouchClient] mapped records", {
+    durationMs: Date.now() - startedAt,
+    boardId: touchBoard.boardId,
+    recordsCount: records.length,
+    sample: records.slice(0, 5).map((record) => ({
+      id: record.id,
+      ownerIds: record.ownerIds,
+      peopleText: record.peopleText,
+      createdAt: record.createdAt,
+      email: record.email,
+    })),
+  });
+
+  return {
+    records,
+    nextCursor,
+    boardName,
+    appliedFilters,
   };
 };
 
@@ -923,5 +1441,419 @@ export const getMondayUserProfile = async (userId: string) => {
     email: user.email ?? null,
     name: user.name ?? null,
   } satisfies MondayUserProfile;
+};
+
+const parseDropdownLabelsFromSettings = (settingsStr: string | null | undefined) => {
+  if (!settingsStr || settingsStr.trim().length === 0) return [];
+  try {
+    const parsed = JSON.parse(settingsStr) as Record<string, unknown>;
+    const labels = new Set<string>();
+    const pushLabel = (value: unknown) => {
+      if (typeof value === "string") {
+        const normalized = value.trim();
+        if (normalized.length > 0) {
+          labels.add(normalized);
+        }
+        return;
+      }
+      if (typeof value === "object" && value !== null) {
+        const record = value as Record<string, unknown>;
+        for (const key of ["name", "label", "title", "value"]) {
+          if (typeof record[key] === "string") {
+            const normalized = (record[key] as string).trim();
+            if (normalized.length > 0) {
+              labels.add(normalized);
+            }
+          }
+        }
+      }
+    };
+
+    const labelsNode = parsed.labels;
+    if (typeof labelsNode === "object" && labelsNode !== null) {
+      for (const value of Object.values(labelsNode as Record<string, unknown>)) {
+        pushLabel(value);
+      }
+    }
+
+    const labelsPositions = parsed.labels_positions_v2;
+    if (Array.isArray(labelsPositions)) {
+      for (const entry of labelsPositions) {
+        pushLabel(entry);
+      }
+    }
+
+    const labelsColors = parsed.labels_colors;
+    if (typeof labelsColors === "object" && labelsColors !== null) {
+      for (const value of Object.values(labelsColors as Record<string, unknown>)) {
+        pushLabel(value);
+      }
+    }
+
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+};
+
+export const getMondayRecordEditOptions = async () => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    return {
+      referredToContractors: [],
+      hiredWithContractor: [],
+      retentionPeriod: [],
+      tags: [],
+    } satisfies MondayRecordEditOptions;
+  }
+
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+
+  const query = `
+    query GetRecordEditColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns {
+          id
+          settings_str
+        }
+      }
+    }
+  `;
+
+  const data = await callMondayGraphQL<BoardColumnsData>(query, {
+    boardId: mondayBoard.boardId,
+  });
+  const columns = data.boards?.[0]?.columns ?? [];
+  const getLabelsForColumn = (columnId: string) => {
+    const column = columns.find((entry) => entry.id === columnId);
+    return parseDropdownLabelsFromSettings(column?.settings_str);
+  };
+
+  return {
+    referredToContractors: getLabelsForColumn(RETENTION_REFERRED_COLUMN_ID),
+    hiredWithContractor: getLabelsForColumn(RETENTION_HIRED_WITH_COLUMN_ID),
+    retentionPeriod: getLabelsForColumn(RETENTION_PERIOD_COLUMN_ID),
+    tags: getLabelsForColumn(TAGS_COLUMN_ID),
+  } satisfies MondayRecordEditOptions;
+};
+
+interface UpdateMondayRecordFieldsArgs {
+  itemId: string;
+  referredToContractors?: string | null;
+  hiredWithContractor?: string | null;
+  hireDate?: string | null;
+  retentionPeriod?: string | null;
+  tags?: string[] | null;
+}
+
+const normalizeDateOnlyValue = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const dateOnly = trimmed.includes("T") ? trimmed.slice(0, 10) : trimmed;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null;
+  return dateOnly;
+};
+
+export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArgs) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  if (!itemId) {
+    throw new Error("Missing itemId");
+  }
+
+  const columnValues: Record<string, unknown> = {};
+
+  if ("referredToContractors" in args) {
+    const value = args.referredToContractors?.trim() ?? "";
+    columnValues[RETENTION_REFERRED_COLUMN_ID] = value
+      ? { labels: [value] }
+      : null;
+  }
+  if ("hiredWithContractor" in args) {
+    const value = args.hiredWithContractor?.trim() ?? "";
+    columnValues[RETENTION_HIRED_WITH_COLUMN_ID] = value
+      ? { labels: [value] }
+      : null;
+  }
+  if ("hireDate" in args) {
+    const dateOnly = normalizeDateOnlyValue(args.hireDate);
+    columnValues[RETENTION_HIRE_DATE_COLUMN_ID] = dateOnly
+      ? { date: dateOnly }
+      : null;
+  }
+  if ("retentionPeriod" in args) {
+    const value = args.retentionPeriod?.trim() ?? "";
+    columnValues[RETENTION_PERIOD_COLUMN_ID] = value
+      ? { labels: [value] }
+      : null;
+  }
+  if ("tags" in args) {
+    const labels = (args.tags ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    columnValues[TAGS_COLUMN_ID] = labels.length > 0 ? { labels } : null;
+  }
+
+  if (Object.keys(columnValues).length === 0) {
+    throw new Error("No update fields provided");
+  }
+
+  const mutation = `
+    mutation UpdateMondayItemColumns(
+      $boardId: ID!
+      $itemId: ID!
+      $columnValues: JSON!
+    ) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+        create_labels_if_missing: true
+      ) {
+        id
+      }
+    }
+  `;
+
+  interface UpdateMutationData {
+    change_multiple_column_values?: { id?: string };
+  }
+
+  await callMondayGraphQL<UpdateMutationData>(mutation, {
+    boardId: mondayBoard.boardId,
+    itemId,
+    columnValues: JSON.stringify(columnValues),
+  });
+};
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
+
+const resolveBoardCreateColumnIds = async (boardId: string) => {
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+
+  const query = `
+    query ResolveBoardCreateColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns {
+          id
+          title
+          type
+        }
+      }
+    }
+  `;
+
+  const data = await callMondayGraphQL<BoardColumnsData>(query, { boardId });
+  const columns = data.boards?.[0]?.columns ?? [];
+  const normalized = columns.map((column) => ({
+    id: column.id ?? "",
+    type: (column.type ?? "").toLowerCase(),
+    title: (column.title ?? "").toLowerCase(),
+  }));
+
+  const byType = (type: string) => normalized.find((column) => column.type === type)?.id || null;
+  const byTitleIncludes = (needle: string) =>
+    normalized.find((column) => column.title.includes(needle))?.id || null;
+
+  return {
+    emailColumnId: byType("email") ?? "email__1",
+    peopleColumnId: byType("people"),
+    addressColumnId:
+      byTitleIncludes("address") ??
+      byTitleIncludes("street") ??
+      "text6__1",
+    firstNameColumnId: byTitleIncludes("first name"),
+    lastNameColumnId: byTitleIncludes("last name"),
+  };
+};
+
+export const findMondayContactsByEmail = async (email: string, limit = 15) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    return [] as MondayContactCandidate[];
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    return [] as MondayContactCandidate[];
+  }
+
+  const columnIds = await resolveBoardCreateColumnIds(mondayBoard.boardId);
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+
+  interface BoardItem {
+    id: string;
+    name?: string;
+    url?: string | null;
+    updated_at?: string | null;
+    column_values?: Array<{
+      id?: string | null;
+      type?: string | null;
+      text?: string | null;
+      value?: string | null;
+    }>;
+  }
+  interface QueryData {
+    boards?: Array<{
+      items_page?: {
+        items?: BoardItem[];
+      };
+    }>;
+  }
+
+  const query = `
+    query FindContactsByEmail($boardId: ID!, $limit: Int!) {
+      boards(ids: [$boardId]) {
+        items_page(
+          limit: $limit
+          query_params: {
+            rules: [{
+              column_id: "${columnIds.emailColumnId}"
+              compare_value: [${JSON.stringify(normalizedEmail)}]
+              operator: any_of
+            }]
+          }
+        ) {
+          items {
+            id
+            name
+            url
+            updated_at
+            column_values {
+              id
+              type
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const data = await callMondayGraphQL<QueryData>(query, {
+    boardId: mondayBoard.boardId,
+    limit: safeLimit,
+  });
+
+  const rows = data.boards?.[0]?.items_page?.items ?? [];
+  const mapped = rows
+    .map((row) => {
+      const emailValue =
+        row.column_values?.find((column) => column.id === columnIds.emailColumnId)?.text ??
+        null;
+      const ownerValue =
+        row.column_values?.find((column) => column.type === "people")?.text ?? null;
+      return {
+        id: row.id,
+        name: row.name ?? "",
+        url: row.url ?? null,
+        email: emailValue,
+        owner: ownerValue,
+        updatedAt: row.updated_at ?? null,
+      } satisfies MondayContactCandidate;
+    })
+    .filter((row) => normalizeEmail(row.email ?? "") === normalizedEmail);
+
+  return mapped.slice(0, safeLimit);
+};
+
+interface CreateMondayContactArgs {
+  firstName: string;
+  lastName: string;
+  email: string;
+  address: string;
+  ownerId: string;
+}
+
+export const createMondayContact = async (args: CreateMondayContactArgs) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const firstName = args.firstName.trim();
+  const lastName = args.lastName.trim();
+  const email = args.email.trim();
+  const address = args.address.trim();
+  const ownerId = args.ownerId.trim();
+
+  if (!firstName || !lastName || !email || !ownerId) {
+    throw new Error("Missing required contact fields");
+  }
+
+  const columnIds = await resolveBoardCreateColumnIds(mondayBoard.boardId);
+  const itemName = `${firstName} ${lastName}`.trim();
+  const columnValues: Record<string, unknown> = {};
+
+  if (columnIds.emailColumnId) {
+    columnValues[columnIds.emailColumnId] = { email, text: email };
+  }
+  if (columnIds.addressColumnId && address) {
+    columnValues[columnIds.addressColumnId] = address;
+  }
+  if (columnIds.firstNameColumnId) {
+    columnValues[columnIds.firstNameColumnId] = firstName;
+  }
+  if (columnIds.lastNameColumnId) {
+    columnValues[columnIds.lastNameColumnId] = lastName;
+  }
+  if (columnIds.peopleColumnId) {
+    columnValues[columnIds.peopleColumnId] = {
+      personsAndTeams: [{ id: Number(ownerId), kind: "person" }],
+    };
+  }
+
+  const mutation = `
+    mutation CreateMondayContact(
+      $boardId: ID!
+      $itemName: String!
+      $columnValues: JSON!
+    ) {
+      create_item(
+        board_id: $boardId
+        item_name: $itemName
+        column_values: $columnValues
+        create_labels_if_missing: true
+      ) {
+        id
+      }
+    }
+  `;
+
+  interface MutationData {
+    create_item?: { id?: string };
+  }
+  const result = await callMondayGraphQL<MutationData>(mutation, {
+    boardId: mondayBoard.boardId,
+    itemName,
+    columnValues: JSON.stringify(columnValues),
+  });
+  const id = result.create_item?.id;
+  if (!id) {
+    throw new Error("Failed to create monday contact");
+  }
+
+  return { id };
 };
 

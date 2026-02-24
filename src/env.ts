@@ -21,6 +21,13 @@ export const env = createEnv({
     MONDAY_API_KEY: z.string().optional(),
     MONDAY_BOARD_ID: z.string().optional(),
     MONDAY_EMAIL_TEMPLATES_BOARD_ID: z.string().optional(),
+    MONDAY_CONTACT_TOUCHED_BOARD_ID: z.string().optional(),
+    OUTLOOK_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+    OUTLOOK_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+    OUTLOOK_OAUTH_TENANT_ID: z.string().min(1).optional(),
+    OUTLOOK_OAUTH_STATE_SECRET: z.string().min(1).optional(),
+    OUTLOOK_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+    OUTLOOK_OAUTH_REDIRECT_URI: z.url().optional(),
   },
 
   client: {

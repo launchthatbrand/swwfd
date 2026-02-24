@@ -224,6 +224,124 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayTouchBackfillJobs: {
+    document: {
+      baselineDate: string;
+      contactBoardId: string;
+      createdTouches: number;
+      currentCursor?: string | null;
+      errorsCount: number;
+      finishedAt?: number | null;
+      lastError?: string | null;
+      pageSize: number;
+      processedContacts: number;
+      skippedTouches: number;
+      sourceTag: string;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      touchBoardId: string;
+      updatedAt: number;
+      workflowId?: string;
+      _id: Id<"mondayTouchBackfillJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "baselineDate"
+      | "contactBoardId"
+      | "createdTouches"
+      | "currentCursor"
+      | "errorsCount"
+      | "finishedAt"
+      | "lastError"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedTouches"
+      | "sourceTag"
+      | "startedAt"
+      | "status"
+      | "touchBoardId"
+      | "updatedAt"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayTouchCsvExportChunks: {
+    document: {
+      chunkIndex: number;
+      content: string;
+      createdAt: number;
+      jobId: Id<"mondayTouchCsvExportJobs">;
+      _id: Id<"mondayTouchCsvExportChunks">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "chunkIndex"
+      | "content"
+      | "createdAt"
+      | "jobId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_jobId_and_chunkIndex: ["jobId", "chunkIndex", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayTouchCsvExportJobs: {
+    document: {
+      baselineDate: string;
+      chunkCount: number;
+      contactBoardId: string;
+      currentCursor?: string | null;
+      finishedAt?: number | null;
+      lastError?: string | null;
+      pageSize: number;
+      processedContacts: number;
+      rowCount: number;
+      sourceTag: string;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      updatedAt: number;
+      workflowId?: string;
+      _id: Id<"mondayTouchCsvExportJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "baselineDate"
+      | "chunkCount"
+      | "contactBoardId"
+      | "currentCursor"
+      | "finishedAt"
+      | "lastError"
+      | "pageSize"
+      | "processedContacts"
+      | "rowCount"
+      | "sourceTag"
+      | "startedAt"
+      | "status"
+      | "updatedAt"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   users: {
     document: {
       email?: string;

@@ -73,6 +73,7 @@
     "launchthat-plugin-shortlinks": "workspace:^",
     "lucide-react": "^0.555.0",
     "maath": "^0.10.8",
+    "monday-sdk-js": "^0.5.6",
     "next": "catalog:",
     "qrcode": "^1.5.4",
     "react": "catalog:react19",

@@ -28,31 +28,19 @@ export default action({
       "pieces" in piecesConfig &&
       Array.isArray((piecesConfig as { pieces?: unknown }).pieces);
 
-    let registry: RegistryIndex | null = null;
-    if (isRegistryShape) {
-      registry = piecesConfig as RegistryIndex;
-    } else {
-      // Mirror vendor/t3-activepieces nextjs app's rich registry source.
-      const staticRegistryModule = await import(
-        "../../../vendor/t3-activepieces/apps/nextjs/convex/pieces/registry/index.json"
-      );
-      const staticRegistry = staticRegistryModule.default as RegistryIndex;
-      registry = {
-        ...staticRegistry,
-        pieces: staticRegistry.pieces.filter((piece) =>
-          DEFAULT_PIECE_NAMES.has(piece.name),
-        ),
-      };
-    }
-
-    const pieces =
-      registry.pieces.length > 0
-        ? seedPiecesFromRegistry(registry).map((piece) => ({
-            ...piece,
-            // Overwrite prior minimal seed records that were inserted at this version.
-            version: "0.0.0-local",
-          }))
-        : seedPieces();
+    const registry = isRegistryShape ? (piecesConfig as RegistryIndex) : null;
+    const pieces = registry
+      ? seedPiecesFromRegistry({
+          ...registry,
+          pieces: registry.pieces.filter((piece) =>
+            DEFAULT_PIECE_NAMES.has(piece.name),
+          ),
+        }).map((piece) => ({
+          ...piece,
+          // Overwrite prior minimal seed records that were inserted at this version.
+          version: "0.0.0-local",
+        }))
+      : seedPieces();
 
     await ctx.runMutation(
       components.activepieces.pieces.mutations.importPieces,

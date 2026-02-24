@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
 import {
+  MONDAY_DEV_BYPASS_TOKEN,
+  canUseMondayDevBypass,
+  getMondayDevBypassIdentity,
   getMondaySessionTokenFromRequest,
   verifyMondaySessionToken,
 } from "~/server/monday/session";
@@ -29,7 +32,38 @@ export const POST = async (request: Request) => {
       : getMondaySessionTokenFromRequest(request);
 
   if (!token) {
-    return toJson({ ok: false, error: "Missing sessionToken" }, 400);
+    if (!canUseMondayDevBypass()) {
+      return toJson({ ok: false, error: "Missing sessionToken" }, 400);
+    }
+    try {
+      const identity = await getMondayDevBypassIdentity();
+      return toJson({
+        ok: true,
+        identity,
+        devBypass: true,
+        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load Monday dev identity";
+      return toJson({ ok: false, error: message }, 500);
+    }
+  }
+
+  if (token === MONDAY_DEV_BYPASS_TOKEN && canUseMondayDevBypass()) {
+    try {
+      const identity = await getMondayDevBypassIdentity();
+      return toJson({
+        ok: true,
+        identity,
+        devBypass: true,
+        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load Monday dev identity";
+      return toJson({ ok: false, error: message }, 500);
+    }
   }
 
   try {

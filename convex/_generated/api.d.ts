@@ -319,6 +319,89 @@ export declare const api: {
       }>
     >;
   };
+  mondayTouchBackfill: {
+    cancelBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayTouchBackfillJobs"> },
+      { jobId: Id<"mondayTouchBackfillJobs">; status: string }
+    >;
+    cancelCsvExport: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayTouchCsvExportJobs"> },
+      { jobId: Id<"mondayTouchCsvExportJobs">; status: string }
+    >;
+    getCsvExportCsv: FunctionReference<
+      "query",
+      "public",
+      { jobId: Id<"mondayTouchCsvExportJobs"> },
+      null | {
+        csv?: string;
+        fileName: string;
+        lastError?: string | null;
+        status: "running" | "done" | "failed" | "cancelled";
+      }
+    >;
+    getLatestCsvExportJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        baselineDate: string;
+        chunkCount: number;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        finishedAt?: number | null;
+        jobId: Id<"mondayTouchCsvExportJobs">;
+        lastError?: string | null;
+        pageSize: number;
+        processedContacts: number;
+        rowCount: number;
+        sourceTag: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        updatedAt: number;
+        workflowId?: string;
+      }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        baselineDate: string;
+        contactBoardId: string;
+        createdTouches: number;
+        currentCursor?: string | null;
+        errorsCount: number;
+        finishedAt?: number | null;
+        jobId: Id<"mondayTouchBackfillJobs">;
+        lastError?: string | null;
+        pageSize: number;
+        processedContacts: number;
+        skippedTouches: number;
+        sourceTag: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+        updatedAt: number;
+        workflowId?: string;
+      }
+    >;
+    startBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { baselineDate?: string; pageSize?: number; sourceTag?: string },
+      { jobId: Id<"mondayTouchBackfillJobs">; workflowId: string }
+    >;
+    startCsvExport: FunctionReference<
+      "mutation",
+      "public",
+      { baselineDate?: string; pageSize?: number; sourceTag?: string },
+      { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
+    >;
+  };
   pieces: {
     actions: {
       executeActionRecipe: FunctionReference<
@@ -660,6 +743,142 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayTouchBackfill: {
+    appendCsvChunk: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        chunkContent: string;
+        jobId: Id<"mondayTouchCsvExportJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        rowCountDelta: number;
+      },
+      null
+    >;
+    backfillTouchesWorkflow: FunctionReference<
+      "mutation",
+      "internal",
+      any,
+      any
+    >;
+    exportTouchesCsvWorkflow: FunctionReference<
+      "mutation",
+      "internal",
+      any,
+      any
+    >;
+    finishCsvJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayTouchCsvExportJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayTouchBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getCsvJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayTouchCsvExportJobs"> },
+      null | {
+        _id: Id<"mondayTouchCsvExportJobs">;
+        baselineDate: string;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        pageSize: number;
+        sourceTag: string;
+        status: "running" | "done" | "failed" | "cancelled";
+      }
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayTouchBackfillJobs"> },
+      null | {
+        _id: Id<"mondayTouchBackfillJobs">;
+        baselineDate: string;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        pageSize: number;
+        sourceTag: string;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+      }
+    >;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdTouchesDelta: number;
+        errorsDelta: number;
+        jobId: Id<"mondayTouchBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedTouchesDelta: number;
+      },
+      null
+    >;
+  };
+  mondayTouchBackfillNode: {
+    fetchContactsPageAction: FunctionReference<
+      "action",
+      "internal",
+      { boardId: string; cursor?: string | null; pageSize: number },
+      {
+        contacts: Array<{
+          createdAtDate: string | null;
+          email: string | null;
+          id: string;
+          name: string;
+          ownerIds: Array<string>;
+        }>;
+        nextCursor: string | null;
+      }
+    >;
+    fetchExistingBaselineKeysAction: FunctionReference<
+      "action",
+      "internal",
+      { baselineDate: string; sourceTag: string; touchBoardId: string },
+      { keys: Array<string> }
+    >;
+    writeTouchRowsAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        baselineDate: string;
+        contacts: Array<{
+          createdAtDate: string | null;
+          email: string | null;
+          id: string;
+          name: string;
+          ownerIds: Array<string>;
+        }>;
+        dedupeKeys: Array<string>;
+        jobId: Id<"mondayTouchBackfillJobs">;
+        sourceTag: string;
+        touchBoardId: string;
+      },
+      {
+        created: number;
+        createdKeys: Array<string>;
+        deduped: number;
+        errors: number;
+        skipped: number;
+      }
     >;
   };
 };
