@@ -17,6 +17,10 @@ export const env = createEnv({
       .default("false"),
     SWWFD_DEV_AUTH_BYPASS_EMAIL: z.string().email().optional(),
     SWWFD_DEV_AUTH_BYPASS_PASSWORD: z.string().min(8).optional(),
+    MONDAY_SIGNING_SECRET: z.string().min(1).optional(),
+    MONDAY_API_KEY: z.string().optional(),
+    MONDAY_BOARD_ID: z.string().optional(),
+    MONDAY_EMAIL_TEMPLATES_BOARD_ID: z.string().optional(),
   },
 
   client: {
