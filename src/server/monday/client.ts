@@ -1551,6 +1551,8 @@ interface UpdateMondayRecordFieldsArgs {
   hireDate?: string | null;
   retentionPeriod?: string | null;
   tags?: string[] | null;
+  status?: string | null;
+  ownerId?: string | null;
 }
 
 const normalizeDateOnlyValue = (value: string | null | undefined) => {
@@ -1574,6 +1576,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   }
 
   const columnValues: Record<string, unknown> = {};
+  const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
 
   if ("referredToContractors" in args) {
     const value = args.referredToContractors?.trim() ?? "";
@@ -1604,6 +1607,34 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     columnValues[TAGS_COLUMN_ID] = labels.length > 0 ? { labels } : null;
+  }
+  if ("status" in args) {
+    const statusColumnId = boardColumnIds.statusColumnId;
+    if (!statusColumnId) {
+      throw new Error("Status column not found on Monday board");
+    }
+    const value = args.status?.trim() ?? "";
+    columnValues[statusColumnId] = value ? { label: value } : null;
+  }
+  if ("ownerId" in args) {
+    const peopleColumnId = boardColumnIds.peopleColumnId;
+    if (!peopleColumnId) {
+      throw new Error("Owner people column not found on Monday board");
+    }
+    const ownerIdRaw = args.ownerId?.trim() ?? "";
+    if (!ownerIdRaw) {
+      columnValues[peopleColumnId] = null;
+    } else {
+      const ownerAsNumber = Number(ownerIdRaw);
+      columnValues[peopleColumnId] = {
+        personsAndTeams: [
+          {
+            id: Number.isFinite(ownerAsNumber) ? ownerAsNumber : ownerIdRaw,
+            kind: "person",
+          },
+        ],
+      };
+    }
   }
 
   if (Object.keys(columnValues).length === 0) {

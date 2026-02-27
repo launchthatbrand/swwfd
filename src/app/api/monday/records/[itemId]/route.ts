@@ -15,6 +15,8 @@ interface UpdateRecordBody {
   hireDate?: string | null;
   retentionPeriod?: string | null;
   tags?: string[] | null;
+  status?: string | null;
+  ownerId?: string | null;
 }
 
 export const PATCH = async (
@@ -49,6 +51,8 @@ export const PATCH = async (
       hireDate: body.hireDate,
       retentionPeriod: body.retentionPeriod,
       tags: body.tags,
+      status: body.status,
+      ownerId: body.ownerId,
     });
     return toJson({ ok: true });
   } catch (error) {

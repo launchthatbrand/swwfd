@@ -374,10 +374,13 @@ const fetchContactRecordsByIds = async (args: {
   boardId: string;
   itemIds: string[];
 }) => {
+  // Monday's `items(ids: ...)` resolver effectively caps results to 25 per call,
+  // even when passing larger ID arrays. Keep chunk size at 25 to avoid silent drops.
+  const MONDAY_ITEMS_BY_IDS_CHUNK_SIZE = 25;
   const chunks: string[][] = [];
   const ids = args.itemIds;
-  for (let index = 0; index < ids.length; index += 100) {
-    chunks.push(ids.slice(index, index + 100));
+  for (let index = 0; index < ids.length; index += MONDAY_ITEMS_BY_IDS_CHUNK_SIZE) {
+    chunks.push(ids.slice(index, index + MONDAY_ITEMS_BY_IDS_CHUNK_SIZE));
   }
 
   const items: MondayBoardItem[] = [];

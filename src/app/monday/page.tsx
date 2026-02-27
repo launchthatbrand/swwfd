@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Mail,
   RefreshCcw,
   Settings,
   UserPlus,
@@ -154,6 +155,11 @@ interface MondayCreateContactResponse {
   ok: boolean;
   error?: string;
   created?: { id: string };
+}
+
+interface MondaySendEmailResponse {
+  ok: boolean;
+  error?: string;
 }
 
 interface AddNewContactValues {
@@ -435,6 +441,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [retentionDialogRecord, setRetentionDialogRecord] =
     useState<MondayRecord | null>(null);
   const [tagsDialogRecord, setTagsDialogRecord] = useState<MondayRecord | null>(null);
+  const [statusDialogRecord, setStatusDialogRecord] = useState<MondayRecord | null>(null);
+  const [ownerDialogRecord, setOwnerDialogRecord] = useState<MondayRecord | null>(null);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: "",
     hiredWithContractor: "",
@@ -442,10 +450,18 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     retentionPeriod: "",
   });
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
+  const [statusDraft, setStatusDraft] = useState("");
+  const [ownerDraft, setOwnerDraft] = useState("");
   const [isSavingRetention, setIsSavingRetention] = useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [isSavingOwner, setIsSavingOwner] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
+  const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
+  const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
   const [search, setSearch] = useState("");
@@ -602,7 +618,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
 
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
-    enabled: !!sessionToken && !staticMode && settingsOpen,
+    enabled: !!sessionToken && !staticMode && (settingsOpen || !!sendEmailRecord),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("boardId", "18401299370");
@@ -1029,6 +1045,13 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       null
     );
   }, [emailTemplates, selectedTemplateId]);
+  const sendEmailTemplate = useMemo(() => {
+    return (
+      emailTemplates.find((template) => template.id === sendEmailTemplateId) ??
+      emailTemplates[0] ??
+      null
+    );
+  }, [emailTemplates, sendEmailTemplateId]);
 
   const callbackUrl = useMemo(() => {
     if (typeof window === "undefined") return "/api/monday/email/outlook/callback";
@@ -1100,6 +1123,59 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       toast.error(message);
     } finally {
       setIsDisconnectingOutlook(false);
+    }
+  };
+
+  const openSendEmailDialog = (record: MondayRecord) => {
+    setSendEmailRecord(record);
+    setSendEmailStep(1);
+    setSendEmailTemplateId(emailTemplates[0]?.id ?? null);
+  };
+  const closeSendEmailDialog = () => {
+    setSendEmailRecord(null);
+    setSendEmailStep(1);
+    setSendEmailTemplateId(null);
+    setIsSendingEmail(false);
+  };
+  const handleConfirmSendEmail = async () => {
+    if (!sessionToken || !sendEmailRecord || !sendEmailTemplate) {
+      toast.error("Missing email send context");
+      return;
+    }
+    const recipient = sendEmailRecord.email?.trim() ?? "";
+    if (!recipient) {
+      toast.error("This contact does not have an email address");
+      return;
+    }
+    setIsSendingEmail(true);
+    try {
+      const response = await fetch("/api/monday/email/send", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          to: recipient,
+          subject: sendEmailTemplate.name,
+          html:
+            sendEmailTemplate.renderedHtml.trim().length > 0
+              ? sendEmailTemplate.renderedHtml
+              : sendEmailTemplate.content,
+        }),
+      });
+      const data = (await response.json()) as MondaySendEmailResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to send email");
+      }
+      toast.success(`Email sent to ${recipient}`);
+      closeSendEmailDialog();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send email";
+      toast.error(message);
+    } finally {
+      setIsSendingEmail(false);
     }
   };
 
@@ -1191,6 +1267,14 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     setTagsDialogRecord(record);
     setTagsDraft(splitCsvValues(record.tags));
   };
+  const openStatusDialog = (record: MondayRecord) => {
+    setStatusDialogRecord(record);
+    setStatusDraft(record.statusText ?? "");
+  };
+  const openOwnerDialog = (record: MondayRecord) => {
+    setOwnerDialogRecord(record);
+    setOwnerDraft(record.ownerIds[0] ?? "");
+  };
 
   const handleSaveRetention = async () => {
     if (!sessionToken || !retentionDialogRecord) {
@@ -1273,6 +1357,82 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       toast.error(message);
     } finally {
       setIsSavingTags(false);
+    }
+  };
+  const handleSaveStatus = async () => {
+    if (!sessionToken || !statusDialogRecord) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to update status?")) {
+      return;
+    }
+    setIsSavingStatus(true);
+    try {
+      const contactId = statusDialogRecord.contactId?.trim();
+      const targetRecordId =
+        contactId && contactId.length > 0 ? contactId : statusDialogRecord.id;
+      const response = await fetch(`/api/monday/records/${targetRecordId}`, {
+        method: "PATCH",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          status: statusDraft || null,
+        }),
+      });
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to update status");
+      }
+      toast.success("Status updated");
+      setStatusDialogRecord(null);
+      await recordsQuery.refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update status";
+      toast.error(message);
+    } finally {
+      setIsSavingStatus(false);
+    }
+  };
+  const handleSaveOwner = async () => {
+    if (!sessionToken || !ownerDialogRecord) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    if (!window.confirm("Are you sure you want to update owner?")) {
+      return;
+    }
+    setIsSavingOwner(true);
+    try {
+      const contactId = ownerDialogRecord.contactId?.trim();
+      const targetRecordId =
+        contactId && contactId.length > 0 ? contactId : ownerDialogRecord.id;
+      const response = await fetch(`/api/monday/records/${targetRecordId}`, {
+        method: "PATCH",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          ownerId: ownerDraft || null,
+        }),
+      });
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to update owner");
+      }
+      toast.success("Owner updated");
+      setOwnerDialogRecord(null);
+      await recordsQuery.refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update owner";
+      toast.error(message);
+    } finally {
+      setIsSavingOwner(false);
     }
   };
 
@@ -1409,14 +1569,29 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       id: "statusText",
       header: "Status",
       accessorKey: "statusText",
-      cell: (item: MondayRecord) =>
-        item.statusText ? <Badge variant="secondary">{item.statusText}</Badge> : "—",
+      cell: (item: MondayRecord) => (
+        <button
+          type="button"
+          onClick={() => openStatusDialog(item)}
+          className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left"
+        >
+          {item.statusText ? <Badge variant="secondary">{item.statusText}</Badge> : "—"}
+        </button>
+      ),
     },
     {
       id: "peopleText",
       header: "Owner",
       accessorKey: "peopleText",
-      cell: (item: MondayRecord) => item.peopleText ?? "—",
+      cell: (item: MondayRecord) => (
+        <button
+          type="button"
+          onClick={() => openOwnerDialog(item)}
+          className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left text-xs"
+        >
+          {item.peopleText ?? "—"}
+        </button>
+      ),
     },
     {
       id: "retention",
@@ -1511,6 +1686,16 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         window.open(record.url, "_blank", "noopener,noreferrer");
       },
       isDisabled: (record) => !record.url,
+    },
+    {
+      id: "send-email",
+      label: "Send Email",
+      icon: <Mail className="h-4 w-4" />,
+      variant: "secondary",
+      onClick: (record) => {
+        openSendEmailDialog(record);
+      },
+      isDisabled: (record) => !record.email || !sessionToken || staticMode,
     },
 
   ];
@@ -2143,6 +2328,119 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       </Dialog>
 
       <Dialog
+        open={!!statusDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setStatusDialogRecord(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Update Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <select
+                value={statusDraft || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStatusDraft(value === "__none__" ? "" : value);
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStatusDialogRecord(null)}
+                disabled={isSavingStatus}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveStatus();
+                }}
+                disabled={isSavingStatus}
+              >
+                {isSavingStatus ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!ownerDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setOwnerDialogRecord(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Update Owner</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Owner</label>
+              <select
+                value={ownerDraft || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setOwnerDraft(value === "__none__" ? "" : value);
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(
+                  new Map(
+                    [
+                      ...ownerOptions.map((option) => [option.value, option.label] as const),
+                      ownerDraft.trim().length > 0
+                        ? [ownerDraft, `User ${ownerDraft}` as string]
+                        : null,
+                    ].filter((entry): entry is readonly [string, string] => !!entry),
+                  ),
+                )
+                  .map(([value, label]) => ({ value, label }))
+                  .map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setOwnerDialogRecord(null)}
+                disabled={isSavingOwner}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveOwner();
+                }}
+                disabled={isSavingOwner}
+              >
+                {isSavingOwner ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={!!tagsDialogRecord}
         onOpenChange={(open) => {
           if (!open) setTagsDialogRecord(null);
@@ -2209,6 +2507,138 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         getRowId={(item) => item.id}
         entityActions={entityActions}
       />
+
+      <Dialog
+        open={!!sendEmailRecord}
+        onOpenChange={(open) => {
+          if (!open) closeSendEmailDialog();
+        }}
+      >
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Send Email</DialogTitle>
+          </DialogHeader>
+          {sendEmailRecord ? (
+            <div className="space-y-4">
+              <div className="text-muted-foreground text-sm">
+                Recipient:{" "}
+                <span className="text-foreground font-medium">
+                  {sendEmailRecord.name}
+                  {" · "}
+                  {sendEmailRecord.email ?? "No email"}
+                </span>
+              </div>
+              {sendEmailStep === 1 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    Step 1: Choose an email template
+                  </p>
+                  <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-md border p-2">
+                    {emailTemplates.map((template) => {
+                      const isActive = template.id === sendEmailTemplateId;
+                      return (
+                        <button
+                          key={template.id}
+                          type="button"
+                          className={[
+                            "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                            isActive
+                              ? "border-primary bg-primary/10"
+                              : "hover:bg-muted/60",
+                          ].join(" ")}
+                          onClick={() => {
+                            setSendEmailTemplateId(template.id);
+                          }}
+                        >
+                          <p className="line-clamp-1 font-medium">{template.name}</p>
+                          <p className="text-muted-foreground mt-1 text-xs">
+                            Updated {formatUpdatedAt(template.updatedAt)}
+                          </p>
+                        </button>
+                      );
+                    })}
+                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">
+                        No templates found.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={closeSendEmailDialog}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => setSendEmailStep(2)}
+                      disabled={!sendEmailTemplate}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {sendEmailStep === 2 && sendEmailTemplate ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 2: Preview template</p>
+                  <div className="rounded-md border p-4">
+                    <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                    <p className="mt-1 text-base font-medium">{sendEmailTemplate.name}</p>
+                    <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                      Email Preview (Lead View)
+                    </p>
+                    <div className="bg-card mt-2 rounded-md border p-4">
+                      {sendEmailTemplate.content.trim().length === 0 ? (
+                        <p className="text-muted-foreground text-sm">
+                          No content found in template.
+                        </p>
+                      ) : sendEmailTemplate.renderedHtml.trim().length > 0 ? (
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{
+                            __html: sendEmailTemplate.renderedHtml,
+                          }}
+                        />
+                      ) : (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                          {sendEmailTemplate.content}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                      Back
+                    </Button>
+                    <Button onClick={() => setSendEmailStep(3)}>Next</Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {sendEmailStep === 3 && sendEmailTemplate ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 3: Confirm send</p>
+                  <div className="rounded-md border p-4 text-sm">
+                    Are you sure you want to send this email?
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                      Back
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmSendEmail();
+                      }}
+                      disabled={isSendingEmail || !sendEmailRecord.email}
+                    >
+                      {isSendingEmail ? "Sending..." : "Send Email"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       {!staticMode && recordsQuery.hasNextPage ? (
         <div ref={loadMoreAnchorRef} className="h-10" />
       ) : null}
