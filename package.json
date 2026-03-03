@@ -5,7 +5,7 @@
   "scripts": {
     "build": "pnpm with-env next build",
     "clean": "git clean -xdf .cache .next .turbo node_modules",
-    "dev": "pnpm with-env next dev --turbo",
+    "dev": "pnpm with-env next dev --turbo --port 3600",
     "format": "prettier --check . --ignore-path ../../.gitignore",
     "lint": "NODE_OPTIONS=--experimental-strip-types eslint --flag unstable_native_nodejs_ts_config",
     "seed:pieces": "pnpm with-env convex run init",
