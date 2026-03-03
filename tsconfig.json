@@ -7,10 +7,10 @@
       "~/*": ["./src/*"],
       "@convex-config/*": ["./convex/*"],
       "launchthat-plugin-core-tenant": [
-        "../../packages/launchthat-plugin-core-tenant/src/index.ts"
+        "../../packages/plugins/core-tenant/src/index.ts"
       ],
       "launchthat-plugin-core-tenant/*": [
-        "../../packages/launchthat-plugin-core-tenant/src/*"
+        "../../packages/plugins/core-tenant/src/*"
       ]
     },
     "plugins": [{ "name": "next" }]

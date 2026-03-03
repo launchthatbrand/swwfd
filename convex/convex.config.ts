@@ -1,20 +1,20 @@
 import { defineApp } from "convex/server";
 import workflow from "@convex-dev/workflow/convex.config";
 import activepieces from "@launchthatbrand/activepieces-convex/convex.config";
-import launchthat_access from "../../../packages/launchthat-plugin-access/src/convex/component/convex.config";
-import launchthat_affiliates from "../../../packages/launchthat-plugin-affiliates/src/convex/component/convex.config";
-import launchthat_core_tenant from "../../../packages/launchthat-plugin-core-tenant/src/convex/component/convex.config";
-import launchthat_crm from "../../../packages/launchthat-plugin-crm/src/convex/component/convex.config";
-import launchthat_discord from "../../../packages/launchthat-plugin-discord/src/convex/component/convex.config";
-import launchthat_ecommerce from "../../../packages/launchthat-plugin-ecommerce/src/convex/component/convex.config";
-import launchthat_email from "../../../packages/launchthat-plugin-email/src/convex/component/convex.config";
-import launchthat_feedback from "../../../packages/launchthat-plugin-feedback/src/convex/component/convex.config";
-import launchthat_joincodes from "../../../packages/launchthat-plugin-joincodes/src/convex/component/convex.config";
-import launchthat_notifications from "../../../packages/launchthat-plugin-notifications/src/convex/component/convex.config";
-import launchthat_onboarding from "../../../packages/launchthat-plugin-onboarding/src/convex/component/convex.config";
-import launchthat_observability from "../../../packages/launchthat-plugin-observability/src/convex/component/convex.config";
-import launchthat_push from "../../../packages/launchthat-plugin-push/src/convex/component/convex.config";
-import launchthat_shortlinks from "../../../packages/launchthat-plugin-shortlinks/src/convex/component/convex.config";
+import launchthat_access from "../../../packages/plugins/access/src/convex/component/convex.config";
+import launchthat_affiliates from "../../../packages/plugins/affiliates/src/convex/component/convex.config";
+import launchthat_core_tenant from "../../../packages/plugins/core-tenant/src/convex/component/convex.config";
+import launchthat_crm from "../../../packages/plugins/crm/src/convex/component/convex.config";
+import launchthat_discord from "../../../packages/plugins/discord/src/convex/component/convex.config";
+import launchthat_ecommerce from "../../../packages/plugins/ecommerce/src/convex/component/convex.config";
+import launchthat_email from "../../../packages/plugins/email/src/convex/component/convex.config";
+import launchthat_feedback from "../../../packages/plugins/feedback/src/convex/component/convex.config";
+import launchthat_joincodes from "../../../packages/plugins/joincodes/src/convex/component/convex.config";
+import launchthat_notifications from "../../../packages/plugins/notifications/src/convex/component/convex.config";
+import launchthat_onboarding from "../../../packages/plugins/onboarding/src/convex/component/convex.config";
+import launchthat_observability from "../../../packages/plugins/observability/src/convex/component/convex.config";
+import launchthat_push from "../../../packages/plugins/push/src/convex/component/convex.config";
+import launchthat_shortlinks from "../../../packages/plugins/shortlinks/src/convex/component/convex.config";
 
 const app = defineApp();
 
