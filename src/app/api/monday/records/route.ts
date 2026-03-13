@@ -57,7 +57,7 @@ export const GET = async (request: Request) => {
   const startedAt = Date.now();
 
   try {
-    const { records, nextCursor, boardName, appliedFilters } =
+    const { records, nextCursor, boardName, appliedFilters, approvalSteps } =
       await listMondayBoardRecords({
       cursor,
       limit,
@@ -143,6 +143,7 @@ export const GET = async (request: Request) => {
       boardName,
       records: filtered,
       nextCursor,
+      approvalSteps,
     });
   } catch (error) {
     const message =

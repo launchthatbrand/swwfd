@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,11 +14,6 @@ import type {
   ColumnDefinition,
   EntityAction,
 } from "@acme/ui/entity-list";
-import { useEffect, useMemo, useRef, useState } from "react";
-
-import { Badge } from "@acme/ui/badge";
-import { Button } from "@acme/ui/button";
-import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -26,18 +22,30 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@acme/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@acme/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@acme/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@acme/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@acme/ui/tooltip";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+
+import { Badge } from "@acme/ui/badge";
+import { Button } from "@acme/ui/button";
+import { Calendar } from "@acme/ui/calendar";
 import { EntityList } from "@acme/ui/entity-list";
 import { Input } from "@acme/ui/input";
-import { MultiSelect } from "@acme/ui/multi-select";
-import { Progress } from "@acme/ui/progress";
 import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
+import { MultiSelect } from "@acme/ui/multi-select";
+import { Progress } from "@acme/ui/progress";
 import mondaySdkInitialize from "monday-sdk-js";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@acme/ui/tabs";
 import { toast } from "@acme/ui/toast";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@acme/ui/tooltip";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Calendar } from "@acme/ui/calendar";
 
 interface MondayRecord extends Record<string, unknown> {
   id: string;
@@ -52,6 +60,11 @@ interface MondayRecord extends Record<string, unknown> {
   statusText: string | null;
   peopleText: string | null;
   ownerIds: string[];
+  ownerProfiles: {
+    id: string;
+    name: string | null;
+    photoThumb: string | null;
+  }[];
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -80,6 +93,7 @@ interface MondayResponse {
   boardName?: string | null;
   records?: MondayRecord[];
   nextCursor?: string | null;
+  approvalSteps?: ApprovalStepConfig[];
 }
 
 interface MondayEmailTemplate {
@@ -194,6 +208,21 @@ interface ResumePreviewState {
   recordName: string;
 }
 
+interface MockBusinessInfo {
+  name: string;
+  industry: string;
+  city: string;
+  state: string;
+  teamSize: number;
+  activeProjects: number;
+  reliabilityScore: number;
+}
+
+interface ApprovalStepConfig {
+  id: string;
+  title: string;
+}
+
 interface MondaySendEmailResponse {
   ok: boolean;
   error?: string;
@@ -242,6 +271,204 @@ const getAddressDisplayParts = (address: string | null | undefined) => {
   const prefix = parts.slice(0, -3).join(", ");
   const full = prefix ? `${prefix}, ${cityStateZip}` : cityStateZip;
   return { prefix: prefix || null, cityStateZip, full };
+};
+
+const getDistrictChipClassName = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (normalized.includes("district 1"))
+    return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
+  if (normalized.includes("district 2"))
+    return "bg-amber-500/15 text-amber-700 border-amber-500/30";
+  if (normalized.includes("district 3"))
+    return "bg-pink-500/15 text-pink-700 border-pink-500/30";
+  if (normalized.includes("district 4"))
+    return "bg-cyan-500/15 text-cyan-700 border-cyan-500/30";
+  if (normalized.includes("district 5"))
+    return "bg-violet-500/15 text-violet-700 border-violet-500/30";
+  if (normalized.includes("district 6"))
+    return "bg-teal-500/15 text-teal-700 border-teal-700/30";
+  if (normalized.includes("district 7"))
+    return "bg-sky-500/15 text-sky-700 border-sky-500/30";
+  return "bg-muted text-foreground border-border";
+};
+
+const APPROVAL_STEPS: ApprovalStepConfig[] = [
+  { id: "color_mm1db321", title: "Approval Step 1" },
+  { id: "color_mm1dwtvd", title: "Approval Step 2" },
+  { id: "color_mm1dwr4k", title: "Approval Step 3" },
+  { id: "color_mm1dnr11", title: "Approval Step 4" },
+  { id: "color_mm1dgeqy", title: "Approval Step 5" },
+  { id: "color_mm1d80yc", title: "Approval Step 6" },
+  { id: "color_mm1djwjj", title: "Approval Step 7" },
+  { id: "color_mm1d4e3y", title: "Approval Step 8" },
+];
+
+const buildMockBusinessInfo = (name: string): MockBusinessInfo => {
+  const normalized = name.trim() || "Unknown Contractor";
+  const seed = Array.from(normalized).reduce(
+    (sum, char) => sum + char.charCodeAt(0),
+    0,
+  );
+  const industries = [
+    "General Contracting",
+    "Remodeling",
+    "Electrical",
+    "Plumbing",
+    "HVAC",
+    "Roofing",
+  ] as const;
+  const cities = ["Austin", "Houston", "Dallas", "Phoenix", "Denver", "Tampa"] as const;
+  const states = ["TX", "AZ", "CO", "FL", "GA", "NC"] as const;
+
+  return {
+    name: normalized,
+    industry: industries[seed % industries.length] ?? "General Contracting",
+    city: cities[seed % cities.length] ?? "Austin",
+    state: states[seed % states.length] ?? "TX",
+    teamSize: 8 + (seed % 65),
+    activeProjects: 1 + (seed % 14),
+    reliabilityScore: 72 + (seed % 27),
+  };
+};
+
+const BusinessInfoHoverCard = (props: {
+  companyName: string;
+  children: React.ReactNode;
+}) => {
+  const [open, setOpen] = useState(false);
+  const info = useMemo(
+    () => buildMockBusinessInfo(props.companyName),
+    [props.companyName],
+  );
+
+  return (
+    <Popover open={open}>
+      <PopoverTrigger asChild>
+        <div
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+          className="inline-flex"
+        >
+          {props.children}
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        portal={false}
+        side="top"
+        align="start"
+        className="w-[min(22rem,calc(100vw-2rem))]"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <div className="space-y-1.5">
+          <p className="text-sm font-semibold wrap-break-word">{info.name}</p>
+          <p className="text-muted-foreground text-xs wrap-break-word">
+            {info.industry} · {info.city}, {info.state}
+          </p>
+          <div className="text-muted-foreground grid grid-cols-2 gap-2 pt-1 text-xs">
+            <span>Team size: {info.teamSize}</span>
+            <span>Projects: {info.activeProjects}</span>
+            <span className="col-span-2">
+              Reliability score: {info.reliabilityScore}/100
+            </span>
+          </div>
+          <p className="text-muted-foreground pt-1 text-[11px] leading-snug wrap-break-word whitespace-normal">
+            Mock business data preview. Replace with CRM/company profile data when
+            integration is ready.
+          </p>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+const ApprovalProgressIndicator = (props: {
+  progressValue: number | null;
+  steps: ApprovalStepConfig[];
+}) => {
+  const [open, setOpen] = useState(false);
+  const safeProgress = Math.max(0, Math.min(100, Math.round(props.progressValue ?? 0)));
+  const stepCount = Math.max(props.steps.length, 1);
+  const stepSize = 100 / stepCount;
+  const completedSteps = Math.floor(safeProgress / stepSize);
+
+  return (
+    <Popover open={open}>
+      <PopoverTrigger asChild>
+        <div
+          className="mt-1 space-y-1"
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
+            <span>Progress</span>
+            <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
+          </div>
+          <div className="relative h-2 overflow-hidden rounded-full bg-muted/80">
+            <div
+              className="bg-primary h-full transition-all"
+              style={{ width: `${safeProgress}%` }}
+            />
+            {props.steps.map((step, index) => {
+              const left =
+                props.steps.length === 1
+                  ? 0
+                  : (index / (props.steps.length - 1)) * 100;
+              const completed = safeProgress >= (index + 1) * stepSize;
+              return (
+                <span
+                  key={step.id}
+                  className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${completed ? "bg-foreground/60" : "bg-border/70"
+                    }`}
+                  style={{ left: `${left}%` }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </PopoverTrigger>
+      <PopoverContent
+        portal={false}
+        side="top"
+        align="start"
+        className="w-72"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold">Onboarding Progress</p>
+            <span className="text-muted-foreground text-xs">
+              {completedSteps}/{props.steps.length} steps
+            </span>
+          </div>
+          <div className="space-y-1">
+            {props.steps.map((step, index) => {
+              const completed = safeProgress >= (index + 1) * stepSize;
+              return (
+                <div
+                  key={step.id}
+                  className="flex items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-xs"
+                >
+                  <span className="truncate">
+                    {index + 1}. {step.title}
+                  </span>
+                  <span
+                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${completed
+                        ? "bg-emerald-500/15 text-emerald-700"
+                        : "bg-muted text-muted-foreground"
+                      }`}
+                  >
+                    {completed ? "Done" : "Pending"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 };
 
 const formatDateTimeParts = (value: string | null) => {
@@ -513,7 +740,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [contactHistoryDialogRecord, setContactHistoryDialogRecord] =
     useState<MondayRecord | null>(null);
   const [retentionDraft, setRetentionDraft] = useState({
-    referredToContractors: "",
+    referredToContractors: [] as string[],
     hiredWithContractor: "",
     hireDate: "",
     retentionPeriod: "",
@@ -522,6 +749,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [statusDraft, setStatusDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
   const [isSavingRetention, setIsSavingRetention] = useState(false);
+  const [retentionHireDatePopoverOpen, setRetentionHireDatePopoverOpen] =
+    useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [isSavingOwner, setIsSavingOwner] = useState(false);
@@ -882,7 +1111,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           }
           throw new Error(
             devAuthData.error ??
-              "Missing Monday session token from SDK/query string",
+            "Missing Monday session token from SDK/query string",
           );
         }
 
@@ -1034,6 +1263,18 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
               ? "Owner Two"
               : "Owner Three",
         ownerIds: [ownerId],
+        ownerProfiles: [
+          {
+            id: ownerId,
+            name:
+              ownerId === "53441186"
+                ? "Current Monday User"
+                : ownerId === "71234567"
+                  ? "Owner Two"
+                  : "Owner Three",
+            photoThumb: null,
+          },
+        ],
         email: `lead${id}@example.com`,
         phone: `(555) 010-${String(index).padStart(2, "0")}`,
         address: `${100 + index} Test Ave, Test City`,
@@ -1115,6 +1356,24 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const boardName = staticMode
     ? "Static Test Board (50 records)"
     : recordsQuery.data?.pages[0]?.boardName ?? "Monday Board";
+  const approvalSteps = useMemo(() => {
+    const fromApi = recordsQuery.data?.pages[0]?.approvalSteps;
+    if (!fromApi || fromApi.length === 0) {
+      return APPROVAL_STEPS;
+    }
+    const titleById = new Map(
+      fromApi
+        .filter(
+          (step): step is ApprovalStepConfig =>
+            step.id.trim().length > 0 && step.title.trim().length > 0,
+        )
+        .map((step) => [step.id.trim(), step.title.trim()] as const),
+    );
+    return APPROVAL_STEPS.map((step) => ({
+      id: step.id,
+      title: titleById.get(step.id) ?? step.title,
+    }));
+  }, [recordsQuery.data?.pages]);
   const emailTemplates = useMemo(
     () => (staticMode ? [] : (emailTemplatesQuery.data?.templates ?? [])),
     [emailTemplatesQuery.data?.templates, staticMode],
@@ -1298,6 +1557,21 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     }
   };
 
+  const ownerProfileById = useMemo(() => {
+    const map = new Map<
+      string,
+      { id: string; name: string | null; photoThumb: string | null }
+    >();
+    for (const record of records) {
+      for (const owner of record.ownerProfiles) {
+        if (!map.has(owner.id)) {
+          map.set(owner.id, owner);
+        }
+      }
+    }
+    return map;
+  }, [records]);
+
   const ownerOptions = useMemo(() => {
     return Array.from(
       new Map(
@@ -1315,9 +1589,17 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           .map((entry) => [entry.value, entry.label] as const),
       ),
     )
-      .map(([value, label]) => ({ value, label }))
+      .map(([value, label]) => {
+        const ownerProfile = ownerProfileById.get(value);
+        return {
+          value,
+          label,
+          name: ownerProfile?.name ?? null,
+          photoThumb: ownerProfile?.photoThumb ?? null,
+        };
+      })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [records]);
+  }, [ownerProfileById, records]);
   const addContactOwnerOptions = useMemo(() => {
     const base = ownerOptions.map((option) => ({ ...option }));
     if (identity?.userId) {
@@ -1326,6 +1608,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         base.unshift({
           value: identity.userId,
           label: `Current User (${identity.userId})`,
+          name: null,
+          photoThumb: null,
         });
       }
     }
@@ -1374,8 +1658,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
 
   const openRetentionDialog = (record: MondayRecord) => {
     setRetentionDialogRecord(record);
+    setRetentionHireDatePopoverOpen(false);
     setRetentionDraft({
-      referredToContractors: record.referredToContractors ?? "",
+      referredToContractors: splitCsvValues(record.referredToContractors),
       hiredWithContractor: record.hiredWithContractor ?? "",
       hireDate: normalizeDateOnlyFromRecord(record.hireDate),
       retentionPeriod: record.retentionPeriod ?? "",
@@ -1421,7 +1706,10 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           "x-monday-session-token": sessionToken,
         },
         body: JSON.stringify({
-          referredToContractors: retentionDraft.referredToContractors || null,
+          referredToContractors:
+            retentionDraft.referredToContractors.length > 0
+              ? retentionDraft.referredToContractors
+              : null,
           hiredWithContractor: retentionDraft.hiredWithContractor || null,
           hireDate: retentionDraft.hireDate || null,
           retentionPeriod: retentionDraft.retentionPeriod || null,
@@ -1716,74 +2004,79 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         const details = getContactTooltipDetails(item);
         const addressDisplay = getAddressDisplayParts(item.address);
         return (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => openContactHistoryDialog(item)}
-                className="hover:bg-accent/40 flex w-full cursor-pointer gap-3 rounded-md p-2 text-left"
-              >
-                <Avatar className="mt-0.5 size-9">
-                  <AvatarFallback className="text-xs font-semibold">
-                    {getNameInitials(item.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="font-medium">{item.name}</span>
-                  <span className="text-muted-foreground truncate text-xs">
-                    {item.email ?? "No email"}
-                  </span>
-                  {addressDisplay.full ? (
-                    <span className="text-muted-foreground text-xs">
-                      {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                      {addressDisplay.cityStateZip ? (
-                        <span className="text-sm font-semibold text-foreground">
-                          {addressDisplay.cityStateZip}
-                        </span>
-                      ) : (
-                        addressDisplay.full
-                      )}
+          <button
+            type="button"
+            onClick={() => openContactHistoryDialog(item)}
+            className="hover:bg-accent/40 flex w-full cursor-pointer gap-3 rounded-md p-2 text-left"
+          >
+            <Avatar className="mt-0.5 size-9">
+              <AvatarFallback className="text-xs font-semibold">
+                {getNameInitials(item.name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="space-y-1">
+                    <span className="block font-medium">{item.name}</span>
+                    <span className="text-muted-foreground block truncate text-xs">
+                      {item.email ?? "No email"}
                     </span>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">No address</span>
-                  )}
-                  <span className="text-muted-foreground text-xs">
-                    {item.phone ?? "No phone"}
-                  </span>
-                  <div className="mt-1 space-y-1">
-                    <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
-                      <span>Progress</span>
-                      <span>
-                        {item.batteryProgress !== null
-                          ? `${item.batteryProgress}%`
-                          : "—"}
+                    {addressDisplay.full ? (
+                      <span className="text-muted-foreground block text-xs">
+                        {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                        {addressDisplay.cityStateZip ? (
+                          <span className="text-sm font-semibold text-foreground">
+                            {addressDisplay.cityStateZip}
+                          </span>
+                        ) : (
+                          addressDisplay.full
+                        )}
                       </span>
-                    </div>
-                    <Progress value={item.batteryProgress ?? 0} className="h-1.5" />
+                    ) : (
+                      <span className="text-muted-foreground block text-xs">No address</span>
+                    )}
+                    <span className="text-muted-foreground block text-xs">
+                      {item.phone ?? "No phone"}
+                    </span>
                   </div>
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right" align="start" sideOffset={8} className="max-w-md p-3">
-              <div className="space-y-2">
-                <p className="text-xs font-semibold tracking-wide uppercase">Contact details</p>
-                <div className="max-h-72 space-y-1 overflow-y-auto">
-                  {details.map((detail) => (
-                    <div key={`${detail.label}-${detail.value}`} className="grid grid-cols-[100px_1fr] gap-2 text-xs">
-                      <span className="text-muted">{detail.label}</span>
-                      <span className="wrap-break-word">{detail.value}</span>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="right"
+                  align="start"
+                  sideOffset={8}
+                  className="max-w-md p-3"
+                >
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold tracking-wide uppercase">
+                      Contact details
+                    </p>
+                    <div className="max-h-72 space-y-1 overflow-y-auto">
+                      {details.map((detail) => (
+                        <div
+                          key={`${detail.label}-${detail.value}`}
+                          className="grid grid-cols-[100px_1fr] gap-2 text-xs"
+                        >
+                          <span className="text-muted">{detail.label}</span>
+                          <span className="wrap-break-word">{detail.value}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-            </TooltipContent>
-          </Tooltip>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+              <ApprovalProgressIndicator
+                progressValue={item.batteryProgress}
+                steps={approvalSteps}
+              />
+            </div>
+          </button>
         );
       },
     },
     {
       id: "statusText",
-      header: "Status",
+      header: "District",
       accessorKey: "statusText",
       cell: (item: MondayRecord) => (
         <button
@@ -1791,7 +2084,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           onClick={() => openStatusDialog(item)}
           className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left"
         >
-          {item.statusText ? <Badge variant="secondary">{item.statusText}</Badge> : "—"}
+          {item.statusText ? (
+            <span
+              className={`inline-flex min-w-[86px] items-center justify-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(item.statusText)}`}
+            >
+              {item.statusText}
+            </span>
+          ) : (
+            "—"
+          )}
         </button>
       ),
     },
@@ -1803,9 +2104,34 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         <button
           type="button"
           onClick={() => openOwnerDialog(item)}
-          className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left text-xs"
+          className="hover:bg-accent/40 flex w-full cursor-pointer items-center justify-center rounded-md p-2 text-center"
         >
-          {item.peopleText ?? "—"}
+          {item.ownerProfiles.length > 0 ? (
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center justify-center -space-x-2">
+                {item.ownerProfiles.slice(0, 3).map((owner) => (
+                  <Avatar
+                    key={owner.id}
+                    className="size-8 border-2 border-background shadow-sm"
+                  >
+                    {owner.photoThumb ? (
+                      <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                    ) : null}
+                    <AvatarFallback className="text-xs font-semibold">
+                      {getNameInitials(owner.name ?? owner.id)}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+              </div>
+              <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
+                {item.ownerProfiles
+                  .map((owner) => owner.name?.trim() ?? owner.id)
+                  .join(", ")}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs">{item.peopleText ?? "—"}</span>
+          )}
         </button>
       ),
     },
@@ -1814,25 +2140,53 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       header: "Retention",
       accessorKey: "referredToContractors",
       cell: (item: MondayRecord) => {
+        const referredValues = splitCsvValues(item.referredToContractors);
         return (
           <button
             type="button"
             onClick={() => openRetentionDialog(item)}
-            className="hover:bg-accent/40 flex w-full cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
+            className="hover:bg-accent/40 flex w-full max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
           >
-            <span className="text-xs">
-              <span className="font-medium">Referred:</span>{" "}
-              {item.referredToContractors ?? "—"}
-            </span>
-            <span className="text-xs">
+            <div className="w-full space-y-1">
+              <span className="block text-xs font-medium">Referred:</span>
+              {referredValues.length > 0 ? (
+                <div className="flex max-w-full flex-wrap gap-1">
+                  {referredValues.map((value) => (
+                    <BusinessInfoHoverCard
+                      key={value}
+                      companyName={value}
+                    >
+                      <Badge
+                        variant="secondary"
+                        className="max-w-full cursor-help truncate text-[10px]"
+                        title={value}
+                      >
+                        {value}
+                      </Badge>
+                    </BusinessInfoHoverCard>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-muted-foreground text-xs">—</span>
+              )}
+            </div>
+            <span className="block w-full truncate text-xs">
               <span className="font-medium">Hired With:</span>{" "}
-              {item.hiredWithContractor ?? "—"}
+              {item.hiredWithContractor?.trim() ? (
+                <BusinessInfoHoverCard companyName={item.hiredWithContractor}>
+                  <Badge variant="secondary" className="ml-1 cursor-help text-[10px]">
+                    {item.hiredWithContractor}
+                  </Badge>
+                </BusinessInfoHoverCard>
+              ) : (
+                "—"
+              )}
             </span>
-            <span className="text-xs">
+            <span className="block w-full truncate text-xs">
               <span className="font-medium">Hire Date:</span>{" "}
               {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
             </span>
-            <span className="text-xs">
+            <span className="block w-full truncate text-xs">
               <span className="font-medium">Period:</span>{" "}
               {item.retentionPeriod ?? "—"}
             </span>
@@ -1844,16 +2198,34 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       id: "tags",
       header: "Tags",
       accessorKey: "tags",
-      cell: (item: MondayRecord) => (
-        <button
-          type="button"
-          onClick={() => openTagsDialog(item)}
-          title={item.tags ?? ""}
-          className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left text-xs whitespace-normal wrap-break-word"
-        >
-          {item.tags ?? "—"}
-        </button>
-      ),
+      cell: (item: MondayRecord) => {
+        const tagValues = splitCsvValues(item.tags);
+        return (
+          <button
+            type="button"
+            onClick={() => openTagsDialog(item)}
+            title={item.tags ?? ""}
+            className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left"
+          >
+            {tagValues.length > 0 ? (
+              <div className="flex max-w-[260px] flex-wrap gap-1">
+                {tagValues.map((tag) => (
+                  <Badge
+                    key={tag}
+                    variant="secondary"
+                    className="max-w-full truncate text-[10px]"
+                    title={tag}
+                  >
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-xs">—</span>
+            )}
+          </button>
+        );
+      },
     },
     {
       id: "resume",
@@ -1969,7 +2341,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   ];
 
   return (
-    <div className="container mx-auto max-w-[1600px] space-y-4 py-6">
+    <div className="monday-like-page container mx-auto max-w-[1600px] space-y-3 py-4">
       {identity ? (
         <div className="text-muted-foreground text-xs">
           Connected account: {identity.accountId} · user: {identity.userId} · board:{" "}
@@ -1982,365 +2354,385 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between gap-3">
-                  <div className="w-full max-w-md space-y-1">
-                    <Input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search records (server, 2+ chars)"
-                      className="max-w-md"
-                    />
-                    {search.trim().length > 0 && search.trim().length < 2 ? (
-                      <p className="text-muted-foreground text-xs">
-                        Type at least 2 characters to run server search.
-                      </p>
-                    ) : null}
-                  </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setActiveMonth(
-                  (prev) =>
-                    new Date(
-                      Date.UTC(
-                        prev.getUTCFullYear(),
-                        prev.getUTCMonth() - 1,
-                        1,
+      <div className="bg-card/70 rounded-lg border px-3 py-2">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="w-full max-w-xl min-w-[280px] flex-1 space-y-1">
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search records (server, 2+ chars)"
+                className="bg-background/90 h-8 max-w-xl text-sm"
+              />
+              {search.trim().length > 0 && search.trim().length < 2 ? (
+                <p className="text-muted-foreground text-xs">
+                  Type at least 2 characters to run server search.
+                </p>
+              ) : null}
+            </div>
+            <div className="bg-background flex items-center gap-1 rounded-md border p-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5"
+                onClick={() => {
+                  setActiveMonth(
+                    (prev) =>
+                      new Date(
+                        Date.UTC(
+                          prev.getUTCFullYear(),
+                          prev.getUTCMonth() - 1,
+                          1,
+                        ),
                       ),
-                    ),
-                );
-              }}
-            >
-              <ChevronLeft className="mr-2 h-4 w-4" />
-              Prev month
-            </Button>
-            <Badge variant="outline">{monthBounds.label}</Badge>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setActiveMonth(
-                  (prev) =>
-                    new Date(
-                      Date.UTC(
-                        prev.getUTCFullYear(),
-                        prev.getUTCMonth() + 1,
-                        1,
-                      ),
-                    ),
-                );
-              }}
-            >
-              Next month
-              <ChevronRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
-          <select
-            value={ownerFilter || "__all_owner__"}
-            onChange={(event) => {
-              if (!isOwnerFilterEditable) return;
-              const value = event.target.value;
-              setOwnerFilter(value === "__all_owner__" ? "" : value);
-            }}
-            className="bg-background border-input h-9 w-[260px] rounded-md border px-3 text-sm"
-            disabled={!isOwnerFilterEditable}
-          >
-            {isOwnerFilterEditable ? (
-              <option value="__all_owner__">Owner: all</option>
-            ) : (
-              <option value={identity?.userId ?? "__all_owner__"}>Owner: me</option>
-            )}
-            {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-              <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-            ) : null}
-            {ownerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter || "__all_status__"}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusFilter(value === "__all_status__" ? "" : value);
-            }}
-            className="bg-background border-input h-9 w-[220px] rounded-md border px-3 text-sm"
-          >
-            <option value="__all_status__">Status: all</option>
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (staticMode) return;
-              void recordsQuery.refetch();
-            }}
-            disabled={staticMode || recordsQuery.isFetching}
-          >
-            <RefreshCcw className="mr-2 h-4 w-4" />
-            Reload
-          </Button>
-          {viewMode === "userScoped" ? (
-            <Button
-              variant="default"
-              onClick={() => {
-                resetAddContactDialog();
-                setAddContactOpen(true);
-              }}
-              disabled={authLoading || !identity?.userId}
-            >
-              <UserPlus className="mr-2 h-4 w-4" />
-              Add Contact
-            </Button>
-          ) : null}
-          {!staticMode && recordsQuery.hasNextPage ? (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                void recordsQuery.fetchNextPage();
-              }}
-              disabled={recordsQuery.isFetchingNextPage}
-            >
-              {recordsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
-            </Button>
-          ) : null}
-          <Button asChild variant="ghost">
-            <Link
-              href="https://developer.monday.com/api-reference/reference/items-page"
-              target="_blank"
-              rel="noreferrer"
-            >
-              API docs
-            </Link>
-          </Button>
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
+                  );
+                }}
+              >
+                <ChevronLeft className="mr-1.5 h-4 w-4" />
+                Prev month
               </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl">
-              <DialogHeader>
-                <DialogTitle>Monday Settings</DialogTitle>
-              </DialogHeader>
-              <Tabs defaultValue="email-templates" className="flex gap-4">
-                <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
-                  <TabsTrigger
-                    value="email-templates"
-                    className="w-full justify-start text-left"
+              <Badge variant="outline" className="h-8 rounded-sm px-2 text-xs">
+                {monthBounds.label}
+              </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-2.5"
+                onClick={() => {
+                  setActiveMonth(
+                    (prev) =>
+                      new Date(
+                        Date.UTC(
+                          prev.getUTCFullYear(),
+                          prev.getUTCMonth() + 1,
+                          1,
+                        ),
+                      ),
+                  );
+                }}
+              >
+                Next month
+                <ChevronRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="border-t pt-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
+                <select
+                  value={ownerFilter || "__all_owner__"}
+                  onChange={(event) => {
+                    if (!isOwnerFilterEditable) return;
+                    const value = event.target.value;
+                    setOwnerFilter(value === "__all_owner__" ? "" : value);
+                  }}
+                  className="bg-background border-input h-8 w-60 rounded-md border px-2.5 text-xs"
+                  disabled={!isOwnerFilterEditable}
+                >
+                  {isOwnerFilterEditable ? (
+                    <option value="__all_owner__">Owner: all</option>
+                  ) : (
+                    <option value={identity?.userId ?? "__all_owner__"}>Owner: me</option>
+                  )}
+                  {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+                    <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+                  ) : null}
+                  {ownerOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter || "__all_status__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusFilter(value === "__all_status__" ? "" : value);
+                  }}
+                  className="bg-background border-input h-8 w-[200px] rounded-md border px-2.5 text-xs"
+                >
+                  <option value="__all_status__">District: all</option>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8"
+                  onClick={() => {
+                    if (staticMode) return;
+                    void recordsQuery.refetch();
+                  }}
+                  disabled={staticMode || recordsQuery.isFetching}
+                >
+                  <RefreshCcw className="mr-1.5 h-4 w-4" />
+                  Reload
+                </Button>
+                {viewMode === "userScoped" ? (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-8"
+                    onClick={() => {
+                      resetAddContactDialog();
+                      setAddContactOpen(true);
+                    }}
+                    disabled={authLoading || !identity?.userId}
                   >
-                    Email Templates
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="email-settings"
-                    className="w-full justify-start text-left"
+                    <UserPlus className="mr-1.5 h-4 w-4" />
+                    Add Contact
+                  </Button>
+                ) : null}
+                {!staticMode && recordsQuery.hasNextPage ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-8"
+                    onClick={() => {
+                      void recordsQuery.fetchNextPage();
+                    }}
+                    disabled={recordsQuery.isFetchingNextPage}
                   >
-                    Email Settings
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="user-zip-map"
-                    className="w-full justify-start text-left"
+                    {recordsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
+                  </Button>
+                ) : null}
+                <Button asChild size="sm" variant="outline" className="h-8">
+                  <Link
+                    href="https://developer.monday.com/api-reference/reference/items-page"
+                    target="_blank"
+                    rel="noreferrer"
                   >
-                    User {"<->"} Zipcode map
-                  </TabsTrigger>
-                </TabsList>
-                <div className="min-h-80 flex-1 rounded-md border p-4">
-                  <TabsContent value="email-templates" className="mt-0">
-                    <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">
-                          Templates ({emailTemplates.length})
-                        </p>
-                        <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                          {emailTemplates.map((template) => {
-                            const isActive = template.id === selectedTemplate?.id;
-                            return (
-                              <button
-                                key={template.id}
-                                type="button"
-                                className={[
-                                  "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                  isActive
-                                    ? "border-primary bg-primary/10"
-                                    : "hover:bg-muted/60",
-                                ].join(" ")}
-                                onClick={() => {
-                                  setSelectedTemplateId(template.id);
-                                }}
-                              >
-                                <p className="line-clamp-1 font-medium">{template.name}</p>
-                                <p className="text-muted-foreground mt-1 text-xs">
-                                  Updated {formatUpdatedAt(template.updatedAt)}
-                                </p>
-                              </button>
-                            );
-                          })}
-                          {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                            <p className="text-muted-foreground text-sm">
-                              No templates found on board 18401299370.
-                            </p>
-                          ) : null}
-                          {emailTemplatesQuery.isLoading ? (
-                            <p className="text-muted-foreground text-sm">
-                              Loading templates...
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="bg-background min-h-[420px] rounded-md border p-4">
-                        {selectedTemplate ? (
-                          <div className="space-y-4">
-                            <div className="border-b pb-3">
-                              <p className="text-xs font-semibold tracking-wide uppercase">
-                                Subject
+                    API docs
+                  </Link>
+                </Button>
+                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-8">
+                      <Settings className="mr-1.5 h-4 w-4" />
+                      Settings
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-4xl">
+                    <DialogHeader>
+                      <DialogTitle>Monday Settings</DialogTitle>
+                    </DialogHeader>
+                    <Tabs defaultValue="email-templates" className="flex gap-4">
+                      <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
+                        <TabsTrigger
+                          value="email-templates"
+                          className="w-full justify-start text-left"
+                        >
+                          Email Templates
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="email-settings"
+                          className="w-full justify-start text-left"
+                        >
+                          Email Settings
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="user-zip-map"
+                          className="w-full justify-start text-left"
+                        >
+                          User {"<->"} Zipcode map
+                        </TabsTrigger>
+                      </TabsList>
+                      <div className="min-h-80 flex-1 rounded-md border p-4">
+                        <TabsContent value="email-templates" className="mt-0">
+                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">
+                                Templates ({emailTemplates.length})
                               </p>
-                              <p className="mt-1 text-base font-medium">
-                                {selectedTemplate.name}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-xs font-semibold tracking-wide uppercase">
-                                Email Preview (Lead View)
-                              </p>
-                              <div className="bg-card mt-2 rounded-md border p-4">
-                                {selectedTemplate.content.trim().length === 0 ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    No content found in column doc_mm0wq4r.
-                                  </p>
-                                ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                  <div
-                                    className="prose prose-sm dark:prose-invert max-w-none"
-                                    dangerouslySetInnerHTML={{
-                                      __html: selectedTemplate.renderedHtml,
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                    {selectedTemplate.content}
-                                  </div>
-                                )}
-                                {selectedTemplate.docLink ? (
-                                  <p className="mt-3 text-xs">
-                                    <a
-                                      href={selectedTemplate.docLink}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-primary underline underline-offset-2"
+                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                {emailTemplates.map((template) => {
+                                  const isActive = template.id === selectedTemplate?.id;
+                                  return (
+                                    <button
+                                      key={template.id}
+                                      type="button"
+                                      className={[
+                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                        isActive
+                                          ? "border-primary bg-primary/10"
+                                          : "hover:bg-muted/60",
+                                      ].join(" ")}
+                                      onClick={() => {
+                                        setSelectedTemplateId(template.id);
+                                      }}
                                     >
-                                      Open source Monday Workdoc
-                                    </a>
+                                      <p className="line-clamp-1 font-medium">{template.name}</p>
+                                      <p className="text-muted-foreground mt-1 text-xs">
+                                        Updated {formatUpdatedAt(template.updatedAt)}
+                                      </p>
+                                    </button>
+                                  );
+                                })}
+                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    No templates found on board 18401299370.
+                                  </p>
+                                ) : null}
+                                {emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    Loading templates...
                                   </p>
                                 ) : null}
                               </div>
                             </div>
+                            <div className="bg-background min-h-[420px] rounded-md border p-4">
+                              {selectedTemplate ? (
+                                <div className="space-y-4">
+                                  <div className="border-b pb-3">
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Subject
+                                    </p>
+                                    <p className="mt-1 text-base font-medium">
+                                      {selectedTemplate.name}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Email Preview (Lead View)
+                                    </p>
+                                    <div className="bg-card mt-2 rounded-md border p-4">
+                                      {selectedTemplate.content.trim().length === 0 ? (
+                                        <p className="text-muted-foreground text-sm">
+                                          No content found in column doc_mm0wq4r.
+                                        </p>
+                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                        <div
+                                          className="prose prose-sm dark:prose-invert max-w-none"
+                                          dangerouslySetInnerHTML={{
+                                            __html: selectedTemplate.renderedHtml,
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                          {selectedTemplate.content}
+                                        </div>
+                                      )}
+                                      {selectedTemplate.docLink ? (
+                                        <p className="mt-3 text-xs">
+                                          <a
+                                            href={selectedTemplate.docLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-primary underline underline-offset-2"
+                                          >
+                                            Open source Monday Workdoc
+                                          </a>
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-muted-foreground text-sm">
+                                  Select an email template to preview.
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        ) : (
-                          <p className="text-muted-foreground text-sm">
-                            Select an email template to preview.
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="user-zip-map" className="mt-0">
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                      <p className="text-muted-foreground text-sm">
-                        Define zipcode ownership and routing by user.
-                      </p>
-                    </div>
-                  </TabsContent>
-                  <TabsContent value="email-settings" className="mt-0">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <p className="text-sm font-medium">Email Settings</p>
-                        <p className="text-muted-foreground text-sm">
-                          Configure outbound email account settings for sending
-                          monday-designed templates.
-                        </p>
-                      </div>
-                      <div className="space-y-3 rounded-md border p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge
-                            variant={
-                              outlookStatusQuery.data?.connected
-                                ? "default"
-                                : "secondary"
-                            }
-                          >
-                            {outlookStatusQuery.data?.connected
-                              ? "Outlook connected"
-                              : "Outlook not connected"}
-                          </Badge>
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              void handleConnectOutlook();
-                            }}
-                            disabled={isConnectingOutlook}
-                          >
-                            {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                          </Button>
-                          {outlookStatusQuery.data?.connected ? (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                void handleDisconnectOutlook();
-                              }}
-                              disabled={isDisconnectingOutlook}
-                            >
-                              {isDisconnectingOutlook
-                                ? "Disconnecting..."
-                                : "Disconnect"}
-                            </Button>
-                          ) : null}
-                        </div>
-                        <div className="text-muted-foreground text-sm">
-                          {outlookStatusQuery.data?.connection?.email ? (
-                            <p>
-                              Connected mailbox:{" "}
-                              {outlookStatusQuery.data.connection.email}
+                        </TabsContent>
+                        <TabsContent value="user-zip-map" className="mt-0">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                            <p className="text-muted-foreground text-sm">
+                              Define zipcode ownership and routing by user.
                             </p>
-                          ) : (
-                            <p>
-                              Use OAuth to connect Outlook, then use this account
-                              for sending and engagement tracking.
-                            </p>
-                          )}
-                          {outlookStatusQuery.data?.connection?.updatedAt ? (
-                            <p className="mt-1">
-                              Last updated:{" "}
-                              {new Date(
-                                outlookStatusQuery.data.connection.updatedAt,
-                              ).toLocaleString()}
-                            </p>
-                          ) : null}
-                        </div>
-                        <div className="rounded-md border bg-muted/30 p-3">
-                          <p className="text-xs font-semibold tracking-wide uppercase">
-                            Callback URL
-                          </p>
-                          <p className="mt-1 break-all font-mono text-xs">
-                            {callbackUrl}
-                          </p>
-                        </div>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="email-settings" className="mt-0">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Email Settings</p>
+                              <p className="text-muted-foreground text-sm">
+                                Configure outbound email account settings for sending
+                                monday-designed templates.
+                              </p>
+                            </div>
+                            <div className="space-y-3 rounded-md border p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant={
+                                    outlookStatusQuery.data?.connected
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {outlookStatusQuery.data?.connected
+                                    ? "Outlook connected"
+                                    : "Outlook not connected"}
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    void handleConnectOutlook();
+                                  }}
+                                  disabled={isConnectingOutlook}
+                                >
+                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                </Button>
+                                {outlookStatusQuery.data?.connected ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      void handleDisconnectOutlook();
+                                    }}
+                                    disabled={isDisconnectingOutlook}
+                                  >
+                                    {isDisconnectingOutlook
+                                      ? "Disconnecting..."
+                                      : "Disconnect"}
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="text-muted-foreground text-sm">
+                                {outlookStatusQuery.data?.connection?.email ? (
+                                  <p>
+                                    Connected mailbox:{" "}
+                                    {outlookStatusQuery.data.connection.email}
+                                  </p>
+                                ) : (
+                                  <p>
+                                    Use OAuth to connect Outlook, then use this account
+                                    for sending and engagement tracking.
+                                  </p>
+                                )}
+                                {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                  <p className="mt-1">
+                                    Last updated:{" "}
+                                    {new Date(
+                                      outlookStatusQuery.data.connection.updatedAt,
+                                    ).toLocaleString()}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="rounded-md border bg-muted/30 p-3">
+                                <p className="text-xs font-semibold tracking-wide uppercase">
+                                  Callback URL
+                                </p>
+                                <p className="mt-1 break-all font-mono text-xs">
+                                  {callbackUrl}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </TabsContent>
                       </div>
-                    </div>
-                  </TabsContent>
-                </div>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
+                    </Tabs>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -2453,33 +2845,77 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
             <DialogTitle>Update Retention</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* <div className="space-y-2 rounded-md border p-3">
+              <div>
+                <p className="text-sm font-medium">Business Connections Overview</p>
+                <p className="text-muted-foreground text-xs">
+                  Snapshot of linked contractor relationships (mock data preview).
+                </p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="bg-background space-y-2 rounded-md border p-2.5">
+                  <p className="text-xs font-semibold tracking-wide uppercase">
+                    Referred To Contractor(s)
+                  </p>
+                  {retentionDraft.referredToContractors.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {retentionDraft.referredToContractors.map((contractor) => (
+                        <BusinessInfoHoverCard
+                          key={contractor}
+                          companyName={contractor}
+                        >
+                          <Badge variant="secondary" className="cursor-help text-[11px]">
+                            {contractor}
+                          </Badge>
+                        </BusinessInfoHoverCard>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">No referrals selected.</p>
+                  )}
+                </div>
+                <div className="bg-background space-y-2 rounded-md border p-2.5">
+                  <p className="text-xs font-semibold tracking-wide uppercase">
+                    Hired With Contractor
+                  </p>
+                  {retentionDraft.hiredWithContractor.trim() ? (
+                    <BusinessInfoHoverCard
+                      companyName={retentionDraft.hiredWithContractor}
+                    >
+                      <Badge variant="secondary" className="cursor-help text-[11px]">
+                        {retentionDraft.hiredWithContractor}
+                      </Badge>
+                    </BusinessInfoHoverCard>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">No contractor selected.</p>
+                  )}
+                </div>
+              </div>
+            </div> */}
             <div className="space-y-2">
               <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <select
-                value={retentionDraft.referredToContractors || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    referredToContractors: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
+              <MultiSelect
+                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                options={Array.from(
                   new Set([
                     ...retentionOptions.referredToContractors,
-                    retentionDraft.referredToContractors,
+                    ...retentionDraft.referredToContractors,
                   ]),
                 )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={retentionDraft.referredToContractors}
+                onValueChange={(values) => {
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    referredToContractors: values,
+                  }));
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Hired With Contractor</label>
@@ -2511,39 +2947,50 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Hire Date</label>
-              <div className="space-y-2 rounded-md border p-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">
-                    {retentionDraft.hireDate || "No date selected"}
-                  </span>
-                  {retentionDraft.hireDate ? (
+              <div className="flex items-center gap-2">
+                <Popover
+                  open={retentionHireDatePopoverOpen}
+                  onOpenChange={setRetentionHireDatePopoverOpen}
+                >
+                  <PopoverTrigger asChild>
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                      }}
+                      variant="outline"
+                      className="h-9 flex-1 justify-start font-normal"
                     >
-                      Clear
+                      {retentionDraft.hireDate || "Select date"}
                     </Button>
-                  ) : null}
-                </div>
-                <Calendar
-                  mode="single"
-                  selected={
-                    retentionDraft.hireDate
-                      ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                      : undefined
-                  }
-                  onSelect={(date) => {
-                    if (!date) return;
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      hireDate: toDateOnlyLocal(date),
-                    }));
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                    <Calendar
+                      mode="single"
+                      selected={
+                        retentionDraft.hireDate
+                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                          : undefined
+                      }
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setRetentionDraft((prev) => ({
+                          ...prev,
+                          hireDate: toDateOnlyLocal(date),
+                        }));
+                        setRetentionHireDatePopoverOpen(false);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
                   }}
-                />
+                  disabled={!retentionDraft.hireDate}
+                >
+                  Clear
+                </Button>
               </div>
             </div>
             <div className="space-y-2">
@@ -2660,32 +3107,70 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           <div className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Owner</label>
-              <select
+              <Select
                 value={ownerDraft || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
+                onValueChange={(value) => {
                   setOwnerDraft(value === "__none__" ? "" : value);
                 }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
               >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Map(
-                    [
-                      ...ownerOptions.map((option) => [option.value, option.label] as const),
-                      ownerDraft.trim().length > 0
-                        ? [ownerDraft, `User ${ownerDraft}`]
-                        : null,
-                    ].filter((entry): entry is readonly [string, string] => !!entry),
-                  ),
-                )
-                  .map(([value, label]) => ({ value, label }))
-                  .map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-              </select>
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select value</SelectItem>
+                  {Array.from(
+                    new Map(
+                      [
+                        ...ownerOptions.map((option) => [option.value, option] as const),
+                        ownerDraft.trim().length > 0
+                          ? [
+                            ownerDraft,
+                            {
+                              value: ownerDraft,
+                              label: `User ${ownerDraft}`,
+                              name: null,
+                              photoThumb: null,
+                            },
+                          ]
+                          : null,
+                      ].filter(
+                        (
+                          entry,
+                        ): entry is readonly [
+                          string,
+                          {
+                            value: string;
+                            label: string;
+                            name: string | null;
+                            photoThumb: string | null;
+                          },
+                        ] => !!entry,
+                      ),
+                    ),
+                  )
+                    .map(([, option]) => option)
+                    .map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-5">
+                            {option.photoThumb ? (
+                              <AvatarImage
+                                src={option.photoThumb}
+                                alt={option.name ?? option.value}
+                              />
+                            ) : null}
+                            <AvatarFallback className="text-[10px] font-semibold">
+                              {getNameInitials(option.name ?? option.value)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">
+                            {option.name ?? option.label}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex justify-end gap-2">
               <Button
@@ -2777,53 +3262,53 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   contactHistoryDialogRecord?.address,
                 );
                 return (
-              <div className="flex items-start gap-3">
-                <Avatar className="size-10">
-                  <AvatarFallback className="text-sm font-semibold">
-                    {getNameInitials(contactHistoryDialogRecord?.name ?? "")}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1 space-y-1 text-sm">
-                  <p className="font-medium">{contactHistoryDialogRecord?.name ?? "—"}</p>
-                  <p className="text-muted-foreground">
-                    {contactHistoryDialogRecord?.email ?? "—"}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {addressDisplay.full ? (
-                      <>
-                        {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                        {addressDisplay.cityStateZip ? (
-                          <span className="text-[15px] font-semibold text-foreground">
-                            {addressDisplay.cityStateZip}
-                          </span>
+                  <div className="flex items-start gap-3">
+                    <Avatar className="size-10">
+                      <AvatarFallback className="text-sm font-semibold">
+                        {getNameInitials(contactHistoryDialogRecord?.name ?? "")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1 space-y-1 text-sm">
+                      <p className="font-medium">{contactHistoryDialogRecord?.name ?? "—"}</p>
+                      <p className="text-muted-foreground">
+                        {contactHistoryDialogRecord?.email ?? "—"}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {addressDisplay.full ? (
+                          <>
+                            {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                            {addressDisplay.cityStateZip ? (
+                              <span className="text-[15px] font-semibold text-foreground">
+                                {addressDisplay.cityStateZip}
+                              </span>
+                            ) : (
+                              addressDisplay.full
+                            )}
+                          </>
                         ) : (
-                          addressDisplay.full
+                          "—"
                         )}
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                  <p className="text-muted-foreground">
-                    {contactHistoryDialogRecord?.phone ?? "—"}
-                  </p>
-                  <div className="pt-1 space-y-1">
-                    <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
-                      <span>Progress</span>
-                      <span>
-                        {contactHistoryDialogRecord?.batteryProgress !== null &&
-                        contactHistoryDialogRecord?.batteryProgress !== undefined
-                          ? `${contactHistoryDialogRecord.batteryProgress}%`
-                          : "—"}
-                      </span>
+                      </p>
+                      <p className="text-muted-foreground">
+                        {contactHistoryDialogRecord?.phone ?? "—"}
+                      </p>
+                      <div className="pt-1 space-y-1">
+                        <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
+                          <span>Progress</span>
+                          <span>
+                            {contactHistoryDialogRecord?.batteryProgress !== null &&
+                              contactHistoryDialogRecord?.batteryProgress !== undefined
+                              ? `${contactHistoryDialogRecord.batteryProgress}%`
+                              : "—"}
+                          </span>
+                        </div>
+                        <Progress
+                          value={contactHistoryDialogRecord?.batteryProgress ?? 0}
+                          className="h-1.5"
+                        />
+                      </div>
                     </div>
-                    <Progress
-                      value={contactHistoryDialogRecord?.batteryProgress ?? 0}
-                      className="h-1.5"
-                    />
                   </div>
-                </div>
-              </div>
                 );
               })()}
             </div>
@@ -2884,7 +3369,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         data={records}
         columns={columns}
         enableVirtualization
-        virtualRowHeight={88}
+        virtualRowHeight={72}
         virtualOverscan={10}
         hideFilters
         isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
@@ -2925,57 +3410,57 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   lowerName.endsWith(".svg");
                 return (
                   <>
-              <div className="flex items-center justify-between gap-3">
-                <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                <a
-                  href={resumePreview.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary text-xs underline"
-                >
-                  Open in new tab
-                </a>
-              </div>
-              <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                {isPdf ? (
-                  <iframe
-                    src={resumePreview.href}
-                    title={`Resume preview: ${resumePreview.fileName}`}
-                    className="h-full w-full"
-                  />
-                ) : isImage ? (
-                  <object
-                    data={resumePreview.href}
-                    className="h-full w-full"
-                  >
-                    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                      <p className="text-sm font-medium">Image preview unavailable</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
                       <a
                         href={resumePreview.href}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary text-xs underline"
                       >
-                        Open resume in new tab
+                        Open in new tab
                       </a>
                     </div>
-                  </object>
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                    <p className="text-sm font-medium">
-                      This file type cannot be previewed inline.
-                    </p>
-                    <a
-                      href={resumePreview.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary text-xs underline"
-                    >
-                      Open resume in new tab
-                    </a>
-                  </div>
-                )}
-              </div>
+                    <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
+                      {isPdf ? (
+                        <iframe
+                          src={resumePreview.href}
+                          title={`Resume preview: ${resumePreview.fileName}`}
+                          className="h-full w-full"
+                        />
+                      ) : isImage ? (
+                        <object
+                          data={resumePreview.href}
+                          className="h-full w-full"
+                        >
+                          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                            <p className="text-sm font-medium">Image preview unavailable</p>
+                            <a
+                              href={resumePreview.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary text-xs underline"
+                            >
+                              Open resume in new tab
+                            </a>
+                          </div>
+                        </object>
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                          <p className="text-sm font-medium">
+                            This file type cannot be previewed inline.
+                          </p>
+                          <a
+                            href={resumePreview.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary text-xs underline"
+                          >
+                            Open resume in new tab
+                          </a>
+                        </div>
+                      )}
+                    </div>
                   </>
                 );
               })()}

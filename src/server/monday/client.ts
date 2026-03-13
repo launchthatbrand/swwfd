@@ -9,6 +9,16 @@ const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
 const TAGS_COLUMN_ID = "dropdown_mkvw578t";
 const RESUME_FILES_COLUMN_ID = "files__1";
+const APPROVAL_STEP_COLUMN_IDS = [
+  "color_mm1db321",
+  "color_mm1dwtvd",
+  "color_mm1dwr4k",
+  "color_mm1dnr11",
+  "color_mm1dgeqy",
+  "color_mm1d80yc",
+  "color_mm1djwjj",
+  "color_mm1d4e3y",
+] as const;
 
 export interface MondayRecord {
   id: string;
@@ -18,6 +28,11 @@ export interface MondayRecord {
   statusText: string | null;
   peopleText: string | null;
   ownerIds: string[];
+  ownerProfiles: Array<{
+    id: string;
+    name: string | null;
+    photoThumb: string | null;
+  }>;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -61,6 +76,11 @@ export interface MondayRecordEditOptions {
   hiredWithContractor: string[];
   retentionPeriod: string[];
   tags: string[];
+}
+
+export interface MondayApprovalStep {
+  id: string;
+  title: string;
 }
 
 export interface MondayContactCandidate {
@@ -151,6 +171,7 @@ const callMondayGraphQL = async <TData>(
 };
 
 const BOARD_COLUMN_CACHE_TTL_MS = 5 * 60 * 1000;
+const MONDAY_USER_CACHE_TTL_MS = 5 * 60 * 1000;
 const boardColumnCache = new Map<
   string,
   {
@@ -158,8 +179,97 @@ const boardColumnCache = new Map<
     statusColumnId: string | null;
     peopleColumnId: string | null;
     dateColumnId: string | null;
+    columnTitleById: Record<string, string>;
   }
 >();
+const mondayUserCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    value: {
+      id: string;
+      name: string | null;
+      photoThumb: string | null;
+    };
+  }
+>();
+
+const resolveMondayUsersByIds = async (ids: string[]) => {
+  const uniqueIds = Array.from(
+    new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  if (uniqueIds.length === 0) {
+    return new Map<string, { id: string; name: string | null; photoThumb: string | null }>();
+  }
+
+  const now = Date.now();
+  const result = new Map<
+    string,
+    { id: string; name: string | null; photoThumb: string | null }
+  >();
+  const idsToFetch: string[] = [];
+
+  for (const id of uniqueIds) {
+    const cached = mondayUserCache.get(id);
+    if (cached && cached.expiresAt > now) {
+      result.set(id, cached.value);
+      continue;
+    }
+    idsToFetch.push(id);
+  }
+
+  if (idsToFetch.length > 0) {
+    interface UsersData {
+      users?: Array<{
+        id?: string | number | null;
+        name?: string | null;
+        photo_thumb?: string | null;
+      }>;
+    }
+    const query = `
+      query GetUsersByIds($userIds: [ID!]) {
+        users(ids: $userIds) {
+          id
+          name
+          photo_thumb
+        }
+      }
+    `;
+    const data = await callMondayGraphQL<UsersData>(query, {
+      userIds: idsToFetch,
+    });
+    const fetchedUsers = data.users ?? [];
+    for (const user of fetchedUsers) {
+      const idRaw = user.id;
+      if (idRaw === null || idRaw === undefined) continue;
+      const id = String(idRaw).trim();
+      if (!id) continue;
+      const value = {
+        id,
+        name: user.name?.trim() || null,
+        photoThumb: user.photo_thumb?.trim() || null,
+      };
+      mondayUserCache.set(id, {
+        expiresAt: now + MONDAY_USER_CACHE_TTL_MS,
+        value,
+      });
+      result.set(id, value);
+    }
+  }
+
+  for (const id of uniqueIds) {
+    if (!result.has(id)) {
+      const fallback = { id, name: null, photoThumb: null };
+      mondayUserCache.set(id, {
+        expiresAt: now + MONDAY_USER_CACHE_TTL_MS,
+        value: fallback,
+      });
+      result.set(id, fallback);
+    }
+  }
+
+  return result;
+};
 
 const resolveBoardColumnIds = async (boardId: string) => {
   const now = Date.now();
@@ -172,6 +282,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
     boards?: Array<{
       columns?: Array<{
         id?: string | null;
+        title?: string | null;
         type?: string | null;
       }>;
     }>;
@@ -182,6 +293,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
       boards(ids: [$boardId]) {
         columns {
           id
+          title
           type
         }
       }
@@ -198,12 +310,20 @@ const resolveBoardColumnIds = async (boardId: string) => {
     columns.find((column) => column?.id === "date1__1")?.id ??
     columns.find((column) => column?.type === "date")?.id ??
     null;
+  const columnTitleById: Record<string, string> = {};
+  for (const column of columns) {
+    const id = column?.id?.trim();
+    const title = column?.title?.trim();
+    if (!id || !title) continue;
+    columnTitleById[id] = title;
+  }
 
   const resolved = {
     expiresAt: now + BOARD_COLUMN_CACHE_TTL_MS,
     statusColumnId,
     peopleColumnId,
     dateColumnId,
+    columnTitleById,
   };
   boardColumnCache.set(boardId, resolved);
   return resolved;
@@ -250,6 +370,14 @@ const toColumnDisplayValue = (
   } catch {
     return rawValue;
   }
+};
+
+const splitCsvValues = (value: string | null | undefined) => {
+  if (!value) return [] as string[];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 };
 
 const parseFilesColumnValue = (
@@ -354,6 +482,10 @@ export const listMondayBoardRecords = async (args?: {
       records: [] as MondayRecord[],
       nextCursor: null as string | null,
       boardName: null as string | null,
+      approvalSteps: APPROVAL_STEP_COLUMN_IDS.map((id, index) => ({
+        id,
+        title: `Approval Step ${index + 1}`,
+      })) as MondayApprovalStep[],
     };
   }
 
@@ -435,6 +567,9 @@ export const listMondayBoardRecords = async (args?: {
     owner: false,
     status: false,
   };
+  let resolvedColumnIds:
+    | Awaited<ReturnType<typeof resolveBoardColumnIds>>
+    | null = null;
 
   let boardName: string | null = null;
   const readCreatedAtFromCreationLog = (
@@ -614,6 +749,7 @@ export const listMondayBoardRecords = async (args?: {
       statusText: statusColumn?.text ?? null,
       peopleText: peopleColumn?.text ?? null,
       ownerIds,
+      ownerProfiles: [],
       email: emailColumn?.text ?? null,
       phone: phoneColumn?.text ?? null,
       address,
@@ -651,6 +787,7 @@ export const listMondayBoardRecords = async (args?: {
   if (shouldBuildRules) {
     try {
       const columnIds = await resolveBoardColumnIds(mondayBoard.boardId);
+      resolvedColumnIds = columnIds;
       const dateColumnId = columnIds.dateColumnId ?? "date1__1";
       if (
         shouldFilterByDateRange &&
@@ -694,6 +831,14 @@ export const listMondayBoardRecords = async (args?: {
     }
   }
 
+  if (!resolvedColumnIds) {
+    try {
+      resolvedColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
+    } catch {
+      resolvedColumnIds = null;
+    }
+  }
+
   const query = buildListBoardItemsQuery({
     includeCursor: !!cursorArg,
     rules: cursorArg ? [] : rules,
@@ -708,12 +853,31 @@ export const listMondayBoardRecords = async (args?: {
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
   const firstItems = data.boards?.[0]?.items_page?.items ?? [];
   const records = firstItems.map(toRecord);
+  const ownerIdList = records.flatMap((record) => record.ownerIds);
+  const ownerById = await resolveMondayUsersByIds(ownerIdList);
+  const recordsWithOwners = records.map((record) => ({
+    ...record,
+    ownerProfiles: record.ownerIds
+      .map((id) => ownerById.get(id))
+      .filter((owner): owner is { id: string; name: string | null; photoThumb: string | null } =>
+        Boolean(owner),
+      ),
+  }));
+  const approvalSteps: MondayApprovalStep[] = APPROVAL_STEP_COLUMN_IDS.map(
+    (id, index) => ({
+      id,
+      title:
+        resolvedColumnIds?.columnTitleById[id]?.trim() ||
+        `Approval Step ${index + 1}`,
+    }),
+  );
 
   return {
-    records,
+    records: recordsWithOwners,
     nextCursor,
     boardName,
     appliedFilters,
+    approvalSteps,
   };
 };
 
@@ -1022,6 +1186,7 @@ export const listMondayTouchBoardRecords = async (args?: {
         peopleColumn?.text?.trim() ??
         (ownerIds.length > 0 ? ownerIds.join(", ") : null),
       ownerIds,
+      ownerProfiles: [],
       email: emailText,
       phone: null,
       address: null,
@@ -1051,8 +1216,19 @@ export const listMondayTouchBoardRecords = async (args?: {
     })),
   });
 
+  const ownerIdList = records.flatMap((record) => record.ownerIds);
+  const ownerById = await resolveMondayUsersByIds(ownerIdList);
+  const recordsWithOwners = records.map((record) => ({
+    ...record,
+    ownerProfiles: record.ownerIds
+      .map((id) => ownerById.get(id))
+      .filter((owner): owner is { id: string; name: string | null; photoThumb: string | null } =>
+        Boolean(owner),
+      ),
+  }));
+
   return {
-    records,
+    records: recordsWithOwners,
     nextCursor,
     boardName,
     appliedFilters,
@@ -1655,7 +1831,7 @@ export const getMondayRecordEditOptions = async () => {
 
 interface UpdateMondayRecordFieldsArgs {
   itemId: string;
-  referredToContractors?: string | null;
+  referredToContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
   retentionPeriod?: string | null;
@@ -1688,9 +1864,14 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
 
   if ("referredToContractors" in args) {
-    const value = args.referredToContractors?.trim() ?? "";
-    columnValues[RETENTION_REFERRED_COLUMN_ID] = value
-      ? { labels: [value] }
+    const valuesRaw = Array.isArray(args.referredToContractors)
+      ? args.referredToContractors
+      : splitCsvValues(args.referredToContractors);
+    const labels = valuesRaw
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    columnValues[RETENTION_REFERRED_COLUMN_ID] = labels.length > 0
+      ? { labels }
       : null;
   }
   if ("hiredWithContractor" in args) {

@@ -10,7 +10,7 @@ const toJson = (body: unknown, status = 200) => {
 };
 
 interface UpdateRecordBody {
-  referredToContractors?: string | null;
+  referredToContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
   retentionPeriod?: string | null;
