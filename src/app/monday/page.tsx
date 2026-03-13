@@ -471,6 +471,79 @@ const ApprovalProgressIndicator = (props: {
   );
 };
 
+const normalizeOwnerProfiles = (
+  input: unknown,
+): { id: string; name: string | null; photoThumb: string | null }[] => {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const owner = entry as {
+        id?: unknown;
+        name?: unknown;
+        photoThumb?: unknown;
+      };
+      const id = typeof owner.id === "string" ? owner.id.trim() : "";
+      if (id.length === 0) return null;
+      return {
+        id,
+        name: typeof owner.name === "string" ? owner.name.trim() || null : null,
+        photoThumb:
+          typeof owner.photoThumb === "string"
+            ? owner.photoThumb.trim() || null
+            : null,
+      };
+    })
+    .filter(
+      (
+        owner,
+      ): owner is { id: string; name: string | null; photoThumb: string | null } =>
+        owner !== null,
+    );
+};
+
+const normalizeOwnerIds = (input: unknown) => {
+  if (!Array.isArray(input)) return [] as string[];
+  return input
+    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+    .filter((entry) => entry.length > 0);
+};
+
+const normalizeResumeFiles = (
+  input: unknown,
+): { assetId: string | null; name: string; url: string | null }[] => {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const file = entry as {
+        assetId?: unknown;
+        name?: unknown;
+        url?: unknown;
+      };
+      const name =
+        typeof file.name === "string" && file.name.trim().length > 0
+          ? file.name.trim()
+          : "File";
+      const assetId =
+        typeof file.assetId === "string" && file.assetId.trim().length > 0
+          ? file.assetId.trim()
+          : null;
+      const url =
+        typeof file.url === "string" && file.url.trim().length > 0
+          ? file.url.trim()
+          : null;
+      if (!assetId && !url) return null;
+      return { assetId, name, url };
+    })
+    .filter(
+      (
+        file,
+      ): file is { assetId: string | null; name: string; url: string | null } =>
+        file !== null,
+    );
+};
+
 const formatDateTimeParts = (value: string | null) => {
   if (!value) return { date: "—", time: "" };
   const parsed = new Date(value);
@@ -1314,7 +1387,24 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, [staticMode]);
 
   const apiRecords = useMemo(() => {
-    return (recordsQuery.data?.pages ?? []).flatMap((page) => page.records ?? []);
+    return (recordsQuery.data?.pages ?? []).flatMap((page) =>
+      (page.records ?? []).map((record) => {
+        const ownerProfiles = normalizeOwnerProfiles(record.ownerProfiles);
+        const ownerIds = normalizeOwnerIds(record.ownerIds);
+        const batteryProgress =
+          typeof record.batteryProgress === "number" &&
+          Number.isFinite(record.batteryProgress)
+            ? Math.max(0, Math.min(100, Math.round(record.batteryProgress)))
+            : null;
+        return {
+          ...record,
+          ownerProfiles,
+          ownerIds,
+          resumeFiles: normalizeResumeFiles(record.resumeFiles),
+          batteryProgress,
+        };
+      }),
+    );
   }, [recordsQuery.data?.pages]);
 
   const records = useMemo(() => {
