@@ -456,8 +456,8 @@ const ApprovalProgressIndicator = (props: {
                   </span>
                   <span
                     className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${completed
-                        ? "bg-emerald-500/15 text-emerald-700"
-                        : "bg-muted text-muted-foreground"
+                      ? "bg-emerald-500/15 text-emerald-700"
+                      : "bg-muted text-muted-foreground"
                       }`}
                   >
                     {completed ? "Done" : "Pending"}
@@ -1406,7 +1406,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         const ownerIds = normalizeOwnerIds(record.ownerIds);
         const batteryProgress =
           typeof record.batteryProgress === "number" &&
-          Number.isFinite(record.batteryProgress)
+            Number.isFinite(record.batteryProgress)
             ? Math.max(0, Math.min(100, Math.round(record.batteryProgress)))
             : null;
         return {
@@ -3652,7 +3652,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) closeSendEmailDialog();
         }}
       >
-        <DialogContent className="max-w-4xl border-slate-200 bg-[#f8faff]">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
           <DialogHeader>
             <DialogTitle>Send Email</DialogTitle>
           </DialogHeader>
