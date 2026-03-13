@@ -1,5 +1,9 @@
 import { MondayBoardView } from "../page";
 
 export default function MondayUserPage() {
-  return <MondayBoardView viewMode="userScoped" />;
+  return (
+    <div className="overscroll-x-contain overscroll-y-contain">
+      <MondayBoardView viewMode="userScoped" />
+    </div>
+  );
 }

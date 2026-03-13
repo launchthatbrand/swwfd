@@ -63,6 +63,7 @@ interface MondayRecord extends Record<string, unknown> {
   ownerProfiles: {
     id: string;
     name: string | null;
+    email?: string | null;
     photoThumb: string | null;
   }[];
   email: string | null;
@@ -473,7 +474,12 @@ const ApprovalProgressIndicator = (props: {
 
 const normalizeOwnerProfiles = (
   input: unknown,
-): { id: string; name: string | null; photoThumb: string | null }[] => {
+): {
+  id: string;
+  name: string | null;
+  email?: string | null;
+  photoThumb: string | null;
+}[] => {
   if (!Array.isArray(input)) return [];
   return input
     .map((entry) => {
@@ -481,6 +487,7 @@ const normalizeOwnerProfiles = (
       const owner = entry as {
         id?: unknown;
         name?: unknown;
+        email?: unknown;
         photoThumb?: unknown;
       };
       const id = typeof owner.id === "string" ? owner.id.trim() : "";
@@ -488,18 +495,15 @@ const normalizeOwnerProfiles = (
       return {
         id,
         name: typeof owner.name === "string" ? owner.name.trim() || null : null,
+        email:
+          typeof owner.email === "string" ? owner.email.trim() || null : null,
         photoThumb:
           typeof owner.photoThumb === "string"
             ? owner.photoThumb.trim() || null
             : null,
       };
     })
-    .filter(
-      (
-        owner,
-      ): owner is { id: string; name: string | null; photoThumb: string | null } =>
-        owner !== null,
-    );
+    .filter((owner): owner is NonNullable<typeof owner> => owner !== null);
 };
 
 const normalizeOwnerIds = (input: unknown) => {
@@ -584,6 +588,15 @@ const uniqueSorted = (values: (string | null)[]) => {
   return Array.from(new Set(values.filter(Boolean) as string[])).sort((a, b) =>
     a.localeCompare(b),
   );
+};
+
+const interpolateTemplateVariables = (
+  source: string,
+  vars: { ownerName: string; ownerEmail: string },
+) => {
+  return source
+    .replace(/\{\{\s*owner\.name\s*\}\}/gi, vars.ownerName)
+    .replace(/\{\{\s*owner\.email\s*\}\}/gi, vars.ownerEmail);
 };
 
 const splitCsvValues = (value: string | null | undefined) => {
@@ -1605,8 +1618,37 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     setSendEmailTemplateId(null);
     setIsSendingEmail(false);
   };
+  const sendEmailOwnerVars = useMemo(() => {
+    const primaryOwner = sendEmailRecord?.ownerProfiles[0] ?? null;
+    const ownerName =
+      primaryOwner?.name?.trim() ??
+      sendEmailRecord?.peopleText?.trim() ??
+      "";
+    const ownerEmail = primaryOwner?.email?.trim() ?? "";
+    return { ownerName, ownerEmail };
+  }, [sendEmailRecord]);
+  const sendEmailResolvedTemplate = useMemo(() => {
+    if (!sendEmailTemplate) return null;
+    const subject = interpolateTemplateVariables(sendEmailTemplate.name, {
+      ownerName: sendEmailOwnerVars.ownerName,
+      ownerEmail: sendEmailOwnerVars.ownerEmail,
+    });
+    const htmlSource =
+      sendEmailTemplate.renderedHtml.trim().length > 0
+        ? sendEmailTemplate.renderedHtml
+        : sendEmailTemplate.content;
+    const html = interpolateTemplateVariables(htmlSource, {
+      ownerName: sendEmailOwnerVars.ownerName,
+      ownerEmail: sendEmailOwnerVars.ownerEmail,
+    });
+    const text = interpolateTemplateVariables(sendEmailTemplate.content, {
+      ownerName: sendEmailOwnerVars.ownerName,
+      ownerEmail: sendEmailOwnerVars.ownerEmail,
+    });
+    return { subject, html, text };
+  }, [sendEmailOwnerVars.ownerEmail, sendEmailOwnerVars.ownerName, sendEmailTemplate]);
   const handleConfirmSendEmail = async () => {
-    if (!sessionToken || !sendEmailRecord || !sendEmailTemplate) {
+    if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
       return;
     }
@@ -1626,11 +1668,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         },
         body: JSON.stringify({
           to: recipient,
-          subject: sendEmailTemplate.name,
-          html:
-            sendEmailTemplate.renderedHtml.trim().length > 0
-              ? sendEmailTemplate.renderedHtml
-              : sendEmailTemplate.content,
+          subject: sendEmailResolvedTemplate.subject,
+          html: sendEmailResolvedTemplate.html,
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
@@ -2135,7 +2174,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   side="right"
                   align="start"
                   sideOffset={8}
-                  className="max-w-md p-3"
+                  className="max-w-md border border-slate-200 bg-white p-3 text-slate-900 shadow-lg dark:border-slate-200 dark:bg-white dark:text-slate-900"
                 >
                   <div className="space-y-2">
                     <p className="text-xs font-semibold tracking-wide uppercase">
@@ -2697,7 +2736,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                                         </p>
                                       ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
                                         <div
-                                          className="prose prose-sm dark:prose-invert max-w-none"
+                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                          style={{ whiteSpace: "pre-wrap" }}
                                           dangerouslySetInnerHTML={{
                                             __html: selectedTemplate.renderedHtml,
                                           }}
@@ -3339,117 +3379,164 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) setContactHistoryDialogRecord(null);
         }}
       >
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="rounded-md border p-3">
+          {contactHistoryDialogRecord ? (
+            <div className="space-y-4">
               {(() => {
-                const addressDisplay = getAddressDisplayParts(
-                  contactHistoryDialogRecord?.address,
-                );
+                const record = contactHistoryDialogRecord;
+                const addressDisplay = getAddressDisplayParts(record.address);
                 return (
-                  <div className="flex items-start gap-3">
-                    <Avatar className="size-10">
-                      <AvatarFallback className="text-sm font-semibold">
-                        {getNameInitials(contactHistoryDialogRecord?.name ?? "")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1 space-y-1 text-sm">
-                      <p className="font-medium">{contactHistoryDialogRecord?.name ?? "—"}</p>
-                      <p className="text-muted-foreground">
-                        {contactHistoryDialogRecord?.email ?? "—"}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {addressDisplay.full ? (
-                          <>
-                            {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                            {addressDisplay.cityStateZip ? (
-                              <span className="text-[15px] font-semibold text-foreground">
-                                {addressDisplay.cityStateZip}
-                              </span>
+                  <div className="rounded-md border p-4">
+                    <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Avatar className="size-12">
+                          <AvatarFallback className="text-sm font-semibold">
+                            {getNameInitials(record.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold">{record.name}</p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {record.email ?? "—"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {record.phone ?? "—"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {addressDisplay.full ? (
+                              <>
+                                {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                                {addressDisplay.cityStateZip ? (
+                                  <span className="text-[15px] font-semibold text-foreground">
+                                    {addressDisplay.cityStateZip}
+                                  </span>
+                                ) : (
+                                  addressDisplay.full
+                                )}
+                              </>
                             ) : (
-                              addressDisplay.full
+                              "—"
                             )}
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {contactHistoryDialogRecord?.phone ?? "—"}
-                      </p>
-                      <div className="pt-1 space-y-1">
+                          </p>
+                        </div>
+                      </div>
+                      <div className="w-full max-w-sm space-y-1">
                         <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
                           <span>Progress</span>
                           <span>
-                            {contactHistoryDialogRecord?.batteryProgress !== null &&
-                              contactHistoryDialogRecord?.batteryProgress !== undefined
-                              ? `${contactHistoryDialogRecord.batteryProgress}%`
+                            {record.batteryProgress !== null
+                              ? `${record.batteryProgress}%`
                               : "—"}
                           </span>
                         </div>
-                        <Progress
-                          value={contactHistoryDialogRecord?.batteryProgress ?? 0}
-                          className="h-1.5"
-                        />
+                        <Progress value={record.batteryProgress ?? 0} className="h-2" />
                       </div>
                     </div>
                   </div>
                 );
               })()}
-            </div>
 
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Conversation history (Updates)</p>
-              {staticMode ? (
-                <p className="text-muted-foreground text-sm">
-                  Update history is unavailable in static mode.
-                </p>
-              ) : contactUpdatesQuery.isLoading ? (
-                <p className="text-muted-foreground text-sm">Loading updates...</p>
-              ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No updates found for this record.
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {(contactUpdatesQuery.data?.updates ?? []).map((update) => (
-                    <div key={update.id} className="rounded-md border p-3">
-                      <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
-                        <span>{update.creatorName ?? "Unknown user"}</span>
-                        <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
-                      </div>
-                      {update.body.trim().length === 0 ? (
-                        <p className="text-muted-foreground text-sm">No message body</p>
-                      ) : hasHtmlLikeMarkup(update.body) ? (
-                        <div
-                          className="prose prose-sm dark:prose-invert max-w-none"
-                          dangerouslySetInnerHTML={{ __html: update.body }}
-                        />
-                      ) : (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {update.body}
+              <div className="grid gap-4 md:grid-cols-4">
+                <section className="space-y-2 md:col-span-3">
+                  <p className="text-sm font-medium">Conversation history (Updates)</p>
+                  <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
+                    {staticMode ? (
+                      <p className="text-muted-foreground text-sm">
+                        Update history is unavailable in static mode.
+                      </p>
+                    ) : contactUpdatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">Loading updates...</p>
+                    ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        No updates found for this record.
+                      </p>
+                    ) : (
+                      (contactUpdatesQuery.data?.updates ?? []).map((update) => (
+                        <div key={update.id} className="rounded-md border p-3">
+                          <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
+                            <span>{update.creatorName ?? "Unknown user"}</span>
+                            <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
+                          </div>
+                          {update.body.trim().length === 0 ? (
+                            <p className="text-muted-foreground text-sm">No message body</p>
+                          ) : hasHtmlLikeMarkup(update.body) ? (
+                            <div
+                              className="prose prose-sm dark:prose-invert max-w-none"
+                              dangerouslySetInnerHTML={{ __html: update.body }}
+                            />
+                          ) : (
+                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                              {update.body}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                      ))
+                    )}
+                  </div>
+                </section>
 
-            <div className="flex justify-end">
-              <Button
-                variant="outline"
-                onClick={() => setContactHistoryDialogRecord(null)}
-              >
-                Close
-              </Button>
+                <aside className="space-y-3 md:col-span-1">
+                  <div className="rounded-md border p-3">
+                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                      Contact card header
+                    </p>
+                    <div className="space-y-1 text-xs">
+                      <p className="wrap-break-word">
+                        <span className="text-muted-foreground">ID:</span>{" "}
+                        {contactHistoryDialogRecord.id}
+                      </p>
+                      <p className="wrap-break-word">
+                        <span className="text-muted-foreground">District:</span>{" "}
+                        {contactHistoryDialogRecord.statusText ?? "—"}
+                      </p>
+                      <p className="wrap-break-word">
+                        <span className="text-muted-foreground">Owner:</span>{" "}
+                        {contactHistoryDialogRecord.peopleText ?? "—"}
+                      </p>
+                      <p className="wrap-break-word">
+                        <span className="text-muted-foreground">Updated:</span>{" "}
+                        {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
+                      </p>
+                      <p className="wrap-break-word">
+                        <span className="text-muted-foreground">Created:</span>{" "}
+                        {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-md border p-3">
+                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                      Additional contact information
+                    </p>
+                    <div className="max-h-56 space-y-1 overflow-y-auto pr-1 text-xs">
+                      {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
+                        <div
+                          key={`${detail.label}-${detail.value}`}
+                          className="grid grid-cols-[88px_1fr] gap-2"
+                        >
+                          <span className="text-muted">{detail.label}</span>
+                          <span className="wrap-break-word">{detail.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </aside>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setContactHistoryDialogRecord(null)}
+                >
+                  Close
+                </Button>
+              </div>
             </div>
-          </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 
@@ -3565,15 +3652,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) closeSendEmailDialog();
         }}
       >
-        <DialogContent className="max-w-4xl">
+        <DialogContent className="max-w-4xl border-slate-200 bg-[#f8faff]">
           <DialogHeader>
             <DialogTitle>Send Email</DialogTitle>
           </DialogHeader>
           {sendEmailRecord ? (
             <div className="space-y-4">
-              <div className="text-muted-foreground text-sm">
+              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
                 Recipient:{" "}
-                <span className="text-foreground font-medium">
+                <span className="font-medium text-slate-900">
                   {sendEmailRecord.name}
                   {" · "}
                   {sendEmailRecord.email ?? "No email"}
@@ -3584,30 +3671,74 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   <p className="text-sm font-medium">
                     Step 1: Choose an email template
                   </p>
-                  <div className="max-h-[360px] space-y-2 overflow-y-auto rounded-md border p-2">
-                    {emailTemplates.map((template) => {
-                      const isActive = template.id === sendEmailTemplateId;
-                      return (
-                        <button
-                          key={template.id}
-                          type="button"
-                          className={[
-                            "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                            isActive
-                              ? "border-primary bg-primary/10"
-                              : "hover:bg-muted/60",
-                          ].join(" ")}
-                          onClick={() => {
-                            setSendEmailTemplateId(template.id);
-                          }}
-                        >
-                          <p className="line-clamp-1 font-medium">{template.name}</p>
-                          <p className="text-muted-foreground mt-1 text-xs">
-                            Updated {formatUpdatedAt(template.updatedAt)}
-                          </p>
-                        </button>
-                      );
-                    })}
+                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {emailTemplates.map((template) => {
+                        const isActive = template.id === sendEmailTemplateId;
+                        const resolvedTemplateName = interpolateTemplateVariables(
+                          template.name,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const resolvedRenderedHtml = interpolateTemplateVariables(
+                          template.renderedHtml,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const resolvedContent = interpolateTemplateVariables(
+                          template.content,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                        const hasPlainContent = resolvedContent.trim().length > 0;
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className={[
+                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                              isActive
+                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                            ].join(" ")}
+                            onClick={() => {
+                              setSendEmailTemplateId(template.id);
+                            }}
+                          >
+                            <p className="line-clamp-1 font-medium text-slate-900">
+                              {resolvedTemplateName}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Updated {formatUpdatedAt(template.updatedAt)}
+                            </p>
+                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                              {hasRenderedHtml ? (
+                                <div
+                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                  style={{ whiteSpace: "pre-wrap" }}
+                                  dangerouslySetInnerHTML={{
+                                    __html: resolvedRenderedHtml,
+                                  }}
+                                />
+                              ) : hasPlainContent ? (
+                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                  {resolvedContent}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500">No preview content.</p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                     {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
                       <p className="text-muted-foreground text-sm">
                         No templates found.
@@ -3633,25 +3764,28 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   <p className="text-sm font-medium">Step 2: Preview template</p>
                   <div className="rounded-md border p-4">
                     <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                    <p className="mt-1 text-base font-medium">{sendEmailTemplate.name}</p>
+                    <p className="mt-1 text-base font-medium">
+                      {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                    </p>
                     <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
                       Email Preview (Lead View)
                     </p>
                     <div className="bg-card mt-2 rounded-md border p-4">
-                      {sendEmailTemplate.content.trim().length === 0 ? (
+                      {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
                         <p className="text-muted-foreground text-sm">
                           No content found in template.
                         </p>
-                      ) : sendEmailTemplate.renderedHtml.trim().length > 0 ? (
+                      ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
                         <div
-                          className="prose prose-sm dark:prose-invert max-w-none"
+                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                          style={{ whiteSpace: "pre-wrap" }}
                           dangerouslySetInnerHTML={{
-                            __html: sendEmailTemplate.renderedHtml,
+                            __html: sendEmailResolvedTemplate?.html ?? "",
                           }}
                         />
                       ) : (
                         <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {sendEmailTemplate.content}
+                          {sendEmailResolvedTemplate?.text ?? ""}
                         </div>
                       )}
                     </div>

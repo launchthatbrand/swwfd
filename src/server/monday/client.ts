@@ -31,6 +31,7 @@ export interface MondayRecord {
   ownerProfiles: Array<{
     id: string;
     name: string | null;
+    email: string | null;
     photoThumb: string | null;
   }>;
   email: string | null;
@@ -189,6 +190,7 @@ const mondayUserCache = new Map<
     value: {
       id: string;
       name: string | null;
+      email: string | null;
       photoThumb: string | null;
     };
   }
@@ -199,13 +201,16 @@ const resolveMondayUsersByIds = async (ids: string[]) => {
     new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0)),
   );
   if (uniqueIds.length === 0) {
-    return new Map<string, { id: string; name: string | null; photoThumb: string | null }>();
+    return new Map<
+      string,
+      { id: string; name: string | null; email: string | null; photoThumb: string | null }
+    >();
   }
 
   const now = Date.now();
   const result = new Map<
     string,
-    { id: string; name: string | null; photoThumb: string | null }
+    { id: string; name: string | null; email: string | null; photoThumb: string | null }
   >();
   const idsToFetch: string[] = [];
 
@@ -223,6 +228,7 @@ const resolveMondayUsersByIds = async (ids: string[]) => {
       users?: Array<{
         id?: string | number | null;
         name?: string | null;
+        email?: string | null;
         photo_thumb?: string | null;
       }>;
     }
@@ -231,6 +237,7 @@ const resolveMondayUsersByIds = async (ids: string[]) => {
         users(ids: $userIds) {
           id
           name
+          email
           photo_thumb
         }
       }
@@ -247,6 +254,7 @@ const resolveMondayUsersByIds = async (ids: string[]) => {
       const value = {
         id,
         name: user.name?.trim() || null,
+        email: user.email?.trim() || null,
         photoThumb: user.photo_thumb?.trim() || null,
       };
       mondayUserCache.set(id, {
@@ -259,7 +267,7 @@ const resolveMondayUsersByIds = async (ids: string[]) => {
 
   for (const id of uniqueIds) {
     if (!result.has(id)) {
-      const fallback = { id, name: null, photoThumb: null };
+      const fallback = { id, name: null, email: null, photoThumb: null };
       mondayUserCache.set(id, {
         expiresAt: now + MONDAY_USER_CACHE_TTL_MS,
         value: fallback,
@@ -859,7 +867,7 @@ export const listMondayBoardRecords = async (args?: {
     ...record,
     ownerProfiles: record.ownerIds
       .map((id) => ownerById.get(id))
-      .filter((owner): owner is { id: string; name: string | null; photoThumb: string | null } =>
+      .filter((owner): owner is { id: string; name: string | null; email: string | null; photoThumb: string | null } =>
         Boolean(owner),
       ),
   }));
@@ -1222,7 +1230,7 @@ export const listMondayTouchBoardRecords = async (args?: {
     ...record,
     ownerProfiles: record.ownerIds
       .map((id) => ownerById.get(id))
-      .filter((owner): owner is { id: string; name: string | null; photoThumb: string | null } =>
+      .filter((owner): owner is { id: string; name: string | null; email: string | null; photoThumb: string | null } =>
         Boolean(owner),
       ),
   }));
