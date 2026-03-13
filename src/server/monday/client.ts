@@ -8,6 +8,7 @@ const RETENTION_HIRED_WITH_COLUMN_ID = "dropdown_mkwqm5fb";
 const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
 const TAGS_COLUMN_ID = "dropdown_mkvw578t";
+const RESUME_FILES_COLUMN_ID = "files__1";
 
 export interface MondayRecord {
   id: string;
@@ -25,11 +26,17 @@ export interface MondayRecord {
   hireDate: string | null;
   retentionPeriod: string | null;
   tags: string | null;
+  batteryProgress: number | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{
     label: string;
     value: string;
+  }>;
+  resumeFiles: Array<{
+    assetId: string | null;
+    name: string;
+    url: string | null;
   }>;
 }
 
@@ -63,6 +70,15 @@ export interface MondayContactCandidate {
   email: string | null;
   owner: string | null;
   updatedAt: string | null;
+}
+
+export interface MondayRecordUpdate {
+  id: string;
+  body: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  creatorId: string | null;
+  creatorName: string | null;
 }
 
 interface MondayGraphQLResponse<TData> {
@@ -236,6 +252,86 @@ const toColumnDisplayValue = (
   }
 };
 
+const parseFilesColumnValue = (
+  value: string | null | undefined,
+): Array<{ assetId: string | null; name: string; url: string | null }> => {
+  if (!value || value.trim().length === 0) return [];
+  try {
+    const parsed = JSON.parse(value) as {
+      files?: Array<{
+        assetId?: number | string;
+        name?: string;
+        url?: string;
+        public_url?: string;
+      }>;
+    };
+    const files = Array.isArray(parsed.files) ? parsed.files : [];
+    return files
+      .map((file) => {
+        const assetId =
+          typeof file.assetId === "number"
+            ? String(file.assetId)
+            : typeof file.assetId === "string" && file.assetId.trim().length > 0
+              ? file.assetId.trim()
+              : null;
+        const name =
+          typeof file.name === "string" && file.name.trim().length > 0
+            ? file.name.trim()
+            : "File";
+        const url =
+          typeof file.public_url === "string" && file.public_url.trim().length > 0
+            ? file.public_url.trim()
+            : typeof file.url === "string" && file.url.trim().length > 0
+              ? file.url.trim()
+              : null;
+        return { assetId, name, url };
+      })
+      .filter((file) => file.assetId !== null || file.url !== null);
+  } catch {
+    return [];
+  }
+};
+
+const parseBatteryProgressValue = (
+  text: string | null | undefined,
+  rawValue: string | null | undefined,
+): number | null => {
+  const parseNumber = (value: string) => {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+  };
+
+  const fromText = text?.trim() ? parseNumber(text) : null;
+  if (fromText !== null) return fromText;
+
+  if (!rawValue || rawValue.trim().length === 0) return null;
+  try {
+    const parsed = JSON.parse(rawValue) as {
+      battery_value?: number | string | null;
+      value?: number | string | null;
+      text?: string | null;
+    };
+    if (
+      typeof parsed.battery_value === "number" ||
+      typeof parsed.battery_value === "string"
+    ) {
+      return parseNumber(String(parsed.battery_value));
+    }
+    if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+      return parseNumber(String(parsed.value));
+    }
+    if (typeof parsed.text === "string") {
+      return parseNumber(parsed.text);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 export const hasMondayConfig = () => {
   return getMondayBoardEnv().ok;
 };
@@ -387,6 +483,12 @@ export const listMondayBoardRecords = async (args?: {
       (column) => column.id === "dropdown_mkwthbh2",
     );
     const tagsColumn = columns.find((column) => column.id === "dropdown_mkvw578t");
+    const batteryColumn = columns.find(
+      (column) => column.id === "columns_battery_mm1dnmq3",
+    );
+    const resumeFilesColumn = columns.find(
+      (column) => column.id === RESUME_FILES_COLUMN_ID,
+    );
     const addressLine1 = columns.find((column) => column.id === "text6__1")?.text;
     const addressLine2 = columns.find((column) => column.id === "text60__1")?.text;
     const city = columns.find((column) => column.id === "text1__1")?.text;
@@ -532,10 +634,15 @@ export const listMondayBoardRecords = async (args?: {
           retentionPeriodColumn?.value,
         ) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
+      batteryProgress: parseBatteryProgressValue(
+        batteryColumn?.text,
+        batteryColumn?.value,
+      ),
       createdAt:
         createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
       contactDetails,
+      resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
     };
   };
 
@@ -923,9 +1030,11 @@ export const listMondayTouchBoardRecords = async (args?: {
       hireDate: null,
       retentionPeriod: null,
       tags: null,
+      batteryProgress: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
       contactDetails: detailEntries,
+      resumeFiles: [],
     } satisfies MondayRecord;
   });
 
@@ -1669,6 +1778,89 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   });
 };
 
+export const uploadMondayRecordFile = async (args: {
+  itemId: string;
+  file: Blob;
+  filename: string;
+  columnId?: string;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  if (!itemId) {
+    throw new Error("Missing itemId");
+  }
+  const filename = args.filename.trim();
+  if (!filename) {
+    throw new Error("Missing filename");
+  }
+
+  const columnId = args.columnId?.trim() || RESUME_FILES_COLUMN_ID;
+  const mondayApi = getMondayApiEnv();
+  if (!mondayApi.ok) {
+    throw new Error("MONDAY_API_KEY is missing");
+  }
+
+  const mutation = `
+    mutation AddFileToColumn($itemId: ID!, $columnId: String!, $file: File!) {
+      add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
+        id
+      }
+    }
+  `;
+
+  const formData = new FormData();
+  formData.append(
+    "operations",
+    JSON.stringify({
+      query: mutation,
+      variables: {
+        itemId,
+        columnId,
+        file: null,
+      },
+    }),
+  );
+  formData.append("map", JSON.stringify({ file: ["variables.file"] }));
+  formData.append("file", args.file, filename);
+
+  const response = await fetch(`${MONDAY_API_URL}/file`, {
+    method: "POST",
+    headers: {
+      Authorization: mondayApi.apiKey,
+    },
+    body: formData,
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Monday file upload failed with ${response.status}`);
+  }
+
+  const json = (await response.json()) as {
+    data?: {
+      add_file_to_column?: {
+        id?: string;
+      };
+    };
+    errors?: { message?: string }[];
+  };
+  if (Array.isArray(json.errors) && json.errors.length > 0) {
+    const message =
+      json.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
+      "Unknown Monday API error";
+    throw new Error(message);
+  }
+  if (!json.data?.add_file_to_column?.id) {
+    throw new Error("Monday file upload returned no item id");
+  }
+
+  return { id: json.data.add_file_to_column.id };
+};
+
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 const resolveBoardCreateColumnIds = async (boardId: string) => {
@@ -1886,5 +2078,78 @@ export const createMondayContact = async (args: CreateMondayContactArgs) => {
   }
 
   return { id };
+};
+
+export const listMondayRecordUpdates = async (args: {
+  itemId: string;
+  limit?: number;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  if (!itemId) {
+    throw new Error("Missing monday item id");
+  }
+
+  const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
+  const query = `
+    query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
+      items(ids: $itemIds) {
+        id
+        name
+        updates(limit: $limit) {
+          id
+          body
+          created_at
+          updated_at
+          creator {
+            id
+            name
+          }
+        }
+      }
+    }
+  `;
+
+  interface MondayItemUpdatesData {
+    items?: Array<{
+      id?: string | null;
+      name?: string | null;
+      updates?: Array<{
+        id?: string | null;
+        body?: string | null;
+        created_at?: string | null;
+        updated_at?: string | null;
+        creator?: {
+          id?: string | null;
+          name?: string | null;
+        } | null;
+      }>;
+    }>;
+  }
+
+  const data = await callMondayGraphQL<MondayItemUpdatesData>(query, {
+    itemIds: [itemId],
+    limit,
+  });
+
+  const item = data.items?.[0];
+  const updates: MondayRecordUpdate[] = (item?.updates ?? []).map((update) => ({
+    id: update.id ?? "",
+    body: update.body ?? "",
+    createdAt: update.created_at ?? null,
+    updatedAt: update.updated_at ?? null,
+    creatorId: update.creator?.id ?? null,
+    creatorName: update.creator?.name ?? null,
+  }));
+
+  return {
+    itemId: item?.id ?? itemId,
+    itemName: item?.name ?? null,
+    updates,
+  };
 };
 

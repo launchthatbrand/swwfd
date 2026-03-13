@@ -17,9 +17,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@acme/ui/badge";
 import { Button } from "@acme/ui/button";
+import { Avatar, AvatarFallback } from "~/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -27,6 +29,7 @@ import {
 import { EntityList } from "@acme/ui/entity-list";
 import { Input } from "@acme/ui/input";
 import { MultiSelect } from "@acme/ui/multi-select";
+import { Progress } from "@acme/ui/progress";
 import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
 import mondaySdkInitialize from "monday-sdk-js";
@@ -57,11 +60,17 @@ interface MondayRecord extends Record<string, unknown> {
   hireDate: string | null;
   retentionPeriod: string | null;
   tags: string | null;
+  batteryProgress: number | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: {
     label: string;
     value: string;
+  }[];
+  resumeFiles: {
+    assetId: string | null;
+    name: string;
+    url: string | null;
   }[];
 }
 
@@ -157,6 +166,34 @@ interface MondayCreateContactResponse {
   created?: { id: string };
 }
 
+interface MondayRecordUpdate {
+  id: string;
+  body: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  creatorId: string | null;
+  creatorName: string | null;
+}
+
+interface MondayRecordUpdatesResponse {
+  ok: boolean;
+  error?: string;
+  itemId?: string;
+  itemName?: string | null;
+  updates?: MondayRecordUpdate[];
+}
+
+interface MondayResumeUploadResponse {
+  ok: boolean;
+  error?: string;
+}
+
+interface ResumePreviewState {
+  fileName: string;
+  href: string;
+  recordName: string;
+}
+
 interface MondaySendEmailResponse {
   ok: boolean;
   error?: string;
@@ -175,6 +212,36 @@ const formatUpdatedAt = (value: string | null) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+};
+
+const hasHtmlLikeMarkup = (value: string) => /<[a-z][\s\S]*>/i.test(value);
+
+const getNameInitials = (name: string) => {
+  const parts = name
+    .split(" ")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return "?";
+  const first = parts[0] ?? "";
+  if (parts.length === 1) return first.slice(0, 2).toUpperCase();
+  const second = parts[1] ?? "";
+  return `${first[0] ?? ""}${second[0] ?? ""}`.toUpperCase();
+};
+
+const getAddressDisplayParts = (address: string | null | undefined) => {
+  if (!address) return { prefix: null, cityStateZip: null, full: null };
+  const parts = address
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  if (parts.length === 0) return { prefix: null, cityStateZip: null, full: null };
+  if (parts.length < 3) {
+    return { prefix: null, cityStateZip: null, full: parts.join(", ") };
+  }
+  const cityStateZip = parts.slice(-3).join(", ");
+  const prefix = parts.slice(0, -3).join(", ");
+  const full = prefix ? `${prefix}, ${cityStateZip}` : cityStateZip;
+  return { prefix: prefix || null, cityStateZip, full };
 };
 
 const formatDateTimeParts = (value: string | null) => {
@@ -267,7 +334,7 @@ const toDateOnlyLocal = (value: Date) => {
 
 function AddNewContactForm(props: {
   values: AddNewContactValues;
-  ownerOptions: Array<{ value: string; label: string }>;
+  ownerOptions: { value: string; label: string }[];
   isSubmitting: boolean;
   onChange: <K extends keyof AddNewContactValues>(
     key: K,
@@ -443,6 +510,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [tagsDialogRecord, setTagsDialogRecord] = useState<MondayRecord | null>(null);
   const [statusDialogRecord, setStatusDialogRecord] = useState<MondayRecord | null>(null);
   const [ownerDialogRecord, setOwnerDialogRecord] = useState<MondayRecord | null>(null);
+  const [contactHistoryDialogRecord, setContactHistoryDialogRecord] =
+    useState<MondayRecord | null>(null);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: "",
     hiredWithContractor: "",
@@ -456,6 +525,10 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [isSavingOwner, setIsSavingOwner] = useState(false);
+  const [uploadingResumeByRecordId, setUploadingResumeByRecordId] = useState<
+    Record<string, boolean>
+  >({});
+  const [resumePreview, setResumePreview] = useState<ResumePreviewState | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
@@ -693,6 +766,39 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     staleTime: 30_000,
   });
 
+  const contactUpdatesQuery = useQuery({
+    queryKey: [
+      "monday-record-updates",
+      sessionToken,
+      contactHistoryDialogRecord?.id,
+      contactHistoryDialogRecord?.contactId,
+    ],
+    enabled: !!sessionToken && !!contactHistoryDialogRecord && !staticMode,
+    queryFn: async () => {
+      const contactId = contactHistoryDialogRecord?.contactId?.trim();
+      const targetRecordId =
+        contactId && contactId.length > 0
+          ? contactId
+          : (contactHistoryDialogRecord?.id ?? "");
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates?limit=200`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken
+            ? { "x-monday-session-token": sessionToken }
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as MondayRecordUpdatesResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact conversation history");
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ownerParam = params.get("owner");
@@ -881,6 +987,17 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, [outlookStatusQuery.error, settingsOpen, staticMode]);
 
   useEffect(() => {
+    if (staticMode) return;
+    if (!contactHistoryDialogRecord) return;
+    if (!contactUpdatesQuery.error) return;
+    const message =
+      contactUpdatesQuery.error instanceof Error
+        ? contactUpdatesQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [contactHistoryDialogRecord, contactUpdatesQuery.error, staticMode]);
+
+  useEffect(() => {
     const target = loadMoreAnchorRef.current;
     if (!target || !recordsQuery.hasNextPage || !shouldAutoLoadMore) return;
 
@@ -949,6 +1066,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           },
           { label: "Status", value: statuses[index % statuses.length] ?? "New" },
         ],
+        resumeFiles: [],
+        batteryProgress: index % 5 === 0 ? null : (index * 7) % 101,
       };
     });
   }, [staticMode]);
@@ -1239,16 +1358,16 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     );
 
     return {
-      referredToContractors: fromApi?.referredToContractors?.length
+      referredToContractors: fromApi?.referredToContractors.length
         ? fromApi.referredToContractors
         : referredFallback,
-      hiredWithContractor: fromApi?.hiredWithContractor?.length
+      hiredWithContractor: fromApi?.hiredWithContractor.length
         ? fromApi.hiredWithContractor
         : hiredFallback,
-      retentionPeriod: fromApi?.retentionPeriod?.length
+      retentionPeriod: fromApi?.retentionPeriod.length
         ? fromApi.retentionPeriod
         : periodFallback,
-      tags: fromApi?.tags?.length ? fromApi.tags : tagsFallback,
+      tags: fromApi?.tags.length ? fromApi.tags : tagsFallback,
       hireDate: hireDateFallback,
     };
   }, [editOptionsQuery.data, records]);
@@ -1274,6 +1393,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const openOwnerDialog = (record: MondayRecord) => {
     setOwnerDialogRecord(record);
     setOwnerDraft(record.ownerIds[0] ?? "");
+  };
+  const openContactHistoryDialog = (record: MondayRecord) => {
+    setContactHistoryDialogRecord(record);
   };
 
   const handleSaveRetention = async () => {
@@ -1436,6 +1558,66 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     }
   };
 
+  const handleUploadResume = async (record: MondayRecord, file: File) => {
+    if (!sessionToken) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    if (file.size <= 0) {
+      toast.error("Please choose a valid file");
+      return;
+    }
+
+    const contactId = record.contactId?.trim();
+    const targetRecordId = contactId && contactId.length > 0 ? contactId : record.id;
+
+    setUploadingResumeByRecordId((prev) => ({
+      ...prev,
+      [record.id]: true,
+    }));
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/resume`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "x-monday-session-token": sessionToken,
+          },
+          body: formData,
+        },
+      );
+      const data = (await response.json()) as MondayResumeUploadResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to upload resume");
+      }
+      toast.success("Resume uploaded");
+      await recordsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to upload resume";
+      toast.error(message);
+    } finally {
+      setUploadingResumeByRecordId((prev) => ({
+        ...prev,
+        [record.id]: false,
+      }));
+    }
+  };
+
+  const getResumeFileHref = (file: {
+    assetId: string | null;
+    url: string | null;
+  }) => {
+    if (file.assetId) {
+      return `/api/monday/email-templates/assets/${encodeURIComponent(file.assetId)}`;
+    }
+    if (file.url) return file.url;
+    return null;
+  };
+
   const resetAddContactDialog = () => {
     setAddContactStep(1);
     setExistingContactsByEmail([]);
@@ -1532,21 +1714,55 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       accessorKey: "name",
       cell: (item: MondayRecord) => {
         const details = getContactTooltipDetails(item);
+        const addressDisplay = getAddressDisplayParts(item.address);
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex cursor-help flex-col gap-1">
-                <span className="font-medium">{item.name}</span>
-                <span className="text-muted-foreground text-xs">
-                  {item.email ?? "No email"}
-                </span>
-                <span className="text-muted-foreground text-xs">
-                  {item.phone ?? "No phone"}
-                </span>
-                <span className="text-muted-foreground text-xs">
-                  {item.address ?? "No address"}
-                </span>
-              </div>
+              <button
+                type="button"
+                onClick={() => openContactHistoryDialog(item)}
+                className="hover:bg-accent/40 flex w-full cursor-pointer gap-3 rounded-md p-2 text-left"
+              >
+                <Avatar className="mt-0.5 size-9">
+                  <AvatarFallback className="text-xs font-semibold">
+                    {getNameInitials(item.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="font-medium">{item.name}</span>
+                  <span className="text-muted-foreground truncate text-xs">
+                    {item.email ?? "No email"}
+                  </span>
+                  {addressDisplay.full ? (
+                    <span className="text-muted-foreground text-xs">
+                      {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                      {addressDisplay.cityStateZip ? (
+                        <span className="text-sm font-semibold text-foreground">
+                          {addressDisplay.cityStateZip}
+                        </span>
+                      ) : (
+                        addressDisplay.full
+                      )}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground text-xs">No address</span>
+                  )}
+                  <span className="text-muted-foreground text-xs">
+                    {item.phone ?? "No phone"}
+                  </span>
+                  <div className="mt-1 space-y-1">
+                    <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
+                      <span>Progress</span>
+                      <span>
+                        {item.batteryProgress !== null
+                          ? `${item.batteryProgress}%`
+                          : "—"}
+                      </span>
+                    </div>
+                    <Progress value={item.batteryProgress ?? 0} className="h-1.5" />
+                  </div>
+                </div>
+              </button>
             </TooltipTrigger>
             <TooltipContent side="right" align="start" sideOffset={8} className="max-w-md p-3">
               <div className="space-y-2">
@@ -1638,6 +1854,58 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           {item.tags ?? "—"}
         </button>
       ),
+    },
+    {
+      id: "resume",
+      header: "Resume",
+      accessorKey: "resumeFiles",
+      cell: (item: MondayRecord) => {
+        const firstFile = item.resumeFiles[0] ?? null;
+        const isUploading = uploadingResumeByRecordId[item.id] === true;
+        const fileHref = firstFile ? getResumeFileHref(firstFile) : null;
+        return (
+          <div className="space-y-2 p-1">
+            {firstFile ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!fileHref) {
+                    toast.error("Unable to open resume file");
+                    return;
+                  }
+                  setResumePreview({
+                    fileName: firstFile.name,
+                    href: fileHref,
+                    recordName: item.name,
+                  });
+                }}
+                className="text-primary block truncate text-xs underline"
+                title={firstFile.name}
+              >
+                {firstFile.name}
+              </button>
+            ) : (
+              <span className="text-muted-foreground block text-xs">No file</span>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                className="max-w-[170px] text-xs"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void handleUploadResume(item, file);
+                  event.currentTarget.value = "";
+                }}
+                disabled={isUploading || staticMode}
+              />
+              {isUploading ? (
+                <span className="text-muted-foreground text-xs">Uploading...</span>
+              ) : null}
+            </div>
+          </div>
+        );
+      },
     },
     {
       id: "createdAt",
@@ -2406,7 +2674,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                     [
                       ...ownerOptions.map((option) => [option.value, option.label] as const),
                       ownerDraft.trim().length > 0
-                        ? [ownerDraft, `User ${ownerDraft}` as string]
+                        ? [ownerDraft, `User ${ownerDraft}`]
                         : null,
                     ].filter((entry): entry is readonly [string, string] => !!entry),
                   ),
@@ -2490,6 +2758,126 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!contactHistoryDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setContactHistoryDialogRecord(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-md border p-3">
+              {(() => {
+                const addressDisplay = getAddressDisplayParts(
+                  contactHistoryDialogRecord?.address,
+                );
+                return (
+              <div className="flex items-start gap-3">
+                <Avatar className="size-10">
+                  <AvatarFallback className="text-sm font-semibold">
+                    {getNameInitials(contactHistoryDialogRecord?.name ?? "")}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1 space-y-1 text-sm">
+                  <p className="font-medium">{contactHistoryDialogRecord?.name ?? "—"}</p>
+                  <p className="text-muted-foreground">
+                    {contactHistoryDialogRecord?.email ?? "—"}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {addressDisplay.full ? (
+                      <>
+                        {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                        {addressDisplay.cityStateZip ? (
+                          <span className="text-[15px] font-semibold text-foreground">
+                            {addressDisplay.cityStateZip}
+                          </span>
+                        ) : (
+                          addressDisplay.full
+                        )}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {contactHistoryDialogRecord?.phone ?? "—"}
+                  </p>
+                  <div className="pt-1 space-y-1">
+                    <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
+                      <span>Progress</span>
+                      <span>
+                        {contactHistoryDialogRecord?.batteryProgress !== null &&
+                        contactHistoryDialogRecord?.batteryProgress !== undefined
+                          ? `${contactHistoryDialogRecord.batteryProgress}%`
+                          : "—"}
+                      </span>
+                    </div>
+                    <Progress
+                      value={contactHistoryDialogRecord?.batteryProgress ?? 0}
+                      className="h-1.5"
+                    />
+                  </div>
+                </div>
+              </div>
+                );
+              })()}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Conversation history (Updates)</p>
+              {staticMode ? (
+                <p className="text-muted-foreground text-sm">
+                  Update history is unavailable in static mode.
+                </p>
+              ) : contactUpdatesQuery.isLoading ? (
+                <p className="text-muted-foreground text-sm">Loading updates...</p>
+              ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No updates found for this record.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {(contactUpdatesQuery.data?.updates ?? []).map((update) => (
+                    <div key={update.id} className="rounded-md border p-3">
+                      <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
+                        <span>{update.creatorName ?? "Unknown user"}</span>
+                        <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
+                      </div>
+                      {update.body.trim().length === 0 ? (
+                        <p className="text-muted-foreground text-sm">No message body</p>
+                      ) : hasHtmlLikeMarkup(update.body) ? (
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: update.body }}
+                        />
+                      ) : (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                          {update.body}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setContactHistoryDialogRecord(null)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <EntityList<MondayRecord>
         // title="Board Records"
         // description="List view optimized for board operations."
@@ -2507,6 +2895,94 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         getRowId={(item) => item.id}
         entityActions={entityActions}
       />
+
+      <Dialog
+        open={!!resumePreview}
+        onOpenChange={(open) => {
+          if (!open) setResumePreview(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Resume · {resumePreview?.recordName ?? "Contact"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Resume preview dialog with open in new tab fallback.
+            </DialogDescription>
+          </DialogHeader>
+          {resumePreview ? (
+            <div className="space-y-3">
+              {(() => {
+                const lowerName = resumePreview.fileName.toLowerCase();
+                const isPdf = lowerName.endsWith(".pdf");
+                const isImage =
+                  lowerName.endsWith(".png") ||
+                  lowerName.endsWith(".jpg") ||
+                  lowerName.endsWith(".jpeg") ||
+                  lowerName.endsWith(".gif") ||
+                  lowerName.endsWith(".webp") ||
+                  lowerName.endsWith(".svg");
+                return (
+                  <>
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
+                <a
+                  href={resumePreview.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary text-xs underline"
+                >
+                  Open in new tab
+                </a>
+              </div>
+              <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
+                {isPdf ? (
+                  <iframe
+                    src={resumePreview.href}
+                    title={`Resume preview: ${resumePreview.fileName}`}
+                    className="h-full w-full"
+                  />
+                ) : isImage ? (
+                  <object
+                    data={resumePreview.href}
+                    className="h-full w-full"
+                  >
+                    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                      <p className="text-sm font-medium">Image preview unavailable</p>
+                      <a
+                        href={resumePreview.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary text-xs underline"
+                      >
+                        Open resume in new tab
+                      </a>
+                    </div>
+                  </object>
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                    <p className="text-sm font-medium">
+                      This file type cannot be previewed inline.
+                    </p>
+                    <a
+                      href={resumePreview.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary text-xs underline"
+                    >
+                      Open resume in new tab
+                    </a>
+                  </div>
+                )}
+              </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!sendEmailRecord}
