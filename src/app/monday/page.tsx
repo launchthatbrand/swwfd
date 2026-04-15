@@ -865,12 +865,6 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, []);
 
   useEffect(() => {
-    // Activepieces route temporarily swaps token formats via `ap-hsl-vars`.
-    // Ensure Monday page always renders with the default app token set.
-    document.documentElement.classList.remove("ap-hsl-vars");
-  }, []);
-
-  useEffect(() => {
     const timeout = setTimeout(() => {
       setDebouncedSearch(search);
     }, 300);

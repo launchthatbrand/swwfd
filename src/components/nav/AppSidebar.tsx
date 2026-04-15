@@ -9,7 +9,6 @@ import {
   Plug,
   UserRound,
   Users,
-  Workflow,
 } from "lucide-react";
 
 import {
@@ -39,7 +38,6 @@ const buildItems = (section: "admin" | "dashboard"): NavItem[] => {
       { label: "Job Listings", href: "/admin/job-listings", icon: BriefcaseBusiness },
       { label: "Integrations", href: "/admin/integrations", icon: Plug },
       { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
-      { label: "Automations", href: "/admin/automations", icon: Workflow },
     ];
   }
 
