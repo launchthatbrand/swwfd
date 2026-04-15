@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { listMondayRecordUpdates } from "~/server/monday/client";
+import {
+  createMondayRecordUpdate,
+  listMondayRecordUpdates,
+} from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
@@ -22,7 +25,7 @@ export const GET = async (
   }
 
   const { itemId } = await context.params;
-  if (!itemId?.trim()) {
+  if (!itemId.trim()) {
     return toJson({ ok: false, error: "Missing monday item id" }, 400);
   }
 
@@ -43,6 +46,52 @@ export const GET = async (
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load Monday updates";
+    return toJson({ ok: false, error: message }, 500);
+  }
+};
+
+interface CreateUpdateBody {
+  body?: string;
+}
+
+export const POST = async (
+  request: Request,
+  context: { params: Promise<{ itemId: string }> },
+) => {
+  try {
+    await requireVerifiedMondaySession(request);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unauthorized Monday session";
+    return toJson({ ok: false, error: message }, 401);
+  }
+
+  const { itemId } = await context.params;
+  if (!itemId.trim()) {
+    return toJson({ ok: false, error: "Missing monday item id" }, 400);
+  }
+
+  let body: CreateUpdateBody = {};
+  try {
+    body = (await request.json()) as CreateUpdateBody;
+  } catch {
+    return toJson({ ok: false, error: "Invalid JSON body" }, 400);
+  }
+
+  const updateBody = body.body?.trim() ?? "";
+  if (!updateBody) {
+    return toJson({ ok: false, error: "Update body cannot be empty" }, 400);
+  }
+
+  try {
+    const update = await createMondayRecordUpdate({
+      itemId,
+      body: updateBody,
+    });
+    return toJson({ ok: true, update });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to create Monday update";
     return toJson({ ok: false, error: message }, 500);
   }
 };

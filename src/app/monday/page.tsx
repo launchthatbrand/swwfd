@@ -43,7 +43,7 @@ import { Input } from "@acme/ui/input";
 import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
 import { MultiSelect } from "@acme/ui/multi-select";
-import { Progress } from "@acme/ui/progress";
+import { Textarea } from "@acme/ui/textarea";
 import mondaySdkInitialize from "monday-sdk-js";
 import { toast } from "@acme/ui/toast";
 
@@ -196,6 +196,15 @@ interface MondayRecordUpdatesResponse {
   itemId?: string;
   itemName?: string | null;
   updates?: MondayRecordUpdate[];
+}
+
+interface MondayCreateRecordUpdateResponse {
+  ok: boolean;
+  error?: string;
+  update?: {
+    id: string;
+    body: string;
+  };
 }
 
 interface MondayResumeUploadResponse {
@@ -793,13 +802,18 @@ interface MondayBoardViewProps {
   viewMode?: MondayBoardViewMode;
 }
 
-const ADMIN_OWNER_OVERRIDE_EMAIL = "desmond.tatilian@qcausa.com";
 const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
+const MONDAY_OWNER_SCOPE_ADMIN_USER_ID = "53441186";
+const isEmbeddedMondaySessionToken = (token: string | null) => {
+  if (!token) return false;
+  return token !== MONDAY_DEV_BYPASS_TOKEN;
+};
 
 export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [staticMode, setStaticMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
@@ -825,6 +839,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [ownerDialogRecord, setOwnerDialogRecord] = useState<MondayRecord | null>(null);
   const [contactHistoryDialogRecord, setContactHistoryDialogRecord] =
     useState<MondayRecord | null>(null);
+  const [pendingDialogItemId, setPendingDialogItemId] = useState<string | null>(null);
+  const [contactUpdateDraft, setContactUpdateDraft] = useState("");
+  const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: [] as string[],
     hiredWithContractor: "",
@@ -947,10 +964,17 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
+  const canOverrideUserScopeOwner =
+    viewMode === "userScoped" &&
+    isMondayEmbeddedContext &&
+    identity?.userId === MONDAY_OWNER_SCOPE_ADMIN_USER_ID;
+  const useUserRecordsEndpoint =
+    isTouchScopedView && isMondayEmbeddedContext && !canOverrideUserScopeOwner;
   const recordsQuery = useInfiniteQuery({
     queryKey: [
       "monday-records",
       viewMode,
+      useUserRecordsEndpoint ? "user-records" : "records",
       monthBounds.from,
       monthBounds.to,
       debouncedSearch,
@@ -961,7 +985,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     enabled: !!sessionToken && !staticMode,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const recordsEndpoint = isTouchScopedView
+      const recordsEndpoint = useUserRecordsEndpoint
         ? "/api/monday/user-records"
         : "/api/monday/records";
       const params = new URLSearchParams();
@@ -993,7 +1017,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
 
   const shouldAutoLoadMore =
     !staticMode &&
-    !isTouchScopedView &&
+    !useUserRecordsEndpoint &&
     debouncedSearch.trim().length === 0 &&
     statusFilter.trim().length === 0 &&
     ownerFilter.trim().length === 0;
@@ -1111,12 +1135,16 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ownerParam = params.get("owner");
+    const itemIdParam = params.get("itemId");
     const staticParam = params.get("static");
     const outlookParam = params.get("outlook");
     const outlookMessage = params.get("outlookMessage");
 
     if (ownerParam && ownerParam.trim().length > 0) {
       setOwnerFilter(ownerParam.trim());
+    }
+    if (itemIdParam && itemIdParam.trim().length > 0) {
+      setPendingDialogItemId(itemIdParam.trim());
     }
     if (staticParam === "1" || staticParam === "true") {
       setStaticMode(true);
@@ -1154,12 +1182,14 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           accountId: "static-account",
           userId: "53441186",
         });
+        setIsMondayEmbeddedContext(false);
         setAuthLoading(false);
         return;
       }
 
       setAuthLoading(true);
       setIdentity(null);
+      setIsMondayEmbeddedContext(false);
 
       try {
         let maybeToken = readTokenFromLocation();
@@ -1187,6 +1217,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (devAuthResponse.ok && devAuthData.ok && devAuthData.identity) {
             setSessionToken(devAuthData.sessionToken ?? MONDAY_DEV_BYPASS_TOKEN);
             setIdentity(devAuthData.identity);
+            setIsMondayEmbeddedContext(false);
             return;
           }
           throw new Error(
@@ -1218,12 +1249,14 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
 
         setSessionToken(authData.sessionToken ?? maybeToken);
         setIdentity(authData.identity);
+        setIsMondayEmbeddedContext(isEmbeddedMondaySessionToken(maybeToken));
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
             : "Failed to initialize Monday embed session";
         toast.error(message);
+        setIsMondayEmbeddedContext(false);
       } finally {
         setAuthLoading(false);
       }
@@ -1235,13 +1268,10 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   useEffect(() => {
     if (viewMode !== "userScoped") return;
     if (!identity?.userId) return;
-    const overrideEnabled =
-      (userProfileQuery.data?.email?.toLowerCase() ?? null) === ADMIN_OWNER_OVERRIDE_EMAIL;
-    setOwnerFilter((currentValue) => {
-      if (currentValue.trim().length > 0) return currentValue;
-      return overrideEnabled ? "" : identity.userId;
-    });
-  }, [identity?.userId, userProfileQuery.data?.email, viewMode]);
+    if (!isMondayEmbeddedContext) return;
+    if (canOverrideUserScopeOwner) return;
+    setOwnerFilter(identity.userId);
+  }, [canOverrideUserScopeOwner, identity?.userId, isMondayEmbeddedContext, viewMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1475,10 +1505,44 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     () => (staticMode ? [] : (emailTemplatesQuery.data?.templates ?? [])),
     [emailTemplatesQuery.data?.templates, staticMode],
   );
-  const currentUserEmail = userProfileQuery.data?.email?.toLowerCase() ?? null;
-  const canOverrideUserScopeOwner =
-    viewMode === "userScoped" && currentUserEmail === ADMIN_OWNER_OVERRIDE_EMAIL;
-  const isOwnerFilterEditable = viewMode === "all" || canOverrideUserScopeOwner;
+  const isOwnerFilterEditable =
+    viewMode === "all" || !isMondayEmbeddedContext || canOverrideUserScopeOwner;
+
+  useEffect(() => {
+    const itemId = pendingDialogItemId?.trim();
+    if (!itemId) return;
+
+    const matchedRecord = records.find((record) => {
+      const recordId = record.id.trim();
+      const contactId = record.contactId?.trim() ?? "";
+      const touchItemId = record.touchItemId?.trim() ?? "";
+      return recordId === itemId || contactId === itemId || touchItemId === itemId;
+    });
+
+    if (matchedRecord) {
+      openContactHistoryDialog(matchedRecord);
+      setPendingDialogItemId(null);
+      return;
+    }
+
+    if (authLoading || recordsQuery.isLoading || recordsQuery.isFetchingNextPage) {
+      return;
+    }
+
+    if (!staticMode && recordsQuery.hasNextPage) {
+      void recordsQuery.fetchNextPage();
+      return;
+    }
+
+    toast.error(`Unable to find item ${itemId} in the current view`);
+    setPendingDialogItemId(null);
+  }, [
+    authLoading,
+    pendingDialogItemId,
+    records,
+    recordsQuery,
+    staticMode,
+  ]);
 
   useEffect(() => {
     if (viewMode !== "userScoped") return;
@@ -1804,6 +1868,56 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   };
   const openContactHistoryDialog = (record: MondayRecord) => {
     setContactHistoryDialogRecord(record);
+    setContactUpdateDraft("");
+  };
+
+  const handleCreateContactUpdate = async () => {
+    if (staticMode) {
+      toast.error("Updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken || !contactHistoryDialogRecord) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    const body = contactUpdateDraft.trim();
+    if (!body) {
+      toast.error("Enter an update before posting");
+      return;
+    }
+
+    setIsCreatingContactUpdate(true);
+    try {
+      const contactId = contactHistoryDialogRecord.contactId?.trim();
+      const targetRecordId =
+        contactId && contactId.length > 0 ? contactId : contactHistoryDialogRecord.id;
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({ body }),
+        },
+      );
+      const data = (await response.json()) as MondayCreateRecordUpdateResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to post Monday update");
+      }
+
+      setContactUpdateDraft("");
+      await contactUpdatesQuery.refetch();
+      toast.success("Update posted to monday.com");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      toast.error(message);
+    } finally {
+      setIsCreatingContactUpdate(false);
+    }
   };
 
   const handleSaveRetention = async () => {
@@ -2473,7 +2587,10 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           {viewMode === "userScoped" && !isOwnerFilterEditable
             ? " · owner scope locked to current user"
             : ""}
-          {canOverrideUserScopeOwner ? " · owner scope override enabled" : ""}
+          {viewMode === "userScoped" && isOwnerFilterEditable
+            ? " · owner scope selectable"
+            : ""}
+          {canOverrideUserScopeOwner ? " · owner scope admin override enabled" : ""}
         </div>
       ) : null}
 
@@ -2493,10 +2610,25 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                 </p>
               ) : null}
             </div>
-            <div className="bg-background flex items-center gap-1 rounded-md border p-1">
-              <Button
+
+            <div className="bg-background flex items-center rounded-md border p-1 gap-5">
+              {viewMode === "userScoped" ? (
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="h-8"
+                  onClick={() => {
+                    resetAddContactDialog();
+                    setAddContactOpen(true);
+                  }}
+                  disabled={authLoading || !identity?.userId}
+                >
+                  <UserPlus className="mr-1.5 h-4 w-4" />
+                  Add Contact
+                </Button>
+              ) : null}
+              <div className="flex items-center gap-3"> <Button
                 size="sm"
-                variant="outline"
                 className="h-8 px-2.5"
                 onClick={() => {
                   setActiveMonth(
@@ -2514,29 +2646,29 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                 <ChevronLeft className="mr-1.5 h-4 w-4" />
                 Prev month
               </Button>
-              <Badge variant="outline" className="h-8 rounded-sm px-2 text-xs">
-                {monthBounds.label}
-              </Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-2.5"
-                onClick={() => {
-                  setActiveMonth(
-                    (prev) =>
-                      new Date(
-                        Date.UTC(
-                          prev.getUTCFullYear(),
-                          prev.getUTCMonth() + 1,
-                          1,
+                <Badge variant="outline" className="h-8 rounded-sm px-2 text-xs">
+                  {monthBounds.label}
+                </Badge>
+                <Button
+                  size="sm"
+                  className="h-8 px-2.5"
+                  onClick={() => {
+                    setActiveMonth(
+                      (prev) =>
+                        new Date(
+                          Date.UTC(
+                            prev.getUTCFullYear(),
+                            prev.getUTCMonth() + 1,
+                            1,
+                          ),
                         ),
-                      ),
-                  );
-                }}
-              >
-                Next month
-                <ChevronRight className="ml-1.5 h-4 w-4" />
-              </Button>
+                    );
+                  }}
+                >
+                  Next month
+                  <ChevronRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
           <div className="border-t pt-2">
@@ -2596,21 +2728,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   <RefreshCcw className="mr-1.5 h-4 w-4" />
                   Reload
                 </Button>
-                {viewMode === "userScoped" ? (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="h-8"
-                    onClick={() => {
-                      resetAddContactDialog();
-                      setAddContactOpen(true);
-                    }}
-                    disabled={authLoading || !identity?.userId}
-                  >
-                    <UserPlus className="mr-1.5 h-4 w-4" />
-                    Add Contact
-                  </Button>
-                ) : null}
+
                 {!staticMode && recordsQuery.hasNextPage ? (
                   <Button
                     size="sm"
@@ -2964,7 +3082,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) setRetentionDialogRecord(null);
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Update Retention</DialogTitle>
           </DialogHeader>
@@ -3172,7 +3298,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) setStatusDialogRecord(null);
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Update Status</DialogTitle>
           </DialogHeader>
@@ -3224,7 +3358,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) setOwnerDialogRecord(null);
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Update Owner</DialogTitle>
           </DialogHeader>
@@ -3323,7 +3465,15 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           if (!open) setTagsDialogRecord(null);
         }}
       >
-        <DialogContent className="max-w-lg overflow-visible">
+        <DialogContent
+          className="max-w-lg overflow-visible"
+          onInteractOutside={(event) => {
+            event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Update Tags</DialogTitle>
           </DialogHeader>
@@ -3419,25 +3569,45 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                           </p>
                         </div>
                       </div>
-                      <div className="w-full max-w-sm space-y-1">
-                        <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
-                          <span>Progress</span>
-                          <span>
-                            {record.batteryProgress !== null
-                              ? `${record.batteryProgress}%`
-                              : "—"}
-                          </span>
-                        </div>
-                        <Progress value={record.batteryProgress ?? 0} className="h-2" />
+                      <div className="w-full max-w-sm">
+                        <ApprovalProgressIndicator
+                          progressValue={record.batteryProgress}
+                          steps={approvalSteps}
+                        />
                       </div>
                     </div>
                   </div>
                 );
               })()}
 
-              <div className="grid gap-4 md:grid-cols-4">
-                <section className="space-y-2 md:col-span-3">
+              <div className="grid gap-4 md:grid-cols-3">
+                <section className="space-y-2 md:col-span-2">
                   <p className="text-sm font-medium">Conversation history (Updates)</p>
+                  {!staticMode ? (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <label className="text-xs font-medium tracking-wide uppercase">
+                        Add update
+                      </label>
+                      <Textarea
+                        value={contactUpdateDraft}
+                        onChange={(event) => setContactUpdateDraft(event.target.value)}
+                        placeholder="Write an update for this contact..."
+                        rows={4}
+                        disabled={isCreatingContactUpdate}
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            void handleCreateContactUpdate();
+                          }}
+                          disabled={isCreatingContactUpdate || contactUpdateDraft.trim().length === 0}
+                        >
+                          {isCreatingContactUpdate ? "Posting..." : "Post update"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
                     {staticMode ? (
                       <p className="text-muted-foreground text-sm">
@@ -3481,23 +3651,23 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                     </p>
                     <div className="space-y-1 text-xs">
                       <p className="wrap-break-word">
-                        <span className="text-muted-foreground">ID:</span>{" "}
+                        <span className="font-bold">ID:</span>{" "}
                         {contactHistoryDialogRecord.id}
                       </p>
                       <p className="wrap-break-word">
-                        <span className="text-muted-foreground">District:</span>{" "}
+                        <span className="font-bold">District:</span>{" "}
                         {contactHistoryDialogRecord.statusText ?? "—"}
                       </p>
                       <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Owner:</span>{" "}
+                        <span className="font-bold">Owner:</span>{" "}
                         {contactHistoryDialogRecord.peopleText ?? "—"}
                       </p>
                       <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Updated:</span>{" "}
+                        <span className="font-bold">Updated:</span>{" "}
                         {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
                       </p>
                       <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Created:</span>{" "}
+                        <span className="font-bold">Created:</span>{" "}
                         {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
                       </p>
                     </div>
@@ -3510,9 +3680,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                       {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
                         <div
                           key={`${detail.label}-${detail.value}`}
-                          className="grid grid-cols-[88px_1fr] gap-2"
+                          className="grid grid-cols-[88px_1fr] gap-3"
                         >
-                          <span className="text-muted">{detail.label}</span>
+                          <span className="truncate font-bold">{detail.label}</span>
                           <span className="wrap-break-word">{detail.value}</span>
                         </div>
                       ))}

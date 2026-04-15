@@ -2342,3 +2342,53 @@ export const listMondayRecordUpdates = async (args: {
   };
 };
 
+export const createMondayRecordUpdate = async (args: {
+  itemId: string;
+  body: string;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  if (!itemId) {
+    throw new Error("Missing monday item id");
+  }
+  const body = args.body.trim();
+  if (!body) {
+    throw new Error("Update body cannot be empty");
+  }
+
+  const mutation = `
+    mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
+      create_update(item_id: $itemId, body: $body) {
+        id
+        body
+      }
+    }
+  `;
+
+  interface CreateMondayItemUpdateData {
+    create_update?: {
+      id?: string | null;
+      body?: string | null;
+    } | null;
+  }
+
+  const data = await callMondayGraphQL<CreateMondayItemUpdateData>(mutation, {
+    itemId,
+    body,
+  });
+
+  const updateId = data.create_update?.id?.trim() ?? "";
+  if (!updateId) {
+    throw new Error("Monday did not return a new update id");
+  }
+
+  return {
+    id: updateId,
+    body: data.create_update?.body ?? body,
+  };
+};
+
