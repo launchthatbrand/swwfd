@@ -87,6 +87,7 @@
     "@types/react-dom": "catalog:react19",
     "@types/three": "^0.165.0",
     "@types/web-push": "^3.6.4",
+    "baseline-browser-mapping": "^2.10.19",
     "eslint": "catalog:",
     "jiti": "^2.5.1",
     "prettier": "catalog:",
