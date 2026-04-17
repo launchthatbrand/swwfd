@@ -96,6 +96,13 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_jobId_and_chunkIndex", ["jobId", "chunkIndex"]),
 
+  mondayGlobalSettings: defineTable({
+    key: v.string(),
+    emailMarketingEnabled: v.boolean(),
+    updatedAt: v.number(),
+    updatedByMondayUserId: v.string(),
+  }).index("by_key", ["key"]),
+
   mondayMonthlyMigrationJobs: defineTable({
     status: v.union(
       v.literal("running"),

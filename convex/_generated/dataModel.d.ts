@@ -224,6 +224,30 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayGlobalSettings: {
+    document: {
+      emailMarketingEnabled: boolean;
+      key: string;
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayGlobalSettings">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "emailMarketingEnabled"
+      | "key"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_key: ["key", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayMonthlyMigrationEntries: {
     document: {
       createdAt: number;

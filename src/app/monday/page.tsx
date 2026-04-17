@@ -257,6 +257,16 @@ interface MondaySendEmailResponse {
   error?: string;
 }
 
+interface MondayFeatureFlags {
+  emailMarketingEnabled: boolean;
+}
+
+interface MondayFeatureFlagsResponse {
+  ok: boolean;
+  error?: string;
+  featureFlags?: MondayFeatureFlags;
+}
+
 interface AddNewContactValues {
   firstName: string;
   lastName: string;
@@ -290,6 +300,10 @@ const contactUpdateTypeLabel = (value: ContactUpdateType) => {
     CONTACT_UPDATE_TYPE_OPTIONS.find((option) => option.value === value)?.label ??
     "General Update"
   );
+};
+
+const DEFAULT_MONDAY_FEATURE_FLAGS: MondayFeatureFlags = {
+  emailMarketingEnabled: true,
 };
 
 const getNameInitials = (name: string) => {
@@ -945,6 +959,10 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
+    DEFAULT_MONDAY_FEATURE_FLAGS,
+  );
+  const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
   const [search, setSearch] = useState("");
@@ -1042,10 +1060,11 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
+  const isMondaySettingsAdmin = identity?.userId === MONDAY_OWNER_SCOPE_ADMIN_USER_ID;
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
     isMondayEmbeddedContext &&
-    identity?.userId === MONDAY_OWNER_SCOPE_ADMIN_USER_ID;
+    isMondaySettingsAdmin;
   const useUserRecordsEndpoint =
     isTouchScopedView && isMondayEmbeddedContext && !canOverrideUserScopeOwner;
   const recordsQuery = useInfiniteQuery({
@@ -1099,6 +1118,24 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     debouncedSearch.trim().length === 0 &&
     statusFilter.trim().length === 0 &&
     ownerFilter.trim().length === 0;
+
+  const featureFlagsQuery = useQuery({
+    queryKey: ["monday-feature-flags", sessionToken],
+    enabled: !!sessionToken && !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/feature-flags", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayFeatureFlagsResponse;
+      if (!response.ok || !data.ok || !data.featureFlags) {
+        throw new Error(data.error ?? "Failed to load feature flags");
+      }
+      return data.featureFlags;
+    },
+    staleTime: 30_000,
+  });
 
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
@@ -1350,6 +1387,26 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     if (canOverrideUserScopeOwner) return;
     setOwnerFilter(identity.userId);
   }, [canOverrideUserScopeOwner, identity?.userId, isMondayEmbeddedContext, viewMode]);
+
+  useEffect(() => {
+    if (!featureFlagsQuery.data) return;
+    setFeatureFlags(featureFlagsQuery.data);
+  }, [featureFlagsQuery.data]);
+
+  useEffect(() => {
+    if (isMondaySettingsAdmin || !settingsOpen) return;
+    setSettingsOpen(false);
+  }, [isMondaySettingsAdmin, settingsOpen]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!featureFlagsQuery.error) return;
+    const message =
+      featureFlagsQuery.error instanceof Error
+        ? featureFlagsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [featureFlagsQuery.error, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1743,6 +1800,42 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     }
   };
 
+  const handleSetEmailMarketingEnabled = async (enabled: boolean) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMondaySettingsAdmin) {
+      toast.error("Only admins can change feature flags");
+      return;
+    }
+    setIsSavingFeatureFlags(true);
+    try {
+      const response = await fetch("/api/monday/settings/feature-flags", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ emailMarketingEnabled: enabled }),
+      });
+      const data = (await response.json()) as MondayFeatureFlagsResponse;
+      if (!response.ok || !data.ok || !data.featureFlags) {
+        throw new Error(data.error ?? "Failed to save feature flags");
+      }
+      setFeatureFlags(data.featureFlags);
+      await featureFlagsQuery.refetch();
+      toast.success("Feature flag updated");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to update feature flag";
+      toast.error(message);
+    } finally {
+      setIsSavingFeatureFlags(false);
+    }
+  };
+
   const openSendEmailDialog = (record: MondayRecord) => {
     setSendEmailRecord(record);
     setSendEmailStep(1);
@@ -1783,6 +1876,14 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     });
     return { subject, html, text };
   }, [sendEmailOwnerVars.ownerEmail, sendEmailOwnerVars.ownerName, sendEmailTemplate]);
+  useEffect(() => {
+    if (featureFlags.emailMarketingEnabled) return;
+    if (!sendEmailRecord) return;
+    setSendEmailRecord(null);
+    setSendEmailStep(1);
+    setSendEmailTemplateId(null);
+    setIsSendingEmail(false);
+  }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
   const handleConfirmSendEmail = async () => {
     if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
@@ -2644,16 +2745,21 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       },
       isDisabled: (record) => !record.url,
     },
-    {
-      id: "send-email",
-      label: "Send Email",
-      icon: <Mail className="h-4 w-4" />,
-      variant: "secondary",
-      onClick: (record) => {
-        openSendEmailDialog(record);
-      },
-      isDisabled: (record) => !record.email || !sessionToken || staticMode,
-    },
+    ...(featureFlags.emailMarketingEnabled
+      ? ([
+          {
+            id: "send-email",
+            label: "Send Email",
+            icon: <Mail className="h-4 w-4" />,
+            variant: "secondary",
+            onClick: (record: MondayRecord) => {
+              openSendEmailDialog(record);
+            },
+            isDisabled: (record: MondayRecord) =>
+              !record.email || !sessionToken || staticMode,
+          },
+        ] satisfies EntityAction<MondayRecord>[])
+      : []),
 
   ];
 
@@ -2831,39 +2937,46 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                     API docs
                   </Link>
                 </Button>
-                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="h-8">
-                      <Settings className="mr-1.5 h-4 w-4" />
-                      Settings
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl">
-                    <DialogHeader>
-                      <DialogTitle>Monday Settings</DialogTitle>
-                    </DialogHeader>
-                    <Tabs defaultValue="email-templates" className="flex gap-4">
-                      <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
-                        <TabsTrigger
-                          value="email-templates"
-                          className="w-full justify-start text-left"
-                        >
-                          Email Templates
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="email-settings"
-                          className="w-full justify-start text-left"
-                        >
-                          Email Settings
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="user-zip-map"
-                          className="w-full justify-start text-left"
-                        >
-                          User {"<->"} Zipcode map
-                        </TabsTrigger>
-                      </TabsList>
-                      <div className="min-h-80 flex-1 rounded-md border p-4">
+                {isMondaySettingsAdmin ? (
+                  <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-8">
+                        <Settings className="mr-1.5 h-4 w-4" />
+                        Settings
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl">
+                      <DialogHeader>
+                        <DialogTitle>Monday Settings</DialogTitle>
+                      </DialogHeader>
+                      <Tabs defaultValue="email-templates" className="flex gap-4">
+                        <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
+                          <TabsTrigger
+                            value="email-templates"
+                            className="w-full justify-start text-left"
+                          >
+                            Email Templates
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="email-settings"
+                            className="w-full justify-start text-left"
+                          >
+                            Email Settings
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="user-zip-map"
+                            className="w-full justify-start text-left"
+                          >
+                            User {"<->"} Zipcode map
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="feature-flags"
+                            className="w-full justify-start text-left"
+                          >
+                            Feature Flags
+                          </TabsTrigger>
+                        </TabsList>
+                        <div className="min-h-80 flex-1 rounded-md border p-4">
                         <TabsContent value="email-templates" className="mt-0">
                           <div className="grid gap-4 md:grid-cols-[260px_1fr]">
                             <div className="space-y-2">
@@ -3048,10 +3161,47 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                             </div>
                           </div>
                         </TabsContent>
-                      </div>
-                    </Tabs>
-                  </DialogContent>
-                </Dialog>
+                        <TabsContent value="feature-flags" className="mt-0">
+                          <div className="space-y-4">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">Feature Flags</p>
+                              <p className="text-muted-foreground text-sm">
+                                Toggle app capabilities without code changes.
+                              </p>
+                            </div>
+                            <div className="space-y-3 rounded-md border p-4">
+                              <label className="flex items-start gap-3 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={featureFlags.emailMarketingEnabled}
+                                  disabled={isSavingFeatureFlags}
+                                  onChange={(event) => {
+                                    void handleSetEmailMarketingEnabled(
+                                      event.target.checked,
+                                    );
+                                  }}
+                                />
+                                <div className="space-y-1">
+                                  <p className="font-medium">Email Marketing</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Enables email marketing capabilities, including the
+                                    Email action in the table.
+                                  </p>
+                                  {isSavingFeatureFlags ? (
+                                    <p className="text-muted-foreground text-[11px]">
+                                      Saving...
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+                        </TabsContent>
+                        </div>
+                      </Tabs>
+                    </DialogContent>
+                  </Dialog>
+                ) : null}
               </div>
             </div>
           </div>

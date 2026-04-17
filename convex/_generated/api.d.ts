@@ -183,6 +183,20 @@ export declare const api: {
       { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
     >;
   };
+  mondaySettings: {
+    getFeatureFlags: FunctionReference<
+      "query",
+      "public",
+      {},
+      { emailMarketingEnabled: boolean }
+    >;
+    setFeatureFlags: FunctionReference<
+      "mutation",
+      "public",
+      { emailMarketingEnabled: boolean; updatedByMondayUserId: string },
+      { emailMarketingEnabled: boolean }
+    >;
+  };
   mondayTouchBackfill: {
     cancelBackfill: FunctionReference<
       "mutation",
