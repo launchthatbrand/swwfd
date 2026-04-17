@@ -128,6 +128,61 @@ export declare const api: {
       }>
     >;
   };
+  mondayMonthlyMigration: {
+    cancelMigration: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayMonthlyMigrationJobs"> },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        mappedContacts: number;
+        monthTag: string;
+        pageSize: number;
+        processedContacts: number;
+        skippedContacts: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+        updatedAt: number;
+        warningsCount: number;
+        workflowId?: string;
+      }
+    >;
+    startMigration: FunctionReference<
+      "mutation",
+      "public",
+      {
+        dryRun?: boolean;
+        includeParentUpdates?: boolean;
+        includeSubitemUpdates?: boolean;
+        includeSubitems?: boolean;
+        monthTag?: string;
+        pageSize?: number;
+        sourceBoardId: string;
+        targetBoardId?: string;
+      },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
+    >;
+  };
   mondayTouchBackfill: {
     cancelBackfill: FunctionReference<
       "mutation",
@@ -301,6 +356,208 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayMonthlyMigration: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getExistingEntriesForSourceItem: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemId: string },
+      {
+        parentUpdateEntityIds: Array<string>;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayMonthlyMigrationJobs"> },
+      null | {
+        _id: Id<"mondayMonthlyMigrationJobs">;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthTag: string;
+        pageSize: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+      }
+    >;
+    recordCreatedEntries: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        entries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        sourceBoardId: string;
+      },
+      null
+    >;
+    runMonthlyMigrationWorkflow: FunctionReference<
+      "mutation",
+      "internal",
+      any,
+      any
+    >;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdParentUpdatesDelta: number;
+        createdSubitemUpdatesDelta: number;
+        createdSubitemsDelta: number;
+        errorsDelta: number;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        mappedContactsDelta: number;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedContactsDelta: number;
+        sourceBoardName?: string | null;
+        warningsDelta: number;
+      },
+      null
+    >;
+  };
+  mondayMonthlyMigrationNode: {
+    fetchSourcePageAction: FunctionReference<
+      "action",
+      "internal",
+      { cursor?: string | null; pageSize: number; sourceBoardId: string },
+      {
+        items: Array<{
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        }>;
+        nextCursor: string | null;
+        sourceBoardName: string | null;
+        sourceSubitemBoardId: string | null;
+      }
+    >;
+    migrateSourceItemAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        dryRun: boolean;
+        existingEntries: {
+          parentUpdateEntityIds: Array<string>;
+          sourceSubitemToTargetSubitem: Array<{
+            sourceSubitemId: string;
+            targetSubitemId: string;
+          }>;
+          subitemEntityIds: Array<string>;
+          subitemUpdateEntityIds: Array<string>;
+        };
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthTag: string;
+        sourceBoardId: string;
+        sourceBoardName: string | null;
+        sourceItem: {
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        };
+        sourceSubitemBoardId?: string | null;
+        targetBoardId: string;
+      },
+      {
+        createdEntries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        errors: number;
+        mappedContacts: number;
+        processedContacts: number;
+        skippedContacts: number;
+        warnings: Array<string>;
+      }
     >;
   };
   mondayTouchBackfill: {

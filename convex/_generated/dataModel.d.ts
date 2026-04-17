@@ -224,6 +224,114 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayMonthlyMigrationEntries: {
+    document: {
+      createdAt: number;
+      jobId: Id<"mondayMonthlyMigrationJobs">;
+      sourceBoardId: string;
+      sourceEntityId: string;
+      sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+      sourceItemId: string;
+      targetEntityId?: string | null;
+      targetItemId: string;
+      _id: Id<"mondayMonthlyMigrationEntries">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "createdAt"
+      | "jobId"
+      | "sourceBoardId"
+      | "sourceEntityId"
+      | "sourceEntityType"
+      | "sourceItemId"
+      | "targetEntityId"
+      | "targetItemId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_jobId: ["jobId", "_creationTime"];
+      by_sourceBoardId_and_sourceEntityType_and_sourceEntityId: [
+        "sourceBoardId",
+        "sourceEntityType",
+        "sourceEntityId",
+        "_creationTime",
+      ];
+      by_sourceBoardId_and_sourceItemId: [
+        "sourceBoardId",
+        "sourceItemId",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayMonthlyMigrationJobs: {
+    document: {
+      createdParentUpdates: number;
+      createdSubitemUpdates: number;
+      createdSubitems: number;
+      currentCursor?: string | null;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      includeParentUpdates: boolean;
+      includeSubitemUpdates: boolean;
+      includeSubitems: boolean;
+      lastError?: string | null;
+      mappedContacts: number;
+      monthTag: string;
+      pageSize: number;
+      processedContacts: number;
+      skippedContacts: number;
+      sourceBoardId: string;
+      sourceBoardName?: string | null;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      targetBoardId: string;
+      updatedAt: number;
+      warningsCount: number;
+      workflowId?: string;
+      _id: Id<"mondayMonthlyMigrationJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "createdParentUpdates"
+      | "createdSubitems"
+      | "createdSubitemUpdates"
+      | "currentCursor"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "includeParentUpdates"
+      | "includeSubitems"
+      | "includeSubitemUpdates"
+      | "lastError"
+      | "mappedContacts"
+      | "monthTag"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedContacts"
+      | "sourceBoardId"
+      | "sourceBoardName"
+      | "startedAt"
+      | "status"
+      | "targetBoardId"
+      | "updatedAt"
+      | "warningsCount"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayTouchBackfillJobs: {
     document: {
       baselineDate: string;

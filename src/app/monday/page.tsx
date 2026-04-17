@@ -184,6 +184,16 @@ interface MondayCreateContactResponse {
 interface MondayRecordUpdate {
   id: string;
   body: string;
+  updateType:
+    | "general"
+    | "welcome_email"
+    | "followup"
+    | "questionnaire"
+    | "resume"
+    | "resume_referral";
+  source: "item" | "subitem";
+  subitemId: string | null;
+  subitemName: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   creatorId: string | null;
@@ -204,6 +214,15 @@ interface MondayCreateRecordUpdateResponse {
   update?: {
     id: string;
     body: string;
+    updateType:
+      | "general"
+      | "welcome_email"
+      | "followup"
+      | "questionnaire"
+      | "resume"
+      | "resume_referral";
+    source: "item" | "subitem";
+    subitemName?: string | null;
   };
 }
 
@@ -254,6 +273,24 @@ const formatUpdatedAt = (value: string | null) => {
 };
 
 const hasHtmlLikeMarkup = (value: string) => /<[a-z][\s\S]*>/i.test(value);
+
+const CONTACT_UPDATE_TYPE_OPTIONS = [
+  { value: "general", label: "General Update" },
+  { value: "welcome_email", label: "Welcome Email Update" },
+  { value: "followup", label: "Followup Update" },
+  { value: "questionnaire", label: "Questionaire Update" },
+  { value: "resume", label: "Resume Update" },
+  { value: "resume_referral", label: "Resume Referral Update" },
+] as const;
+
+type ContactUpdateType = (typeof CONTACT_UPDATE_TYPE_OPTIONS)[number]["value"];
+
+const contactUpdateTypeLabel = (value: ContactUpdateType) => {
+  return (
+    CONTACT_UPDATE_TYPE_OPTIONS.find((option) => option.value === value)?.label ??
+    "General Update"
+  );
+};
 
 const getNameInitials = (name: string) => {
   const parts = name
@@ -841,6 +878,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     useState<MondayRecord | null>(null);
   const [pendingDialogItemId, setPendingDialogItemId] = useState<string | null>(null);
   const [contactUpdateDraft, setContactUpdateDraft] = useState("");
+  const [contactUpdateType, setContactUpdateType] =
+    useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: [] as string[],
@@ -1869,6 +1908,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const openContactHistoryDialog = (record: MondayRecord) => {
     setContactHistoryDialogRecord(record);
     setContactUpdateDraft("");
+    setContactUpdateType("general");
   };
 
   const handleCreateContactUpdate = async () => {
@@ -1900,7 +1940,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
             "content-type": "application/json",
             "x-monday-session-token": sessionToken,
           },
-          body: JSON.stringify({ body }),
+          body: JSON.stringify({ body, updateType: contactUpdateType }),
         },
       );
       const data = (await response.json()) as MondayCreateRecordUpdateResponse;
@@ -1909,6 +1949,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       }
 
       setContactUpdateDraft("");
+      setContactUpdateType("general");
       await contactUpdatesQuery.refetch();
       toast.success("Update posted to monday.com");
     } catch (error) {
@@ -3588,10 +3629,33 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                       <label className="text-xs font-medium tracking-wide uppercase">
                         Add update
                       </label>
+                      <div className="grid gap-2 md:grid-cols-[220px_1fr]">
+                        <div>
+                          <p className="text-muted-foreground mb-1 text-xs">Update type</p>
+                          <Select
+                            value={contactUpdateType}
+                            onValueChange={(value) => {
+                              setContactUpdateType(value as ContactUpdateType);
+                            }}
+                            disabled={isCreatingContactUpdate}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select update type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CONTACT_UPDATE_TYPE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
                       <Textarea
                         value={contactUpdateDraft}
                         onChange={(event) => setContactUpdateDraft(event.target.value)}
-                        placeholder="Write an update for this contact..."
+                        placeholder={`Write a ${contactUpdateTypeLabel(contactUpdateType).toLowerCase()} for this contact...`}
                         rows={4}
                         disabled={isCreatingContactUpdate}
                       />
@@ -3623,7 +3687,17 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                       (contactUpdatesQuery.data?.updates ?? []).map((update) => (
                         <div key={update.id} className="rounded-md border p-3">
                           <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
-                            <span>{update.creatorName ?? "Unknown user"}</span>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span>{update.creatorName ?? "Unknown user"}</span>
+                              <Badge variant="outline" className="text-[10px]">
+                                {contactUpdateTypeLabel(update.updateType)}
+                              </Badge>
+                              {update.source === "subitem" && update.subitemName ? (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  {update.subitemName}
+                                </Badge>
+                              ) : null}
+                            </div>
                             <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
                           </div>
                           {update.body.trim().length === 0 ? (

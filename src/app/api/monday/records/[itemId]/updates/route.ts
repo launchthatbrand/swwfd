@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createMondayRecordUpdate,
+  isMondayUpdateType,
   listMondayRecordUpdates,
 } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
@@ -52,6 +53,7 @@ export const GET = async (
 
 interface CreateUpdateBody {
   body?: string;
+  updateType?: string;
 }
 
 export const POST = async (
@@ -82,11 +84,26 @@ export const POST = async (
   if (!updateBody) {
     return toJson({ ok: false, error: "Update body cannot be empty" }, 400);
   }
+  const updateTypeRaw = body.updateType?.trim().toLowerCase();
+  if (updateTypeRaw && !isMondayUpdateType(updateTypeRaw)) {
+    return toJson(
+      {
+        ok: false,
+        error:
+          "Invalid update type. Use one of: general, welcome_email, followup, questionnaire, resume, resume_referral.",
+      },
+      400,
+    );
+  }
+  const updateType = updateTypeRaw && isMondayUpdateType(updateTypeRaw)
+    ? updateTypeRaw
+    : undefined;
 
   try {
     const update = await createMondayRecordUpdate({
       itemId,
       body: updateBody,
+      updateType,
     });
     return toJson({ ok: true, update });
   } catch (error) {

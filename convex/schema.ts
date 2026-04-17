@@ -96,4 +96,60 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_jobId_and_chunkIndex", ["jobId", "chunkIndex"]),
 
+  mondayMonthlyMigrationJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    workflowId: v.optional(v.string()),
+    sourceBoardId: v.string(),
+    sourceBoardName: v.optional(v.union(v.string(), v.null())),
+    targetBoardId: v.string(),
+    monthTag: v.string(),
+    dryRun: v.boolean(),
+    includeParentUpdates: v.boolean(),
+    includeSubitems: v.boolean(),
+    includeSubitemUpdates: v.boolean(),
+    pageSize: v.number(),
+    currentCursor: v.optional(v.union(v.string(), v.null())),
+    processedContacts: v.number(),
+    mappedContacts: v.number(),
+    skippedContacts: v.number(),
+    createdParentUpdates: v.number(),
+    createdSubitems: v.number(),
+    createdSubitemUpdates: v.number(),
+    errorsCount: v.number(),
+    warningsCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"]),
+
+  mondayMonthlyMigrationEntries: defineTable({
+    jobId: v.id("mondayMonthlyMigrationJobs"),
+    sourceBoardId: v.string(),
+    sourceEntityType: v.union(
+      v.literal("parent_update"),
+      v.literal("subitem"),
+      v.literal("subitem_update"),
+    ),
+    sourceEntityId: v.string(),
+    sourceItemId: v.string(),
+    targetItemId: v.string(),
+    targetEntityId: v.optional(v.union(v.string(), v.null())),
+    createdAt: v.number(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_sourceBoardId_and_sourceItemId", ["sourceBoardId", "sourceItemId"])
+    .index("by_sourceBoardId_and_sourceEntityType_and_sourceEntityId", [
+      "sourceBoardId",
+      "sourceEntityType",
+      "sourceEntityId",
+    ]),
+
 });
