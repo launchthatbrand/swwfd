@@ -185,12 +185,12 @@ interface MondayRecordUpdate {
   id: string;
   body: string;
   updateType:
-    | "general"
-    | "welcome_email"
-    | "followup"
-    | "questionnaire"
-    | "resume"
-    | "resume_referral";
+  | "general"
+  | "welcome_email"
+  | "followup"
+  | "questionnaire"
+  | "resume"
+  | "resume_referral";
   source: "item" | "subitem";
   subitemId: string | null;
   subitemName: string | null;
@@ -215,12 +215,12 @@ interface MondayCreateRecordUpdateResponse {
     id: string;
     body: string;
     updateType:
-      | "general"
-      | "welcome_email"
-      | "followup"
-      | "questionnaire"
-      | "resume"
-      | "resume_referral";
+    | "general"
+    | "welcome_email"
+    | "followup"
+    | "questionnaire"
+    | "resume"
+    | "resume_referral";
     source: "item" | "subitem";
     subitemName?: string | null;
   };
@@ -305,19 +305,58 @@ const getNameInitials = (name: string) => {
 };
 
 const getAddressDisplayParts = (address: string | null | undefined) => {
-  if (!address) return { prefix: null, cityStateZip: null, full: null };
+  if (!address) {
+    return {
+      prefix: null,
+      cityStateZip: null,
+      full: null,
+      streetLine: null,
+      localityLine: null,
+    };
+  }
   const parts = address
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-  if (parts.length === 0) return { prefix: null, cityStateZip: null, full: null };
-  if (parts.length < 3) {
-    return { prefix: null, cityStateZip: null, full: parts.join(", ") };
+  if (parts.length === 0) {
+    return {
+      prefix: null,
+      cityStateZip: null,
+      full: null,
+      streetLine: null,
+      localityLine: null,
+    };
   }
-  const cityStateZip = parts.slice(-3).join(", ");
+  if (parts.length < 3) {
+    const streetLine = parts[0] ?? null;
+    const localityLine = parts.length > 1 ? parts.slice(1).join(", ") : null;
+    const full = [streetLine, localityLine].filter(Boolean).join(", ") || null;
+    return {
+      prefix: null,
+      cityStateZip: localityLine,
+      full,
+      streetLine,
+      localityLine,
+    };
+  }
+  const city = parts.at(-3) ?? "";
+  const state = parts.at(-2) ?? "";
+  const zip = parts.at(-1) ?? "";
+  const cityStateZip = [city, state, zip].filter((value) => value.length > 0).join(", ");
+  const localityLine =
+    city && state && zip
+      ? `${city}, ${state} ${zip}`
+      : [city, state, zip].filter((value) => value.length > 0).join(", ");
   const prefix = parts.slice(0, -3).join(", ");
+  const streetLine = prefix || null;
   const full = prefix ? `${prefix}, ${cityStateZip}` : cityStateZip;
-  return { prefix: prefix || null, cityStateZip, full };
+  return {
+    prefix: prefix || null,
+    cityStateZip,
+    full,
+    streetLine,
+    localityLine: localityLine || null,
+  };
 };
 
 const getDistrictChipClassName = (value: string) => {
@@ -2297,20 +2336,20 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                 <TooltipTrigger asChild>
                   <div className="space-y-1">
                     <span className="block font-medium">{item.name}</span>
-                    <span className="text-muted-foreground block truncate text-xs">
+                    <span className="block truncate text-xs">
                       {item.email ?? "No email"}
                     </span>
                     {addressDisplay.full ? (
-                      <span className="text-muted-foreground block text-xs">
-                        {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                        {addressDisplay.cityStateZip ? (
-                          <span className="text-sm font-semibold text-foreground">
-                            {addressDisplay.cityStateZip}
+                      <div className="text-muted-foreground block text-xs">
+                        <span className="block">
+                          {addressDisplay.streetLine ?? addressDisplay.full}
+                        </span>
+                        {addressDisplay.localityLine ? (
+                          <span className="block text-sm font-semibold text-foreground">
+                            {addressDisplay.localityLine}
                           </span>
-                        ) : (
-                          addressDisplay.full
-                        )}
-                      </span>
+                        ) : null}
+                      </div>
                     ) : (
                       <span className="text-muted-foreground block text-xs">No address</span>
                     )}
