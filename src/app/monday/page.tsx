@@ -290,6 +290,45 @@ interface MondayUserBoardSettingsResponse {
   settings?: unknown;
 }
 
+interface MondayRoutingStatus {
+  ok: boolean;
+  enabled: boolean;
+  contactBoardId: string | null;
+  countyBoardId: string | null;
+  districtBoardId: string | null;
+  countyMappingsCount: number;
+  districtOwnerMappingsCount: number;
+  contactBoardUrl: string | null;
+  countyBoardUrl: string | null;
+  districtBoardUrl: string | null;
+  issues: string[];
+}
+
+interface MondayRoutingStatusResponse {
+  ok: boolean;
+  error?: string;
+  status?: MondayRoutingStatus;
+}
+
+interface MondayRoutingAssignResult {
+  ok: boolean;
+  status: string;
+  itemId: string;
+  source: "webhook" | "manual";
+  message: string;
+  countyName: string | null;
+  countyFips: string | null;
+  districtCode: string | null;
+  ownerId: string | null;
+  matchedAddress: string | null;
+}
+
+interface MondayRoutingAssignResponse {
+  ok: boolean;
+  error?: string;
+  result?: MondayRoutingAssignResult;
+}
+
 interface AddNewContactValues {
   firstName: string;
   lastName: string;
@@ -1470,7 +1509,6 @@ const extractBoardIdFromContextPayload = (value: unknown) => {
   const payloadObject = value as { data?: unknown };
   const data = payloadObject.data;
   const context = typeof data === "object" && data !== null ? data : value;
-  if (typeof context !== "object" || context === null) return "";
   const contextObject = context as {
     boardId?: unknown;
     board_id?: unknown;
@@ -1636,6 +1674,8 @@ export function MondayBoardView({
   const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
+  const [routingRerunItemId, setRoutingRerunItemId] = useState("");
+  const [isRunningRoutingRerun, setIsRunningRoutingRerun] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeMonth, setActiveMonth] = useState(
@@ -1921,6 +1961,29 @@ export function MondayBoardView({
         throw new Error(data.error ?? "Failed to load Outlook connection status");
       }
       return data;
+    },
+    staleTime: 30_000,
+  });
+
+  const routingStatusQuery = useQuery({
+    queryKey: ["monday-routing-status", sessionToken, identity?.userId, settingsOpen],
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      settingsOpen &&
+      isMondaySettingsAdmin &&
+      !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/routing/status", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayRoutingStatusResponse;
+      if (!response.ok || !data.ok || !data.status) {
+        throw new Error(data.error ?? "Failed to load district routing status");
+      }
+      return data.status;
     },
     staleTime: 30_000,
   });
@@ -2659,6 +2722,59 @@ export function MondayBoardView({
     }
   };
 
+  const handleRunRoutingRerun = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMondaySettingsAdmin) {
+      toast.error("Only admins can run routing tools");
+      return;
+    }
+    const itemId = routingRerunItemId.trim();
+    if (!itemId) {
+      toast.error("Enter a contact item id");
+      return;
+    }
+
+    setIsRunningRoutingRerun(true);
+    try {
+      const response = await fetch("/api/monday/tools/routing/assign", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          itemId,
+          force: true,
+        }),
+      });
+      const data = (await response.json()) as MondayRoutingAssignResponse;
+      if (!response.ok || !data.result) {
+        throw new Error(data.error ?? "Failed to run routing assignment");
+      }
+      const result = data.result;
+      if (!result.ok) {
+        throw new Error(result.message || "Routing assignment did not succeed");
+      }
+      toast.success(
+        `Routing result: ${result.status} · district ${result.districtCode ?? "N/A"} · owner ${result.ownerId ?? "N/A"}`,
+      );
+      await Promise.all([routingStatusQuery.refetch(), recordsQuery.refetch()]);
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to run routing assignment";
+      toast.error(message);
+    } finally {
+      setIsRunningRoutingRerun(false);
+    }
+  };
+
   const handleSaveBoardGeneralSettings = async () => {
     if (!sessionToken) {
       toast.error("Missing Monday session token");
@@ -3236,7 +3352,7 @@ export function MondayBoardView({
       if (!matchedRecord) return prev;
       const matchedBatteryProgress =
         typeof matchedRecord.batteryProgress === "number" &&
-        Number.isFinite(matchedRecord.batteryProgress)
+          Number.isFinite(matchedRecord.batteryProgress)
           ? Math.max(0, Math.min(100, Math.round(matchedRecord.batteryProgress)))
           : null;
       return {
@@ -4500,268 +4616,362 @@ export function MondayBoardView({
                     <DialogTrigger asChild>
                       <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs font-normal">
                         <Filter className="mr-1.5 h-3.5 w-3.5" />
-                        Filters
-                        {advancedFilterConditions.length > 0 && (
+                        Advanced Filters
+                        {activeAdvancedFilterConditions.length > 0 && (
                           <Badge variant="secondary" className="ml-1.5 h-4 px-1 py-0 leading-none text-[10px]">
-                            {advancedFilterConditions.length}
+                            {activeAdvancedFilterConditions.length}
                           </Badge>
                         )}
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
-                      <DialogHeader>
+                    <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
+                      <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
                         <DialogTitle>Advanced Filters</DialogTitle>
                         <DialogDescription>
-                          Create custom filters to narrow down your records.
+                          Build multi-condition logic, preview result count, and save presets per
+                          owner board.
                         </DialogDescription>
                       </DialogHeader>
-                      <div className="space-y-4 py-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="space-y-5 overflow-y-auto px-6 py-5">
+                        <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
+                              {activeAdvancedFilterConditions.length} active
+                            </Badge>
+                            <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
+                              {advancedFilterConditions.length} total
+                            </Badge>
+                            <span className="text-muted-foreground text-xs">
+                              Showing {filteredRecords.length} of {records.length}
+                            </span>
+                          </div>
                           <div className="flex items-center gap-2">
+                            <label
+                              htmlFor="advanced-filter-match-mode"
+                              className="text-muted-foreground text-xs font-medium"
+                            >
+                              Match mode
+                            </label>
                             <select
+                              id="advanced-filter-match-mode"
                               value={advancedFilterMatchMode}
                               onChange={(event) => {
                                 const value = event.target.value === "any" ? "any" : "all";
                                 setActiveSavedAdvancedFilterId(null);
                                 setAdvancedFilterMatchMode(value);
                               }}
-                              className="bg-background border-input h-7 rounded-md border px-2 text-xs"
+                              className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
                             >
-                              <option value="all">Match all</option>
-                              <option value="any">Match any</option>
+                              <option value="all">Match all conditions</option>
+                              <option value="any">Match any condition</option>
                             </select>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <span className="text-muted-foreground text-xs">
-                              Showing {filteredRecords.length} of {records.length}
-                            </span>
+                        </div>
+
+                        <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">Conditions</p>
+                              <p className="text-muted-foreground text-xs">
+                                Add or remove conditions that run against Monday board columns.
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 border-2 px-3 text-xs shadow-sm"
+                                onClick={handleAddAdvancedFilterCondition}
+                              >
+                                Add condition
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 px-3 text-xs"
+                                onClick={handleClearAdvancedFilters}
+                                disabled={advancedFilterConditions.length === 0}
+                              >
+                                Clear all
+                              </Button>
+                            </div>
+                          </div>
+
+                          {advancedFilterConditions.length === 0 ? (
+                            <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
+                              <p className="text-muted-foreground text-sm">
+                                No conditions yet. Add a condition to start filtering records.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                              {advancedFilterConditions.map((condition, index) => {
+                                const conditionTarget = getBoardColumnTargetForCondition(condition);
+                                const boardColumnKind =
+                                  boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                                const operatorOptions =
+                                  boardColumnKind === "date"
+                                    ? ADVANCED_DATE_OPERATORS
+                                    : ADVANCED_TEXT_OPERATORS;
+                                const shouldHideValueInput =
+                                  condition.operator === "is_empty" ||
+                                  condition.operator === "is_not_empty";
+                                const isDateField = boardColumnKind === "date";
+                                const targetLabelLower = conditionTarget.toLowerCase();
+                                const usesOwnerOptions =
+                                  targetLabelLower === "owner" && ownerOptions.length > 0;
+                                const usesDistrictOptions =
+                                  (targetLabelLower === "status" ||
+                                    targetLabelLower === "district") &&
+                                  statusOptions.length > 0;
+                                const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                                return (
+                                  <div
+                                    key={condition.id}
+                                    className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
+                                      ? "border-border/75 bg-background"
+                                      : "border-border/75 bg-muted/25"
+                                      }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
+                                      <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
+                                        Condition {index + 1}
+                                      </p>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 px-2 text-xs"
+                                        onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                    <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
+                                      <label className="space-y-1">
+                                        <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                          Column
+                                        </span>
+                                        <select
+                                          value={conditionTarget}
+                                          onChange={(event) =>
+                                            handleChangeAdvancedFilterTarget(
+                                              condition.id,
+                                              event.target.value,
+                                            )
+                                          }
+                                          className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                        >
+                                          {!hasBoardColumnOptions ? (
+                                            <option value="">No board columns loaded</option>
+                                          ) : null}
+                                          {hasBoardColumnOptions ? (
+                                            <option value="">Select board column</option>
+                                          ) : null}
+                                          {boardColumnFilterOptions.map((label) => (
+                                            <option key={label} value={label}>
+                                              {label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+
+                                      <label className="space-y-1">
+                                        <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                          Operator
+                                        </span>
+                                        <select
+                                          value={condition.operator}
+                                          onChange={(event) => {
+                                            if (!isAdvancedFilterOperator(event.target.value)) return;
+                                            handleChangeAdvancedFilterOperator(
+                                              condition.id,
+                                              event.target.value,
+                                            );
+                                          }}
+                                          className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                        >
+                                          {operatorOptions.map((operator) => (
+                                            <option key={operator} value={operator}>
+                                              {ADVANCED_OPERATOR_LABELS[operator]}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      </label>
+
+                                      {!shouldHideValueInput ? (
+                                        <label className="space-y-1">
+                                          <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                            Value
+                                          </span>
+                                          {usesOwnerOptions ? (
+                                            <select
+                                              value={condition.value}
+                                              onChange={(event) =>
+                                                handleChangeAdvancedFilterValue(
+                                                  condition.id,
+                                                  event.target.value,
+                                                )
+                                              }
+                                              className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                            >
+                                              <option value="">Select owner</option>
+                                              {!ownerOptions.some(
+                                                (option) => option.value === condition.value,
+                                              ) && condition.value.trim().length > 0 ? (
+                                                <option value={condition.value}>
+                                                  {`Owner ${condition.value} (selected)`}
+                                                </option>
+                                              ) : null}
+                                              {ownerOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : usesDistrictOptions ? (
+                                            <select
+                                              value={condition.value}
+                                              onChange={(event) =>
+                                                handleChangeAdvancedFilterValue(
+                                                  condition.id,
+                                                  event.target.value,
+                                                )
+                                              }
+                                              className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                            >
+                                              <option value="">Select district</option>
+                                              {!statusOptions.some(
+                                                (option) => option.value === condition.value,
+                                              ) && condition.value.trim().length > 0 ? (
+                                                <option value={condition.value}>
+                                                  {`District ${condition.value} (selected)`}
+                                                </option>
+                                              ) : null}
+                                              {statusOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            <Input
+                                              type={isDateField ? "date" : "text"}
+                                              value={condition.value}
+                                              onChange={(event) =>
+                                                handleChangeAdvancedFilterValue(
+                                                  condition.id,
+                                                  event.target.value,
+                                                )
+                                              }
+                                              placeholder="Value"
+                                              className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                            />
+                                          )}
+                                        </label>
+                                      ) : (
+                                        <div className="pb-1">
+                                          <p className="text-muted-foreground text-xs">
+                                            No value input required for this operator.
+                                          </p>
+                                        </div>
+                                      )}
+
+                                      {condition.operator === "between" ? (
+                                        <label className="space-y-1">
+                                          <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                            {isDateField ? "End date" : "Second value"}
+                                          </span>
+                                          <Input
+                                            type={isDateField ? "date" : "text"}
+                                            value={condition.valueTo}
+                                            onChange={(event) =>
+                                              handleChangeAdvancedFilterValueTo(
+                                                condition.id,
+                                                event.target.value,
+                                              )
+                                            }
+                                            placeholder={isDateField ? "End date" : "Second value"}
+                                            className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                          />
+                                        </label>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
+                          <div>
+                            <p className="text-sm font-medium">Saved Presets</p>
+                            <p className="text-muted-foreground text-xs">
+                              Save the active filter setup and reuse it for this owner board.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Input
+                              value={pendingSavedAdvancedFilterName}
+                              onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                              placeholder="Saved filter name"
+                              className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                            />
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 px-2 text-xs"
-                              onClick={handleAddAdvancedFilterCondition}
+                              className="h-8 border-2 px-3 text-xs shadow-sm"
+                              onClick={handleSaveAdvancedFilterPreset}
+                              disabled={
+                                isSavingAdvancedFilterPreset ||
+                                !sessionToken ||
+                                presetScopeOwnerId.length === 0
+                              }
                             >
-                              Add Filter
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-xs"
-                              onClick={handleClearAdvancedFilters}
-                              disabled={advancedFilterConditions.length === 0}
-                            >
-                              Clear
+                              {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
                             </Button>
                           </div>
-                        </div>
+                          {presetScopeOwnerId.length === 0 ? (
+                            <p className="text-muted-foreground text-xs">
+                              Select an owner board to enable preset saving.
+                            </p>
+                          ) : null}
 
-                        {advancedFilterConditions.length === 0 ? (
-                          <p className="text-muted-foreground text-xs">
-                            Add conditions to build custom filter logic.
-                          </p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {advancedFilterConditions.map((condition) => {
-                              const conditionTarget = getBoardColumnTargetForCondition(condition);
-                              const boardColumnKind =
-                                boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
-                              const operatorOptions =
-                                boardColumnKind === "date"
-                                  ? ADVANCED_DATE_OPERATORS
-                                  : ADVANCED_TEXT_OPERATORS;
-                              const shouldHideValueInput =
-                                condition.operator === "is_empty" ||
-                                condition.operator === "is_not_empty";
-                              const isDateField = boardColumnKind === "date";
-                              const targetLabelLower = conditionTarget.toLowerCase();
-                              const usesOwnerOptions =
-                                targetLabelLower === "owner" && ownerOptions.length > 0;
-                              const usesDistrictOptions =
-                                (targetLabelLower === "status" ||
-                                  targetLabelLower === "district") &&
-                                statusOptions.length > 0;
-                              const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
-                              return (
+                          {savedAdvancedFilterPresets.length > 0 ? (
+                            <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
+                              {savedAdvancedFilterPresets.map((preset) => (
                                 <div
-                                  key={condition.id}
-                                  className="flex flex-wrap items-center gap-1.5 rounded border p-1.5"
+                                  key={preset.id}
+                                  className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
                                 >
-                                  <select
-                                    value={conditionTarget}
-                                    onChange={(event) =>
-                                      handleChangeAdvancedFilterTarget(condition.id, event.target.value)
+                                  <Button
+                                    size="sm"
+                                    variant={
+                                      activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
                                     }
-                                    className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
+                                    className="h-8 rounded-r-none px-2 text-xs"
+                                    onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
                                   >
-                                    {!hasBoardColumnOptions ? (
-                                      <option value="">No board columns loaded</option>
-                                    ) : null}
-                                    {hasBoardColumnOptions ? (
-                                      <option value="">Select board column</option>
-                                    ) : null}
-                                    {boardColumnFilterOptions.map((label) => (
-                                      <option key={label} value={label}>
-                                        {label}
-                                      </option>
-                                    ))}
-                                  </select>
-
-                                  <select
-                                    value={condition.operator}
-                                    onChange={(event) => {
-                                      if (!isAdvancedFilterOperator(event.target.value)) return;
-                                      handleChangeAdvancedFilterOperator(condition.id, event.target.value);
-                                    }}
-                                    className="bg-background border-input h-7 rounded-md border px-2 text-xs"
-                                  >
-                                    {operatorOptions.map((operator) => (
-                                      <option key={operator} value={operator}>
-                                        {ADVANCED_OPERATOR_LABELS[operator]}
-                                      </option>
-                                    ))}
-                                  </select>
-
-                                  {!shouldHideValueInput ? (
-                                    usesOwnerOptions ? (
-                                      <select
-                                        value={condition.value}
-                                        onChange={(event) =>
-                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                        }
-                                        className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
-                                      >
-                                        <option value="">Select owner</option>
-                                        {!ownerOptions.some((option) => option.value === condition.value) &&
-                                          condition.value.trim().length > 0 ? (
-                                          <option value={condition.value}>
-                                            {`Owner ${condition.value} (selected)`}
-                                          </option>
-                                        ) : null}
-                                        {ownerOptions.map((option) => (
-                                          <option key={option.value} value={option.value}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : usesDistrictOptions ? (
-                                      <select
-                                        value={condition.value}
-                                        onChange={(event) =>
-                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                        }
-                                        className="bg-background border-input h-7 min-w-[200px] rounded-md border px-2 text-xs"
-                                      >
-                                        <option value="">Select district</option>
-                                        {!statusOptions.some((option) => option.value === condition.value) &&
-                                          condition.value.trim().length > 0 ? (
-                                          <option value={condition.value}>
-                                            {`District ${condition.value} (selected)`}
-                                          </option>
-                                        ) : null}
-                                        {statusOptions.map((option) => (
-                                          <option key={option.value} value={option.value}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    ) : (
-                                      <Input
-                                        type={isDateField ? "date" : "text"}
-                                        value={condition.value}
-                                        onChange={(event) =>
-                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                        }
-                                        placeholder="Value"
-                                        className="h-7 min-w-[200px] text-xs"
-                                      />
-                                    )
-                                  ) : null}
-
-                                  {condition.operator === "between" ? (
-                                    <Input
-                                      type={isDateField ? "date" : "text"}
-                                      value={condition.valueTo}
-                                      onChange={(event) =>
-                                        handleChangeAdvancedFilterValueTo(
-                                          condition.id,
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder={isDateField ? "End date" : "Second value"}
-                                      className="h-7 min-w-[200px] text-xs"
-                                    />
-                                  ) : null}
-
+                                    {preset.name}
+                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-7 px-2 text-xs"
-                                    onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                                    className="text-muted-foreground h-8 px-1.5 text-xs"
+                                    onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                                    disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
                                   >
-                                    Remove
+                                    {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
                                   </Button>
                                 </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <Input
-                            value={pendingSavedAdvancedFilterName}
-                            onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
-                            placeholder="Saved filter name"
-                            className="h-7 w-56 text-xs"
-                          />
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-xs"
-                            onClick={handleSaveAdvancedFilterPreset}
-                            disabled={
-                              isSavingAdvancedFilterPreset ||
-                              !sessionToken ||
-                              presetScopeOwnerId.length === 0
-                            }
-                          >
-                            {isSavingAdvancedFilterPreset ? "Saving..." : "Save Filter"}
-                          </Button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-muted-foreground text-xs">
+                              No saved filter presets yet.
+                            </p>
+                          )}
                         </div>
-
-                        {savedAdvancedFilterPresets.length > 0 ? (
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {savedAdvancedFilterPresets.map((preset) => (
-                              <div
-                                key={preset.id}
-                                className="bg-background flex items-center rounded-md border pr-1"
-                              >
-                                <Button
-                                  size="sm"
-                                  variant={
-                                    activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
-                                  }
-                                  className="h-7 rounded-r-none px-2 text-xs"
-                                  onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
-                                >
-                                  {preset.name}
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="text-muted-foreground h-7 px-1.5 text-xs"
-                                  onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
-                                  disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
-                                >
-                                  {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-muted-foreground text-xs">
-                            No saved filter presets yet.
-                          </p>
-                        )}
                       </div>
                     </DialogContent>
                   </Dialog>
@@ -4811,430 +5021,593 @@ export function MondayBoardView({
                       Settings
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
-                    <DialogHeader>
+                  <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
+                    <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
                       <DialogTitle>Monday Settings</DialogTitle>
                     </DialogHeader>
-                    <Tabs defaultValue="general-settings" className="flex gap-4">
-                      <TabsList
-                        className={`h-auto shrink-0 flex-col items-stretch ${isMondaySettingsAdmin ? "w-56" : "w-52"}`}
-                      >
-                        <TabsTrigger
-                          value="general-settings"
-                          className="w-full justify-start text-left"
-                        >
-                          General Settings
-                        </TabsTrigger>
-                        {isMondaySettingsAdmin ? (
-                          <>
-                            <TabsTrigger
-                              value="email-templates"
-                              className="w-full justify-start text-left"
-                            >
-                              Email Templates
-                            </TabsTrigger>
-                            <TabsTrigger
-                              value="email-settings"
-                              className="w-full justify-start text-left"
-                            >
-                              Email Settings
-                            </TabsTrigger>
-                            <TabsTrigger
-                              value="user-zip-map"
-                              className="w-full justify-start text-left"
-                            >
-                              User {"<->"} Zipcode map
-                            </TabsTrigger>
-                            <TabsTrigger
-                              value="feature-flags"
-                              className="w-full justify-start text-left"
-                            >
-                              Feature Flags
-                            </TabsTrigger>
-                          </>
-                        ) : null}
-                      </TabsList>
-                      <div className="min-h-80 flex-1 rounded-md border p-4">
-                        <TabsContent value="general-settings" className="mt-0">
-                          <div className="space-y-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium">General Settings</p>
-                              <p className="text-muted-foreground text-sm">
-                                Customize font size and color for this employee board.
-                              </p>
-                              <p className="text-muted-foreground text-xs">
-                                Scope:{" "}
-                                {presetScopeOwnerId.length > 0
-                                  ? `Owner ${presetScopeOwnerId}`
-                                  : "No owner board selected"}
-                              </p>
-                            </div>
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <div className="space-y-4 rounded-md border p-4">
-                                <div className="space-y-2">
-                                  <label
-                                    htmlFor="board-font-size"
-                                    className="text-xs font-semibold tracking-wide uppercase"
-                                  >
-                                    Font Size
-                                  </label>
-                                  <Select
-                                    value={boardGeneralSettingsDraft.fontSize}
-                                    onValueChange={(value) => {
-                                      if (!isUserBoardFontSize(value)) return;
-                                      setBoardGeneralSettingsDraft((prev) => ({
-                                        ...prev,
-                                        fontSize: value,
-                                      }));
-                                    }}
-                                  >
-                                    <SelectTrigger id="board-font-size" className="h-9">
-                                      <SelectValue placeholder="Select font size" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <label
-                                    htmlFor="board-color-theme"
-                                    className="text-xs font-semibold tracking-wide uppercase"
-                                  >
-                                    Color Theme
-                                  </label>
-                                  <Select
-                                    value={boardGeneralSettingsDraft.colorTheme}
-                                    onValueChange={(value) => {
-                                      if (!isUserBoardColorTheme(value)) return;
-                                      setBoardGeneralSettingsDraft((prev) => ({
-                                        ...prev,
-                                        colorTheme: value,
-                                      }));
-                                    }}
-                                  >
-                                    <SelectTrigger id="board-color-theme" className="h-9">
-                                      <SelectValue placeholder="Select color theme" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          <span className="inline-flex items-center gap-2">
-                                            <span
-                                              className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
-                                            />
-                                            {option.label}
-                                          </span>
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <p className="text-muted-foreground text-xs">
-                                    {USER_BOARD_COLOR_THEME_OPTIONS.find(
-                                      (option) =>
-                                        option.value === boardGeneralSettingsDraft.colorTheme,
-                                    )?.description ?? "Choose a color theme for this board."}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div
-                                className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
+                    <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
+                      <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
+                        <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
+                          <TabsTrigger
+                            value="general-settings"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            General Settings
+                          </TabsTrigger>
+                          {isMondaySettingsAdmin ? (
+                            <>
+                              <TabsTrigger
+                                value="email-templates"
+                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                               >
-                                <p className="text-xs font-semibold tracking-wide uppercase">
-                                  Preview
-                                </p>
-                                <div className="space-y-2 rounded-md border bg-background/80 p-3">
-                                  <p className="text-sm font-medium">Header & controls</p>
-                                  <p className="text-muted-foreground text-xs">
-                                    The board UI applies this color styling and font scaling.
-                                  </p>
-                                </div>
-                                <div className="rounded-md border bg-background/80 p-3">
-                                  <p className="text-xs">
-                                    Font scale preview:{" "}
-                                    {
-                                      USER_BOARD_FONT_SIZE_OPTIONS.find(
-                                        (option) =>
-                                          option.value === boardGeneralSettingsDraft.fontSize,
-                                      )?.label
-                                    }
-                                  </p>
-                                  <div className="mt-2">
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="secondary"
-                                      className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
-                                      disabled
-                                    >
-                                      Quick Action Preview
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Button
-                                onClick={() => {
-                                  void handleSaveBoardGeneralSettings();
-                                }}
-                                disabled={
-                                  isSavingBoardGeneralSettings ||
-                                  !sessionToken ||
-                                  presetScopeOwnerId.length === 0 ||
-                                  !hasUnsavedBoardGeneralSettings
-                                }
+                                Email Templates
+                              </TabsTrigger>
+                              <TabsTrigger
+                                value="email-settings"
+                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                               >
-                                {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft(boardGeneralSettings);
-                                }}
-                                disabled={!hasUnsavedBoardGeneralSettings}
+                                Email Settings
+                              </TabsTrigger>
+                              <TabsTrigger
+                                value="user-zip-map"
+                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                               >
-                                Reset
-                              </Button>
-                            </div>
-                          </div>
-                        </TabsContent>
-
-                        {isMondaySettingsAdmin ? (
-                          <TabsContent value="email-templates" className="mt-0">
-                            <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                              <div className="space-y-2">
-                                <p className="text-sm font-medium">
-                                  Templates ({emailTemplates.length})
-                                </p>
-                                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                                  {emailTemplates.map((template) => {
-                                    const isActive = template.id === selectedTemplate?.id;
-                                    return (
-                                      <button
-                                        key={template.id}
-                                        type="button"
-                                        className={[
-                                          "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                          isActive
-                                            ? "border-primary bg-primary/10"
-                                            : "hover:bg-muted/60",
-                                        ].join(" ")}
-                                        onClick={() => {
-                                          setSelectedTemplateId(template.id);
-                                        }}
-                                      >
-                                        <p className="line-clamp-1 font-medium">{template.name}</p>
-                                        <p className="text-muted-foreground mt-1 text-xs">
-                                          Updated {formatUpdatedAt(template.updatedAt)}
-                                        </p>
-                                      </button>
-                                    );
-                                  })}
-                                  {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                    <p className="text-muted-foreground text-sm">
-                                      No templates found on board 18401299370.
-                                    </p>
-                                  ) : null}
-                                  {emailTemplatesQuery.isLoading ? (
-                                    <p className="text-muted-foreground text-sm">
-                                      Loading templates...
-                                    </p>
-                                  ) : null}
-                                </div>
-                              </div>
-                              <div className="bg-background min-h-[420px] rounded-md border p-4">
-                                {selectedTemplate ? (
-                                  <div className="space-y-4">
-                                    <div className="border-b pb-3">
-                                      <p className="text-xs font-semibold tracking-wide uppercase">
-                                        Subject
-                                      </p>
-                                      <p className="mt-1 text-base font-medium">
-                                        {selectedTemplate.name}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-xs font-semibold tracking-wide uppercase">
-                                        Email Preview (Lead View)
-                                      </p>
-                                      <div className="bg-card mt-2 rounded-md border p-4">
-                                        {selectedTemplate.content.trim().length === 0 ? (
-                                          <p className="text-muted-foreground text-sm">
-                                            No content found in column doc_mm0wq4r.
-                                          </p>
-                                        ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                          <div
-                                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                            style={{ whiteSpace: "pre-wrap" }}
-                                            dangerouslySetInnerHTML={{
-                                              __html: selectedTemplate.renderedHtml,
-                                            }}
-                                          />
-                                        ) : (
-                                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                            {selectedTemplate.content}
-                                          </div>
-                                        )}
-                                        {selectedTemplate.docLink ? (
-                                          <p className="mt-3 text-xs">
-                                            <a
-                                              href={selectedTemplate.docLink}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="text-primary underline underline-offset-2"
-                                            >
-                                              Open source Monday Workdoc
-                                            </a>
-                                          </p>
-                                        ) : null}
-                                      </div>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="text-muted-foreground text-sm">
-                                    Select an email template to preview.
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </TabsContent>
-                        ) : null}
-                        {isMondaySettingsAdmin ? (
-                          <TabsContent value="user-zip-map" className="mt-0">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                              <p className="text-muted-foreground text-sm">
-                                Define zipcode ownership and routing by user.
-                              </p>
-                            </div>
-                          </TabsContent>
-                        ) : null}
-                        {isMondaySettingsAdmin ? (
-                          <TabsContent value="email-settings" className="mt-0">
-                            <div className="space-y-4">
-                              <div className="space-y-2">
-                                <p className="text-sm font-medium">Email Settings</p>
-                                <p className="text-muted-foreground text-sm">
-                                  Configure outbound email account settings for sending
-                                  monday-designed templates.
-                                </p>
-                              </div>
-                              <div className="space-y-3 rounded-md border p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge
-                                    variant={
-                                      outlookStatusQuery.data?.connected
-                                        ? "default"
-                                        : "secondary"
-                                    }
-                                  >
-                                    {outlookStatusQuery.data?.connected
-                                      ? "Outlook connected"
-                                      : "Outlook not connected"}
-                                  </Badge>
-                                  <Button
-                                    size="sm"
-                                    onClick={() => {
-                                      void handleConnectOutlook();
-                                    }}
-                                    disabled={isConnectingOutlook}
-                                  >
-                                    {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                                  </Button>
-                                  {outlookStatusQuery.data?.connected ? (
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        void handleDisconnectOutlook();
-                                      }}
-                                      disabled={isDisconnectingOutlook}
-                                    >
-                                      {isDisconnectingOutlook
-                                        ? "Disconnecting..."
-                                        : "Disconnect"}
-                                    </Button>
-                                  ) : null}
-                                </div>
-                                <div className="text-muted-foreground text-sm">
-                                  {outlookStatusQuery.data?.connection?.email ? (
-                                    <p>
-                                      Connected mailbox:{" "}
-                                      {outlookStatusQuery.data.connection.email}
-                                    </p>
-                                  ) : (
-                                    <p>
-                                      Use OAuth to connect Outlook, then use this account
-                                      for sending and engagement tracking.
-                                    </p>
-                                  )}
-                                  {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                    <p className="mt-1">
-                                      Last updated:{" "}
-                                      {new Date(
-                                        outlookStatusQuery.data.connection.updatedAt,
-                                      ).toLocaleString()}
-                                    </p>
-                                  ) : null}
-                                </div>
-                                <div className="rounded-md border bg-muted/30 p-3">
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Callback URL
-                                  </p>
-                                  <p className="mt-1 break-all font-mono text-xs">
-                                    {callbackUrl}
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </TabsContent>
-                        ) : null}
-                        {isMondaySettingsAdmin ? (
-                          <TabsContent value="feature-flags" className="mt-0">
+                                User {"<->"} Zipcode map
+                              </TabsTrigger>
+                              <TabsTrigger
+                                value="feature-flags"
+                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                              >
+                                Feature Flags
+                              </TabsTrigger>
+                            </>
+                          ) : null}
+                        </TabsList>
+                      </div>
+                      <div className="flex-1 overflow-y-auto px-6 py-5">
+                        <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
+                          <TabsContent value="general-settings" className="mt-0">
                             <div className="space-y-4">
                               <div className="space-y-1">
-                                <p className="text-sm font-medium">Feature Flags</p>
+                                <p className="text-sm font-medium">General Settings</p>
                                 <p className="text-muted-foreground text-sm">
-                                  Toggle app capabilities without code changes.
+                                  Customize font size and color for this employee board.
+                                </p>
+                                <p className="text-muted-foreground text-xs">
+                                  Scope:{" "}
+                                  {presetScopeOwnerId.length > 0
+                                    ? `Owner ${presetScopeOwnerId}`
+                                    : "No owner board selected"}
                                 </p>
                               </div>
-                              <div className="space-y-3 rounded-md border p-4">
-                                <label className="flex items-start gap-3 text-sm">
-                                  <input
-                                    type="checkbox"
-                                    checked={featureFlags.emailMarketingEnabled}
-                                    disabled={isSavingFeatureFlags}
-                                    onChange={(event) => {
-                                      void handleSetEmailMarketingEnabled(
-                                        event.target.checked,
-                                      );
-                                    }}
-                                  />
-                                  <div className="space-y-1">
-                                    <p className="font-medium">Email Marketing</p>
+                              <div className="grid gap-4 md:grid-cols-2">
+                                <div className="space-y-4 rounded-md border p-4">
+                                  <div className="space-y-2">
+                                    <label
+                                      htmlFor="board-font-size"
+                                      className="text-xs font-semibold tracking-wide uppercase"
+                                    >
+                                      Font Size
+                                    </label>
+                                    <Select
+                                      value={boardGeneralSettingsDraft.fontSize}
+                                      onValueChange={(value) => {
+                                        if (!isUserBoardFontSize(value)) return;
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          fontSize: value,
+                                        }));
+                                      }}
+                                    >
+                                      <SelectTrigger id="board-font-size" className="h-9">
+                                        <SelectValue placeholder="Select font size" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                                          <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    <label
+                                      htmlFor="board-color-theme"
+                                      className="text-xs font-semibold tracking-wide uppercase"
+                                    >
+                                      Color Theme
+                                    </label>
+                                    <Select
+                                      value={boardGeneralSettingsDraft.colorTheme}
+                                      onValueChange={(value) => {
+                                        if (!isUserBoardColorTheme(value)) return;
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          colorTheme: value,
+                                        }));
+                                      }}
+                                    >
+                                      <SelectTrigger id="board-color-theme" className="h-9">
+                                        <SelectValue placeholder="Select color theme" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                                          <SelectItem key={option.value} value={option.value}>
+                                            <span className="inline-flex items-center gap-2">
+                                              <span
+                                                className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
+                                              />
+                                              {option.label}
+                                            </span>
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                     <p className="text-muted-foreground text-xs">
-                                      Enables email marketing capabilities, including the
-                                      Email action in the table.
+                                      {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                        (option) =>
+                                          option.value === boardGeneralSettingsDraft.colorTheme,
+                                      )?.description ?? "Choose a color theme for this board."}
                                     </p>
-                                    {isSavingFeatureFlags ? (
-                                      <p className="text-muted-foreground text-[11px]">
-                                        Saving...
+                                  </div>
+                                </div>
+
+                                <div
+                                  className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
+                                >
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Preview
+                                  </p>
+                                  <div className="space-y-2 rounded-md border bg-background/80 p-3">
+                                    <p className="text-sm font-medium">Header & controls</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      The board UI applies this color styling and font scaling.
+                                    </p>
+                                  </div>
+                                  <div className="rounded-md border bg-background/80 p-3">
+                                    <p className="text-xs">
+                                      Font scale preview:{" "}
+                                      {
+                                        USER_BOARD_FONT_SIZE_OPTIONS.find(
+                                          (option) =>
+                                            option.value === boardGeneralSettingsDraft.fontSize,
+                                        )?.label
+                                      }
+                                    </p>
+                                    <div className="mt-2">
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="secondary"
+                                        className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                                        disabled
+                                      >
+                                        Quick Action Preview
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Button
+                                  onClick={() => {
+                                    void handleSaveBoardGeneralSettings();
+                                  }}
+                                  disabled={
+                                    isSavingBoardGeneralSettings ||
+                                    !sessionToken ||
+                                    presetScopeOwnerId.length === 0 ||
+                                    !hasUnsavedBoardGeneralSettings
+                                  }
+                                >
+                                  {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => {
+                                    setBoardGeneralSettingsDraft(boardGeneralSettings);
+                                  }}
+                                  disabled={!hasUnsavedBoardGeneralSettings}
+                                >
+                                  Reset
+                                </Button>
+                              </div>
+                            </div>
+                          </TabsContent>
+
+                          {isMondaySettingsAdmin ? (
+                            <TabsContent value="email-templates" className="mt-0">
+                              <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">
+                                    Templates ({emailTemplates.length})
+                                  </p>
+                                  <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                    {emailTemplates.map((template) => {
+                                      const isActive = template.id === selectedTemplate?.id;
+                                      return (
+                                        <button
+                                          key={template.id}
+                                          type="button"
+                                          className={[
+                                            "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                            isActive
+                                              ? "border-primary bg-primary/10"
+                                              : "hover:bg-muted/60",
+                                          ].join(" ")}
+                                          onClick={() => {
+                                            setSelectedTemplateId(template.id);
+                                          }}
+                                        >
+                                          <p className="line-clamp-1 font-medium">{template.name}</p>
+                                          <p className="text-muted-foreground mt-1 text-xs">
+                                            Updated {formatUpdatedAt(template.updatedAt)}
+                                          </p>
+                                        </button>
+                                      );
+                                    })}
+                                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                      <p className="text-muted-foreground text-sm">
+                                        No templates found on board 18401299370.
+                                      </p>
+                                    ) : null}
+                                    {emailTemplatesQuery.isLoading ? (
+                                      <p className="text-muted-foreground text-sm">
+                                        Loading templates...
                                       </p>
                                     ) : null}
                                   </div>
-                                </label>
+                                </div>
+                                <div className="bg-background min-h-[420px] rounded-md border p-4">
+                                  {selectedTemplate ? (
+                                    <div className="space-y-4">
+                                      <div className="border-b pb-3">
+                                        <p className="text-xs font-semibold tracking-wide uppercase">
+                                          Subject
+                                        </p>
+                                        <p className="mt-1 text-base font-medium">
+                                          {selectedTemplate.name}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-xs font-semibold tracking-wide uppercase">
+                                          Email Preview (Lead View)
+                                        </p>
+                                        <div className="bg-card mt-2 rounded-md border p-4">
+                                          {selectedTemplate.content.trim().length === 0 ? (
+                                            <p className="text-muted-foreground text-sm">
+                                              No content found in column doc_mm0wq4r.
+                                            </p>
+                                          ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                            <div
+                                              className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                              style={{ whiteSpace: "pre-wrap" }}
+                                              dangerouslySetInnerHTML={{
+                                                __html: selectedTemplate.renderedHtml,
+                                              }}
+                                            />
+                                          ) : (
+                                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                              {selectedTemplate.content}
+                                            </div>
+                                          )}
+                                          {selectedTemplate.docLink ? (
+                                            <p className="mt-3 text-xs">
+                                              <a
+                                                href={selectedTemplate.docLink}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-primary underline underline-offset-2"
+                                              >
+                                                Open source Monday Workdoc
+                                              </a>
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <p className="text-muted-foreground text-sm">
+                                      Select an email template to preview.
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </TabsContent>
-                        ) : null}
+                            </TabsContent>
+                          ) : null}
+                          {isMondaySettingsAdmin ? (
+                            <TabsContent value="user-zip-map" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Configure and monitor district routing for newly created contact
+                                  records.
+                                </p>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    Routing Status
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.isLoading
+                                      ? "Loading..."
+                                      : routingStatusQuery.data?.enabled
+                                        ? routingStatusQuery.data.ok
+                                          ? "Configured"
+                                          : "Configured with issues"
+                                        : "Not configured"}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    County Mappings
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.data?.countyMappingsCount ?? 0}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    District Owner Mappings
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
+                                <p className="text-sm font-medium">Routing boards</p>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">Contact board</p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.contactBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.contactBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">
+                                      County {"->"} District board
+                                    </p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.countyBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.countyBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">
+                                      District {"->"} Owner board
+                                    </p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.districtBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.districtBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-medium">Routing diagnostics</p>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={() => {
+                                      void routingStatusQuery.refetch();
+                                    }}
+                                    disabled={routingStatusQuery.isFetching}
+                                  >
+                                    {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
+                                  </Button>
+                                </div>
+                                {routingStatusQuery.error ? (
+                                  <p className="text-destructive text-xs">
+                                    {routingStatusQuery.error instanceof Error
+                                      ? routingStatusQuery.error.message
+                                      : "Failed to load routing diagnostics"}
+                                  </p>
+                                ) : null}
+                                {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
+                                  <ul className="list-disc space-y-1 pl-4 text-xs">
+                                    {(routingStatusQuery.data?.issues ?? []).map((issue) => (
+                                      <li key={issue} className="text-destructive">
+                                        {issue}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-muted-foreground text-xs">
+                                    No routing issues detected.
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">Manual rerun</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Re-run owner assignment for one contact item id.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Input
+                                    value={routingRerunItemId}
+                                    onChange={(event) => setRoutingRerunItemId(event.target.value)}
+                                    placeholder="Item ID"
+                                    className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    className="h-8 px-3 text-xs"
+                                    onClick={() => {
+                                      void handleRunRoutingRerun();
+                                    }}
+                                    disabled={isRunningRoutingRerun}
+                                  >
+                                    {isRunningRoutingRerun ? "Running..." : "Run assignment"}
+                                  </Button>
+                                </div>
+                              </div>
+                              </div>
+                            </TabsContent>
+                          ) : null}
+                          {isMondaySettingsAdmin ? (
+                            <TabsContent value="email-settings" className="mt-0">
+                              <div className="space-y-4">
+                                <div className="space-y-2">
+                                  <p className="text-sm font-medium">Email Settings</p>
+                                  <p className="text-muted-foreground text-sm">
+                                    Configure outbound email account settings for sending
+                                    monday-designed templates.
+                                  </p>
+                                </div>
+                                <div className="space-y-3 rounded-md border p-4">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      variant={
+                                        outlookStatusQuery.data?.connected
+                                          ? "default"
+                                          : "secondary"
+                                      }
+                                    >
+                                      {outlookStatusQuery.data?.connected
+                                        ? "Outlook connected"
+                                        : "Outlook not connected"}
+                                    </Badge>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        void handleConnectOutlook();
+                                      }}
+                                      disabled={isConnectingOutlook}
+                                    >
+                                      {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                    </Button>
+                                    {outlookStatusQuery.data?.connected ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          void handleDisconnectOutlook();
+                                        }}
+                                        disabled={isDisconnectingOutlook}
+                                      >
+                                        {isDisconnectingOutlook
+                                          ? "Disconnecting..."
+                                          : "Disconnect"}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="text-muted-foreground text-sm">
+                                    {outlookStatusQuery.data?.connection?.email ? (
+                                      <p>
+                                        Connected mailbox:{" "}
+                                        {outlookStatusQuery.data.connection.email}
+                                      </p>
+                                    ) : (
+                                      <p>
+                                        Use OAuth to connect Outlook, then use this account
+                                        for sending and engagement tracking.
+                                      </p>
+                                    )}
+                                    {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                      <p className="mt-1">
+                                        Last updated:{" "}
+                                        {new Date(
+                                          outlookStatusQuery.data.connection.updatedAt,
+                                        ).toLocaleString()}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-md border bg-muted/30 p-3">
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Callback URL
+                                    </p>
+                                    <p className="mt-1 break-all font-mono text-xs">
+                                      {callbackUrl}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </TabsContent>
+                          ) : null}
+                          {isMondaySettingsAdmin ? (
+                            <TabsContent value="feature-flags" className="mt-0">
+                              <div className="space-y-4">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">Feature Flags</p>
+                                  <p className="text-muted-foreground text-sm">
+                                    Toggle app capabilities without code changes.
+                                  </p>
+                                </div>
+                                <div className="space-y-3 rounded-md border p-4">
+                                  <label className="flex items-start gap-3 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={featureFlags.emailMarketingEnabled}
+                                      disabled={isSavingFeatureFlags}
+                                      onChange={(event) => {
+                                        void handleSetEmailMarketingEnabled(
+                                          event.target.checked,
+                                        );
+                                      }}
+                                    />
+                                    <div className="space-y-1">
+                                      <p className="font-medium">Email Marketing</p>
+                                      <p className="text-muted-foreground text-xs">
+                                        Enables email marketing capabilities, including the
+                                        Email action in the table.
+                                      </p>
+                                      {isSavingFeatureFlags ? (
+                                        <p className="text-muted-foreground text-[11px]">
+                                          Saving...
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </label>
+                                </div>
+                              </div>
+                            </TabsContent>
+                          ) : null}
+                        </div>
                       </div>
                     </Tabs>
                   </DialogContent>
