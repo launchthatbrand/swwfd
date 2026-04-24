@@ -43,6 +43,7 @@ export interface MondayRecord {
   retentionPeriod: string | null;
   tags: string | null;
   batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{
@@ -852,6 +853,7 @@ export const listMondayBoardRecords = async (args?: {
         ) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress: parsedBatteryProgress,
+      batteryRawValue: batteryColumn?.value ?? null,
       createdAt:
         createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
@@ -1279,6 +1281,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       retentionPeriod: null,
       tags: null,
       batteryProgress: null,
+      batteryRawValue: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
       contactDetails: detailEntries,
