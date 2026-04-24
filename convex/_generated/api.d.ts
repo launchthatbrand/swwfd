@@ -280,6 +280,38 @@ export declare const api: {
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
     >;
   };
+  mondayUserBoardSettings: {
+    getForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        viewerMondayUserId: string;
+      },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }
+    >;
+  };
   mondayUserFilterPresets: {
     listForOwnerBoard: FunctionReference<
       "query",

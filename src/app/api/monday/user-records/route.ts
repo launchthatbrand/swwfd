@@ -49,6 +49,7 @@ type MergedRecord = {
   hireDate: string | null;
   retentionPeriod: string | null;
   tags: string | null;
+  batteryProgress: number | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
@@ -158,6 +159,48 @@ const parseDateValue = (column: MondayColumnValue | undefined) => {
   const parsed = Date.parse(text.replace(" UTC", "Z"));
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed).toISOString();
+};
+
+const parseBatteryProgressValue = (
+  text: string | null | undefined,
+  rawValue: string | null | undefined,
+): number | null => {
+  const parseNumber = (value: string) => {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+  };
+
+  if (!rawValue || rawValue.trim().length === 0) return null;
+  try {
+    const parsed = JSON.parse(rawValue) as {
+      battery_value?: number | string | null;
+      value?: number | string | null;
+      text?: string | null;
+    };
+    if (
+      typeof parsed.battery_value === "number" ||
+      typeof parsed.battery_value === "string"
+    ) {
+      return parseNumber(String(parsed.battery_value));
+    }
+    if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+      return parseNumber(String(parsed.value));
+    }
+    if (typeof parsed.text === "string") {
+      return parseNumber(parsed.text);
+    }
+    const fromTextInRaw = typeof parsed.text === "string" ? parseNumber(parsed.text) : null;
+    if (fromTextInRaw !== null) return fromTextInRaw;
+  } catch {
+    // Fall back to text parsing below.
+  }
+
+  const fromText = text?.trim() ? parseNumber(text) : null;
+  if (fromText !== null) return fromText;
+  return null;
 };
 
 const extractPrimitiveStrings = (input: unknown): string[] => {
@@ -271,12 +314,22 @@ const fetchTouchPage = async (args: {
       items_page?: { cursor?: string | null; items?: MondayBoardItem[] };
     }>;
   }
+  const dateRule = args.dateRule ?? null;
   const canPushDateRule =
     !args.cursor &&
-    !!args.dateRule &&
-    /^[a-zA-Z0-9_]+$/.test(args.dateRule.touchDateColumnId) &&
-    isIsoDateOnly(args.dateRule.dateFrom) &&
-    isIsoDateOnly(args.dateRule.dateTo);
+    !!dateRule &&
+    /^[a-zA-Z0-9_]+$/.test(dateRule.touchDateColumnId) &&
+    isIsoDateOnly(dateRule.dateFrom) &&
+    isIsoDateOnly(dateRule.dateTo);
+  const queryParamsRule = canPushDateRule && dateRule
+    ? `query_params: {
+            rules: [{
+              column_id: "${dateRule.touchDateColumnId}"
+              compare_value: ["${dateRule.dateFrom}", "${dateRule.dateTo}"]
+              operator: between
+            }]
+          }`
+    : "";
   const query = `
     query ListTouchItems($boardId: ID!, $limit: Int!${args.cursor ? ", $cursor: String" : ""}) {
       boards(ids: [$boardId]) {
@@ -284,16 +337,7 @@ const fetchTouchPage = async (args: {
         items_page(
           limit: $limit
           ${args.cursor ? "cursor: $cursor" : ""}
-          ${canPushDateRule
-      ? `query_params: {
-            rules: [{
-              column_id: "${args.dateRule.touchDateColumnId}"
-              compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
-              operator: between
-            }]
-          }`
-      : ""
-    }
+          ${queryParamsRule}
         ) {
           cursor
           items {
@@ -412,6 +456,16 @@ const fetchContactRecordsByIds = async (args: {
     items.push(...(data.items ?? []));
   }
 
+  const batteryDebugEntries: {
+    contactItemId: string;
+    contactName: string;
+    batteryColumnId: string | null;
+    batteryColumnType: string | null;
+    batteryText: string | null;
+    batteryRawValue: string | null;
+    parsedBatteryProgress: number | null;
+  }[] = [];
+
   const toContactRecord = (item: MondayBoardItem): MergedRecord => {
     const columns = item.column_values ?? [];
     const byId = (id: string) => columns.find((column) => column.id === id);
@@ -427,6 +481,20 @@ const fetchContactRecordsByIds = async (args: {
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
     const tagsColumn = byId("dropdown_mkvw578t");
+    const batteryColumn = byId("columns_battery_mm1dnmq3") ?? byType("battery");
+    const parsedBatteryProgress = parseBatteryProgressValue(
+      batteryColumn?.text,
+      batteryColumn?.value,
+    );
+    batteryDebugEntries.push({
+      contactItemId: item.id,
+      contactName: item.name ?? "",
+      batteryColumnId: batteryColumn?.id ?? null,
+      batteryColumnType: batteryColumn?.type ?? null,
+      batteryText: batteryColumn?.text ?? null,
+      batteryRawValue: batteryColumn?.value ?? null,
+      parsedBatteryProgress,
+    });
     const dateColumn = byId("date1__1");
     const creationLogColumn = byType("creation_log");
 
@@ -481,6 +549,7 @@ const fetchContactRecordsByIds = async (args: {
       hireDate: hireDate,
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
+      batteryProgress: parsedBatteryProgress,
       createdAt: createdAt ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
       contactDetails: details,
@@ -491,6 +560,12 @@ const fetchContactRecordsByIds = async (args: {
   for (const item of items) {
     map.set(item.id, toContactRecord(item));
   }
+  console.info("[MondayUserRecordsRoute][BatteryDebug][ContactRecordsByIds]", {
+    boardId: args.boardId,
+    requestedContactIds: args.itemIds,
+    returnedContactCount: items.length,
+    entries: batteryDebugEntries,
+  });
   return map;
 };
 
