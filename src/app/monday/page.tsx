@@ -861,6 +861,29 @@ const CONTACT_UPDATE_ACTION_BUTTONS: {
     },
   ];
 
+type QuickContactActionButton = (typeof CONTACT_UPDATE_ACTION_BUTTONS)[number];
+
+const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
+  Exclude<ContactUpdateType, "general">,
+  string
+> = {
+  welcome_email: "Welcome Email Update",
+  followup: "Followup Update",
+  questionnaire: "Questionaire Update",
+  resume: "Resume Update",
+  resume_referral: "Resume Referral Update",
+};
+
+const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
+  Record<Exclude<ContactUpdateType, "general">, string>
+> = {
+  welcome_email: "color_mm1db321",
+  followup: "color_mm1dwtvd",
+  questionnaire: "color_mm1dwr4k",
+  resume: "color_mm1dnr11",
+  resume_referral: "color_mm1dgeqy",
+};
+
 const contactUpdateTypeLabel = (value: ContactUpdateType) => {
   return (
     CONTACT_UPDATE_TYPE_OPTIONS.find((option) => option.value === value)?.label ??
@@ -1431,6 +1454,40 @@ const extractThemeFromContextPayload = (value: unknown) => {
   return typeof theme === "string" ? theme : null;
 };
 
+const toTrimmedBoardId = (value: unknown) => {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : "";
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return "";
+};
+
+const extractBoardIdFromContextPayload = (value: unknown) => {
+  if (typeof value !== "object" || value === null) return "";
+  const payloadObject = value as { data?: unknown };
+  const data = payloadObject.data;
+  const context = typeof data === "object" && data !== null ? data : value;
+  if (typeof context !== "object" || context === null) return "";
+  const contextObject = context as {
+    boardId?: unknown;
+    board_id?: unknown;
+    boardIds?: unknown;
+  };
+  const directBoardId =
+    toTrimmedBoardId(contextObject.boardId) || toTrimmedBoardId(contextObject.board_id);
+  if (directBoardId) return directBoardId;
+  if (Array.isArray(contextObject.boardIds)) {
+    for (const boardIdCandidate of contextObject.boardIds) {
+      const normalized = toTrimmedBoardId(boardIdCandidate);
+      if (normalized) return normalized;
+    }
+  }
+  return "";
+};
+
 const hasUnsubscribe = (
   value: unknown,
 ): value is {
@@ -1540,6 +1597,14 @@ export function MondayBoardView({
   const [contactUpdateType, setContactUpdateType] =
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
+  const [bulkQuickActionType, setBulkQuickActionType] = useState<
+    Exclude<ContactUpdateType, "general"> | null
+  >(null);
+  const [bulkQuickActionConfirmation, setBulkQuickActionConfirmation] = useState<{
+    action: QuickContactActionButton;
+    selectedItems: MondayRecord[];
+  } | null>(null);
+  const bulkClearSelectionRef = useRef<(() => void) | null>(null);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: [] as string[],
     hiredWithContractor: "",
@@ -1701,6 +1766,10 @@ export function MondayBoardView({
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize;
+  const canCreateUpdatesAsLoggedInMondayUser =
+    isMondayEmbeddedContext &&
+    !!identity?.userId &&
+    sessionToken !== MONDAY_DEV_BYPASS_TOKEN;
   const recordsQuery = useInfiniteQuery({
     queryKey: [
       "monday-records",
@@ -3142,6 +3211,287 @@ export function MondayBoardView({
     setContactUpdateType("general");
   };
 
+  const resolveContactUpdateTargetRecordId = (record: MondayRecord) => {
+    const contactId = record.contactId?.trim();
+    if (contactId && contactId.length > 0) return contactId;
+    return record.id;
+  };
+
+  const syncContactHistoryDialogFromRecords = (refreshedRecords: MondayRecord[]) => {
+    setContactHistoryDialogRecord((prev) => {
+      if (!prev) return prev;
+      const prevContactId = prev.contactId?.trim() ?? "";
+      const matchedRecord = refreshedRecords.find((candidate) => {
+        const candidateId = candidate.id.trim();
+        const candidateContactId = candidate.contactId?.trim() ?? "";
+        const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
+        return (
+          candidateId === prev.id ||
+          candidateId === prevContactId ||
+          candidateContactId === prev.id ||
+          candidateContactId === prevContactId ||
+          candidateTouchItemId === prev.id
+        );
+      });
+      if (!matchedRecord) return prev;
+      const matchedBatteryProgress =
+        typeof matchedRecord.batteryProgress === "number" &&
+        Number.isFinite(matchedRecord.batteryProgress)
+          ? Math.max(0, Math.min(100, Math.round(matchedRecord.batteryProgress)))
+          : null;
+      return {
+        ...prev,
+        ...matchedRecord,
+        ownerProfiles: normalizeOwnerProfiles(matchedRecord.ownerProfiles),
+        ownerIds: normalizeOwnerIds(matchedRecord.ownerIds),
+        resumeFiles: normalizeResumeFiles(matchedRecord.resumeFiles),
+        batteryProgress: matchedBatteryProgress,
+      };
+    });
+  };
+
+  const callMondayContextApi = async <TData,>(
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<TData> => {
+    if (typeof monday.api !== "function") {
+      throw new Error("Monday client API is unavailable in this context");
+    }
+    const result = (await monday.api(query, { variables })) as
+      | {
+        data?: TData;
+        errors?: { message?: string | null }[];
+      }
+      | null
+      | undefined;
+    const errors = result?.errors ?? [];
+    if (errors.length > 0) {
+      const message = errors
+        .map((entry) => entry.message ?? "")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .join(" | ");
+      throw new Error(message || "Monday API returned an unknown error");
+    }
+    if (!result?.data) {
+      throw new Error("Monday API returned no data");
+    }
+    return result.data;
+  };
+
+  const normalizeForSubitemTypeMatch = (value: string) => {
+    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
+  };
+
+  const doesSubitemMatchUpdateType = (
+    subitemName: string,
+    type: Exclude<ContactUpdateType, "general">,
+  ) => {
+    const normalized = normalizeForSubitemTypeMatch(subitemName);
+    switch (type) {
+      case "welcome_email":
+        return normalized.includes("welcome");
+      case "followup":
+        return (
+          normalized.includes("follow-up") ||
+          normalized.includes("follow up") ||
+          normalized.includes("followup")
+        );
+      case "questionnaire":
+        return normalized.includes("question");
+      case "resume":
+        return normalized.includes("resume") && !normalized.includes("referral");
+      case "resume_referral":
+        return normalized.includes("resume referral");
+      default:
+        return false;
+    }
+  };
+
+  const resolveMondayContextBoardId = async () => {
+    const identityBoardId = identity?.boardId?.trim() ?? "";
+    if (identityBoardId.length > 0) return identityBoardId;
+    try {
+      const contextPayload = (await monday.get("context")) as unknown;
+      return extractBoardIdFromContextPayload(contextPayload);
+    } catch {
+      return "";
+    }
+  };
+
+  const createMondayRecordUpdateAsContextUser = async (args: {
+    itemId: string;
+    body: string;
+    updateType?: ContactUpdateType;
+  }) => {
+    const itemId = args.itemId.trim();
+    const body = args.body.trim();
+    if (!itemId || !body) {
+      throw new Error("Missing Monday update context");
+    }
+    const updateType = args.updateType ?? "general";
+
+    let targetItemId = itemId;
+    let source: "item" | "subitem" = "item";
+    let subitemName: string | null = null;
+    if (updateType !== "general") {
+      interface ExistingSubitemsData {
+        items?: {
+          subitems?: {
+            id?: string | number | null;
+            name?: string | null;
+          }[];
+        }[];
+      }
+      const existingSubitemsData = await callMondayContextApi<ExistingSubitemsData>(
+        `
+          query GetItemSubitems($itemIds: [ID!]) {
+            items(ids: $itemIds) {
+              subitems {
+                id
+                name
+              }
+            }
+          }
+        `,
+        { itemIds: [itemId] },
+      );
+      const matchedSubitem = (existingSubitemsData.items?.[0]?.subitems ?? []).find((subitem) => {
+        const subitemIdRaw = subitem.id;
+        const subitemId =
+          subitemIdRaw === null || subitemIdRaw === undefined
+            ? ""
+            : String(subitemIdRaw).trim();
+        const name = subitem.name?.trim() ?? "";
+        if (!subitemId || !name) return false;
+        return doesSubitemMatchUpdateType(name, updateType);
+      });
+
+      if (matchedSubitem?.id !== null && matchedSubitem?.id !== undefined) {
+        targetItemId = String(matchedSubitem.id).trim();
+        subitemName = matchedSubitem.name?.trim() ?? UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+      } else {
+        interface CreateSubitemData {
+          create_subitem?: {
+            id?: string | number | null;
+          } | null;
+        }
+        const desiredSubitemName = UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+        const createdSubitemData = await callMondayContextApi<CreateSubitemData>(
+          `
+            mutation CreateSubitem($parentItemId: ID!, $itemName: String!) {
+              create_subitem(parent_item_id: $parentItemId, item_name: $itemName) {
+                id
+              }
+            }
+          `,
+          {
+            parentItemId: itemId,
+            itemName: desiredSubitemName,
+          },
+        );
+        const createdSubitemIdRaw = createdSubitemData.create_subitem?.id;
+        const createdSubitemId =
+          createdSubitemIdRaw === null || createdSubitemIdRaw === undefined
+            ? ""
+            : String(createdSubitemIdRaw).trim();
+        if (!createdSubitemId) {
+          throw new Error("Failed to create subitem for typed update");
+        }
+        targetItemId = createdSubitemId;
+        subitemName = desiredSubitemName;
+      }
+      source = "subitem";
+    }
+
+    interface CreateUpdateData {
+      create_update?: {
+        id?: string | number | null;
+        body?: string | null;
+      } | null;
+    }
+    const createUpdateData = await callMondayContextApi<CreateUpdateData>(
+      `
+        mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
+          create_update(item_id: $itemId, body: $body) {
+            id
+            body
+          }
+        }
+      `,
+      {
+        itemId: targetItemId,
+        body,
+      },
+    );
+    const createdUpdateIdRaw = createUpdateData.create_update?.id;
+    const createdUpdateId =
+      createdUpdateIdRaw === null || createdUpdateIdRaw === undefined
+        ? ""
+        : String(createdUpdateIdRaw).trim();
+    if (!createdUpdateId) {
+      throw new Error("Monday did not return a new update id");
+    }
+
+    let warning: string | null = null;
+    let approvalStepMarked = false;
+    if (updateType !== "general") {
+      const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
+      const boardId = await resolveMondayContextBoardId();
+      if (!approvalStepColumnId) {
+        warning = "No onboarding step mapping exists for this update type";
+      } else if (!boardId) {
+        warning = "Missing boardId in monday context; skipped onboarding step update";
+      } else {
+        try {
+          await callMondayContextApi<{
+            change_multiple_column_values?: { id?: string | number | null } | null;
+          }>(
+            `
+              mutation MarkApprovalStepDone(
+                $boardId: ID!
+                $itemId: ID!
+                $columnValues: JSON!
+              ) {
+                change_multiple_column_values(
+                  board_id: $boardId
+                  item_id: $itemId
+                  column_values: $columnValues
+                  create_labels_if_missing: true
+                ) {
+                  id
+                }
+              }
+            `,
+            {
+              boardId,
+              itemId,
+              columnValues: JSON.stringify({
+                [approvalStepColumnId]: { label: "Done" },
+              }),
+            },
+          );
+          approvalStepMarked = true;
+        } catch (error) {
+          warning =
+            error instanceof Error
+              ? error.message
+              : "Failed to mark onboarding step done";
+        }
+      }
+    }
+
+    return {
+      id: createdUpdateId,
+      body: createUpdateData.create_update?.body ?? body,
+      updateType,
+      source,
+      subitemName,
+      approvalStepMarked,
+      warning,
+    } satisfies NonNullable<MondayCreateRecordUpdateResponse["update"]>;
+  };
+
   const handleCreateContactUpdate = async (
     options?: {
       body?: string;
@@ -3166,24 +3516,32 @@ export function MondayBoardView({
 
     setIsCreatingContactUpdate(true);
     try {
-      const contactId = contactHistoryDialogRecord.contactId?.trim();
-      const targetRecordId =
-        contactId && contactId.length > 0 ? contactId : contactHistoryDialogRecord.id;
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
+      const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+      let data: MondayCreateRecordUpdateResponse;
+      if (canCreateUpdatesAsLoggedInMondayUser) {
+        const update = await createMondayRecordUpdateAsContextUser({
+          itemId: targetRecordId,
+          body,
+          updateType,
+        });
+        data = { ok: true, update };
+      } else {
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({ body, updateType }),
           },
-          body: JSON.stringify({ body, updateType }),
-        },
-      );
-      const data = (await response.json()) as MondayCreateRecordUpdateResponse;
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to post Monday update");
+        );
+        data = (await response.json()) as MondayCreateRecordUpdateResponse;
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "Failed to post Monday update");
+        }
       }
 
       setContactUpdateDraft("");
@@ -3197,36 +3555,7 @@ export function MondayBoardView({
       const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
         (page) => page.records ?? [],
       );
-      setContactHistoryDialogRecord((prev) => {
-        if (!prev) return prev;
-        const prevContactId = prev.contactId?.trim() ?? "";
-        const matchedRecord = refreshedRecords.find((candidate) => {
-          const candidateId = candidate.id.trim();
-          const candidateContactId = candidate.contactId?.trim() ?? "";
-          const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
-          return (
-            candidateId === prev.id ||
-            candidateId === prevContactId ||
-            candidateContactId === prev.id ||
-            candidateContactId === prevContactId ||
-            candidateTouchItemId === prev.id
-          );
-        });
-        if (!matchedRecord) return prev;
-        const matchedBatteryProgress =
-          typeof matchedRecord.batteryProgress === "number" &&
-          Number.isFinite(matchedRecord.batteryProgress)
-            ? Math.max(0, Math.min(100, Math.round(matchedRecord.batteryProgress)))
-            : null;
-        return {
-          ...prev,
-          ...matchedRecord,
-          ownerProfiles: normalizeOwnerProfiles(matchedRecord.ownerProfiles),
-          ownerIds: normalizeOwnerIds(matchedRecord.ownerIds),
-          resumeFiles: normalizeResumeFiles(matchedRecord.resumeFiles),
-          batteryProgress: matchedBatteryProgress,
-        };
-      });
+      syncContactHistoryDialogFromRecords(refreshedRecords);
       if (data.update?.warning) {
         toast.success("Update posted to monday.com");
         toast.error(`Onboarding step sync warning: ${data.update.warning}`);
@@ -3241,6 +3570,123 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsCreatingContactUpdate(false);
+    }
+  };
+
+  const handleBulkQuickActionUpdates = async (
+    selectedItems: MondayRecord[],
+    clearSelection: () => void,
+    action: QuickContactActionButton,
+  ) => {
+    if (staticMode) {
+      toast.error("Bulk updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session token");
+      return;
+    }
+    if (selectedItems.length === 0) {
+      toast.error("Select at least one record");
+      return;
+    }
+
+    const targetsByRecordId = new Map<string, MondayRecord>();
+    for (const record of selectedItems) {
+      const targetRecordId = resolveContactUpdateTargetRecordId(record);
+      if (!targetRecordId.trim()) continue;
+      if (!targetsByRecordId.has(targetRecordId)) {
+        targetsByRecordId.set(targetRecordId, record);
+      }
+    }
+    const targets = Array.from(targetsByRecordId.entries());
+    if (targets.length === 0) {
+      toast.error("No valid contact records in selection");
+      return;
+    }
+
+    setBulkQuickActionType(action.type);
+    try {
+      const results = await Promise.all(
+        targets.map(async ([targetRecordId]) => {
+          try {
+            let data: MondayCreateRecordUpdateResponse;
+            if (canCreateUpdatesAsLoggedInMondayUser) {
+              const update = await createMondayRecordUpdateAsContextUser({
+                itemId: targetRecordId,
+                body: action.defaultBody,
+                updateType: action.type,
+              });
+              data = { ok: true, update };
+            } else {
+              const response = await fetch(
+                `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+                {
+                  method: "POST",
+                  cache: "no-store",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-monday-session-token": sessionToken,
+                  },
+                  body: JSON.stringify({
+                    body: action.defaultBody,
+                    updateType: action.type,
+                  }),
+                },
+              );
+              data = (await response.json()) as MondayCreateRecordUpdateResponse;
+              if (!response.ok || !data.ok) {
+                throw new Error(data.error ?? "Failed to post Monday update");
+              }
+            }
+            return {
+              ok: true,
+              warning: data.update?.warning ?? null,
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              warning: null,
+              error:
+                error instanceof Error ? error.message : "Failed to post Monday update",
+            };
+          }
+        }),
+      );
+
+      const successCount = results.filter((result) => result.ok).length;
+      const warningCount = results.filter((result) => result.warning).length;
+      const failed = results.filter((result) => !result.ok);
+      const failedCount = failed.length;
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      clearSelection();
+
+      if (successCount > 0) {
+        toast.success(
+          `Applied "${action.label}" to ${successCount} record${successCount === 1 ? "" : "s"}.`,
+        );
+      }
+      if (warningCount > 0) {
+        toast.error(
+          `${warningCount} record${warningCount === 1 ? "" : "s"} had onboarding sync warnings.`,
+        );
+      }
+      if (failedCount > 0) {
+        const firstError = failed[0]?.error ?? "Unknown error";
+        toast.error(
+          `Failed to apply action to ${failedCount} record${failedCount === 1 ? "" : "s"}: ${firstError}`,
+        );
+      }
+    } finally {
+      setBulkQuickActionType(null);
     }
   };
 
@@ -5594,6 +6040,7 @@ export function MondayBoardView({
         // description="List view optimized for board operations."
         data={filteredRecords}
         columns={columns}
+        enableRowSelection
         enableVirtualization
         virtualRowHeight={72}
         virtualOverscan={10}
@@ -5605,7 +6052,88 @@ export function MondayBoardView({
         initialSort={{ id: "createdAt", direction: "desc" }}
         getRowId={(item) => item.id}
         entityActions={entityActions}
+        bulkActions={({ selectedItems, clearSelection }) => (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            <p className="text-muted-foreground text-xs">
+              {selectedItems.length} selected
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                <Button
+                  key={action.type}
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                  disabled={!!bulkQuickActionType}
+                  onClick={() => {
+                    bulkClearSelectionRef.current = clearSelection;
+                    setBulkQuickActionConfirmation({
+                      action,
+                      selectedItems: [...selectedItems],
+                    });
+                  }}
+                >
+                  {bulkQuickActionType === action.type ? "Applying..." : action.label}
+                </Button>
+              ))}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={clearSelection}
+                disabled={!!bulkQuickActionType}
+              >
+                Clear
+              </Button>
+            </div>
+          </div>
+        )}
       />
+
+      <Dialog
+        open={!!bulkQuickActionConfirmation}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (bulkQuickActionType) return;
+          setBulkQuickActionConfirmation(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
+            <DialogDescription>
+              {bulkQuickActionConfirmation
+                ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
+                : "Confirm this bulk action."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setBulkQuickActionConfirmation(null)}
+              disabled={!!bulkQuickActionType}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const confirmation = bulkQuickActionConfirmation;
+                if (!confirmation) return;
+                setBulkQuickActionConfirmation(null);
+                void handleBulkQuickActionUpdates(
+                  confirmation.selectedItems,
+                  () => bulkClearSelectionRef.current?.(),
+                  confirmation.action,
+                );
+              }}
+              disabled={!!bulkQuickActionType}
+            >
+              {bulkQuickActionType ? "Applying..." : "Confirm"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={!!resumePreview}
