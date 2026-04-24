@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
+  Filter,
   Mail,
   RefreshCcw,
   Settings,
@@ -267,6 +268,18 @@ interface MondayFeatureFlagsResponse {
   featureFlags?: MondayFeatureFlags;
 }
 
+interface MondayUserFilterPresetsResponse {
+  ok: boolean;
+  error?: string;
+  presets?: unknown[];
+}
+
+interface MondayUserFilterPresetUpsertResponse {
+  ok: boolean;
+  error?: string;
+  preset?: unknown;
+}
+
 interface AddNewContactValues {
   firstName: string;
   lastName: string;
@@ -274,6 +287,365 @@ interface AddNewContactValues {
   address: string;
   ownerId: string;
 }
+
+type AdvancedFilterMatchMode = "all" | "any";
+
+type AdvancedFilterField =
+  | "owner"
+  | "district"
+  | "name"
+  | "email"
+  | "phone"
+  | "address"
+  | "tags"
+  | "createdAt"
+  | "hireDate"
+  | "detail";
+
+type AdvancedFilterOperator =
+  | "contains"
+  | "equals"
+  | "not_equals"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "on_or_after"
+  | "on_or_before"
+  | "between";
+
+interface AdvancedFilterCondition {
+  id: string;
+  field: AdvancedFilterField;
+  operator: AdvancedFilterOperator;
+  value: string;
+  valueTo: string;
+  target: string;
+}
+
+interface SavedAdvancedFilterPreset {
+  id: string;
+  name: string;
+  matchMode: AdvancedFilterMatchMode;
+  conditions: AdvancedFilterCondition[];
+  createdAt: number;
+  updatedAt?: number;
+  ownerMondayUserId?: string;
+}
+
+const ADVANCED_FILTER_FIELDS: {
+  value: AdvancedFilterField;
+  label: string;
+  kind: "text" | "date";
+}[] = [
+  { value: "owner", label: "Owner", kind: "text" },
+  { value: "district", label: "District", kind: "text" },
+  { value: "name", label: "Name", kind: "text" },
+  { value: "email", label: "Email", kind: "text" },
+  { value: "phone", label: "Phone", kind: "text" },
+  { value: "address", label: "Address", kind: "text" },
+  { value: "tags", label: "Tags", kind: "text" },
+  { value: "createdAt", label: "Created Date", kind: "date" },
+  { value: "hireDate", label: "Hire Date", kind: "date" },
+  { value: "detail", label: "Board Column", kind: "text" },
+];
+
+const ADVANCED_TEXT_OPERATORS: AdvancedFilterOperator[] = [
+  "contains",
+  "equals",
+  "not_equals",
+  "starts_with",
+  "ends_with",
+  "is_empty",
+  "is_not_empty",
+];
+
+const ADVANCED_DATE_OPERATORS: AdvancedFilterOperator[] = [
+  "on_or_after",
+  "on_or_before",
+  "between",
+  "is_empty",
+  "is_not_empty",
+];
+
+const ADVANCED_OPERATOR_LABELS: Record<AdvancedFilterOperator, string> = {
+  contains: "contains",
+  equals: "is",
+  not_equals: "is not",
+  starts_with: "starts with",
+  ends_with: "ends with",
+  is_empty: "is empty",
+  is_not_empty: "is not empty",
+  on_or_after: "on or after",
+  on_or_before: "on or before",
+  between: "between",
+};
+
+const LEGACY_FIELD_TO_BOARD_COLUMN_LABEL: Partial<
+  Record<Exclude<AdvancedFilterField, "detail">, string>
+> = {
+  owner: "Owner",
+  district: "Status",
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  address: "Address",
+  tags: "Tags",
+  createdAt: "Date",
+  hireDate: "Hire Date",
+};
+
+const createAdvancedFilterId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `af_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const isAdvancedFilterField = (value: unknown): value is AdvancedFilterField => {
+  if (typeof value !== "string") return false;
+  return ADVANCED_FILTER_FIELDS.some((field) => field.value === value);
+};
+
+const isAdvancedDateField = (field: AdvancedFilterField) => {
+  return ADVANCED_FILTER_FIELDS.find((entry) => entry.value === field)?.kind === "date";
+};
+
+const getAdvancedOperatorsForField = (field: AdvancedFilterField) => {
+  if (field === "detail") return [...ADVANCED_TEXT_OPERATORS, ...ADVANCED_DATE_OPERATORS];
+  return isAdvancedDateField(field) ? ADVANCED_DATE_OPERATORS : ADVANCED_TEXT_OPERATORS;
+};
+
+const getDefaultAdvancedOperatorForField = (
+  field: AdvancedFilterField,
+): AdvancedFilterOperator => {
+  if (isAdvancedDateField(field)) return "on_or_after";
+  if (field === "owner" || field === "district") return "equals";
+  return "contains";
+};
+
+const isAdvancedFilterOperator = (value: unknown): value is AdvancedFilterOperator => {
+  if (typeof value !== "string") return false;
+  return (
+    ADVANCED_TEXT_OPERATORS.includes(value as AdvancedFilterOperator) ||
+    ADVANCED_DATE_OPERATORS.includes(value as AdvancedFilterOperator)
+  );
+};
+
+const createAdvancedFilterCondition = (
+  field: AdvancedFilterField = "detail",
+  target = "",
+): AdvancedFilterCondition => ({
+  id: createAdvancedFilterId(),
+  field,
+  operator: getDefaultAdvancedOperatorForField(field),
+  value: "",
+  valueTo: "",
+  target,
+});
+
+const isAdvancedDateOperator = (operator: AdvancedFilterOperator) => {
+  return (
+    operator === "on_or_after" || operator === "on_or_before" || operator === "between"
+  );
+};
+
+const getBoardColumnTargetForCondition = (condition: AdvancedFilterCondition) => {
+  if (condition.field === "detail") return condition.target.trim();
+  return LEGACY_FIELD_TO_BOARD_COLUMN_LABEL[condition.field]?.trim() ?? "";
+};
+
+const normalizeAdvancedDate = (value: string | null | undefined) => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return "";
+  return new Date(parsed).toISOString().slice(0, 10);
+};
+
+const isAdvancedConditionActive = (condition: AdvancedFilterCondition) => {
+  const boardColumnTarget = getBoardColumnTargetForCondition(condition);
+  if (boardColumnTarget.length === 0) {
+    return false;
+  }
+  if (condition.operator === "is_empty" || condition.operator === "is_not_empty") {
+    return true;
+  }
+  if (condition.operator === "between") {
+    return condition.value.trim().length > 0 && condition.valueTo.trim().length > 0;
+  }
+  return condition.value.trim().length > 0;
+};
+
+const getRecordFieldValues = (record: MondayRecord, field: AdvancedFilterField) => {
+  switch (field) {
+    case "owner": {
+      const ownerProfileValues = record.ownerProfiles.flatMap((owner) => [
+        owner.id,
+        owner.name ?? "",
+        owner.email ?? "",
+      ]);
+      return [...record.ownerIds, record.peopleText ?? "", ...ownerProfileValues]
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0);
+    }
+    case "district":
+      return [record.statusText ?? ""].map((value) => value.trim()).filter(Boolean);
+    case "name":
+      return [record.name].map((value) => value.trim()).filter(Boolean);
+    case "email":
+      return [record.email ?? ""].map((value) => value.trim()).filter(Boolean);
+    case "phone":
+      return [record.phone ?? ""].map((value) => value.trim()).filter(Boolean);
+    case "address":
+      return [record.address ?? ""].map((value) => value.trim()).filter(Boolean);
+    case "tags":
+      return splitCsvValues(record.tags).map((value) => value.trim()).filter(Boolean);
+    case "createdAt": {
+      const normalized = normalizeDateOnlyFromRecord(record.createdAt);
+      return normalized ? [normalized] : [];
+    }
+    case "hireDate": {
+      const normalized = normalizeDateOnlyFromRecord(record.hireDate);
+      return normalized ? [normalized] : [];
+    }
+    case "detail":
+      return [];
+    default:
+      return [];
+  }
+};
+
+const getRecordFieldValuesForCondition = (
+  record: MondayRecord,
+  condition: AdvancedFilterCondition,
+) => {
+  const boardColumnTarget = getBoardColumnTargetForCondition(condition);
+  if (boardColumnTarget.length > 0) {
+    return record.contactDetails
+      .filter((detail) => detail.label.trim() === boardColumnTarget)
+      .map((detail) => detail.value.trim())
+      .filter((value) => value.length > 0);
+  }
+  return getRecordFieldValues(record, condition.field);
+};
+
+const doesRecordMatchAdvancedCondition = (
+  record: MondayRecord,
+  condition: AdvancedFilterCondition,
+) => {
+  const values = getRecordFieldValuesForCondition(record, condition);
+  const hasValue = values.length > 0;
+
+  if (condition.operator === "is_empty") return !hasValue;
+  if (condition.operator === "is_not_empty") return hasValue;
+
+  if (isAdvancedDateOperator(condition.operator)) {
+    const target = normalizeAdvancedDate(condition.value);
+    const targetTo = normalizeAdvancedDate(condition.valueTo);
+    const dateValues = values.map((value) => normalizeAdvancedDate(value)).filter(Boolean);
+    if (dateValues.length === 0) return false;
+    if (condition.operator === "between") {
+      if (!target || !targetTo) return true;
+      return dateValues.some((value) => value >= target && value <= targetTo);
+    }
+    if (condition.operator === "on_or_after") {
+      if (!target) return true;
+      return dateValues.some((value) => value >= target);
+    }
+    if (!target) return true;
+    return dateValues.some((value) => value <= target);
+  }
+
+  const normalizedNeedle = condition.value.trim().toLowerCase();
+  if (normalizedNeedle.length === 0) return true;
+  const normalizedValues = values.map((value) => value.toLowerCase());
+  if (normalizedValues.length === 0) return false;
+
+  switch (condition.operator) {
+    case "contains":
+      return normalizedValues.some((value) => value.includes(normalizedNeedle));
+    case "equals":
+      return normalizedValues.some((value) => value === normalizedNeedle);
+    case "not_equals":
+      return normalizedValues.every((value) => value !== normalizedNeedle);
+    case "starts_with":
+      return normalizedValues.some((value) => value.startsWith(normalizedNeedle));
+    case "ends_with":
+      return normalizedValues.some((value) => value.endsWith(normalizedNeedle));
+    default:
+      return true;
+  }
+};
+
+const doesRecordMatchAdvancedFilters = (
+  record: MondayRecord,
+  conditions: AdvancedFilterCondition[],
+  matchMode: AdvancedFilterMatchMode,
+) => {
+  if (conditions.length === 0) return true;
+  if (matchMode === "any") {
+    return conditions.some((condition) =>
+      doesRecordMatchAdvancedCondition(record, condition),
+    );
+  }
+  return conditions.every((condition) =>
+    doesRecordMatchAdvancedCondition(record, condition),
+  );
+};
+
+const parseAdvancedCondition = (input: unknown): AdvancedFilterCondition | null => {
+  if (!input || typeof input !== "object") return null;
+  const candidate = input as Partial<AdvancedFilterCondition>;
+  if (!isAdvancedFilterField(candidate.field)) return null;
+  if (!isAdvancedFilterOperator(candidate.operator)) return null;
+  if (
+    candidate.field !== "detail" &&
+    !getAdvancedOperatorsForField(candidate.field).includes(candidate.operator)
+  ) {
+    return null;
+  }
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim().length > 0
+        ? candidate.id
+        : createAdvancedFilterId(),
+    field: candidate.field,
+    operator: candidate.operator,
+    value: typeof candidate.value === "string" ? candidate.value : "",
+    valueTo: typeof candidate.valueTo === "string" ? candidate.valueTo : "",
+    target: typeof candidate.target === "string" ? candidate.target : "",
+  };
+};
+
+const parseSavedAdvancedFilterPreset = (input: unknown): SavedAdvancedFilterPreset | null => {
+  if (!input || typeof input !== "object") return null;
+  const candidate = input as Partial<SavedAdvancedFilterPreset>;
+  const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+  if (!name) return null;
+  const parsedConditions = Array.isArray(candidate.conditions)
+    ? candidate.conditions
+        .map((condition) => parseAdvancedCondition(condition))
+        .filter((condition): condition is AdvancedFilterCondition => condition !== null)
+    : [];
+  return {
+    id:
+      typeof candidate.id === "string" && candidate.id.trim().length > 0
+        ? candidate.id
+        : createAdvancedFilterId(),
+    name,
+    matchMode: candidate.matchMode === "any" ? "any" : "all",
+    conditions: parsedConditions,
+    createdAt: typeof candidate.createdAt === "number" ? candidate.createdAt : Date.now(),
+    updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : undefined,
+    ownerMondayUserId:
+      typeof candidate.ownerMondayUserId === "string"
+        ? candidate.ownerMondayUserId
+        : undefined,
+  };
+};
 
 const formatUpdatedAt = (value: string | null) => {
   if (!value) return "—";
@@ -890,6 +1262,8 @@ export type MondayBoardViewMode = "all" | "userScoped";
 
 interface MondayBoardViewProps {
   viewMode?: MondayBoardViewMode;
+  initialOwnerFilter?: string;
+  forcedOwnerId?: string;
 }
 
 const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
@@ -899,15 +1273,41 @@ const isEmbeddedMondaySessionToken = (token: string | null) => {
   return token !== MONDAY_DEV_BYPASS_TOKEN;
 };
 
-export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
+export function MondayBoardView({
+  viewMode = "all",
+  initialOwnerFilter,
+  forcedOwnerId: forcedOwnerIdProp,
+}: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
+  const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
+  const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [staticMode, setStaticMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState(
+    () => (forcedOwnerId.length > 0 ? forcedOwnerId : (initialOwnerFilter?.trim() ?? "")),
+  );
+  const [advancedFilterMatchMode, setAdvancedFilterMatchMode] =
+    useState<AdvancedFilterMatchMode>("all");
+  const [advancedFilterConditions, setAdvancedFilterConditions] = useState<
+    AdvancedFilterCondition[]
+  >([]);
+  const [savedAdvancedFilterPresets, setSavedAdvancedFilterPresets] = useState<
+    SavedAdvancedFilterPreset[]
+  >([]);
+  const [activeSavedAdvancedFilterId, setActiveSavedAdvancedFilterId] = useState<
+    string | null
+  >(null);
+  const [pendingSavedAdvancedFilterName, setPendingSavedAdvancedFilterName] =
+    useState("");
+  const [isSavingAdvancedFilterPreset, setIsSavingAdvancedFilterPreset] =
+    useState(false);
+  const [deletingAdvancedFilterPresetIds, setDeletingAdvancedFilterPresetIds] = useState<
+    Record<string, boolean>
+  >({});
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactStep, setAddContactStep] = useState<1 | 2>(1);
   const [addContactValues, setAddContactValues] = useState<AddNewContactValues>({
@@ -1063,10 +1463,21 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const isMondaySettingsAdmin = identity?.userId === MONDAY_OWNER_SCOPE_ADMIN_USER_ID;
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
+    !hasForcedOwnerScope &&
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
   const useUserRecordsEndpoint =
-    isTouchScopedView && isMondayEmbeddedContext && !canOverrideUserScopeOwner;
+    isTouchScopedView &&
+    isMondayEmbeddedContext &&
+    !canOverrideUserScopeOwner &&
+    !hasForcedOwnerScope;
+  const presetScopeOwnerId = useMemo(() => {
+    if (hasForcedOwnerScope) return forcedOwnerId;
+    if (viewMode !== "userScoped") return "";
+    const ownerFromFilter = ownerFilter.trim();
+    if (ownerFromFilter.length > 0) return ownerFromFilter;
+    return identity?.userId.trim() ?? "";
+  }, [forcedOwnerId, hasForcedOwnerScope, identity?.userId, ownerFilter, viewMode]);
   const recordsQuery = useInfiniteQuery({
     queryKey: [
       "monday-records",
@@ -1247,15 +1658,40 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     staleTime: 30_000,
   });
 
+  const userFilterPresetsQuery = useQuery({
+    queryKey: ["monday-user-filter-presets", sessionToken, presetScopeOwnerId],
+    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(`/api/monday/user-filter-presets?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayUserFilterPresetsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load saved filters");
+      }
+      const presets = (data.presets ?? [])
+        .map((entry) => parseSavedAdvancedFilterPreset(entry))
+        .filter((entry): entry is SavedAdvancedFilterPreset => entry !== null)
+        .slice(0, 25);
+      return presets;
+    },
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const ownerParam = params.get("owner");
+    const ownerIdParam = params.get("ownerId");
+    const ownerParam = ownerIdParam ?? params.get("owner");
     const itemIdParam = params.get("itemId");
     const staticParam = params.get("static");
     const outlookParam = params.get("outlook");
     const outlookMessage = params.get("outlookMessage");
 
-    if (ownerParam && ownerParam.trim().length > 0) {
+    if (!hasForcedOwnerScope && ownerParam && ownerParam.trim().length > 0) {
       setOwnerFilter(ownerParam.trim());
     }
     if (itemIdParam && itemIdParam.trim().length > 0) {
@@ -1269,7 +1705,22 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, []);
+  }, [hasForcedOwnerScope]);
+
+  useEffect(() => {
+    setSavedAdvancedFilterPresets([]);
+    setActiveSavedAdvancedFilterId(null);
+  }, [presetScopeOwnerId]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userFilterPresetsQuery.data) return;
+    setSavedAdvancedFilterPresets(userFilterPresetsQuery.data);
+    setActiveSavedAdvancedFilterId((prev) => {
+      if (!prev) return prev;
+      return userFilterPresetsQuery.data.some((preset) => preset.id === prev) ? prev : null;
+    });
+  }, [presetScopeOwnerId, userFilterPresetsQuery.data]);
 
   useEffect(() => {
     const handleOutlookOAuthMessage = (event: MessageEvent) => {
@@ -1381,12 +1832,24 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   }, [monday, staticMode]);
 
   useEffect(() => {
+    if (hasForcedOwnerScope) return;
     if (viewMode !== "userScoped") return;
     if (!identity?.userId) return;
     if (!isMondayEmbeddedContext) return;
     if (canOverrideUserScopeOwner) return;
     setOwnerFilter(identity.userId);
-  }, [canOverrideUserScopeOwner, identity?.userId, isMondayEmbeddedContext, viewMode]);
+  }, [
+    canOverrideUserScopeOwner,
+    hasForcedOwnerScope,
+    identity?.userId,
+    isMondayEmbeddedContext,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    if (!hasForcedOwnerScope) return;
+    setOwnerFilter(forcedOwnerId);
+  }, [forcedOwnerId, hasForcedOwnerScope]);
 
   useEffect(() => {
     if (!featureFlagsQuery.data) return;
@@ -1438,6 +1901,16 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
         : "Unknown loading error";
     toast.error(message);
   }, [staticMode, userProfileQuery.error]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!userFilterPresetsQuery.error) return;
+    const message =
+      userFilterPresetsQuery.error instanceof Error
+        ? userFilterPresetsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [staticMode, userFilterPresetsQuery.error]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1641,7 +2114,8 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     [emailTemplatesQuery.data?.templates, staticMode],
   );
   const isOwnerFilterEditable =
-    viewMode === "all" || !isMondayEmbeddedContext || canOverrideUserScopeOwner;
+    !hasForcedOwnerScope &&
+    (viewMode === "all" || !isMondayEmbeddedContext || canOverrideUserScopeOwner);
 
   useEffect(() => {
     const itemId = pendingDialogItemId?.trim();
@@ -1681,17 +2155,20 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
 
   useEffect(() => {
     if (viewMode !== "userScoped") return;
+    if (hasForcedOwnerScope) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (ownerFilter.trim().length > 0) {
       params.set("owner", ownerFilter.trim());
+      params.set("ownerId", ownerFilter.trim());
     } else {
       params.delete("owner");
+      params.delete("ownerId");
     }
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [ownerFilter, viewMode]);
+  }, [hasForcedOwnerScope, ownerFilter, viewMode]);
 
   useEffect(() => {
     if (emailTemplates.length === 0) return;
@@ -1985,6 +2462,52 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     if (ownerFilter.trim().length === 0) return true;
     return ownerOptions.some((option) => option.value === ownerFilter);
   }, [ownerFilter, ownerOptions]);
+  const lockedOwnerLabel = useMemo(() => {
+    const normalizedOwner = ownerFilter.trim() || forcedOwnerId;
+    if (!normalizedOwner) return "Owner: locked";
+    const option = ownerOptions.find((entry) => entry.value === normalizedOwner);
+    if (option) return `Owner: ${option.label}`;
+    if (hasForcedOwnerScope) return `Owner: ${forcedOwnerId}`;
+    return "Owner: me";
+  }, [forcedOwnerId, hasForcedOwnerScope, ownerFilter, ownerOptions]);
+  const boardColumnFilterOptions = useMemo(() => {
+    const labels = new Set<string>();
+    for (const record of records) {
+      for (const detail of record.contactDetails) {
+        const label = detail.label.trim();
+        if (!label) continue;
+        labels.add(label);
+      }
+    }
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  }, [records]);
+  const boardColumnFilterKindByLabel = useMemo(() => {
+    const byLabel = new Map<string, string[]>();
+    for (const record of records) {
+      for (const detail of record.contactDetails) {
+        const label = detail.label.trim();
+        const value = detail.value.trim();
+        if (!label || !value) continue;
+        const existing = byLabel.get(label);
+        if (existing) {
+          if (existing.length < 8) existing.push(value);
+        } else {
+          byLabel.set(label, [value]);
+        }
+      }
+    }
+
+    const kinds = new Map<string, "text" | "date">();
+    for (const label of boardColumnFilterOptions) {
+      const samples = byLabel.get(label) ?? [];
+      const labelSuggestsDate = /\b(date|time)\b/i.test(label);
+      const hasDateSamples =
+        samples.length > 0 &&
+        samples.every((sample) => normalizeAdvancedDate(sample).length > 0);
+      kinds.set(label, labelSuggestsDate || hasDateSamples ? "date" : "text");
+    }
+    return kinds;
+  }, [boardColumnFilterOptions, records]);
 
   const statusOptions = useMemo(() => {
     return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
@@ -1992,6 +2515,246 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       value,
     }));
   }, [records]);
+  const activeAdvancedFilterConditions = useMemo(
+    () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
+    [advancedFilterConditions],
+  );
+  const filteredRecords = useMemo(() => {
+    if (activeAdvancedFilterConditions.length === 0) return records;
+    return records.filter((record) =>
+      doesRecordMatchAdvancedFilters(
+        record,
+        activeAdvancedFilterConditions,
+        advancedFilterMatchMode,
+      ),
+    );
+  }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+
+  const handleAddAdvancedFilterCondition = () => {
+    setActiveSavedAdvancedFilterId(null);
+    const defaultTarget = boardColumnFilterOptions[0] ?? "";
+    const defaultKind = boardColumnFilterKindByLabel.get(defaultTarget) ?? "text";
+    setAdvancedFilterConditions((prev) => [
+      ...prev,
+      {
+        ...createAdvancedFilterCondition("detail", defaultTarget),
+        operator: defaultKind === "date" ? "on_or_after" : "contains",
+      },
+    ]);
+  };
+
+  const handleRemoveAdvancedFilterCondition = (conditionId: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.filter((condition) => condition.id !== conditionId),
+    );
+  };
+
+  const handleChangeAdvancedFilterOperator = (
+    conditionId: string,
+    operator: AdvancedFilterOperator,
+  ) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return {
+          ...condition,
+          operator,
+          value:
+            operator === "is_empty" || operator === "is_not_empty" ? "" : condition.value,
+          valueTo: operator === "between" ? condition.valueTo : "",
+        };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterTarget = (conditionId: string, target: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        const normalizedTarget = target.trim();
+        const kind = boardColumnFilterKindByLabel.get(normalizedTarget) ?? "text";
+        const allowedOperators =
+          kind === "date" ? ADVANCED_DATE_OPERATORS : ADVANCED_TEXT_OPERATORS;
+        const operator = allowedOperators.includes(condition.operator)
+          ? condition.operator
+          : kind === "date"
+            ? "on_or_after"
+            : "contains";
+        return {
+          ...condition,
+          field: "detail",
+          target: normalizedTarget,
+          operator,
+        };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterValue = (conditionId: string, value: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return { ...condition, value };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterValueTo = (conditionId: string, valueTo: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return { ...condition, valueTo };
+      }),
+    );
+  };
+
+  const handleClearAdvancedFilters = () => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions([]);
+    setAdvancedFilterMatchMode("all");
+  };
+
+  const handleSaveAdvancedFilterPreset = async () => {
+    const name = pendingSavedAdvancedFilterName.trim();
+    if (!name) {
+      toast.error("Enter a name before saving a filter preset");
+      return;
+    }
+    if (activeAdvancedFilterConditions.length === 0) {
+      toast.error("Add at least one filter condition before saving");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Missing owner board scope for saved filters");
+      return;
+    }
+
+    const normalizedName = name.toLowerCase();
+    const existingPreset = savedAdvancedFilterPresets.find(
+      (preset) => preset.name.toLowerCase() === normalizedName,
+    );
+    const conditionsForSave = activeAdvancedFilterConditions
+      .map((condition) => {
+        const target = getBoardColumnTargetForCondition(condition);
+        if (!target) return null;
+        return {
+          ...condition,
+          field: "detail" as const,
+          target,
+        };
+      })
+      .filter((condition) => condition !== null) as AdvancedFilterCondition[];
+    if (conditionsForSave.length === 0) {
+      toast.error("Select at least one board column before saving");
+      return;
+    }
+    setIsSavingAdvancedFilterPreset(true);
+    try {
+      const response = await fetch("/api/monday/user-filter-presets", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          ownerId: presetScopeOwnerId,
+          presetId: existingPreset?.id,
+          name,
+          matchMode: advancedFilterMatchMode,
+          conditions: conditionsForSave,
+        }),
+      });
+      const data = (await response.json()) as MondayUserFilterPresetUpsertResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to save filter preset");
+      }
+      const parsedPreset = parseSavedAdvancedFilterPreset(data.preset);
+      if (!parsedPreset) {
+        throw new Error("Invalid filter preset returned from server");
+      }
+
+      setSavedAdvancedFilterPresets((prev) => {
+        const withoutExisting = prev.filter((entry) => entry.id !== parsedPreset.id);
+        return [parsedPreset, ...withoutExisting].slice(0, 25);
+      });
+      setActiveSavedAdvancedFilterId(parsedPreset.id);
+      setPendingSavedAdvancedFilterName("");
+      toast.success(
+        existingPreset ? `Updated filter preset "${name}"` : `Saved filter preset "${name}"`,
+      );
+      await userFilterPresetsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save filter preset";
+      toast.error(message);
+    } finally {
+      setIsSavingAdvancedFilterPreset(false);
+    }
+  };
+
+  const handleApplySavedAdvancedFilterPreset = (preset: SavedAdvancedFilterPreset) => {
+    setAdvancedFilterMatchMode(preset.matchMode);
+    setAdvancedFilterConditions(
+      preset.conditions.map((condition) => ({
+        ...condition,
+        id: createAdvancedFilterId(),
+      })),
+    );
+    setActiveSavedAdvancedFilterId(preset.id);
+    setPendingSavedAdvancedFilterName(preset.name);
+    toast.success(`Applied filter preset "${preset.name}"`);
+  };
+
+  const handleDeleteSavedAdvancedFilterPreset = async (presetId: string) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Missing owner board scope for saved filters");
+      return;
+    }
+    setDeletingAdvancedFilterPresetIds((prev) => ({ ...prev, [presetId]: true }));
+    try {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(
+        `/api/monday/user-filter-presets/${encodeURIComponent(presetId)}?${params.toString()}`,
+        {
+          method: "DELETE",
+          cache: "no-store",
+          headers: { "x-monday-session-token": sessionToken },
+        },
+      );
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to delete filter preset");
+      }
+      setSavedAdvancedFilterPresets((prev) => prev.filter((preset) => preset.id !== presetId));
+      setActiveSavedAdvancedFilterId((prev) => (prev === presetId ? null : prev));
+      await userFilterPresetsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete filter preset";
+      toast.error(message);
+    } finally {
+      setDeletingAdvancedFilterPresetIds((prev) => {
+        const next = { ...prev };
+        delete next[presetId];
+        return next;
+      });
+    }
+  };
 
   const retentionOptions = useMemo(() => {
     const fromApi = editOptionsQuery.data;
@@ -2475,7 +3238,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                           key={`${detail.label}-${detail.value}`}
                           className="grid grid-cols-[100px_1fr] gap-2 text-xs"
                         >
-                          <span className="text-muted">{detail.label}</span>
+                          <span className="font-bold">{detail.label}</span>
                           <span className="wrap-break-word">{detail.value}</span>
                         </div>
                       ))}
@@ -2747,18 +3510,18 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     },
     ...(featureFlags.emailMarketingEnabled
       ? ([
-          {
-            id: "send-email",
-            label: "Send Email",
-            icon: <Mail className="h-4 w-4" />,
-            variant: "secondary",
-            onClick: (record: MondayRecord) => {
-              openSendEmailDialog(record);
-            },
-            isDisabled: (record: MondayRecord) =>
-              !record.email || !sessionToken || staticMode,
+        {
+          id: "send-email",
+          label: "Send Email",
+          icon: <Mail className="h-4 w-4" />,
+          variant: "secondary",
+          onClick: (record: MondayRecord) => {
+            openSendEmailDialog(record);
           },
-        ] satisfies EntityAction<MondayRecord>[])
+          isDisabled: (record: MondayRecord) =>
+            !record.email || !sessionToken || staticMode,
+        },
+      ] satisfies EntityAction<MondayRecord>[])
       : []),
 
   ];
@@ -2771,7 +3534,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           {boardName}
           {staticMode ? " · static mode" : ""}
           {viewMode === "userScoped" && !isOwnerFilterEditable
-            ? " · owner scope locked to current user"
+            ? hasForcedOwnerScope
+              ? ` · owner scope locked to board owner ${forcedOwnerId}`
+              : " · owner scope locked to current user"
             : ""}
           {viewMode === "userScoped" && isOwnerFilterEditable
             ? " · owner scope selectable"
@@ -2859,46 +3624,319 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           </div>
           <div className="border-t pt-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
-                <select
-                  value={ownerFilter || "__all_owner__"}
-                  onChange={(event) => {
-                    if (!isOwnerFilterEditable) return;
-                    const value = event.target.value;
-                    setOwnerFilter(value === "__all_owner__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-8 w-60 rounded-md border px-2.5 text-xs"
-                  disabled={!isOwnerFilterEditable}
-                >
-                  {isOwnerFilterEditable ? (
-                    <option value="__all_owner__">Owner: all</option>
+              <div className="flex min-w-[320px] flex-1 flex-col gap-2 overflow-x-auto pb-1">
+                <div className="flex items-center gap-2 whitespace-nowrap *:shrink-0">
+                  <select
+                    value={ownerFilter || "__all_owner__"}
+                    onChange={(event) => {
+                      if (!isOwnerFilterEditable) return;
+                      const value = event.target.value;
+                      setOwnerFilter(value === "__all_owner__" ? "" : value);
+                    }}
+                    className="bg-background border-input h-8 w-60 rounded-md border px-2.5 text-xs"
+                    disabled={!isOwnerFilterEditable}
+                  >
+                    {isOwnerFilterEditable ? (
+                      <option value="__all_owner__">Owner: all</option>
+                    ) : (
+                      <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
+                        {lockedOwnerLabel}
+                      </option>
+                    )}
+                    {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+                      <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+                    ) : null}
+                    {ownerOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={statusFilter || "__all_status__"}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setStatusFilter(value === "__all_status__" ? "" : value);
+                    }}
+                    className="bg-background border-input h-8 w-[200px] rounded-md border px-2.5 text-xs"
+                  >
+                    <option value="__all_status__">District: all</option>
+                    {statusOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs font-normal">
+                        <Filter className="mr-1.5 h-3.5 w-3.5" />
+                        Filters
+                        {advancedFilterConditions.length > 0 && (
+                          <Badge variant="secondary" className="ml-1.5 h-4 px-1 py-0 leading-none text-[10px]">
+                            {advancedFilterConditions.length}
+                          </Badge>
+                        )}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+                      <DialogHeader>
+                        <DialogTitle>Advanced Filters</DialogTitle>
+                        <DialogDescription>
+                          Create custom filters to narrow down your records.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="space-y-4 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                      <select
+                        value={advancedFilterMatchMode}
+                        onChange={(event) => {
+                          const value = event.target.value === "any" ? "any" : "all";
+                          setActiveSavedAdvancedFilterId(null);
+                          setAdvancedFilterMatchMode(value);
+                        }}
+                        className="bg-background border-input h-7 rounded-md border px-2 text-xs"
+                      >
+                        <option value="all">Match all</option>
+                        <option value="any">Match any</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground text-xs">
+                        Showing {filteredRecords.length} of {records.length}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleAddAdvancedFilterCondition}
+                      >
+                        Add Filter
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 text-xs"
+                        onClick={handleClearAdvancedFilters}
+                        disabled={advancedFilterConditions.length === 0}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+
+                  {advancedFilterConditions.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      Add conditions to build custom filter logic.
+                    </p>
                   ) : (
-                    <option value={identity?.userId ?? "__all_owner__"}>Owner: me</option>
+                    <div className="space-y-1.5">
+                      {advancedFilterConditions.map((condition) => {
+                        const conditionTarget = getBoardColumnTargetForCondition(condition);
+                        const boardColumnKind =
+                          boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                        const operatorOptions =
+                          boardColumnKind === "date"
+                            ? ADVANCED_DATE_OPERATORS
+                            : ADVANCED_TEXT_OPERATORS;
+                        const shouldHideValueInput =
+                          condition.operator === "is_empty" ||
+                          condition.operator === "is_not_empty";
+                        const isDateField = boardColumnKind === "date";
+                        const targetLabelLower = conditionTarget.toLowerCase();
+                        const usesOwnerOptions =
+                          targetLabelLower === "owner" && ownerOptions.length > 0;
+                        const usesDistrictOptions =
+                          (targetLabelLower === "status" ||
+                            targetLabelLower === "district") &&
+                          statusOptions.length > 0;
+                        const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                        return (
+                          <div
+                            key={condition.id}
+                            className="flex flex-wrap items-center gap-1.5 rounded border p-1.5"
+                          >
+                            <select
+                              value={conditionTarget}
+                              onChange={(event) =>
+                                handleChangeAdvancedFilterTarget(condition.id, event.target.value)
+                              }
+                              className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
+                            >
+                              {!hasBoardColumnOptions ? (
+                                <option value="">No board columns loaded</option>
+                              ) : null}
+                              {hasBoardColumnOptions ? (
+                                <option value="">Select board column</option>
+                              ) : null}
+                              {boardColumnFilterOptions.map((label) => (
+                                <option key={label} value={label}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              value={condition.operator}
+                              onChange={(event) => {
+                                if (!isAdvancedFilterOperator(event.target.value)) return;
+                                handleChangeAdvancedFilterOperator(condition.id, event.target.value);
+                              }}
+                              className="bg-background border-input h-7 rounded-md border px-2 text-xs"
+                            >
+                              {operatorOptions.map((operator) => (
+                                <option key={operator} value={operator}>
+                                  {ADVANCED_OPERATOR_LABELS[operator]}
+                                </option>
+                              ))}
+                            </select>
+
+                            {!shouldHideValueInput ? (
+                              usesOwnerOptions ? (
+                                <select
+                                  value={condition.value}
+                                  onChange={(event) =>
+                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                  }
+                                  className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
+                                >
+                                  <option value="">Select owner</option>
+                                  {!ownerOptions.some((option) => option.value === condition.value) &&
+                                  condition.value.trim().length > 0 ? (
+                                    <option value={condition.value}>
+                                      {`Owner ${condition.value} (selected)`}
+                                    </option>
+                                  ) : null}
+                                  {ownerOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : usesDistrictOptions ? (
+                                <select
+                                  value={condition.value}
+                                  onChange={(event) =>
+                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                  }
+                                  className="bg-background border-input h-7 min-w-[200px] rounded-md border px-2 text-xs"
+                                >
+                                  <option value="">Select district</option>
+                                  {!statusOptions.some((option) => option.value === condition.value) &&
+                                  condition.value.trim().length > 0 ? (
+                                    <option value={condition.value}>
+                                      {`District ${condition.value} (selected)`}
+                                    </option>
+                                  ) : null}
+                                  {statusOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <Input
+                                  type={isDateField ? "date" : "text"}
+                                  value={condition.value}
+                                  onChange={(event) =>
+                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                  }
+                                  placeholder="Value"
+                                  className="h-7 min-w-[200px] text-xs"
+                                />
+                              )
+                            ) : null}
+
+                            {condition.operator === "between" ? (
+                              <Input
+                                type={isDateField ? "date" : "text"}
+                                value={condition.valueTo}
+                                onChange={(event) =>
+                                  handleChangeAdvancedFilterValueTo(
+                                    condition.id,
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={isDateField ? "End date" : "Second value"}
+                                className="h-7 min-w-[200px] text-xs"
+                              />
+                            ) : null}
+
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                  {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-                    <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-                  ) : null}
-                  {ownerOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={statusFilter || "__all_status__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusFilter(value === "__all_status__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-8 w-[200px] rounded-md border px-2.5 text-xs"
-                >
-                  <option value="__all_status__">District: all</option>
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Input
+                      value={pendingSavedAdvancedFilterName}
+                      onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                      placeholder="Saved filter name"
+                      className="h-7 w-56 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleSaveAdvancedFilterPreset}
+                      disabled={
+                        isSavingAdvancedFilterPreset ||
+                        !sessionToken ||
+                        presetScopeOwnerId.length === 0
+                      }
+                    >
+                      {isSavingAdvancedFilterPreset ? "Saving..." : "Save Filter"}
+                    </Button>
+                  </div>
+
+                  {savedAdvancedFilterPresets.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {savedAdvancedFilterPresets.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="bg-background flex items-center rounded-md border pr-1"
+                        >
+                          <Button
+                            size="sm"
+                            variant={
+                              activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                            }
+                            className="h-7 rounded-r-none px-2 text-xs"
+                            onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
+                          >
+                            {preset.name}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground h-7 px-1.5 text-xs"
+                            onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                            disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
+                          >
+                            {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">
+                      No saved filter presets yet.
+                    </p>
+                  )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </div>
               <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
                 <Button
@@ -2977,226 +4015,226 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                           </TabsTrigger>
                         </TabsList>
                         <div className="min-h-80 flex-1 rounded-md border p-4">
-                        <TabsContent value="email-templates" className="mt-0">
-                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">
-                                Templates ({emailTemplates.length})
-                              </p>
-                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                                {emailTemplates.map((template) => {
-                                  const isActive = template.id === selectedTemplate?.id;
-                                  return (
-                                    <button
-                                      key={template.id}
-                                      type="button"
-                                      className={[
-                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                        isActive
-                                          ? "border-primary bg-primary/10"
-                                          : "hover:bg-muted/60",
-                                      ].join(" ")}
-                                      onClick={() => {
-                                        setSelectedTemplateId(template.id);
-                                      }}
-                                    >
-                                      <p className="line-clamp-1 font-medium">{template.name}</p>
-                                      <p className="text-muted-foreground mt-1 text-xs">
-                                        Updated {formatUpdatedAt(template.updatedAt)}
-                                      </p>
-                                    </button>
-                                  );
-                                })}
-                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    No templates found on board 18401299370.
-                                  </p>
-                                ) : null}
-                                {emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    Loading templates...
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="bg-background min-h-[420px] rounded-md border p-4">
-                              {selectedTemplate ? (
-                                <div className="space-y-4">
-                                  <div className="border-b pb-3">
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Subject
-                                    </p>
-                                    <p className="mt-1 text-base font-medium">
-                                      {selectedTemplate.name}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Email Preview (Lead View)
-                                    </p>
-                                    <div className="bg-card mt-2 rounded-md border p-4">
-                                      {selectedTemplate.content.trim().length === 0 ? (
-                                        <p className="text-muted-foreground text-sm">
-                                          No content found in column doc_mm0wq4r.
+                          <TabsContent value="email-templates" className="mt-0">
+                            <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">
+                                  Templates ({emailTemplates.length})
+                                </p>
+                                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                  {emailTemplates.map((template) => {
+                                    const isActive = template.id === selectedTemplate?.id;
+                                    return (
+                                      <button
+                                        key={template.id}
+                                        type="button"
+                                        className={[
+                                          "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                          isActive
+                                            ? "border-primary bg-primary/10"
+                                            : "hover:bg-muted/60",
+                                        ].join(" ")}
+                                        onClick={() => {
+                                          setSelectedTemplateId(template.id);
+                                        }}
+                                      >
+                                        <p className="line-clamp-1 font-medium">{template.name}</p>
+                                        <p className="text-muted-foreground mt-1 text-xs">
+                                          Updated {formatUpdatedAt(template.updatedAt)}
                                         </p>
-                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                        <div
-                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                          style={{ whiteSpace: "pre-wrap" }}
-                                          dangerouslySetInnerHTML={{
-                                            __html: selectedTemplate.renderedHtml,
-                                          }}
-                                        />
-                                      ) : (
-                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                          {selectedTemplate.content}
-                                        </div>
-                                      )}
-                                      {selectedTemplate.docLink ? (
-                                        <p className="mt-3 text-xs">
-                                          <a
-                                            href={selectedTemplate.docLink}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-primary underline underline-offset-2"
-                                          >
-                                            Open source Monday Workdoc
-                                          </a>
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-muted-foreground text-sm">
-                                  Select an email template to preview.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="user-zip-map" className="mt-0">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                            <p className="text-muted-foreground text-sm">
-                              Define zipcode ownership and routing by user.
-                            </p>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="email-settings" className="mt-0">
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">Email Settings</p>
-                              <p className="text-muted-foreground text-sm">
-                                Configure outbound email account settings for sending
-                                monday-designed templates.
-                              </p>
-                            </div>
-                            <div className="space-y-3 rounded-md border p-4">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant={
-                                    outlookStatusQuery.data?.connected
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {outlookStatusQuery.data?.connected
-                                    ? "Outlook connected"
-                                    : "Outlook not connected"}
-                                </Badge>
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    void handleConnectOutlook();
-                                  }}
-                                  disabled={isConnectingOutlook}
-                                >
-                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                                </Button>
-                                {outlookStatusQuery.data?.connected ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      void handleDisconnectOutlook();
-                                    }}
-                                    disabled={isDisconnectingOutlook}
-                                  >
-                                    {isDisconnectingOutlook
-                                      ? "Disconnecting..."
-                                      : "Disconnect"}
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <div className="text-muted-foreground text-sm">
-                                {outlookStatusQuery.data?.connection?.email ? (
-                                  <p>
-                                    Connected mailbox:{" "}
-                                    {outlookStatusQuery.data.connection.email}
-                                  </p>
-                                ) : (
-                                  <p>
-                                    Use OAuth to connect Outlook, then use this account
-                                    for sending and engagement tracking.
-                                  </p>
-                                )}
-                                {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                  <p className="mt-1">
-                                    Last updated:{" "}
-                                    {new Date(
-                                      outlookStatusQuery.data.connection.updatedAt,
-                                    ).toLocaleString()}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <div className="rounded-md border bg-muted/30 p-3">
-                                <p className="text-xs font-semibold tracking-wide uppercase">
-                                  Callback URL
-                                </p>
-                                <p className="mt-1 break-all font-mono text-xs">
-                                  {callbackUrl}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="feature-flags" className="mt-0">
-                          <div className="space-y-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium">Feature Flags</p>
-                              <p className="text-muted-foreground text-sm">
-                                Toggle app capabilities without code changes.
-                              </p>
-                            </div>
-                            <div className="space-y-3 rounded-md border p-4">
-                              <label className="flex items-start gap-3 text-sm">
-                                <input
-                                  type="checkbox"
-                                  checked={featureFlags.emailMarketingEnabled}
-                                  disabled={isSavingFeatureFlags}
-                                  onChange={(event) => {
-                                    void handleSetEmailMarketingEnabled(
-                                      event.target.checked,
+                                      </button>
                                     );
-                                  }}
-                                />
-                                <div className="space-y-1">
-                                  <p className="font-medium">Email Marketing</p>
-                                  <p className="text-muted-foreground text-xs">
-                                    Enables email marketing capabilities, including the
-                                    Email action in the table.
-                                  </p>
-                                  {isSavingFeatureFlags ? (
-                                    <p className="text-muted-foreground text-[11px]">
-                                      Saving...
+                                  })}
+                                  {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                    <p className="text-muted-foreground text-sm">
+                                      No templates found on board 18401299370.
+                                    </p>
+                                  ) : null}
+                                  {emailTemplatesQuery.isLoading ? (
+                                    <p className="text-muted-foreground text-sm">
+                                      Loading templates...
                                     </p>
                                   ) : null}
                                 </div>
-                              </label>
+                              </div>
+                              <div className="bg-background min-h-[420px] rounded-md border p-4">
+                                {selectedTemplate ? (
+                                  <div className="space-y-4">
+                                    <div className="border-b pb-3">
+                                      <p className="text-xs font-semibold tracking-wide uppercase">
+                                        Subject
+                                      </p>
+                                      <p className="mt-1 text-base font-medium">
+                                        {selectedTemplate.name}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-semibold tracking-wide uppercase">
+                                        Email Preview (Lead View)
+                                      </p>
+                                      <div className="bg-card mt-2 rounded-md border p-4">
+                                        {selectedTemplate.content.trim().length === 0 ? (
+                                          <p className="text-muted-foreground text-sm">
+                                            No content found in column doc_mm0wq4r.
+                                          </p>
+                                        ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                          <div
+                                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                            style={{ whiteSpace: "pre-wrap" }}
+                                            dangerouslySetInnerHTML={{
+                                              __html: selectedTemplate.renderedHtml,
+                                            }}
+                                          />
+                                        ) : (
+                                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                            {selectedTemplate.content}
+                                          </div>
+                                        )}
+                                        {selectedTemplate.docLink ? (
+                                          <p className="mt-3 text-xs">
+                                            <a
+                                              href={selectedTemplate.docLink}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary underline underline-offset-2"
+                                            >
+                                              Open source Monday Workdoc
+                                            </a>
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-muted-foreground text-sm">
+                                    Select an email template to preview.
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </TabsContent>
+                          </TabsContent>
+                          <TabsContent value="user-zip-map" className="mt-0">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                              <p className="text-muted-foreground text-sm">
+                                Define zipcode ownership and routing by user.
+                              </p>
+                            </div>
+                          </TabsContent>
+                          <TabsContent value="email-settings" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">Email Settings</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Configure outbound email account settings for sending
+                                  monday-designed templates.
+                                </p>
+                              </div>
+                              <div className="space-y-3 rounded-md border p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant={
+                                      outlookStatusQuery.data?.connected
+                                        ? "default"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {outlookStatusQuery.data?.connected
+                                      ? "Outlook connected"
+                                      : "Outlook not connected"}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      void handleConnectOutlook();
+                                    }}
+                                    disabled={isConnectingOutlook}
+                                  >
+                                    {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                  </Button>
+                                  {outlookStatusQuery.data?.connected ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        void handleDisconnectOutlook();
+                                      }}
+                                      disabled={isDisconnectingOutlook}
+                                    >
+                                      {isDisconnectingOutlook
+                                        ? "Disconnecting..."
+                                        : "Disconnect"}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <div className="text-muted-foreground text-sm">
+                                  {outlookStatusQuery.data?.connection?.email ? (
+                                    <p>
+                                      Connected mailbox:{" "}
+                                      {outlookStatusQuery.data.connection.email}
+                                    </p>
+                                  ) : (
+                                    <p>
+                                      Use OAuth to connect Outlook, then use this account
+                                      for sending and engagement tracking.
+                                    </p>
+                                  )}
+                                  {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                    <p className="mt-1">
+                                      Last updated:{" "}
+                                      {new Date(
+                                        outlookStatusQuery.data.connection.updatedAt,
+                                      ).toLocaleString()}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="rounded-md border bg-muted/30 p-3">
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Callback URL
+                                  </p>
+                                  <p className="mt-1 break-all font-mono text-xs">
+                                    {callbackUrl}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </TabsContent>
+                          <TabsContent value="feature-flags" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Feature Flags</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Toggle app capabilities without code changes.
+                                </p>
+                              </div>
+                              <div className="space-y-3 rounded-md border p-4">
+                                <label className="flex items-start gap-3 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={featureFlags.emailMarketingEnabled}
+                                    disabled={isSavingFeatureFlags}
+                                    onChange={(event) => {
+                                      void handleSetEmailMarketingEnabled(
+                                        event.target.checked,
+                                      );
+                                    }}
+                                  />
+                                  <div className="space-y-1">
+                                    <p className="font-medium">Email Marketing</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Enables email marketing capabilities, including the
+                                      Email action in the table.
+                                    </p>
+                                    {isSavingFeatureFlags ? (
+                                      <p className="text-muted-foreground text-[11px]">
+                                        Saving...
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          </TabsContent>
                         </div>
                       </Tabs>
                     </DialogContent>
@@ -3970,7 +5008,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
       <EntityList<MondayRecord>
         // title="Board Records"
         // description="List view optimized for board operations."
-        data={records}
+        data={filteredRecords}
         columns={columns}
         enableVirtualization
         virtualRowHeight={72}

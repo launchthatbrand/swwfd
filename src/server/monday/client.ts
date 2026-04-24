@@ -763,10 +763,14 @@ export const listMondayBoardRecords = async (args?: {
         const displayValue = toColumnDisplayValue(column.text, column.value);
         return displayValue.trim().length > 0;
       })
-      .map((column) => ({
-        label: column.id ?? "field",
-        value: toColumnDisplayValue(column.text, column.value),
-      }));
+      .map((column) => {
+        const columnId = column.id ?? "";
+        const columnTitle = resolvedColumnIds?.columnTitleById[columnId]?.trim() ?? "";
+        return {
+          label: columnTitle.length > 0 ? columnTitle : columnId || "field",
+          value: toColumnDisplayValue(column.text, column.value),
+        };
+      });
 
     const detailsByLabel = new Map<string, string>();
     for (const detail of [...primaryDetails, ...allColumnDetails]) {

@@ -258,12 +258,12 @@ const fetchTouchPage = async (args: {
   cursor: string | null;
   limit: number;
   dateRule?:
-    | {
-        touchDateColumnId: string;
-        dateFrom: string;
-        dateTo: string;
-      }
-    | null;
+  | {
+    touchDateColumnId: string;
+    dateFrom: string;
+    dateTo: string;
+  }
+  | null;
 }) => {
   interface Data {
     boards?: Array<{
@@ -284,17 +284,16 @@ const fetchTouchPage = async (args: {
         items_page(
           limit: $limit
           ${args.cursor ? "cursor: $cursor" : ""}
-          ${
-            canPushDateRule
-              ? `query_params: {
+          ${canPushDateRule
+      ? `query_params: {
             rules: [{
               column_id: "${args.dateRule.touchDateColumnId}"
               compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
               operator: between
             }]
           }`
-              : ""
-          }
+      : ""
+    }
         ) {
           cursor
           items {
@@ -553,10 +552,10 @@ export const GET = async (request: Request) => {
         dateRule:
           scanPages === 0 && canApplyDateRule && touchColumns.touchDateColumnId
             ? {
-                touchDateColumnId: touchColumns.touchDateColumnId,
-                dateFrom: dateFromText,
-                dateTo: dateToText,
-              }
+              touchDateColumnId: touchColumns.touchDateColumnId,
+              dateFrom: dateFromText,
+              dateTo: dateToText,
+            }
             : null,
       });
       boardName = boardName ?? page.boardName;

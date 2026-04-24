@@ -474,6 +474,73 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayUserFilterPresets: {
+    document: {
+      accountId: string;
+      conditions: Array<{
+        field:
+          | "owner"
+          | "district"
+          | "name"
+          | "email"
+          | "phone"
+          | "address"
+          | "tags"
+          | "createdAt"
+          | "hireDate"
+          | "detail";
+        id: string;
+        operator:
+          | "contains"
+          | "equals"
+          | "not_equals"
+          | "starts_with"
+          | "ends_with"
+          | "is_empty"
+          | "is_not_empty"
+          | "on_or_after"
+          | "on_or_before"
+          | "between";
+        target?: string;
+        value: string;
+        valueTo: string;
+      }>;
+      createdAt: number;
+      createdByMondayUserId: string;
+      matchMode: "all" | "any";
+      name: string;
+      ownerMondayUserId: string;
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayUserFilterPresets">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accountId"
+      | "conditions"
+      | "createdAt"
+      | "createdByMondayUserId"
+      | "matchMode"
+      | "name"
+      | "ownerMondayUserId"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+      by_account_and_owner_and_name: [
+        "accountId",
+        "ownerMondayUserId",
+        "name",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   users: {
     document: {
       email?: string;
