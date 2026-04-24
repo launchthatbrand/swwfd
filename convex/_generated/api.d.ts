@@ -280,6 +280,131 @@ export declare const api: {
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
     >;
   };
+  mondayUserFilterPresets: {
+    listForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      Array<{
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }>
+    >;
+    removeForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      { accountId: string; ownerMondayUserId: string; presetId: string },
+      null
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        presetId?: string;
+        viewerMondayUserId: string;
+      },
+      {
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }
+    >;
+  };
   viewer: {
     me: FunctionReference<
       "query",
@@ -1694,6 +1819,22 @@ export declare const components: {
           token: string;
         }>
       >;
+      listRawMembershipsByOrganization: FunctionReference<
+        "query",
+        "internal",
+        { afterJoinedAt?: number; limit?: number; organizationId: string },
+        {
+          hasMore: boolean;
+          rows: Array<{
+            _id: string;
+            isActive: boolean;
+            joinedAt: number;
+            organizationId: string;
+            role: string;
+            userId: string;
+          }>;
+        }
+      >;
     };
   };
   launchthat_notifications: {
@@ -1959,6 +2100,22 @@ export declare const components: {
   };
   launchthat_email: {
     actions: {
+      fetchReceivedEmailContent: FunctionReference<
+        "action",
+        "internal",
+        { messageId: string; orgId: string },
+        null | { html?: string; text?: string }
+      >;
+      revalidateSavedByoKey: FunctionReference<
+        "action",
+        "internal",
+        { orgId: string; provider?: "resend" },
+        {
+          domains?: Array<{ id: string; name: string; status: string }>;
+          error?: string;
+          valid: boolean;
+        }
+      >;
       syncEmailDomain: FunctionReference<
         "action",
         "internal",
@@ -1969,6 +2126,25 @@ export declare const components: {
           records: Array<{ name: string; type: string; value: string }>;
           status: "unconfigured" | "pending" | "verified" | "error";
           updatedAt: number;
+        }
+      >;
+      syncEmailDomainWithSavedKey: FunctionReference<
+        "action",
+        "internal",
+        { domain: string; orgId: string },
+        {
+          emailDomain: string | null;
+          status: "unconfigured" | "pending" | "verified" | "error";
+        }
+      >;
+      validateByoApiKey: FunctionReference<
+        "action",
+        "internal",
+        { apiKey: string; provider?: "resend" },
+        {
+          domains?: Array<{ id: string; name: string; status: string }>;
+          error?: string;
+          valid: boolean;
         }
       >;
     };
@@ -2112,12 +2288,15 @@ export declare const components: {
         "mutation",
         "internal",
         {
+          byoApiKey?: string;
+          byoProvider?: "resend";
           designKey?: "clean" | "bold" | "minimal";
           enabled: boolean;
           fromLocalPart: string;
           fromMode: "portal" | "custom";
           fromName: string;
           orgId: string;
+          orgMode?: "portal" | "byo";
           replyToEmail?: string;
         },
         null
@@ -2136,6 +2315,12 @@ export declare const components: {
       >;
     };
     queries: {
+      findOrgByInboundAddress: FunctionReference<
+        "query",
+        "internal",
+        { domain: string; localPart: string },
+        null | { orgId: string }
+      >;
       getEmailDomain: FunctionReference<
         "query",
         "internal",
@@ -2153,11 +2338,15 @@ export declare const components: {
         "internal",
         { orgId: string },
         null | {
+          byoApiKeyMasked?: string;
+          byoApiKeySet: boolean;
+          byoProvider?: "resend";
           designKey?: "clean" | "bold" | "minimal";
           enabled: boolean;
           fromLocalPart: string;
           fromMode: "portal" | "custom";
           fromName: string;
+          orgMode: "portal" | "byo";
           replyToEmail: string | null;
         }
       >;

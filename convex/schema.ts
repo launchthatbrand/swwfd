@@ -3,6 +3,41 @@ import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
+const mondayAdvancedFilterFieldValidator = v.union(
+  v.literal("owner"),
+  v.literal("district"),
+  v.literal("name"),
+  v.literal("email"),
+  v.literal("phone"),
+  v.literal("address"),
+  v.literal("tags"),
+  v.literal("createdAt"),
+  v.literal("hireDate"),
+  v.literal("detail"),
+);
+
+const mondayAdvancedFilterOperatorValidator = v.union(
+  v.literal("contains"),
+  v.literal("equals"),
+  v.literal("not_equals"),
+  v.literal("starts_with"),
+  v.literal("ends_with"),
+  v.literal("is_empty"),
+  v.literal("is_not_empty"),
+  v.literal("on_or_after"),
+  v.literal("on_or_before"),
+  v.literal("between"),
+);
+
+const mondayAdvancedFilterConditionValidator = v.object({
+  id: v.string(),
+  field: mondayAdvancedFilterFieldValidator,
+  operator: mondayAdvancedFilterOperatorValidator,
+  value: v.string(),
+  valueTo: v.string(),
+  target: v.optional(v.string()),
+});
+
 export default defineSchema({
   ...authTables,
 
@@ -102,6 +137,24 @@ export default defineSchema({
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
   }).index("by_key", ["key"]),
+
+  mondayUserFilterPresets: defineTable({
+    accountId: v.string(),
+    ownerMondayUserId: v.string(),
+    name: v.string(),
+    matchMode: v.union(v.literal("all"), v.literal("any")),
+    conditions: v.array(mondayAdvancedFilterConditionValidator),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    createdByMondayUserId: v.string(),
+    updatedByMondayUserId: v.string(),
+  })
+    .index("by_account_and_owner", ["accountId", "ownerMondayUserId"])
+    .index("by_account_and_owner_and_name", [
+      "accountId",
+      "ownerMondayUserId",
+      "name",
+    ]),
 
   mondayMonthlyMigrationJobs: defineTable({
     status: v.union(
