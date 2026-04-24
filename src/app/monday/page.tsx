@@ -224,6 +224,9 @@ interface MondayCreateRecordUpdateResponse {
     | "resume_referral";
     source: "item" | "subitem";
     subitemName?: string | null;
+    approvalStepColumnId?: string | null;
+    approvalStepMarked?: boolean;
+    warning?: string | null;
   };
 }
 
@@ -280,6 +283,12 @@ interface MondayUserFilterPresetUpsertResponse {
   preset?: unknown;
 }
 
+interface MondayUserBoardSettingsResponse {
+  ok: boolean;
+  error?: string;
+  settings?: unknown;
+}
+
 interface AddNewContactValues {
   firstName: string;
   lastName: string;
@@ -333,22 +342,147 @@ interface SavedAdvancedFilterPreset {
   ownerMondayUserId?: string;
 }
 
+type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
+type UserBoardFontSize = "default" | "medium" | "large";
+
+interface UserBoardGeneralSettings {
+  ownerMondayUserId?: string;
+  colorTheme: UserBoardColorTheme;
+  fontSize: UserBoardFontSize;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+const USER_BOARD_FONT_SIZE_OPTIONS: { value: UserBoardFontSize; label: string }[] = [
+  { value: "default", label: "Default (100%)" },
+  { value: "medium", label: "Medium (106%)" },
+  { value: "large", label: "Large (112%)" },
+];
+
+const USER_BOARD_FONT_SIZE_SCALE: Record<UserBoardFontSize, number> = {
+  default: 1,
+  medium: 1.06,
+  large: 1.12,
+};
+
+const USER_BOARD_ACTION_BUTTON_SIZE_CLASS: Record<UserBoardFontSize, string> = {
+  default: "h-8 px-2.5 text-xs",
+  medium: "h-9 px-3 text-sm",
+  large: "h-10 px-3.5 text-base",
+};
+
+const USER_BOARD_COLOR_THEME_OPTIONS: {
+  value: UserBoardColorTheme;
+  label: string;
+  description: string;
+  swatchClassName: string;
+}[] = [
+    {
+      value: "neutral",
+      label: "Neutral",
+      description: "Balanced default styling.",
+      swatchClassName: "bg-slate-400",
+    },
+    {
+      value: "sky",
+      label: "Sky",
+      description: "Cool blue accents.",
+      swatchClassName: "bg-sky-400",
+    },
+    {
+      value: "emerald",
+      label: "Emerald",
+      description: "Fresh green accents.",
+      swatchClassName: "bg-emerald-400",
+    },
+    {
+      value: "violet",
+      label: "Violet",
+      description: "Calm purple accents.",
+      swatchClassName: "bg-violet-400",
+    },
+    {
+      value: "rose",
+      label: "Rose",
+      description: "Warm pink accents.",
+      swatchClassName: "bg-rose-400",
+    },
+  ];
+
+const USER_BOARD_COLOR_THEME_STYLES: Record<
+  UserBoardColorTheme,
+  {
+    shellCardClassName: string;
+    toolbarClassName: string;
+    previewClassName: string;
+    actionButtonClassName: string;
+  }
+> = {
+  neutral: {
+    shellCardClassName: "bg-card/70 border-border",
+    toolbarClassName: "bg-background border-border",
+    previewClassName: "bg-muted/30 border-border",
+    actionButtonClassName:
+      "bg-slate-600/90 text-white hover:bg-slate-700 dark:bg-slate-500 dark:hover:bg-slate-400",
+  },
+  sky: {
+    shellCardClassName: "bg-sky-50/70 border-sky-200 dark:bg-sky-950/25 dark:border-sky-800",
+    toolbarClassName: "bg-sky-100/70 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700",
+    previewClassName: "bg-sky-50/80 border-sky-200 dark:bg-sky-900/20 dark:border-sky-800",
+    actionButtonClassName:
+      "bg-sky-500/90 text-white hover:bg-sky-600 dark:bg-sky-600 dark:hover:bg-sky-500",
+  },
+  emerald: {
+    shellCardClassName:
+      "bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800",
+    toolbarClassName:
+      "bg-emerald-100/70 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700",
+    previewClassName:
+      "bg-emerald-50/80 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800",
+    actionButtonClassName:
+      "bg-emerald-500/90 text-white hover:bg-emerald-600 dark:bg-emerald-600 dark:hover:bg-emerald-500",
+  },
+  violet: {
+    shellCardClassName:
+      "bg-violet-50/70 border-violet-200 dark:bg-violet-950/20 dark:border-violet-800",
+    toolbarClassName:
+      "bg-violet-100/70 border-violet-200 dark:bg-violet-900/30 dark:border-violet-700",
+    previewClassName:
+      "bg-violet-50/80 border-violet-200 dark:bg-violet-900/20 dark:border-violet-800",
+    actionButtonClassName:
+      "bg-violet-500/90 text-white hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-500",
+  },
+  rose: {
+    shellCardClassName: "bg-rose-50/70 border-rose-200 dark:bg-rose-950/20 dark:border-rose-800",
+    toolbarClassName:
+      "bg-rose-100/70 border-rose-200 dark:bg-rose-900/30 dark:border-rose-700",
+    previewClassName: "bg-rose-50/80 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800",
+    actionButtonClassName:
+      "bg-rose-500/90 text-white hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-500",
+  },
+};
+
+const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
+  colorTheme: "neutral",
+  fontSize: "medium",
+};
+
 const ADVANCED_FILTER_FIELDS: {
   value: AdvancedFilterField;
   label: string;
   kind: "text" | "date";
 }[] = [
-  { value: "owner", label: "Owner", kind: "text" },
-  { value: "district", label: "District", kind: "text" },
-  { value: "name", label: "Name", kind: "text" },
-  { value: "email", label: "Email", kind: "text" },
-  { value: "phone", label: "Phone", kind: "text" },
-  { value: "address", label: "Address", kind: "text" },
-  { value: "tags", label: "Tags", kind: "text" },
-  { value: "createdAt", label: "Created Date", kind: "date" },
-  { value: "hireDate", label: "Hire Date", kind: "date" },
-  { value: "detail", label: "Board Column", kind: "text" },
-];
+    { value: "owner", label: "Owner", kind: "text" },
+    { value: "district", label: "District", kind: "text" },
+    { value: "name", label: "Name", kind: "text" },
+    { value: "email", label: "Email", kind: "text" },
+    { value: "phone", label: "Phone", kind: "text" },
+    { value: "address", label: "Address", kind: "text" },
+    { value: "tags", label: "Tags", kind: "text" },
+    { value: "createdAt", label: "Created Date", kind: "date" },
+    { value: "hireDate", label: "Hire Date", kind: "date" },
+    { value: "detail", label: "Board Column", kind: "text" },
+  ];
 
 const ADVANCED_TEXT_OPERATORS: AdvancedFilterOperator[] = [
   "contains",
@@ -627,8 +761,8 @@ const parseSavedAdvancedFilterPreset = (input: unknown): SavedAdvancedFilterPres
   if (!name) return null;
   const parsedConditions = Array.isArray(candidate.conditions)
     ? candidate.conditions
-        .map((condition) => parseAdvancedCondition(condition))
-        .filter((condition): condition is AdvancedFilterCondition => condition !== null)
+      .map((condition) => parseAdvancedCondition(condition))
+      .filter((condition): condition is AdvancedFilterCondition => condition !== null)
     : [];
   return {
     id:
@@ -644,6 +778,33 @@ const parseSavedAdvancedFilterPreset = (input: unknown): SavedAdvancedFilterPres
       typeof candidate.ownerMondayUserId === "string"
         ? candidate.ownerMondayUserId
         : undefined,
+  };
+};
+
+const isUserBoardColorTheme = (value: unknown): value is UserBoardColorTheme => {
+  return USER_BOARD_COLOR_THEME_OPTIONS.some((option) => option.value === value);
+};
+
+const isUserBoardFontSize = (value: unknown): value is UserBoardFontSize => {
+  return USER_BOARD_FONT_SIZE_OPTIONS.some((option) => option.value === value);
+};
+
+const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralSettings => {
+  if (!input || typeof input !== "object") return { ...DEFAULT_USER_BOARD_GENERAL_SETTINGS };
+  const candidate = input as Partial<UserBoardGeneralSettings>;
+  return {
+    ownerMondayUserId:
+      typeof candidate.ownerMondayUserId === "string"
+        ? candidate.ownerMondayUserId
+        : undefined,
+    colorTheme: isUserBoardColorTheme(candidate.colorTheme)
+      ? candidate.colorTheme
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.colorTheme,
+    fontSize: isUserBoardFontSize(candidate.fontSize)
+      ? candidate.fontSize
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.fontSize,
+    createdAt: typeof candidate.createdAt === "number" ? candidate.createdAt : undefined,
+    updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : undefined,
   };
 };
 
@@ -666,6 +827,38 @@ const CONTACT_UPDATE_TYPE_OPTIONS = [
 ] as const;
 
 type ContactUpdateType = (typeof CONTACT_UPDATE_TYPE_OPTIONS)[number]["value"];
+
+const CONTACT_UPDATE_ACTION_BUTTONS: {
+  type: Exclude<ContactUpdateType, "general">;
+  label: string;
+  defaultBody: string;
+}[] = [
+    {
+      type: "welcome_email",
+      label: "Welcome Email Sent",
+      defaultBody: "Welcome Email Sent",
+    },
+    {
+      type: "followup",
+      label: "Follow-Up Email Sent",
+      defaultBody: "Follow-Up Email Sent",
+    },
+    {
+      type: "questionnaire",
+      label: "Questionnaire Sent",
+      defaultBody: "Questionnaire Sent",
+    },
+    {
+      type: "resume",
+      label: "Resume Received",
+      defaultBody: "Resume Received",
+    },
+    {
+      type: "resume_referral",
+      label: "Resume Referral",
+      defaultBody: "Resume Referral",
+    },
+  ];
 
 const contactUpdateTypeLabel = (value: ContactUpdateType) => {
   return (
@@ -1308,6 +1501,14 @@ export function MondayBoardView({
   const [deletingAdvancedFilterPresetIds, setDeletingAdvancedFilterPresetIds] = useState<
     Record<string, boolean>
   >({});
+  const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
+    ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+  });
+  const [boardGeneralSettingsDraft, setBoardGeneralSettingsDraft] =
+    useState<UserBoardGeneralSettings>({
+      ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+    });
+  const [isSavingBoardGeneralSettings, setIsSavingBoardGeneralSettings] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactStep, setAddContactStep] = useState<1 | 2>(1);
   const [addContactValues, setAddContactValues] = useState<AddNewContactValues>({
@@ -1478,6 +1679,23 @@ export function MondayBoardView({
     if (ownerFromFilter.length > 0) return ownerFromFilter;
     return identity?.userId.trim() ?? "";
   }, [forcedOwnerId, hasForcedOwnerScope, identity?.userId, ownerFilter, viewMode]);
+  const boardThemeStyles = useMemo(
+    () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
+    [boardGeneralSettings.colorTheme],
+  );
+  const boardDraftThemeStyles = useMemo(
+    () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettingsDraft.colorTheme],
+    [boardGeneralSettingsDraft.colorTheme],
+  );
+  const boardFontScale = USER_BOARD_FONT_SIZE_SCALE[boardGeneralSettings.fontSize];
+  const boardFontScalePercent = Math.round(boardFontScale * 100);
+  const quickActionButtonSizeClass =
+    USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettings.fontSize];
+  const quickActionButtonDraftSizeClass =
+    USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettingsDraft.fontSize];
+  const hasUnsavedBoardGeneralSettings =
+    boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
+    boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize;
   const recordsQuery = useInfiniteQuery({
     queryKey: [
       "monday-records",
@@ -1550,7 +1768,10 @@ export function MondayBoardView({
 
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
-    enabled: !!sessionToken && !staticMode && (settingsOpen || !!sendEmailRecord),
+    enabled:
+      !!sessionToken &&
+      !staticMode &&
+      (!!sendEmailRecord || (settingsOpen && isMondaySettingsAdmin)),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("boardId", "18401299370");
@@ -1609,7 +1830,12 @@ export function MondayBoardView({
 
   const outlookStatusQuery = useQuery({
     queryKey: ["monday-outlook-status", sessionToken, identity?.userId, settingsOpen],
-    enabled: !!sessionToken && !!identity?.userId && settingsOpen && !staticMode,
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      settingsOpen &&
+      isMondaySettingsAdmin &&
+      !staticMode,
     queryFn: async () => {
       const response = await fetch("/api/monday/email/outlook/status", {
         method: "GET",
@@ -1682,6 +1908,26 @@ export function MondayBoardView({
     staleTime: 30_000,
   });
 
+  const userBoardSettingsQuery = useQuery({
+    queryKey: ["monday-user-board-settings", sessionToken, presetScopeOwnerId],
+    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(`/api/monday/settings/user-board?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayUserBoardSettingsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load board settings");
+      }
+      return parseUserBoardGeneralSettings(data.settings);
+    },
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ownerIdParam = params.get("ownerId");
@@ -1710,6 +1956,8 @@ export function MondayBoardView({
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
     setActiveSavedAdvancedFilterId(null);
+    setBoardGeneralSettings({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
+    setBoardGeneralSettingsDraft({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
   }, [presetScopeOwnerId]);
 
   useEffect(() => {
@@ -1721,6 +1969,22 @@ export function MondayBoardView({
       return userFilterPresetsQuery.data.some((preset) => preset.id === prev) ? prev : null;
     });
   }, [presetScopeOwnerId, userFilterPresetsQuery.data]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userBoardSettingsQuery.data) return;
+    setBoardGeneralSettings(userBoardSettingsQuery.data);
+    setBoardGeneralSettingsDraft(userBoardSettingsQuery.data);
+  }, [presetScopeOwnerId, userBoardSettingsQuery.data]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousFontSize = root.style.fontSize;
+    root.style.fontSize = `${boardFontScalePercent}%`;
+    return () => {
+      root.style.fontSize = previousFontSize;
+    };
+  }, [boardFontScalePercent]);
 
   useEffect(() => {
     const handleOutlookOAuthMessage = (event: MessageEvent) => {
@@ -1857,11 +2121,6 @@ export function MondayBoardView({
   }, [featureFlagsQuery.data]);
 
   useEffect(() => {
-    if (isMondaySettingsAdmin || !settingsOpen) return;
-    setSettingsOpen(false);
-  }, [isMondaySettingsAdmin, settingsOpen]);
-
-  useEffect(() => {
     if (staticMode) return;
     if (!featureFlagsQuery.error) return;
     const message =
@@ -1884,13 +2143,14 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
+    if (!isMondaySettingsAdmin) return;
     if (!emailTemplatesQuery.error) return;
     const message =
       emailTemplatesQuery.error instanceof Error
         ? emailTemplatesQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [emailTemplatesQuery.error, settingsOpen, staticMode]);
+  }, [emailTemplatesQuery.error, isMondaySettingsAdmin, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1914,6 +2174,16 @@ export function MondayBoardView({
 
   useEffect(() => {
     if (staticMode) return;
+    if (!userBoardSettingsQuery.error) return;
+    const message =
+      userBoardSettingsQuery.error instanceof Error
+        ? userBoardSettingsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [staticMode, userBoardSettingsQuery.error]);
+
+  useEffect(() => {
+    if (staticMode) return;
     if (!editOptionsQuery.error) return;
     const message =
       editOptionsQuery.error instanceof Error
@@ -1925,13 +2195,14 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
+    if (!isMondaySettingsAdmin) return;
     if (!outlookStatusQuery.error) return;
     const message =
       outlookStatusQuery.error instanceof Error
         ? outlookStatusQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [outlookStatusQuery.error, settingsOpen, staticMode]);
+  }, [isMondaySettingsAdmin, outlookStatusQuery.error, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -2310,6 +2581,57 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsSavingFeatureFlags(false);
+    }
+  };
+
+  const handleSaveBoardGeneralSettings = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Select an owner board before saving settings");
+      return;
+    }
+    if (
+      !isUserBoardColorTheme(boardGeneralSettingsDraft.colorTheme) ||
+      !isUserBoardFontSize(boardGeneralSettingsDraft.fontSize)
+    ) {
+      toast.error("Choose a valid font size and color theme");
+      return;
+    }
+
+    setIsSavingBoardGeneralSettings(true);
+    try {
+      const response = await fetch("/api/monday/settings/user-board", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          ownerId: presetScopeOwnerId,
+          colorTheme: boardGeneralSettingsDraft.colorTheme,
+          fontSize: boardGeneralSettingsDraft.fontSize,
+        }),
+      });
+      const data = (await response.json()) as MondayUserBoardSettingsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to save board settings");
+      }
+
+      const parsedSettings = parseUserBoardGeneralSettings(data.settings);
+      setBoardGeneralSettings(parsedSettings);
+      setBoardGeneralSettingsDraft(parsedSettings);
+      await userBoardSettingsQuery.refetch();
+      toast.success("General settings saved for this employee board");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save general settings";
+      toast.error(message);
+    } finally {
+      setIsSavingBoardGeneralSettings(false);
     }
   };
 
@@ -2814,7 +3136,13 @@ export function MondayBoardView({
     setContactUpdateType("general");
   };
 
-  const handleCreateContactUpdate = async () => {
+  const handleCreateContactUpdate = async (
+    options?: {
+      body?: string;
+      updateType?: ContactUpdateType;
+      keepSelectedType?: boolean;
+    },
+  ) => {
     if (staticMode) {
       toast.error("Updates are unavailable in static mode");
       return;
@@ -2823,7 +3151,8 @@ export function MondayBoardView({
       toast.error("Missing monday session context");
       return;
     }
-    const body = contactUpdateDraft.trim();
+    const updateType = options?.updateType ?? contactUpdateType;
+    const body = (options?.body ?? contactUpdateDraft).trim();
     if (!body) {
       toast.error("Enter an update before posting");
       return;
@@ -2843,7 +3172,7 @@ export function MondayBoardView({
             "content-type": "application/json",
             "x-monday-session-token": sessionToken,
           },
-          body: JSON.stringify({ body, updateType: contactUpdateType }),
+          body: JSON.stringify({ body, updateType }),
         },
       );
       const data = (await response.json()) as MondayCreateRecordUpdateResponse;
@@ -2852,9 +3181,54 @@ export function MondayBoardView({
       }
 
       setContactUpdateDraft("");
-      setContactUpdateType("general");
-      await contactUpdatesQuery.refetch();
-      toast.success("Update posted to monday.com");
+      if (!options?.keepSelectedType) {
+        setContactUpdateType("general");
+      }
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactUpdatesQuery.refetch(),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      setContactHistoryDialogRecord((prev) => {
+        if (!prev) return prev;
+        const prevContactId = prev.contactId?.trim() ?? "";
+        const matchedRecord = refreshedRecords.find((candidate) => {
+          const candidateId = candidate.id.trim();
+          const candidateContactId = candidate.contactId?.trim() ?? "";
+          const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
+          return (
+            candidateId === prev.id ||
+            candidateId === prevContactId ||
+            candidateContactId === prev.id ||
+            candidateContactId === prevContactId ||
+            candidateTouchItemId === prev.id
+          );
+        });
+        if (!matchedRecord) return prev;
+        const matchedBatteryProgress =
+          typeof matchedRecord.batteryProgress === "number" &&
+          Number.isFinite(matchedRecord.batteryProgress)
+            ? Math.max(0, Math.min(100, Math.round(matchedRecord.batteryProgress)))
+            : null;
+        return {
+          ...prev,
+          ...matchedRecord,
+          ownerProfiles: normalizeOwnerProfiles(matchedRecord.ownerProfiles),
+          ownerIds: normalizeOwnerIds(matchedRecord.ownerIds),
+          resumeFiles: normalizeResumeFiles(matchedRecord.resumeFiles),
+          batteryProgress: matchedBatteryProgress,
+        };
+      });
+      if (data.update?.warning) {
+        toast.success("Update posted to monday.com");
+        toast.error(`Onboarding step sync warning: ${data.update.warning}`);
+      } else if (data.update?.approvalStepMarked) {
+        toast.success("Update posted and onboarding step marked complete");
+      } else {
+        toast.success("Update posted to monday.com");
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to post Monday update";
@@ -3545,7 +3919,7 @@ export function MondayBoardView({
         </div>
       ) : null}
 
-      <div className="bg-card/70 rounded-lg border px-3 py-2">
+      <div className={`rounded-lg border px-3 py-2 ${boardThemeStyles.shellCardClassName}`}>
         <div className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="w-full max-w-xl min-w-[280px] flex-1 space-y-1">
@@ -3562,7 +3936,9 @@ export function MondayBoardView({
               ) : null}
             </div>
 
-            <div className="bg-background flex items-center rounded-md border p-1 gap-5">
+            <div
+              className={`flex items-center gap-5 rounded-md border p-1 ${boardThemeStyles.toolbarClassName}`}
+            >
               {viewMode === "userScoped" ? (
                 <Button
                   size="sm"
@@ -3689,250 +4065,250 @@ export function MondayBoardView({
                       <div className="space-y-4 py-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                      <select
-                        value={advancedFilterMatchMode}
-                        onChange={(event) => {
-                          const value = event.target.value === "any" ? "any" : "all";
-                          setActiveSavedAdvancedFilterId(null);
-                          setAdvancedFilterMatchMode(value);
-                        }}
-                        className="bg-background border-input h-7 rounded-md border px-2 text-xs"
-                      >
-                        <option value="all">Match all</option>
-                        <option value="any">Match any</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground text-xs">
-                        Showing {filteredRecords.length} of {records.length}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        onClick={handleAddAdvancedFilterCondition}
-                      >
-                        Add Filter
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
-                        onClick={handleClearAdvancedFilters}
-                        disabled={advancedFilterConditions.length === 0}
-                      >
-                        Clear
-                      </Button>
-                    </div>
-                  </div>
-
-                  {advancedFilterConditions.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      Add conditions to build custom filter logic.
-                    </p>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {advancedFilterConditions.map((condition) => {
-                        const conditionTarget = getBoardColumnTargetForCondition(condition);
-                        const boardColumnKind =
-                          boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
-                        const operatorOptions =
-                          boardColumnKind === "date"
-                            ? ADVANCED_DATE_OPERATORS
-                            : ADVANCED_TEXT_OPERATORS;
-                        const shouldHideValueInput =
-                          condition.operator === "is_empty" ||
-                          condition.operator === "is_not_empty";
-                        const isDateField = boardColumnKind === "date";
-                        const targetLabelLower = conditionTarget.toLowerCase();
-                        const usesOwnerOptions =
-                          targetLabelLower === "owner" && ownerOptions.length > 0;
-                        const usesDistrictOptions =
-                          (targetLabelLower === "status" ||
-                            targetLabelLower === "district") &&
-                          statusOptions.length > 0;
-                        const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
-                        return (
-                          <div
-                            key={condition.id}
-                            className="flex flex-wrap items-center gap-1.5 rounded border p-1.5"
-                          >
                             <select
-                              value={conditionTarget}
-                              onChange={(event) =>
-                                handleChangeAdvancedFilterTarget(condition.id, event.target.value)
-                              }
-                              className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
-                            >
-                              {!hasBoardColumnOptions ? (
-                                <option value="">No board columns loaded</option>
-                              ) : null}
-                              {hasBoardColumnOptions ? (
-                                <option value="">Select board column</option>
-                              ) : null}
-                              {boardColumnFilterOptions.map((label) => (
-                                <option key={label} value={label}>
-                                  {label}
-                                </option>
-                              ))}
-                            </select>
-
-                            <select
-                              value={condition.operator}
+                              value={advancedFilterMatchMode}
                               onChange={(event) => {
-                                if (!isAdvancedFilterOperator(event.target.value)) return;
-                                handleChangeAdvancedFilterOperator(condition.id, event.target.value);
+                                const value = event.target.value === "any" ? "any" : "all";
+                                setActiveSavedAdvancedFilterId(null);
+                                setAdvancedFilterMatchMode(value);
                               }}
                               className="bg-background border-input h-7 rounded-md border px-2 text-xs"
                             >
-                              {operatorOptions.map((operator) => (
-                                <option key={operator} value={operator}>
-                                  {ADVANCED_OPERATOR_LABELS[operator]}
-                                </option>
-                              ))}
+                              <option value="all">Match all</option>
+                              <option value="any">Match any</option>
                             </select>
-
-                            {!shouldHideValueInput ? (
-                              usesOwnerOptions ? (
-                                <select
-                                  value={condition.value}
-                                  onChange={(event) =>
-                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                  }
-                                  className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
-                                >
-                                  <option value="">Select owner</option>
-                                  {!ownerOptions.some((option) => option.value === condition.value) &&
-                                  condition.value.trim().length > 0 ? (
-                                    <option value={condition.value}>
-                                      {`Owner ${condition.value} (selected)`}
-                                    </option>
-                                  ) : null}
-                                  {ownerOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : usesDistrictOptions ? (
-                                <select
-                                  value={condition.value}
-                                  onChange={(event) =>
-                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                  }
-                                  className="bg-background border-input h-7 min-w-[200px] rounded-md border px-2 text-xs"
-                                >
-                                  <option value="">Select district</option>
-                                  {!statusOptions.some((option) => option.value === condition.value) &&
-                                  condition.value.trim().length > 0 ? (
-                                    <option value={condition.value}>
-                                      {`District ${condition.value} (selected)`}
-                                    </option>
-                                  ) : null}
-                                  {statusOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <Input
-                                  type={isDateField ? "date" : "text"}
-                                  value={condition.value}
-                                  onChange={(event) =>
-                                    handleChangeAdvancedFilterValue(condition.id, event.target.value)
-                                  }
-                                  placeholder="Value"
-                                  className="h-7 min-w-[200px] text-xs"
-                                />
-                              )
-                            ) : null}
-
-                            {condition.operator === "between" ? (
-                              <Input
-                                type={isDateField ? "date" : "text"}
-                                value={condition.valueTo}
-                                onChange={(event) =>
-                                  handleChangeAdvancedFilterValueTo(
-                                    condition.id,
-                                    event.target.value,
-                                  )
-                                }
-                                placeholder={isDateField ? "End date" : "Second value"}
-                                className="h-7 min-w-[200px] text-xs"
-                              />
-                            ) : null}
-
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-muted-foreground text-xs">
+                              Showing {filteredRecords.length} of {records.length}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 px-2 text-xs"
+                              onClick={handleAddAdvancedFilterCondition}
+                            >
+                              Add Filter
+                            </Button>
                             <Button
                               size="sm"
                               variant="ghost"
                               className="h-7 px-2 text-xs"
-                              onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                              onClick={handleClearAdvancedFilters}
+                              disabled={advancedFilterConditions.length === 0}
                             >
-                              Remove
+                              Clear
                             </Button>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                        </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <Input
-                      value={pendingSavedAdvancedFilterName}
-                      onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
-                      placeholder="Saved filter name"
-                      className="h-7 w-56 text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 px-2 text-xs"
-                      onClick={handleSaveAdvancedFilterPreset}
-                      disabled={
-                        isSavingAdvancedFilterPreset ||
-                        !sessionToken ||
-                        presetScopeOwnerId.length === 0
-                      }
-                    >
-                      {isSavingAdvancedFilterPreset ? "Saving..." : "Save Filter"}
-                    </Button>
-                  </div>
+                        {advancedFilterConditions.length === 0 ? (
+                          <p className="text-muted-foreground text-xs">
+                            Add conditions to build custom filter logic.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {advancedFilterConditions.map((condition) => {
+                              const conditionTarget = getBoardColumnTargetForCondition(condition);
+                              const boardColumnKind =
+                                boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                              const operatorOptions =
+                                boardColumnKind === "date"
+                                  ? ADVANCED_DATE_OPERATORS
+                                  : ADVANCED_TEXT_OPERATORS;
+                              const shouldHideValueInput =
+                                condition.operator === "is_empty" ||
+                                condition.operator === "is_not_empty";
+                              const isDateField = boardColumnKind === "date";
+                              const targetLabelLower = conditionTarget.toLowerCase();
+                              const usesOwnerOptions =
+                                targetLabelLower === "owner" && ownerOptions.length > 0;
+                              const usesDistrictOptions =
+                                (targetLabelLower === "status" ||
+                                  targetLabelLower === "district") &&
+                                statusOptions.length > 0;
+                              const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                              return (
+                                <div
+                                  key={condition.id}
+                                  className="flex flex-wrap items-center gap-1.5 rounded border p-1.5"
+                                >
+                                  <select
+                                    value={conditionTarget}
+                                    onChange={(event) =>
+                                      handleChangeAdvancedFilterTarget(condition.id, event.target.value)
+                                    }
+                                    className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
+                                  >
+                                    {!hasBoardColumnOptions ? (
+                                      <option value="">No board columns loaded</option>
+                                    ) : null}
+                                    {hasBoardColumnOptions ? (
+                                      <option value="">Select board column</option>
+                                    ) : null}
+                                    {boardColumnFilterOptions.map((label) => (
+                                      <option key={label} value={label}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
 
-                  {savedAdvancedFilterPresets.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {savedAdvancedFilterPresets.map((preset) => (
-                        <div
-                          key={preset.id}
-                          className="bg-background flex items-center rounded-md border pr-1"
-                        >
+                                  <select
+                                    value={condition.operator}
+                                    onChange={(event) => {
+                                      if (!isAdvancedFilterOperator(event.target.value)) return;
+                                      handleChangeAdvancedFilterOperator(condition.id, event.target.value);
+                                    }}
+                                    className="bg-background border-input h-7 rounded-md border px-2 text-xs"
+                                  >
+                                    {operatorOptions.map((operator) => (
+                                      <option key={operator} value={operator}>
+                                        {ADVANCED_OPERATOR_LABELS[operator]}
+                                      </option>
+                                    ))}
+                                  </select>
+
+                                  {!shouldHideValueInput ? (
+                                    usesOwnerOptions ? (
+                                      <select
+                                        value={condition.value}
+                                        onChange={(event) =>
+                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                        }
+                                        className="bg-background border-input h-7 min-w-[220px] rounded-md border px-2 text-xs"
+                                      >
+                                        <option value="">Select owner</option>
+                                        {!ownerOptions.some((option) => option.value === condition.value) &&
+                                          condition.value.trim().length > 0 ? (
+                                          <option value={condition.value}>
+                                            {`Owner ${condition.value} (selected)`}
+                                          </option>
+                                        ) : null}
+                                        {ownerOptions.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : usesDistrictOptions ? (
+                                      <select
+                                        value={condition.value}
+                                        onChange={(event) =>
+                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                        }
+                                        className="bg-background border-input h-7 min-w-[200px] rounded-md border px-2 text-xs"
+                                      >
+                                        <option value="">Select district</option>
+                                        {!statusOptions.some((option) => option.value === condition.value) &&
+                                          condition.value.trim().length > 0 ? (
+                                          <option value={condition.value}>
+                                            {`District ${condition.value} (selected)`}
+                                          </option>
+                                        ) : null}
+                                        {statusOptions.map((option) => (
+                                          <option key={option.value} value={option.value}>
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <Input
+                                        type={isDateField ? "date" : "text"}
+                                        value={condition.value}
+                                        onChange={(event) =>
+                                          handleChangeAdvancedFilterValue(condition.id, event.target.value)
+                                        }
+                                        placeholder="Value"
+                                        className="h-7 min-w-[200px] text-xs"
+                                      />
+                                    )
+                                  ) : null}
+
+                                  {condition.operator === "between" ? (
+                                    <Input
+                                      type={isDateField ? "date" : "text"}
+                                      value={condition.valueTo}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValueTo(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder={isDateField ? "End date" : "Second value"}
+                                      className="h-7 min-w-[200px] text-xs"
+                                    />
+                                  ) : null}
+
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Input
+                            value={pendingSavedAdvancedFilterName}
+                            onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                            placeholder="Saved filter name"
+                            className="h-7 w-56 text-xs"
+                          />
                           <Button
                             size="sm"
-                            variant={
-                              activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                            variant="outline"
+                            className="h-7 px-2 text-xs"
+                            onClick={handleSaveAdvancedFilterPreset}
+                            disabled={
+                              isSavingAdvancedFilterPreset ||
+                              !sessionToken ||
+                              presetScopeOwnerId.length === 0
                             }
-                            className="h-7 rounded-r-none px-2 text-xs"
-                            onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
                           >
-                            {preset.name}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-muted-foreground h-7 px-1.5 text-xs"
-                            onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
-                            disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
-                          >
-                            {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                            {isSavingAdvancedFilterPreset ? "Saving..." : "Save Filter"}
                           </Button>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground text-xs">
-                      No saved filter presets yet.
-                    </p>
-                  )}
+
+                        {savedAdvancedFilterPresets.length > 0 ? (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {savedAdvancedFilterPresets.map((preset) => (
+                              <div
+                                key={preset.id}
+                                className="bg-background flex items-center rounded-md border pr-1"
+                              >
+                                <Button
+                                  size="sm"
+                                  variant={
+                                    activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                                  }
+                                  className="h-7 rounded-r-none px-2 text-xs"
+                                  onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
+                                >
+                                  {preset.name}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="text-muted-foreground h-7 px-1.5 text-xs"
+                                  onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                                  disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
+                                >
+                                  {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-xs">
+                            No saved filter presets yet.
+                          </p>
+                        )}
                       </div>
                     </DialogContent>
                   </Dialog>
@@ -3975,46 +4351,210 @@ export function MondayBoardView({
                     API docs
                   </Link>
                 </Button>
-                {isMondaySettingsAdmin ? (
-                  <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                    <DialogTrigger asChild>
-                      <Button size="sm" variant="outline" className="h-8">
-                        <Settings className="mr-1.5 h-4 w-4" />
-                        Settings
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-4xl">
-                      <DialogHeader>
-                        <DialogTitle>Monday Settings</DialogTitle>
-                      </DialogHeader>
-                      <Tabs defaultValue="email-templates" className="flex gap-4">
-                        <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
-                          <TabsTrigger
-                            value="email-templates"
-                            className="w-full justify-start text-left"
-                          >
-                            Email Templates
-                          </TabsTrigger>
-                          <TabsTrigger
-                            value="email-settings"
-                            className="w-full justify-start text-left"
-                          >
-                            Email Settings
-                          </TabsTrigger>
-                          <TabsTrigger
-                            value="user-zip-map"
-                            className="w-full justify-start text-left"
-                          >
-                            User {"<->"} Zipcode map
-                          </TabsTrigger>
-                          <TabsTrigger
-                            value="feature-flags"
-                            className="w-full justify-start text-left"
-                          >
-                            Feature Flags
-                          </TabsTrigger>
-                        </TabsList>
-                        <div className="min-h-80 flex-1 rounded-md border p-4">
+                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-8">
+                      <Settings className="mr-1.5 h-4 w-4" />
+                      Settings
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[85vh] max-w-4xl overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>Monday Settings</DialogTitle>
+                    </DialogHeader>
+                    <Tabs defaultValue="general-settings" className="flex gap-4">
+                      <TabsList
+                        className={`h-auto shrink-0 flex-col items-stretch ${isMondaySettingsAdmin ? "w-56" : "w-52"}`}
+                      >
+                        <TabsTrigger
+                          value="general-settings"
+                          className="w-full justify-start text-left"
+                        >
+                          General Settings
+                        </TabsTrigger>
+                        {isMondaySettingsAdmin ? (
+                          <>
+                            <TabsTrigger
+                              value="email-templates"
+                              className="w-full justify-start text-left"
+                            >
+                              Email Templates
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="email-settings"
+                              className="w-full justify-start text-left"
+                            >
+                              Email Settings
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="user-zip-map"
+                              className="w-full justify-start text-left"
+                            >
+                              User {"<->"} Zipcode map
+                            </TabsTrigger>
+                            <TabsTrigger
+                              value="feature-flags"
+                              className="w-full justify-start text-left"
+                            >
+                              Feature Flags
+                            </TabsTrigger>
+                          </>
+                        ) : null}
+                      </TabsList>
+                      <div className="min-h-80 flex-1 rounded-md border p-4">
+                        <TabsContent value="general-settings" className="mt-0">
+                          <div className="space-y-4">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">General Settings</p>
+                              <p className="text-muted-foreground text-sm">
+                                Customize font size and color for this employee board.
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                Scope:{" "}
+                                {presetScopeOwnerId.length > 0
+                                  ? `Owner ${presetScopeOwnerId}`
+                                  : "No owner board selected"}
+                              </p>
+                            </div>
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-4 rounded-md border p-4">
+                                <div className="space-y-2">
+                                  <label
+                                    htmlFor="board-font-size"
+                                    className="text-xs font-semibold tracking-wide uppercase"
+                                  >
+                                    Font Size
+                                  </label>
+                                  <Select
+                                    value={boardGeneralSettingsDraft.fontSize}
+                                    onValueChange={(value) => {
+                                      if (!isUserBoardFontSize(value)) return;
+                                      setBoardGeneralSettingsDraft((prev) => ({
+                                        ...prev,
+                                        fontSize: value,
+                                      }));
+                                    }}
+                                  >
+                                    <SelectTrigger id="board-font-size" className="h-9">
+                                      <SelectValue placeholder="Select font size" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                  <label
+                                    htmlFor="board-color-theme"
+                                    className="text-xs font-semibold tracking-wide uppercase"
+                                  >
+                                    Color Theme
+                                  </label>
+                                  <Select
+                                    value={boardGeneralSettingsDraft.colorTheme}
+                                    onValueChange={(value) => {
+                                      if (!isUserBoardColorTheme(value)) return;
+                                      setBoardGeneralSettingsDraft((prev) => ({
+                                        ...prev,
+                                        colorTheme: value,
+                                      }));
+                                    }}
+                                  >
+                                    <SelectTrigger id="board-color-theme" className="h-9">
+                                      <SelectValue placeholder="Select color theme" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          <span className="inline-flex items-center gap-2">
+                                            <span
+                                              className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
+                                            />
+                                            {option.label}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <p className="text-muted-foreground text-xs">
+                                    {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                      (option) =>
+                                        option.value === boardGeneralSettingsDraft.colorTheme,
+                                    )?.description ?? "Choose a color theme for this board."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div
+                                className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
+                              >
+                                <p className="text-xs font-semibold tracking-wide uppercase">
+                                  Preview
+                                </p>
+                                <div className="space-y-2 rounded-md border bg-background/80 p-3">
+                                  <p className="text-sm font-medium">Header & controls</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    The board UI applies this color styling and font scaling.
+                                  </p>
+                                </div>
+                                <div className="rounded-md border bg-background/80 p-3">
+                                  <p className="text-xs">
+                                    Font scale preview:{" "}
+                                    {
+                                      USER_BOARD_FONT_SIZE_OPTIONS.find(
+                                        (option) =>
+                                          option.value === boardGeneralSettingsDraft.fontSize,
+                                      )?.label
+                                    }
+                                  </p>
+                                  <div className="mt-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                                      disabled
+                                    >
+                                      Quick Action Preview
+                                    </Button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                onClick={() => {
+                                  void handleSaveBoardGeneralSettings();
+                                }}
+                                disabled={
+                                  isSavingBoardGeneralSettings ||
+                                  !sessionToken ||
+                                  presetScopeOwnerId.length === 0 ||
+                                  !hasUnsavedBoardGeneralSettings
+                                }
+                              >
+                                {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft(boardGeneralSettings);
+                                }}
+                                disabled={!hasUnsavedBoardGeneralSettings}
+                              >
+                                Reset
+                              </Button>
+                            </div>
+                          </div>
+                        </TabsContent>
+
+                        {isMondaySettingsAdmin ? (
                           <TabsContent value="email-templates" className="mt-0">
                             <div className="grid gap-4 md:grid-cols-[260px_1fr]">
                               <div className="space-y-2">
@@ -4113,6 +4653,8 @@ export function MondayBoardView({
                               </div>
                             </div>
                           </TabsContent>
+                        ) : null}
+                        {isMondaySettingsAdmin ? (
                           <TabsContent value="user-zip-map" className="mt-0">
                             <div className="space-y-2">
                               <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
@@ -4121,6 +4663,8 @@ export function MondayBoardView({
                               </p>
                             </div>
                           </TabsContent>
+                        ) : null}
+                        {isMondaySettingsAdmin ? (
                           <TabsContent value="email-settings" className="mt-0">
                             <div className="space-y-4">
                               <div className="space-y-2">
@@ -4199,6 +4743,8 @@ export function MondayBoardView({
                               </div>
                             </div>
                           </TabsContent>
+                        ) : null}
+                        {isMondaySettingsAdmin ? (
                           <TabsContent value="feature-flags" className="mt-0">
                             <div className="space-y-4">
                               <div className="space-y-1">
@@ -4235,11 +4781,11 @@ export function MondayBoardView({
                               </div>
                             </div>
                           </TabsContent>
-                        </div>
-                      </Tabs>
-                    </DialogContent>
-                  </Dialog>
-                ) : null}
+                        ) : null}
+                      </div>
+                    </Tabs>
+                  </DialogContent>
+                </Dialog>
               </div>
             </div>
           </div>
@@ -4847,6 +5393,36 @@ export function MondayBoardView({
                   </div>
                 );
               })()}
+
+              {!staticMode ? (
+                <section className="space-y-2 rounded-md border p-3">
+                  <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                    Quick Actions
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                    {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                      <Button
+                        key={action.type}
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                        disabled={isCreatingContactUpdate}
+                        onClick={() => {
+                          setContactUpdateType(action.type);
+                          void handleCreateContactUpdate({
+                            updateType: action.type,
+                            body: action.defaultBody,
+                            keepSelectedType: true,
+                          });
+                        }}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               <div className="grid gap-4 md:grid-cols-3">
                 <section className="space-y-2 md:col-span-2">

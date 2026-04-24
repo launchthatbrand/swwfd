@@ -474,6 +474,36 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayUserBoardSettings: {
+    document: {
+      accountId: string;
+      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+      createdAt: number;
+      fontSize: "default" | "medium" | "large";
+      ownerMondayUserId: string;
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayUserBoardSettings">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accountId"
+      | "colorTheme"
+      | "createdAt"
+      | "fontSize"
+      | "ownerMondayUserId"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayUserFilterPresets: {
     document: {
       accountId: string;

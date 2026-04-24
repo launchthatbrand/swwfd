@@ -130,6 +130,16 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   resume_referral: "Resume Referral Update",
 };
 
+const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
+  Record<Exclude<MondayUpdateType, "general">, string>
+> = {
+  welcome_email: APPROVAL_STEP_COLUMN_IDS[0],
+  followup: APPROVAL_STEP_COLUMN_IDS[1],
+  questionnaire: APPROVAL_STEP_COLUMN_IDS[2],
+  resume: APPROVAL_STEP_COLUMN_IDS[3],
+  resume_referral: APPROVAL_STEP_COLUMN_IDS[4],
+};
+
 export const isMondayUpdateType = (value: string | null | undefined): value is MondayUpdateType => {
   if (!value) return false;
   return MONDAY_UPDATE_TYPE_SET.has(value.trim().toLowerCase());
@@ -473,9 +483,6 @@ const parseBatteryProgressValue = (
     return Math.max(0, Math.min(100, Math.round(parsed)));
   };
 
-  const fromText = text?.trim() ? parseNumber(text) : null;
-  if (fromText !== null) return fromText;
-
   if (!rawValue || rawValue.trim().length === 0) return null;
   try {
     const parsed = JSON.parse(rawValue) as {
@@ -495,10 +502,15 @@ const parseBatteryProgressValue = (
     if (typeof parsed.text === "string") {
       return parseNumber(parsed.text);
     }
-    return null;
+    const fromTextInRaw = typeof parsed.text === "string" ? parseNumber(parsed.text) : null;
+    if (fromTextInRaw !== null) return fromTextInRaw;
   } catch {
-    return null;
+    // Fall back to text parsing below.
   }
+
+  const fromText = text?.trim() ? parseNumber(text) : null;
+  if (fromText !== null) return fromText;
+  return null;
 };
 
 export const hasMondayConfig = () => {
@@ -638,6 +650,16 @@ export const listMondayBoardRecords = async (args?: {
     return null;
   };
 
+  const batteryDebugEntries: {
+    itemId: string;
+    itemName: string;
+    batteryColumnId: string | null;
+    batteryColumnType: string | null;
+    batteryText: string | null;
+    batteryRawValue: string | null;
+    parsedBatteryProgress: number | null;
+  }[] = [];
+
   const toRecord = (item: BoardItem): MondayRecord => {
     const columns = item.column_values ?? [];
     const statusColumn = columns.find((column) => column.type === "status");
@@ -660,8 +682,22 @@ export const listMondayBoardRecords = async (args?: {
     );
     const tagsColumn = columns.find((column) => column.id === "dropdown_mkvw578t");
     const batteryColumn = columns.find(
-      (column) => column.id === "columns_battery_mm1dnmq3",
+      (column) =>
+        column.id === "columns_battery_mm1dnmq3" || (column.type ?? "").toLowerCase() === "battery",
     );
+    const parsedBatteryProgress = parseBatteryProgressValue(
+      batteryColumn?.text,
+      batteryColumn?.value,
+    );
+    batteryDebugEntries.push({
+      itemId: item.id,
+      itemName: item.name ?? "",
+      batteryColumnId: batteryColumn?.id ?? null,
+      batteryColumnType: batteryColumn?.type ?? null,
+      batteryText: batteryColumn?.text ?? null,
+      batteryRawValue: batteryColumn?.value ?? null,
+      parsedBatteryProgress,
+    });
     const resumeFilesColumn = columns.find(
       (column) => column.id === RESUME_FILES_COLUMN_ID,
     );
@@ -815,10 +851,7 @@ export const listMondayBoardRecords = async (args?: {
           retentionPeriodColumn?.value,
         ) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
-      batteryProgress: parseBatteryProgressValue(
-        batteryColumn?.text,
-        batteryColumn?.value,
-      ),
+      batteryProgress: parsedBatteryProgress,
       createdAt:
         createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
@@ -898,6 +931,11 @@ export const listMondayBoardRecords = async (args?: {
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
   const firstItems = data.boards?.[0]?.items_page?.items ?? [];
   const records = firstItems.map(toRecord);
+  console.info("[MondayClient][BatteryDebug][ContactBoardRecords]", {
+    boardId: mondayBoard.boardId,
+    fetchedItemCount: firstItems.length,
+    entries: batteryDebugEntries,
+  });
   const ownerIdList = records.flatMap((record) => record.ownerIds);
   const ownerById = await resolveMondayUsersByIds(ownerIdList);
   const recordsWithOwners = records.map((record) => ({
@@ -2497,6 +2535,66 @@ export const createMondayRecordUpdate = async (args: {
   const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
     ? requestedUpdateType
     : "general";
+  const markApprovalStepCompleteForUpdateType = async () => {
+    if (updateType === "general") {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
+    const stepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
+    if (!stepColumnId) {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
+    try {
+      interface MarkStepData {
+        change_multiple_column_values?: { id?: string } | null;
+      }
+      await callMondayGraphQL<MarkStepData>(
+        `
+          mutation MarkApprovalStepDone(
+            $boardId: ID!
+            $itemId: ID!
+            $columnValues: JSON!
+          ) {
+            change_multiple_column_values(
+              board_id: $boardId
+              item_id: $itemId
+              column_values: $columnValues
+              create_labels_if_missing: true
+            ) {
+              id
+            }
+          }
+        `,
+        {
+          boardId: mondayBoard.boardId,
+          itemId,
+          columnValues: JSON.stringify({
+            [stepColumnId]: { label: "Done" },
+          }),
+        },
+      );
+      return {
+        stepColumnId,
+        stepMarked: true,
+        warning: null as string | null,
+      };
+    } catch (error) {
+      const warning =
+        error instanceof Error ? error.message : "Failed to mark onboarding step done";
+      return {
+        stepColumnId,
+        stepMarked: false,
+        warning,
+      };
+    }
+  };
 
   const normalizeForSubitemTypeMatch = (value: string) => {
     return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
@@ -2630,6 +2728,7 @@ export const createMondayRecordUpdate = async (args: {
   if (!updateId) {
     throw new Error("Monday did not return a new update id");
   }
+  const approvalStepResult = await markApprovalStepCompleteForUpdateType();
 
   return {
     id: updateId,
@@ -2638,6 +2737,9 @@ export const createMondayRecordUpdate = async (args: {
     source: targetSource,
     targetItemId,
     subitemName: targetSubitemName,
+    approvalStepColumnId: approvalStepResult.stepColumnId,
+    approvalStepMarked: approvalStepResult.stepMarked,
+    warning: approvalStepResult.warning,
   };
 };
 

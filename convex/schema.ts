@@ -156,6 +156,22 @@ export default defineSchema({
       "name",
     ]),
 
+  mondayUserBoardSettings: defineTable({
+    accountId: v.string(),
+    ownerMondayUserId: v.string(),
+    colorTheme: v.union(
+      v.literal("neutral"),
+      v.literal("sky"),
+      v.literal("emerald"),
+      v.literal("violet"),
+      v.literal("rose"),
+    ),
+    fontSize: v.union(v.literal("default"), v.literal("medium"), v.literal("large")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedByMondayUserId: v.string(),
+  }).index("by_account_and_owner", ["accountId", "ownerMondayUserId"]),
+
   mondayMonthlyMigrationJobs: defineTable({
     status: v.union(
       v.literal("running"),
