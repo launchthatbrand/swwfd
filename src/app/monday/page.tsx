@@ -76,6 +76,7 @@ interface MondayRecord extends Record<string, unknown> {
   retentionPeriod: string | null;
   tags: string | null;
   batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: {
@@ -1050,6 +1051,7 @@ const BusinessInfoHoverCard = (props: {
 const ApprovalProgressIndicator = (props: {
   progressValue: number | null;
   steps: ApprovalStepConfig[];
+  rawProgressValue?: string | null;
 }) => {
   const [open, setOpen] = useState(false);
   const safeProgress = Math.max(0, Math.min(100, Math.round(props.progressValue ?? 0)));
@@ -1090,6 +1092,9 @@ const ApprovalProgressIndicator = (props: {
               );
             })}
           </div>
+          <p className="text-muted-foreground font-mono text-[10px] leading-tight break-all">
+            raw: {props.rawProgressValue ?? "null"}
+          </p>
         </div>
       </PopoverTrigger>
       <PopoverContent
@@ -2298,6 +2303,7 @@ export function MondayBoardView({
         ],
         resumeFiles: [],
         batteryProgress: index % 5 === 0 ? null : (index * 7) % 101,
+        batteryRawValue: null,
       };
     });
   }, [staticMode]);
@@ -3623,6 +3629,7 @@ export function MondayBoardView({
               <ApprovalProgressIndicator
                 progressValue={item.batteryProgress}
                 steps={approvalSteps}
+                rawProgressValue={item.batteryRawValue}
               />
             </div>
           </button>
@@ -5387,6 +5394,7 @@ export function MondayBoardView({
                         <ApprovalProgressIndicator
                           progressValue={record.batteryProgress}
                           steps={approvalSteps}
+                          rawProgressValue={record.batteryRawValue}
                         />
                       </div>
                     </div>

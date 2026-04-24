@@ -50,6 +50,7 @@ type MergedRecord = {
   retentionPeriod: string | null;
   tags: string | null;
   batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
@@ -550,6 +551,7 @@ const fetchContactRecordsByIds = async (args: {
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress: parsedBatteryProgress,
+      batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAt ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
       contactDetails: details,
