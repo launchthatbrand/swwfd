@@ -28,6 +28,13 @@ type MondayGraphQLResponse<TData> = {
   errors?: Array<{ message?: string }>;
 };
 
+type OwnerProfile = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  photoThumb: string | null;
+};
+
 type MergedRecord = {
   id: string;
   contactId?: string | null;
@@ -41,6 +48,7 @@ type MergedRecord = {
   statusText: string | null;
   peopleText: string | null;
   ownerIds: string[];
+  ownerProfiles: OwnerProfile[];
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -127,6 +135,41 @@ const callMondayGraphQL = async <TData>(
     throw new Error("Monday API returned no data");
   }
   return json.data;
+};
+
+const resolveOwnerProfiles = async (ownerIds: string[]): Promise<Map<string, OwnerProfile>> => {
+  const uniqueIds = Array.from(new Set(ownerIds.map((id) => id.trim()).filter((id) => id.length > 0)));
+  const result = new Map<string, OwnerProfile>();
+  if (uniqueIds.length === 0) return result;
+  interface UsersData {
+    users?: Array<{
+      id?: string | number | null;
+      name?: string | null;
+      email?: string | null;
+      photo_thumb?: string | null;
+    }>;
+  }
+  try {
+    const data = await callMondayGraphQL<UsersData>(
+      `query GetOwnerProfiles($ids: [ID!]) { users(ids: $ids) { id name email photo_thumb } }`,
+      { ids: uniqueIds },
+    );
+    for (const user of data.users ?? []) {
+      const id = user.id != null ? String(user.id).trim() : "";
+      if (!id) continue;
+      result.set(id, {
+        id,
+        name: user.name?.trim() || null,
+        email: user.email?.trim() || null,
+        photoThumb: user.photo_thumb?.trim() || null,
+      });
+    }
+  } catch (e) {
+    console.warn("[MondayUserRecordsRoute] resolveOwnerProfiles failed (non-fatal)", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  return result;
 };
 
 const parsePeopleIds = (columnValue: string | null | undefined) => {
@@ -645,6 +688,7 @@ const fetchContactRecordsByIds = async (args: {
       statusText: statusColumn?.text ?? null,
       peopleText: peopleColumn?.text ?? null,
       ownerIds,
+      ownerProfiles: [],
       email: emailColumn?.text ?? null,
       phone: phoneColumn?.text ?? null,
       address,
@@ -843,10 +887,20 @@ export const GET = async (request: Request) => {
       return b.id.localeCompare(a.id);
     });
 
+    // Resolve owner avatars in one batched query across all merged records.
+    const allOwnerIds = merged.flatMap((r) => r.ownerIds);
+    const ownerProfileMap = await resolveOwnerProfiles(allOwnerIds);
+    const mergedWithProfiles = merged.map((r) => ({
+      ...r,
+      ownerProfiles: r.ownerIds
+        .map((id) => ownerProfileMap.get(id))
+        .filter((p): p is OwnerProfile => p !== undefined),
+    }));
+
     console.info("[MondayUserRecordsRoute] GET completed", {
       durationMs: Date.now() - startedAt,
       requestedLimit: limit,
-      returnedRows: merged.length,
+      returnedRows: mergedWithProfiles.length,
       matchedTouches: matchedTouches.length,
       loadedContacts: contactMap.size,
       hasNextCursor: !!cursor,
@@ -860,7 +914,7 @@ export const GET = async (request: Request) => {
     return toJson({
       ok: true,
       boardName: boardName ?? "Monday Board",
-      records: merged,
+      records: mergedWithProfiles,
       nextCursor: cursor,
     });
   } catch (error) {
