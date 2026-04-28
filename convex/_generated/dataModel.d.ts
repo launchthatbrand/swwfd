@@ -542,8 +542,10 @@ export type DataModel = {
       accountId: string;
       colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
       createdAt: number;
+      displayMode?: "table" | "grid";
       fontSize: "default" | "medium" | "large";
       ownerMondayUserId: string;
+      pageSize?: number;
       tableDensity?: "expanded" | "compact";
       updatedAt: number;
       updatedByMondayUserId: string;
@@ -556,8 +558,10 @@ export type DataModel = {
       | "accountId"
       | "colorTheme"
       | "createdAt"
+      | "displayMode"
       | "fontSize"
       | "ownerMondayUserId"
+      | "pageSize"
       | "tableDensity"
       | "updatedAt"
       | "updatedByMondayUserId";

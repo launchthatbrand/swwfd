@@ -6,6 +6,8 @@ import {
   ChevronRight,
   ExternalLink,
   Filter,
+  LayoutGrid,
+  List,
   Mail,
   RefreshCcw,
   Settings,
@@ -41,7 +43,6 @@ import { Button } from "@acme/ui/button";
 import { Calendar } from "@acme/ui/calendar";
 import { EntityList } from "@acme/ui/entity-list";
 import { Input } from "@acme/ui/input";
-import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
 import { MultiSelect } from "@acme/ui/multi-select";
 import { Textarea } from "@acme/ui/textarea";
@@ -385,6 +386,22 @@ interface SavedAdvancedFilterPreset {
 type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
 type UserBoardFontSize = "default" | "medium" | "large";
 type UserBoardTableDensity = "expanded" | "compact";
+type UserBoardDisplayMode = "table" | "grid";
+/** 0 = infinite scroll */
+type UserBoardPageSize = 20 | 40 | 100 | 0;
+
+const USER_BOARD_PAGE_SIZE_OPTIONS: { value: UserBoardPageSize; label: string }[] = [
+  { value: 20, label: "20 per page" },
+  { value: 40, label: "40 per page" },
+  { value: 100, label: "100 per page" },
+  { value: 0, label: "Infinite scroll" },
+];
+
+const isUserBoardPageSize = (value: unknown): value is UserBoardPageSize =>
+  value === 20 || value === 40 || value === 100 || value === 0;
+
+const isUserBoardDisplayMode = (value: unknown): value is UserBoardDisplayMode =>
+  value === "table" || value === "grid";
 
 const USER_BOARD_TABLE_DENSITY_OPTIONS: {
   value: UserBoardTableDensity;
@@ -417,6 +434,8 @@ interface UserBoardGeneralSettings {
   colorTheme: UserBoardColorTheme;
   fontSize: UserBoardFontSize;
   tableDensity: UserBoardTableDensity;
+  pageSize: UserBoardPageSize;
+  displayMode: UserBoardDisplayMode;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -487,14 +506,14 @@ const USER_BOARD_COLOR_THEME_STYLES: Record<
   }
 > = {
   neutral: {
-    shellCardClassName: "bg-card/70 border-border",
-    toolbarClassName: "bg-background border-border",
-    previewClassName: "bg-muted/30 border-border",
+    shellCardClassName: "bg-muted border-border",
+    toolbarClassName: "bg-muted/60 border-border",
+    previewClassName: "bg-muted/50 border-border",
     actionButtonClassName:
       "bg-slate-600/90 text-white hover:bg-slate-700 dark:bg-slate-500 dark:hover:bg-slate-400",
   },
   sky: {
-    shellCardClassName: "bg-sky-50/70 border-sky-200 dark:bg-sky-950/25 dark:border-sky-800",
+    shellCardClassName: "bg-sky-100/90 border-sky-300 dark:bg-sky-950/60 dark:border-sky-700",
     toolbarClassName: "bg-sky-100/70 border-sky-200 dark:bg-sky-900/30 dark:border-sky-700",
     previewClassName: "bg-sky-50/80 border-sky-200 dark:bg-sky-900/20 dark:border-sky-800",
     actionButtonClassName:
@@ -502,7 +521,7 @@ const USER_BOARD_COLOR_THEME_STYLES: Record<
   },
   emerald: {
     shellCardClassName:
-      "bg-emerald-50/70 border-emerald-200 dark:bg-emerald-950/20 dark:border-emerald-800",
+      "bg-emerald-100/90 border-emerald-300 dark:bg-emerald-950/50 dark:border-emerald-700",
     toolbarClassName:
       "bg-emerald-100/70 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-700",
     previewClassName:
@@ -512,7 +531,7 @@ const USER_BOARD_COLOR_THEME_STYLES: Record<
   },
   violet: {
     shellCardClassName:
-      "bg-violet-50/70 border-violet-200 dark:bg-violet-950/20 dark:border-violet-800",
+      "bg-violet-100/90 border-violet-300 dark:bg-violet-950/50 dark:border-violet-700",
     toolbarClassName:
       "bg-violet-100/70 border-violet-200 dark:bg-violet-900/30 dark:border-violet-700",
     previewClassName:
@@ -521,7 +540,7 @@ const USER_BOARD_COLOR_THEME_STYLES: Record<
       "bg-violet-500/90 text-white hover:bg-violet-600 dark:bg-violet-600 dark:hover:bg-violet-500",
   },
   rose: {
-    shellCardClassName: "bg-rose-50/70 border-rose-200 dark:bg-rose-950/20 dark:border-rose-800",
+    shellCardClassName: "bg-rose-100/90 border-rose-300 dark:bg-rose-950/50 dark:border-rose-700",
     toolbarClassName:
       "bg-rose-100/70 border-rose-200 dark:bg-rose-900/30 dark:border-rose-700",
     previewClassName: "bg-rose-50/80 border-rose-200 dark:bg-rose-900/20 dark:border-rose-800",
@@ -534,6 +553,8 @@ const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   colorTheme: "neutral",
   fontSize: "medium",
   tableDensity: "expanded",
+  pageSize: 40,
+  displayMode: "table",
 };
 
 const ADVANCED_FILTER_FIELDS: {
@@ -875,6 +896,12 @@ const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralSettings
     tableDensity: isUserBoardTableDensity(candidate.tableDensity)
       ? candidate.tableDensity
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.tableDensity,
+    pageSize: isUserBoardPageSize(candidate.pageSize)
+      ? candidate.pageSize
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.pageSize,
+    displayMode: isUserBoardDisplayMode(candidate.displayMode)
+      ? candidate.displayMode
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.displayMode,
     createdAt: typeof candidate.createdAt === "number" ? candidate.createdAt : undefined,
     updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : undefined,
   };
@@ -1585,6 +1612,85 @@ const getContactTooltipDetails = (record: MondayRecord) => {
   ];
 };
 
+// ---------------------------------------------------------------------------
+// ContactCard — used in grid view for userScoped mode
+// ---------------------------------------------------------------------------
+
+const ContactCard = ({
+  record,
+  approvalSteps,
+  onClick,
+}: {
+  record: MondayRecord;
+  approvalSteps: { id: string; title: string }[];
+  onClick: (record: MondayRecord) => void;
+}) => {
+  const addressDisplay = getAddressDisplayParts(record.address);
+  const owner = record.ownerProfiles[0];
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(record)}
+      className="hover:border-primary/50 hover:shadow-primary/5 group flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md"
+    >
+      <div className="flex items-start gap-3">
+        <Avatar className="size-10 shrink-0">
+          <AvatarFallback className="text-sm font-semibold">
+            {getNameInitials(record.name)}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-semibold leading-tight">{record.name}</p>
+          {record.email ? (
+            <p className="text-muted-foreground truncate text-xs">{record.email}</p>
+          ) : null}
+          {addressDisplay.localityLine ? (
+            <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
+          ) : null}
+        </div>
+        {record.statusText ? (
+          <span
+            className={`inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
+          >
+            {record.statusText}
+          </span>
+        ) : null}
+      </div>
+
+      <ApprovalProgressIndicator
+        progressValue={record.batteryProgress}
+        steps={approvalSteps}
+        rawProgressValue={record.batteryRawValue}
+      />
+
+      <div className="flex items-center justify-between gap-2">
+        {owner ? (
+          <div className="flex items-center gap-1.5">
+            <Avatar className="size-5 shrink-0">
+              {owner.photoThumb ? (
+                <AvatarImage src={owner.photoThumb} alt={owner.name ?? ""} />
+              ) : null}
+              <AvatarFallback className="text-[10px]">
+                {getNameInitials(owner.name ?? owner.id)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-muted-foreground truncate text-xs">
+              {owner.name ?? owner.id}
+            </span>
+          </div>
+        ) : (
+          <span className="text-muted-foreground text-xs">No owner</span>
+        )}
+        {record.createdAt ? (
+          <span className="text-muted-foreground shrink-0 text-xs">
+            {new Date(record.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })}
+          </span>
+        ) : null}
+      </div>
+    </button>
+  );
+};
+
 export type MondayBoardViewMode = "all" | "userScoped";
 
 interface MondayBoardViewProps {
@@ -1606,6 +1712,7 @@ export function MondayBoardView({
   forcedOwnerId: forcedOwnerIdProp,
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
+  const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<"table" | "grid">("table");
   const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
   const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
@@ -1840,7 +1947,9 @@ export function MondayBoardView({
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
-    boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity;
+    boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
+    boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
+    boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode;
   const canCreateUpdatesAsLoggedInMondayUser =
     isMondayEmbeddedContext &&
     !!identity?.userId &&
@@ -2147,6 +2256,9 @@ export function MondayBoardView({
     if (!userBoardSettingsQuery.data) return;
     setBoardGeneralSettings(userBoardSettingsQuery.data);
     setBoardGeneralSettingsDraft(userBoardSettingsQuery.data);
+    if (isUserBoardDisplayMode(userBoardSettingsQuery.data.displayMode)) {
+      setUserScopedDisplayMode(userBoardSettingsQuery.data.displayMode);
+    }
   }, [presetScopeOwnerId, userBoardSettingsQuery.data]);
 
   useEffect(() => {
@@ -2842,6 +2954,8 @@ export function MondayBoardView({
           colorTheme: boardGeneralSettingsDraft.colorTheme,
           fontSize: boardGeneralSettingsDraft.fontSize,
           tableDensity: boardGeneralSettingsDraft.tableDensity,
+          pageSize: boardGeneralSettingsDraft.pageSize,
+          displayMode: boardGeneralSettingsDraft.displayMode,
         }),
       });
       const data = (await response.json()) as MondayUserBoardSettingsResponse;
@@ -2852,6 +2966,9 @@ export function MondayBoardView({
       const parsedSettings = parseUserBoardGeneralSettings(data.settings);
       setBoardGeneralSettings(parsedSettings);
       setBoardGeneralSettingsDraft(parsedSettings);
+      if (isUserBoardDisplayMode(parsedSettings.displayMode)) {
+        setUserScopedDisplayMode(parsedSettings.displayMode);
+      }
       await userBoardSettingsQuery.refetch();
       toast.success("General settings saved for this employee board");
     } catch (error) {
@@ -4319,7 +4436,7 @@ export function MondayBoardView({
           <button
             type="button"
             onClick={() => openRetentionDialog(item)}
-            className="hover:bg-accent/40 flex w-full min-w-[150px] max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
+            className="hover:bg-accent/40 flex w-full min-w-[100px] max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
           >
             {/* Referred row — single line */}
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
@@ -4532,7 +4649,7 @@ export function MondayBoardView({
   ];
 
   return (
-    <div className="monday-like-page container mx-auto max-w-[1600px] space-y-3 py-4">
+    <div className="monday-like-page mx-auto space-y-3 pb-10">
       {/* {identity ? (
         <div className="text-muted-foreground text-xs">
           Connected account: {identity.accountId} · user: {identity.userId} · board:{" "}
@@ -4550,1301 +4667,1358 @@ export function MondayBoardView({
         </div>
       ) : null} */}
 
-      <div className={`rounded-lg border px-3 py-2 ${boardThemeStyles.shellCardClassName}`}>
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="w-full max-w-xl min-w-[280px] flex-1 space-y-1">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search records (server, 2+ chars)"
-                className="bg-background/90 h-8 max-w-xl text-sm"
-              />
-              {search.trim().length > 0 && search.trim().length < 2 ? (
-                <p className="text-muted-foreground text-xs">
-                  Type at least 2 characters to run server search.
-                </p>
-              ) : null}
-            </div>
-
-            <div
-              className={`flex items-center gap-5 rounded-md border p-1 ${boardThemeStyles.toolbarClassName}`}
-            >
-              {viewMode === "userScoped" ? (
-                <Button
-                  size="sm"
-                  variant="default"
-                  className="h-8"
-                  onClick={() => {
-                    resetAddContactDialog();
-                    setAddContactOpen(true);
-                  }}
-                  disabled={authLoading || !identity?.userId}
-                >
-                  <UserPlus className="mr-1.5 h-4 w-4" />
-                  Add Contact
-                </Button>
-              ) : null}
-              <div className="flex items-center gap-3"> <Button
-                size="sm"
-                className="h-8 px-2.5"
-                onClick={() => {
-                  setActiveMonth(
-                    (prev) =>
-                      new Date(
-                        Date.UTC(
-                          prev.getUTCFullYear(),
-                          prev.getUTCMonth() - 1,
-                          1,
-                        ),
-                      ),
-                  );
-                }}
-              >
-                <ChevronLeft className="mr-1.5 h-4 w-4" />
-                Prev month
-              </Button>
-                <Badge variant="outline" className="h-8 rounded-sm px-2 text-xs">
-                  {monthBounds.label}
-                </Badge>
-                <Button
-                  size="sm"
-                  className="h-8 px-2.5"
-                  onClick={() => {
-                    setActiveMonth(
-                      (prev) =>
-                        new Date(
-                          Date.UTC(
-                            prev.getUTCFullYear(),
-                            prev.getUTCMonth() + 1,
-                            1,
-                          ),
-                        ),
-                    );
-                  }}
-                >
-                  Next month
-                  <ChevronRight className="ml-1.5 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="border-t pt-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex min-w-[320px] flex-1 flex-col gap-2 overflow-x-auto pb-1">
-                <div className="flex items-center gap-2 whitespace-nowrap *:shrink-0">
-                  <select
-                    value={ownerFilter || "__all_owner__"}
-                    onChange={(event) => {
-                      if (!isOwnerFilterEditable) return;
-                      const value = event.target.value;
-                      setOwnerFilter(value === "__all_owner__" ? "" : value);
-                    }}
-                    className="bg-background border-input h-8 w-60 rounded-md border px-2.5 text-xs"
-                    disabled={!isOwnerFilterEditable}
-                  >
-                    {isOwnerFilterEditable ? (
-                      <option value="__all_owner__">Owner: all</option>
-                    ) : (
-                      <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
-                        {lockedOwnerLabel}
-                      </option>
-                    )}
-                    {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-                      <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-                    ) : null}
-                    {ownerOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={statusFilter || "__all_status__"}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setStatusFilter(value === "__all_status__" ? "" : value);
-                    }}
-                    className="bg-background border-input h-8 w-[200px] rounded-md border px-2.5 text-xs"
-                  >
-                    <option value="__all_status__">District: all</option>
-                    {statusOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs font-normal">
-                        <Filter className="mr-1.5 h-3.5 w-3.5" />
-                        Advanced Filters
-                        {activeAdvancedFilterConditions.length > 0 && (
-                          <Badge variant="secondary" className="ml-1.5 h-4 px-1 py-0 leading-none text-[10px]">
-                            {activeAdvancedFilterConditions.length}
-                          </Badge>
-                        )}
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
-                      <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
-                        <DialogTitle>Advanced Filters</DialogTitle>
-                        <DialogDescription>
-                          Build multi-condition logic, preview result count, and save presets per
-                          owner board.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="space-y-5 overflow-y-auto px-6 py-5">
-                        <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
-                              {activeAdvancedFilterConditions.length} active
-                            </Badge>
-                            <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
-                              {advancedFilterConditions.length} total
-                            </Badge>
-                            <span className="text-muted-foreground text-xs">
-                              Showing {filteredRecords.length} of {records.length}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label
-                              htmlFor="advanced-filter-match-mode"
-                              className="text-muted-foreground text-xs font-medium"
-                            >
-                              Match mode
-                            </label>
-                            <select
-                              id="advanced-filter-match-mode"
-                              value={advancedFilterMatchMode}
-                              onChange={(event) => {
-                                const value = event.target.value === "any" ? "any" : "all";
-                                setActiveSavedAdvancedFilterId(null);
-                                setAdvancedFilterMatchMode(value);
-                              }}
-                              className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
-                            >
-                              <option value="all">Match all conditions</option>
-                              <option value="any">Match any condition</option>
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-medium">Conditions</p>
-                              <p className="text-muted-foreground text-xs">
-                                Add or remove conditions that run against Monday board columns.
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 border-2 px-3 text-xs shadow-sm"
-                                onClick={handleAddAdvancedFilterCondition}
-                              >
-                                Add condition
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 px-3 text-xs"
-                                onClick={handleClearAdvancedFilters}
-                                disabled={advancedFilterConditions.length === 0}
-                              >
-                                Clear all
-                              </Button>
-                            </div>
-                          </div>
-
-                          {advancedFilterConditions.length === 0 ? (
-                            <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
-                              <p className="text-muted-foreground text-sm">
-                                No conditions yet. Add a condition to start filtering records.
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                              {advancedFilterConditions.map((condition, index) => {
-                                const conditionTarget = getBoardColumnTargetForCondition(condition);
-                                const boardColumnKind =
-                                  boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
-                                const operatorOptions =
-                                  boardColumnKind === "date"
-                                    ? ADVANCED_DATE_OPERATORS
-                                    : ADVANCED_TEXT_OPERATORS;
-                                const shouldHideValueInput =
-                                  condition.operator === "is_empty" ||
-                                  condition.operator === "is_not_empty";
-                                const isDateField = boardColumnKind === "date";
-                                const targetLabelLower = conditionTarget.toLowerCase();
-                                const usesOwnerOptions =
-                                  targetLabelLower === "owner" && ownerOptions.length > 0;
-                                const usesDistrictOptions =
-                                  (targetLabelLower === "status" ||
-                                    targetLabelLower === "district") &&
-                                  statusOptions.length > 0;
-                                const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
-                                return (
-                                  <div
-                                    key={condition.id}
-                                    className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
-                                      ? "border-border/75 bg-background"
-                                      : "border-border/75 bg-muted/25"
-                                      }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
-                                      <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
-                                        Condition {index + 1}
-                                      </p>
-                                      <Button
-                                        size="sm"
-                                        variant="ghost"
-                                        className="h-7 px-2 text-xs"
-                                        onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
-                                      >
-                                        Remove
-                                      </Button>
-                                    </div>
-                                    <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
-                                      <label className="space-y-1">
-                                        <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                          Column
-                                        </span>
-                                        <select
-                                          value={conditionTarget}
-                                          onChange={(event) =>
-                                            handleChangeAdvancedFilterTarget(
-                                              condition.id,
-                                              event.target.value,
-                                            )
-                                          }
-                                          className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                        >
-                                          {!hasBoardColumnOptions ? (
-                                            <option value="">No board columns loaded</option>
-                                          ) : null}
-                                          {hasBoardColumnOptions ? (
-                                            <option value="">Select board column</option>
-                                          ) : null}
-                                          {boardColumnFilterOptions.map((label) => (
-                                            <option key={label} value={label}>
-                                              {label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </label>
-
-                                      <label className="space-y-1">
-                                        <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                          Operator
-                                        </span>
-                                        <select
-                                          value={condition.operator}
-                                          onChange={(event) => {
-                                            if (!isAdvancedFilterOperator(event.target.value)) return;
-                                            handleChangeAdvancedFilterOperator(
-                                              condition.id,
-                                              event.target.value,
-                                            );
-                                          }}
-                                          className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                        >
-                                          {operatorOptions.map((operator) => (
-                                            <option key={operator} value={operator}>
-                                              {ADVANCED_OPERATOR_LABELS[operator]}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </label>
-
-                                      {!shouldHideValueInput ? (
-                                        <label className="space-y-1">
-                                          <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                            Value
-                                          </span>
-                                          {usesOwnerOptions ? (
-                                            <select
-                                              value={condition.value}
-                                              onChange={(event) =>
-                                                handleChangeAdvancedFilterValue(
-                                                  condition.id,
-                                                  event.target.value,
-                                                )
-                                              }
-                                              className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                            >
-                                              <option value="">Select owner</option>
-                                              {!ownerOptions.some(
-                                                (option) => option.value === condition.value,
-                                              ) && condition.value.trim().length > 0 ? (
-                                                <option value={condition.value}>
-                                                  {`Owner ${condition.value} (selected)`}
-                                                </option>
-                                              ) : null}
-                                              {ownerOptions.map((option) => (
-                                                <option key={option.value} value={option.value}>
-                                                  {option.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          ) : usesDistrictOptions ? (
-                                            <select
-                                              value={condition.value}
-                                              onChange={(event) =>
-                                                handleChangeAdvancedFilterValue(
-                                                  condition.id,
-                                                  event.target.value,
-                                                )
-                                              }
-                                              className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                            >
-                                              <option value="">Select district</option>
-                                              {!statusOptions.some(
-                                                (option) => option.value === condition.value,
-                                              ) && condition.value.trim().length > 0 ? (
-                                                <option value={condition.value}>
-                                                  {`District ${condition.value} (selected)`}
-                                                </option>
-                                              ) : null}
-                                              {statusOptions.map((option) => (
-                                                <option key={option.value} value={option.value}>
-                                                  {option.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          ) : (
-                                            <Input
-                                              type={isDateField ? "date" : "text"}
-                                              value={condition.value}
-                                              onChange={(event) =>
-                                                handleChangeAdvancedFilterValue(
-                                                  condition.id,
-                                                  event.target.value,
-                                                )
-                                              }
-                                              placeholder="Value"
-                                              className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
-                                            />
-                                          )}
-                                        </label>
-                                      ) : (
-                                        <div className="pb-1">
-                                          <p className="text-muted-foreground text-xs">
-                                            No value input required for this operator.
-                                          </p>
-                                        </div>
-                                      )}
-
-                                      {condition.operator === "between" ? (
-                                        <label className="space-y-1">
-                                          <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                            {isDateField ? "End date" : "Second value"}
-                                          </span>
-                                          <Input
-                                            type={isDateField ? "date" : "text"}
-                                            value={condition.valueTo}
-                                            onChange={(event) =>
-                                              handleChangeAdvancedFilterValueTo(
-                                                condition.id,
-                                                event.target.value,
-                                              )
-                                            }
-                                            placeholder={isDateField ? "End date" : "Second value"}
-                                            className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
-                                          />
-                                        </label>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
-                          <div>
-                            <p className="text-sm font-medium">Saved Presets</p>
-                            <p className="text-muted-foreground text-xs">
-                              Save the active filter setup and reuse it for this owner board.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Input
-                              value={pendingSavedAdvancedFilterName}
-                              onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
-                              placeholder="Saved filter name"
-                              className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
-                            />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 border-2 px-3 text-xs shadow-sm"
-                              onClick={handleSaveAdvancedFilterPreset}
-                              disabled={
-                                isSavingAdvancedFilterPreset ||
-                                !sessionToken ||
-                                presetScopeOwnerId.length === 0
-                              }
-                            >
-                              {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
-                            </Button>
-                          </div>
-                          {presetScopeOwnerId.length === 0 ? (
-                            <p className="text-muted-foreground text-xs">
-                              Select an owner board to enable preset saving.
-                            </p>
-                          ) : null}
-
-                          {savedAdvancedFilterPresets.length > 0 ? (
-                            <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
-                              {savedAdvancedFilterPresets.map((preset) => (
-                                <div
-                                  key={preset.id}
-                                  className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
-                                >
-                                  <Button
-                                    size="sm"
-                                    variant={
-                                      activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
-                                    }
-                                    className="h-8 rounded-r-none px-2 text-xs"
-                                    onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
-                                  >
-                                    {preset.name}
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="text-muted-foreground h-8 px-1.5 text-xs"
-                                    onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
-                                    disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
-                                  >
-                                    {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
-                                  </Button>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-muted-foreground text-xs">
-                              No saved filter presets yet.
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => {
-                    if (staticMode) return;
-                    void recordsQuery.refetch();
-                  }}
-                  disabled={staticMode || recordsQuery.isFetching}
-                >
-                  <RefreshCcw className="mr-1.5 h-4 w-4" />
-                  Reload
-                </Button>
-
-                {!staticMode && recordsQuery.hasNextPage ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-8"
-                    onClick={() => {
-                      void recordsQuery.fetchNextPage();
-                    }}
-                    disabled={recordsQuery.isFetchingNextPage}
-                  >
-                    {recordsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
-                  </Button>
-                ) : null}
-                <Button asChild size="sm" variant="outline" className="h-8">
-                  <Link
-                    href="https://developer.monday.com/api-reference/reference/items-page"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    API docs
-                  </Link>
-                </Button>
-                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="h-8">
-                      <Settings className="mr-1.5 h-4 w-4" />
-                      Settings
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
-                    <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
-                      <DialogTitle>Monday Settings</DialogTitle>
-                    </DialogHeader>
-                    <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
-                      <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
-                        <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
-                          <TabsTrigger
-                            value="general-settings"
-                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                          >
-                            General Settings
-                          </TabsTrigger>
-                          {isMondaySettingsAdmin ? (
-                            <>
-                              <TabsTrigger
-                                value="email-templates"
-                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                              >
-                                Email Templates
-                              </TabsTrigger>
-                              <TabsTrigger
-                                value="email-settings"
-                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                              >
-                                Email Settings
-                              </TabsTrigger>
-                              <TabsTrigger
-                                value="user-zip-map"
-                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                              >
-                                User {"<->"} Zipcode map
-                              </TabsTrigger>
-                              <TabsTrigger
-                                value="feature-flags"
-                                className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                              >
-                                Feature Flags
-                              </TabsTrigger>
-                            </>
-                          ) : null}
-                        </TabsList>
-                      </div>
-                      <div className="flex-1 overflow-y-auto px-6 py-5">
-                        <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
-                          <TabsContent value="general-settings" className="mt-0">
-                            <div className="space-y-4">
-                              <div className="space-y-1">
-                                <p className="text-sm font-medium">General Settings</p>
-                                <p className="text-muted-foreground text-sm">
-                                  Customize font size and color for this employee board.
-                                </p>
-                                <p className="text-muted-foreground text-xs">
-                                  Scope:{" "}
-                                  {presetScopeOwnerId.length > 0
-                                    ? `Owner ${presetScopeOwnerId}`
-                                    : "No owner board selected"}
-                                </p>
-                              </div>
-                              <div className="grid gap-4 md:grid-cols-2">
-                                <div className="space-y-4 rounded-md border p-4">
-                                  <div className="space-y-2">
-                                    <label
-                                      htmlFor="board-font-size"
-                                      className="text-xs font-semibold tracking-wide uppercase"
-                                    >
-                                      Font Size
-                                    </label>
-                                    <Select
-                                      value={boardGeneralSettingsDraft.fontSize}
-                                      onValueChange={(value) => {
-                                        if (!isUserBoardFontSize(value)) return;
-                                        setBoardGeneralSettingsDraft((prev) => ({
-                                          ...prev,
-                                          fontSize: value,
-                                        }));
-                                      }}
-                                    >
-                                      <SelectTrigger id="board-font-size" className="h-9">
-                                        <SelectValue placeholder="Select font size" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
-                                          <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <label
-                                      htmlFor="board-color-theme"
-                                      className="text-xs font-semibold tracking-wide uppercase"
-                                    >
-                                      Color Theme
-                                    </label>
-                                    <Select
-                                      value={boardGeneralSettingsDraft.colorTheme}
-                                      onValueChange={(value) => {
-                                        if (!isUserBoardColorTheme(value)) return;
-                                        setBoardGeneralSettingsDraft((prev) => ({
-                                          ...prev,
-                                          colorTheme: value,
-                                        }));
-                                      }}
-                                    >
-                                      <SelectTrigger id="board-color-theme" className="h-9">
-                                        <SelectValue placeholder="Select color theme" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
-                                          <SelectItem key={option.value} value={option.value}>
-                                            <span className="inline-flex items-center gap-2">
-                                              <span
-                                                className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
-                                              />
-                                              {option.label}
-                                            </span>
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <p className="text-muted-foreground text-xs">
-                                      {USER_BOARD_COLOR_THEME_OPTIONS.find(
-                                        (option) =>
-                                          option.value === boardGeneralSettingsDraft.colorTheme,
-                                      )?.description ?? "Choose a color theme for this board."}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div
-                                  className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
-                                >
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Preview
-                                  </p>
-                                  <div className="space-y-2 rounded-md border bg-background/80 p-3">
-                                    <p className="text-sm font-medium">Header & controls</p>
-                                    <p className="text-muted-foreground text-xs">
-                                      The board UI applies this color styling and font scaling.
-                                    </p>
-                                  </div>
-                                  <div className="rounded-md border bg-background/80 p-3">
-                                    <p className="text-xs">
-                                      Font scale preview:{" "}
-                                      {
-                                        USER_BOARD_FONT_SIZE_OPTIONS.find(
-                                          (option) =>
-                                            option.value === boardGeneralSettingsDraft.fontSize,
-                                        )?.label
-                                      }
-                                    </p>
-                                    <div className="mt-2">
-                                      <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="secondary"
-                                        className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
-                                        disabled
-                                      >
-                                        Quick Action Preview
-                                      </Button>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 rounded-md border p-4">
-                                <label className="text-xs font-semibold tracking-wide uppercase">
-                                  Table Density
-                                </label>
-                                <p className="text-muted-foreground text-xs">
-                                  {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
-                                    (o) => o.value === boardGeneralSettingsDraft.tableDensity,
-                                  )?.description}
-                                </p>
-                                <div className="mt-1 flex gap-2">
-                                  {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
-                                    <button
-                                      key={option.value}
-                                      type="button"
-                                      onClick={() => {
-                                        setBoardGeneralSettingsDraft((prev) => ({
-                                          ...prev,
-                                          tableDensity: option.value,
-                                        }));
-                                      }}
-                                      className={`flex flex-1 flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
-                                        ? "border-primary bg-primary/10 text-primary"
-                                        : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                                        }`}
-                                    >
-                                      <span className="flex flex-col gap-0.5">
-                                        {option.value === "expanded" ? (
-                                          <>
-                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-70" />
-                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
-                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
-                                          </>
-                                        ) : (
-                                          <>
-                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-70" />
-                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
-                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
-                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
-                                          </>
-                                        )}
-                                      </span>
-                                      {option.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Button
-                                  onClick={() => {
-                                    void handleSaveBoardGeneralSettings();
-                                  }}
-                                  disabled={
-                                    isSavingBoardGeneralSettings ||
-                                    !sessionToken ||
-                                    presetScopeOwnerId.length === 0 ||
-                                    !hasUnsavedBoardGeneralSettings
-                                  }
-                                >
-                                  {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  onClick={() => {
-                                    setBoardGeneralSettingsDraft(boardGeneralSettings);
-                                  }}
-                                  disabled={!hasUnsavedBoardGeneralSettings}
-                                >
-                                  Reset
-                                </Button>
-                              </div>
-                            </div>
-                          </TabsContent>
-
-                          {isMondaySettingsAdmin ? (
-                            <TabsContent value="email-templates" className="mt-0">
-                              <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                                <div className="space-y-2">
-                                  <p className="text-sm font-medium">
-                                    Templates ({emailTemplates.length})
-                                  </p>
-                                  <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                                    {emailTemplates.map((template) => {
-                                      const isActive = template.id === selectedTemplate?.id;
-                                      return (
-                                        <button
-                                          key={template.id}
-                                          type="button"
-                                          className={[
-                                            "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                            isActive
-                                              ? "border-primary bg-primary/10"
-                                              : "hover:bg-muted/60",
-                                          ].join(" ")}
-                                          onClick={() => {
-                                            setSelectedTemplateId(template.id);
-                                          }}
-                                        >
-                                          <p className="line-clamp-1 font-medium">{template.name}</p>
-                                          <p className="text-muted-foreground mt-1 text-xs">
-                                            Updated {formatUpdatedAt(template.updatedAt)}
-                                          </p>
-                                        </button>
-                                      );
-                                    })}
-                                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                      <p className="text-muted-foreground text-sm">
-                                        No templates found on board 18401299370.
-                                      </p>
-                                    ) : null}
-                                    {emailTemplatesQuery.isLoading ? (
-                                      <p className="text-muted-foreground text-sm">
-                                        Loading templates...
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                </div>
-                                <div className="bg-background min-h-[420px] rounded-md border p-4">
-                                  {selectedTemplate ? (
-                                    <div className="space-y-4">
-                                      <div className="border-b pb-3">
-                                        <p className="text-xs font-semibold tracking-wide uppercase">
-                                          Subject
-                                        </p>
-                                        <p className="mt-1 text-base font-medium">
-                                          {selectedTemplate.name}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-xs font-semibold tracking-wide uppercase">
-                                          Email Preview (Lead View)
-                                        </p>
-                                        <div className="bg-card mt-2 rounded-md border p-4">
-                                          {selectedTemplate.content.trim().length === 0 ? (
-                                            <p className="text-muted-foreground text-sm">
-                                              No content found in column doc_mm0wq4r.
-                                            </p>
-                                          ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                            <div
-                                              className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                              style={{ whiteSpace: "pre-wrap" }}
-                                              dangerouslySetInnerHTML={{
-                                                __html: selectedTemplate.renderedHtml,
-                                              }}
-                                            />
-                                          ) : (
-                                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                              {selectedTemplate.content}
-                                            </div>
-                                          )}
-                                          {selectedTemplate.docLink ? (
-                                            <p className="mt-3 text-xs">
-                                              <a
-                                                href={selectedTemplate.docLink}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-primary underline underline-offset-2"
-                                              >
-                                                Open source Monday Workdoc
-                                              </a>
-                                            </p>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <p className="text-muted-foreground text-sm">
-                                      Select an email template to preview.
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            </TabsContent>
-                          ) : null}
-                          {isMondaySettingsAdmin ? (
-                            <TabsContent value="user-zip-map" className="mt-0">
-                              <div className="space-y-4">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                                  <p className="text-muted-foreground text-sm">
-                                    Configure and monitor district routing for newly created contact
-                                    records.
-                                  </p>
-                                </div>
-
-                                <div className="grid gap-3 md:grid-cols-3">
-                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                      Routing Status
-                                    </p>
-                                    <p className="mt-1 text-sm font-medium">
-                                      {routingStatusQuery.isLoading
-                                        ? "Loading..."
-                                        : routingStatusQuery.data?.enabled
-                                          ? routingStatusQuery.data.ok
-                                            ? "Configured"
-                                            : "Configured with issues"
-                                          : "Not configured"}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                      County Mappings
-                                    </p>
-                                    <p className="mt-1 text-sm font-medium">
-                                      {routingStatusQuery.data?.countyMappingsCount ?? 0}
-                                    </p>
-                                  </div>
-                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                      District Owner Mappings
-                                    </p>
-                                    <p className="mt-1 text-sm font-medium">
-                                      {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
-                                  <p className="text-sm font-medium">Routing boards</p>
-                                  <div className="grid gap-3 md:grid-cols-3">
-                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                      <p className="text-xs font-semibold uppercase">Contact board</p>
-                                      <p className="text-muted-foreground mt-1 break-all text-xs">
-                                        {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
-                                      </p>
-                                      {routingStatusQuery.data?.contactBoardUrl ? (
-                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                          <a
-                                            href={routingStatusQuery.data.contactBoardUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                          >
-                                            Open board
-                                          </a>
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                      <p className="text-xs font-semibold uppercase">
-                                        County {"->"} District board
-                                      </p>
-                                      <p className="text-muted-foreground mt-1 break-all text-xs">
-                                        {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
-                                      </p>
-                                      {routingStatusQuery.data?.countyBoardUrl ? (
-                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                          <a
-                                            href={routingStatusQuery.data.countyBoardUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                          >
-                                            Open board
-                                          </a>
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                      <p className="text-xs font-semibold uppercase">
-                                        District {"->"} Owner board
-                                      </p>
-                                      <p className="text-muted-foreground mt-1 break-all text-xs">
-                                        {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
-                                      </p>
-                                      {routingStatusQuery.data?.districtBoardUrl ? (
-                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                          <a
-                                            href={routingStatusQuery.data.districtBoardUrl}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                          >
-                                            Open board
-                                          </a>
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    <p className="text-sm font-medium">Routing diagnostics</p>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-7 text-xs"
-                                      onClick={() => {
-                                        void routingStatusQuery.refetch();
-                                      }}
-                                      disabled={routingStatusQuery.isFetching}
-                                    >
-                                      {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
-                                    </Button>
-                                  </div>
-                                  {routingStatusQuery.error ? (
-                                    <p className="text-destructive text-xs">
-                                      {routingStatusQuery.error instanceof Error
-                                        ? routingStatusQuery.error.message
-                                        : "Failed to load routing diagnostics"}
-                                    </p>
-                                  ) : null}
-                                  {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
-                                    <ul className="list-disc space-y-1 pl-4 text-xs">
-                                      {(routingStatusQuery.data?.issues ?? []).map((issue) => (
-                                        <li key={issue} className="text-destructive">
-                                          {issue}
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="text-muted-foreground text-xs">
-                                      No routing issues detected.
-                                    </p>
-                                  )}
-                                </div>
-
-                                <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium">Manual rerun</p>
-                                    <p className="text-muted-foreground text-xs">
-                                      Re-run owner assignment for one contact item id.
-                                    </p>
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Input
-                                      value={routingRerunItemId}
-                                      onChange={(event) => setRoutingRerunItemId(event.target.value)}
-                                      placeholder="Item ID"
-                                      className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      className="h-8 px-3 text-xs"
-                                      onClick={() => {
-                                        void handleRunRoutingRerun();
-                                      }}
-                                      disabled={isRunningRoutingRerun}
-                                    >
-                                      {isRunningRoutingRerun ? "Running..." : "Run assignment"}
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            </TabsContent>
-                          ) : null}
-                          {isMondaySettingsAdmin ? (
-                            <TabsContent value="email-settings" className="mt-0">
-                              <div className="space-y-4">
-                                <div className="space-y-2">
-                                  <p className="text-sm font-medium">Email Settings</p>
-                                  <p className="text-muted-foreground text-sm">
-                                    Configure outbound email account settings for sending
-                                    monday-designed templates.
-                                  </p>
-                                </div>
-                                <div className="space-y-3 rounded-md border p-4">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                      variant={
-                                        outlookStatusQuery.data?.connected
-                                          ? "default"
-                                          : "secondary"
-                                      }
-                                    >
-                                      {outlookStatusQuery.data?.connected
-                                        ? "Outlook connected"
-                                        : "Outlook not connected"}
-                                    </Badge>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        void handleConnectOutlook();
-                                      }}
-                                      disabled={isConnectingOutlook}
-                                    >
-                                      {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                                    </Button>
-                                    {outlookStatusQuery.data?.connected ? (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => {
-                                          void handleDisconnectOutlook();
-                                        }}
-                                        disabled={isDisconnectingOutlook}
-                                      >
-                                        {isDisconnectingOutlook
-                                          ? "Disconnecting..."
-                                          : "Disconnect"}
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                  <div className="text-muted-foreground text-sm">
-                                    {outlookStatusQuery.data?.connection?.email ? (
-                                      <p>
-                                        Connected mailbox:{" "}
-                                        {outlookStatusQuery.data.connection.email}
-                                      </p>
-                                    ) : (
-                                      <p>
-                                        Use OAuth to connect Outlook, then use this account
-                                        for sending and engagement tracking.
-                                      </p>
-                                    )}
-                                    {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                      <p className="mt-1">
-                                        Last updated:{" "}
-                                        {new Date(
-                                          outlookStatusQuery.data.connection.updatedAt,
-                                        ).toLocaleString()}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                  <div className="rounded-md border bg-muted/30 p-3">
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Callback URL
-                                    </p>
-                                    <p className="mt-1 break-all font-mono text-xs">
-                                      {callbackUrl}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            </TabsContent>
-                          ) : null}
-                          {isMondaySettingsAdmin ? (
-                            <TabsContent value="feature-flags" className="mt-0">
-                              <div className="space-y-4">
-                                <div className="space-y-1">
-                                  <p className="text-sm font-medium">Feature Flags</p>
-                                  <p className="text-muted-foreground text-sm">
-                                    Toggle app capabilities without code changes.
-                                  </p>
-                                </div>
-                                <div className="space-y-3 rounded-md border p-4">
-                                  <label className="flex items-start gap-3 text-sm">
-                                    <input
-                                      type="checkbox"
-                                      checked={featureFlags.emailMarketingEnabled}
-                                      disabled={isSavingFeatureFlags}
-                                      onChange={(event) => {
-                                        void handleSetEmailMarketingEnabled(
-                                          event.target.checked,
-                                        );
-                                      }}
-                                    />
-                                    <div className="space-y-1">
-                                      <p className="font-medium">Email Marketing</p>
-                                      <p className="text-muted-foreground text-xs">
-                                        Enables email marketing capabilities, including the
-                                        Email action in the table.
-                                      </p>
-                                      {isSavingFeatureFlags ? (
-                                        <p className="text-muted-foreground text-[11px]">
-                                          Saving...
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  </label>
-                                </div>
-                              </div>
-                            </TabsContent>
-                          ) : null}
-                        </div>
-                      </div>
-                    </Tabs>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <Dialog
-        open={addContactOpen}
-        onOpenChange={(open) => {
-          setAddContactOpen(open);
-          if (!open) {
-            resetAddContactDialog();
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add New Contact</DialogTitle>
-          </DialogHeader>
-          {addContactStep === 1 ? (
-            <AddNewContactForm
-              values={addContactValues}
-              ownerOptions={addContactOwnerOptions}
-              isSubmitting={isCheckingDuplicates || isCreatingContact}
-              onChange={(key, value) => {
-                setAddContactValues((prev) => ({ ...prev, [key]: value }));
-              }}
-              onSubmit={() => {
-                void handleCheckDuplicatesAndContinue();
-              }}
+      <div className={`rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {/* Search */}
+          <div className="relative min-w-0 flex-1">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search (2+ chars)…"
+              className="bg-background h-8 w-full text-xs shadow-sm"
             />
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  Before we create, we found these records with the same email.
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  Do you want to use one of these existing records?
-                </p>
-              </div>
-              <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                {existingContactsByEmail.map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex items-center justify-between gap-3 rounded-md border p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{record.name || record.id}</p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {record.email ?? "No email"} · {record.owner ?? "No owner"}
-                      </p>
+            {search.trim().length > 0 && search.trim().length < 2 ? (
+              <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
+                2+ chars needed
+              </p>
+            ) : null}
+          </div>
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Owner + district filters */}
+          <select
+            value={ownerFilter || "__all_owner__"}
+            onChange={(event) => {
+              if (!isOwnerFilterEditable) return;
+              const value = event.target.value;
+              setOwnerFilter(value === "__all_owner__" ? "" : value);
+            }}
+            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+            style={{ maxWidth: "160px" }}
+            disabled={!isOwnerFilterEditable}
+          >
+            {isOwnerFilterEditable ? (
+              <option value="__all_owner__">Owner: all</option>
+            ) : (
+              <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
+                {lockedOwnerLabel}
+              </option>
+            )}
+            {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+              <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+            ) : null}
+            {ownerOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter || "__all_status__"}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStatusFilter(value === "__all_status__" ? "" : value);
+            }}
+            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+            style={{ maxWidth: "150px" }}
+          >
+            <option value="__all_status__">District: all</option>
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
+                <Filter className="h-3.5 w-3.5" />
+                {activeAdvancedFilterConditions.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 py-0 leading-none text-[10px]">
+                    {activeAdvancedFilterConditions.length}
+                  </Badge>
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
+              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                <DialogTitle>Advanced Filters</DialogTitle>
+                <DialogDescription>
+                  Build multi-condition logic, preview result count, and save presets per
+                  owner board.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-5 overflow-y-auto px-6 py-5">
+                <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
+                      {activeAdvancedFilterConditions.length} active
+                    </Badge>
+                    <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
+                      {advancedFilterConditions.length} total
+                    </Badge>
+                    <span className="text-muted-foreground text-xs">
+                      Showing {filteredRecords.length} of {records.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="advanced-filter-match-mode"
+                      className="text-muted-foreground text-xs font-medium"
+                    >
+                      Match mode
+                    </label>
+                    <select
+                      id="advanced-filter-match-mode"
+                      value={advancedFilterMatchMode}
+                      onChange={(event) => {
+                        const value = event.target.value === "any" ? "any" : "all";
+                        setActiveSavedAdvancedFilterId(null);
+                        setAdvancedFilterMatchMode(value);
+                      }}
+                      className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
+                    >
+                      <option value="all">Match all conditions</option>
+                      <option value="any">Match any condition</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Conditions</p>
                       <p className="text-muted-foreground text-xs">
-                        Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                        Add or remove conditions that run against Monday board columns.
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {record.url ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            window.open(record.url ?? "", "_blank", "noopener,noreferrer")
-                          }
-                        >
-                          Open
-                        </Button>
-                      ) : null}
                       <Button
                         size="sm"
-                        onClick={() => {
-                          toast.success("Using existing contact");
-                          setAddContactOpen(false);
-                          resetAddContactDialog();
-                        }}
+                        variant="outline"
+                        className="h-8 border-2 px-3 text-xs shadow-sm"
+                        onClick={handleAddAdvancedFilterCondition}
                       >
-                        Use Existing
+                        Add condition
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-3 text-xs"
+                        onClick={handleClearAdvancedFilters}
+                        disabled={advancedFilterConditions.length === 0}
+                      >
+                        Clear all
                       </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="flex justify-between gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setAddContactStep(1)}
-                  disabled={isCreatingContact}
-                >
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleCreateContact();
-                  }}
-                  disabled={isCreatingContact}
-                >
-                  {isCreatingContact ? "Creating..." : "Create New Anyway"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
-      <Dialog
-        open={!!retentionDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setRetentionDialogRecord(null);
-        }}
-      >
-        <DialogContent
-          className="max-w-lg"
-          onInteractOutside={(event) => {
-            event.preventDefault();
-          }}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
+                  {advancedFilterConditions.length === 0 ? (
+                    <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
+                      <p className="text-muted-foreground text-sm">
+                        No conditions yet. Add a condition to start filtering records.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                      {advancedFilterConditions.map((condition, index) => {
+                        const conditionTarget = getBoardColumnTargetForCondition(condition);
+                        const boardColumnKind =
+                          boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                        const operatorOptions =
+                          boardColumnKind === "date"
+                            ? ADVANCED_DATE_OPERATORS
+                            : ADVANCED_TEXT_OPERATORS;
+                        const shouldHideValueInput =
+                          condition.operator === "is_empty" ||
+                          condition.operator === "is_not_empty";
+                        const isDateField = boardColumnKind === "date";
+                        const targetLabelLower = conditionTarget.toLowerCase();
+                        const usesOwnerOptions =
+                          targetLabelLower === "owner" && ownerOptions.length > 0;
+                        const usesDistrictOptions =
+                          (targetLabelLower === "status" ||
+                            targetLabelLower === "district") &&
+                          statusOptions.length > 0;
+                        const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                        return (
+                          <div
+                            key={condition.id}
+                            className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
+                              ? "border-border/75 bg-background"
+                              : "border-border/75 bg-muted/25"
+                              }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
+                              <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
+                                Condition {index + 1}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
+                              <label className="space-y-1">
+                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                  Column
+                                </span>
+                                <select
+                                  value={conditionTarget}
+                                  onChange={(event) =>
+                                    handleChangeAdvancedFilterTarget(
+                                      condition.id,
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                >
+                                  {!hasBoardColumnOptions ? (
+                                    <option value="">No board columns loaded</option>
+                                  ) : null}
+                                  {hasBoardColumnOptions ? (
+                                    <option value="">Select board column</option>
+                                  ) : null}
+                                  {boardColumnFilterOptions.map((label) => (
+                                    <option key={label} value={label}>
+                                      {label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label className="space-y-1">
+                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                  Operator
+                                </span>
+                                <select
+                                  value={condition.operator}
+                                  onChange={(event) => {
+                                    if (!isAdvancedFilterOperator(event.target.value)) return;
+                                    handleChangeAdvancedFilterOperator(
+                                      condition.id,
+                                      event.target.value,
+                                    );
+                                  }}
+                                  className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                >
+                                  {operatorOptions.map((operator) => (
+                                    <option key={operator} value={operator}>
+                                      {ADVANCED_OPERATOR_LABELS[operator]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              {!shouldHideValueInput ? (
+                                <label className="space-y-1">
+                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                    Value
+                                  </span>
+                                  {usesOwnerOptions ? (
+                                    <select
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                    >
+                                      <option value="">Select owner</option>
+                                      {!ownerOptions.some(
+                                        (option) => option.value === condition.value,
+                                      ) && condition.value.trim().length > 0 ? (
+                                        <option value={condition.value}>
+                                          {`Owner ${condition.value} (selected)`}
+                                        </option>
+                                      ) : null}
+                                      {ownerOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : usesDistrictOptions ? (
+                                    <select
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                    >
+                                      <option value="">Select district</option>
+                                      {!statusOptions.some(
+                                        (option) => option.value === condition.value,
+                                      ) && condition.value.trim().length > 0 ? (
+                                        <option value={condition.value}>
+                                          {`District ${condition.value} (selected)`}
+                                        </option>
+                                      ) : null}
+                                      {statusOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <Input
+                                      type={isDateField ? "date" : "text"}
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Value"
+                                      className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                    />
+                                  )}
+                                </label>
+                              ) : (
+                                <div className="pb-1">
+                                  <p className="text-muted-foreground text-xs">
+                                    No value input required for this operator.
+                                  </p>
+                                </div>
+                              )}
+
+                              {condition.operator === "between" ? (
+                                <label className="space-y-1">
+                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                    {isDateField ? "End date" : "Second value"}
+                                  </span>
+                                  <Input
+                                    type={isDateField ? "date" : "text"}
+                                    value={condition.valueTo}
+                                    onChange={(event) =>
+                                      handleChangeAdvancedFilterValueTo(
+                                        condition.id,
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder={isDateField ? "End date" : "Second value"}
+                                    className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                  />
+                                </label>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
+                  <div>
+                    <p className="text-sm font-medium">Saved Presets</p>
+                    <p className="text-muted-foreground text-xs">
+                      Save the active filter setup and reuse it for this owner board.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={pendingSavedAdvancedFilterName}
+                      onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                      placeholder="Saved filter name"
+                      className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-2 px-3 text-xs shadow-sm"
+                      onClick={handleSaveAdvancedFilterPreset}
+                      disabled={
+                        isSavingAdvancedFilterPreset ||
+                        !sessionToken ||
+                        presetScopeOwnerId.length === 0
+                      }
+                    >
+                      {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
+                    </Button>
+                  </div>
+                  {presetScopeOwnerId.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      Select an owner board to enable preset saving.
+                    </p>
+                  ) : null}
+
+                  {savedAdvancedFilterPresets.length > 0 ? (
+                    <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
+                      {savedAdvancedFilterPresets.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
+                        >
+                          <Button
+                            size="sm"
+                            variant={
+                              activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                            }
+                            className="h-8 rounded-r-none px-2 text-xs"
+                            onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
+                          >
+                            {preset.name}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground h-8 px-1.5 text-xs"
+                            onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                            disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
+                          >
+                            {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">
+                      No saved filter presets yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Month navigation */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            onClick={() => {
+              setActiveMonth(
+                (prev) =>
+                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
+              );
+            }}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
+            {monthBounds.label}
+          </Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            onClick={() => {
+              setActiveMonth(
+                (prev) =>
+                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
+              );
+            }}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+
+          {viewMode === "userScoped" ? (
+            <>
+              <div className="bg-border/60 h-5 w-px shrink-0" />
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 shrink-0 px-2.5"
+                onClick={() => {
+                  resetAddContactDialog();
+                  setAddContactOpen(true);
+                }}
+                disabled={authLoading || !identity?.userId}
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Add
+              </Button>
+              <div className="flex overflow-hidden rounded-md border shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("table")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Table view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("grid")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "grid" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          ) : null}
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Reload */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            title="Reload"
+            onClick={() => {
+              if (staticMode) return;
+              void recordsQuery.refetch();
+            }}
+            disabled={staticMode || recordsQuery.isFetching}
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+
+          {!staticMode && recordsQuery.hasNextPage ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 shrink-0 px-2.5 text-xs"
+              onClick={() => {
+                void recordsQuery.fetchNextPage();
+              }}
+              disabled={recordsQuery.isFetchingNextPage}
+            >
+              {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+            </Button>
+          ) : null}
+
+          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
+              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                <DialogTitle>Monday Settings</DialogTitle>
+              </DialogHeader>
+              <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
+                <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
+                  <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
+                    <TabsTrigger
+                      value="general-settings"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      General Settings
+                    </TabsTrigger>
+                    {isMondaySettingsAdmin ? (
+                      <>
+                        <TabsTrigger
+                          value="email-templates"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          Email Templates
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="email-settings"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          Email Settings
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="user-zip-map"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          User {"<->"} Zipcode map
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="feature-flags"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          Feature Flags
+                        </TabsTrigger>
+                      </>
+                    ) : null}
+                  </TabsList>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
+                    <TabsContent value="general-settings" className="mt-0">
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium">General Settings</p>
+                          <p className="text-muted-foreground text-sm">
+                            Customize font size and color for this employee board.
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            Scope:{" "}
+                            {presetScopeOwnerId.length > 0
+                              ? `Owner ${presetScopeOwnerId}`
+                              : "No owner board selected"}
+                          </p>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <div className="space-y-4 rounded-md border p-4">
+                            <div className="space-y-2">
+                              <label
+                                htmlFor="board-font-size"
+                                className="text-xs font-semibold tracking-wide uppercase"
+                              >
+                                Font Size
+                              </label>
+                              <Select
+                                value={boardGeneralSettingsDraft.fontSize}
+                                onValueChange={(value) => {
+                                  if (!isUserBoardFontSize(value)) return;
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    fontSize: value,
+                                  }));
+                                }}
+                              >
+                                <SelectTrigger id="board-font-size" className="h-9">
+                                  <SelectValue placeholder="Select font size" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label
+                                htmlFor="board-color-theme"
+                                className="text-xs font-semibold tracking-wide uppercase"
+                              >
+                                Color Theme
+                              </label>
+                              <Select
+                                value={boardGeneralSettingsDraft.colorTheme}
+                                onValueChange={(value) => {
+                                  if (!isUserBoardColorTheme(value)) return;
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    colorTheme: value,
+                                  }));
+                                }}
+                              >
+                                <SelectTrigger id="board-color-theme" className="h-9">
+                                  <SelectValue placeholder="Select color theme" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      <span className="inline-flex items-center gap-2">
+                                        <span
+                                          className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
+                                        />
+                                        {option.label}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <p className="text-muted-foreground text-xs">
+                                {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                  (option) =>
+                                    option.value === boardGeneralSettingsDraft.colorTheme,
+                                )?.description ?? "Choose a color theme for this board."}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div
+                            className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
+                          >
+                            <p className="text-xs font-semibold tracking-wide uppercase">
+                              Preview
+                            </p>
+                            <div className="space-y-2 rounded-md border bg-background/80 p-3">
+                              <p className="text-sm font-medium">Header & controls</p>
+                              <p className="text-muted-foreground text-xs">
+                                The board UI applies this color styling and font scaling.
+                              </p>
+                            </div>
+                            <div className="rounded-md border bg-background/80 p-3">
+                              <p className="text-xs">
+                                Font scale preview:{" "}
+                                {
+                                  USER_BOARD_FONT_SIZE_OPTIONS.find(
+                                    (option) =>
+                                      option.value === boardGeneralSettingsDraft.fontSize,
+                                  )?.label
+                                }
+                              </p>
+                              <div className="mt-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                                  disabled
+                                >
+                                  Quick Action Preview
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-md border p-4">
+                          <label className="text-xs font-semibold tracking-wide uppercase">
+                            Table Density
+                          </label>
+                          <p className="text-muted-foreground text-xs">
+                            {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
+                              (o) => o.value === boardGeneralSettingsDraft.tableDensity,
+                            )?.description}
+                          </p>
+                          <div className="mt-1 flex gap-2">
+                            {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    tableDensity: option.value,
+                                  }));
+                                }}
+                                className={`flex flex-1 flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                  }`}
+                              >
+                                <span className="flex flex-col gap-0.5">
+                                  {option.value === "expanded" ? (
+                                    <>
+                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-70" />
+                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
+                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-70" />
+                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                    </>
+                                  )}
+                                </span>
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-md border p-4">
+                          <label className="text-xs font-semibold tracking-wide uppercase">
+                            Records Per Page
+                          </label>
+                          <p className="text-muted-foreground text-xs">
+                            How many records to load at once in the table/grid view.
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {USER_BOARD_PAGE_SIZE_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    pageSize: option.value,
+                                  }));
+                                }}
+                                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                  }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 rounded-md border p-4">
+                          <label className="text-xs font-semibold tracking-wide uppercase">
+                            Default View
+                          </label>
+                          <p className="text-muted-foreground text-xs">
+                            Whether to default to table or grid layout when opening this board.
+                          </p>
+                          <div className="mt-1 flex gap-2">
+                            {(["table", "grid"] as UserBoardDisplayMode[]).map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    displayMode: mode,
+                                  }));
+                                }}
+                                className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
+                                  ? "border-primary bg-primary/10 text-primary"
+                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                  }`}
+                              >
+                                {mode === "table" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            onClick={() => {
+                              void handleSaveBoardGeneralSettings();
+                            }}
+                            disabled={
+                              isSavingBoardGeneralSettings ||
+                              !sessionToken ||
+                              presetScopeOwnerId.length === 0 ||
+                              !hasUnsavedBoardGeneralSettings
+                            }
+                          >
+                            {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setBoardGeneralSettingsDraft(boardGeneralSettings);
+                            }}
+                            disabled={!hasUnsavedBoardGeneralSettings}
+                          >
+                            Reset
+                          </Button>
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="email-templates" className="mt-0">
+                        <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">
+                              Templates ({emailTemplates.length})
+                            </p>
+                            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                              {emailTemplates.map((template) => {
+                                const isActive = template.id === selectedTemplate?.id;
+                                return (
+                                  <button
+                                    key={template.id}
+                                    type="button"
+                                    className={[
+                                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                      isActive
+                                        ? "border-primary bg-primary/10"
+                                        : "hover:bg-muted/60",
+                                    ].join(" ")}
+                                    onClick={() => {
+                                      setSelectedTemplateId(template.id);
+                                    }}
+                                  >
+                                    <p className="line-clamp-1 font-medium">{template.name}</p>
+                                    <p className="text-muted-foreground mt-1 text-xs">
+                                      Updated {formatUpdatedAt(template.updatedAt)}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                              {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                <p className="text-muted-foreground text-sm">
+                                  No templates found on board 18401299370.
+                                </p>
+                              ) : null}
+                              {emailTemplatesQuery.isLoading ? (
+                                <p className="text-muted-foreground text-sm">
+                                  Loading templates...
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="bg-background min-h-[420px] rounded-md border p-4">
+                            {selectedTemplate ? (
+                              <div className="space-y-4">
+                                <div className="border-b pb-3">
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Subject
+                                  </p>
+                                  <p className="mt-1 text-base font-medium">
+                                    {selectedTemplate.name}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Email Preview (Lead View)
+                                  </p>
+                                  <div className="bg-card mt-2 rounded-md border p-4">
+                                    {selectedTemplate.content.trim().length === 0 ? (
+                                      <p className="text-muted-foreground text-sm">
+                                        No content found in column doc_mm0wq4r.
+                                      </p>
+                                    ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                      <div
+                                        className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                        style={{ whiteSpace: "pre-wrap" }}
+                                        dangerouslySetInnerHTML={{
+                                          __html: selectedTemplate.renderedHtml,
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                        {selectedTemplate.content}
+                                      </div>
+                                    )}
+                                    {selectedTemplate.docLink ? (
+                                      <p className="mt-3 text-xs">
+                                        <a
+                                          href={selectedTemplate.docLink}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-primary underline underline-offset-2"
+                                        >
+                                          Open source Monday Workdoc
+                                        </a>
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-muted-foreground text-sm">
+                                Select an email template to preview.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="user-zip-map" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure and monitor district routing for newly created contact
+                              records.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                Routing Status
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.isLoading
+                                  ? "Loading..."
+                                  : routingStatusQuery.data?.enabled
+                                    ? routingStatusQuery.data.ok
+                                      ? "Configured"
+                                      : "Configured with issues"
+                                    : "Not configured"}
+                              </p>
+                            </div>
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                County Mappings
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.data?.countyMappingsCount ?? 0}
+                              </p>
+                            </div>
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                District Owner Mappings
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
+                            <p className="text-sm font-medium">Routing boards</p>
+                            <div className="grid gap-3 md:grid-cols-3">
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">Contact board</p>
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
+                                </p>
+                                {routingStatusQuery.data?.contactBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.contactBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">
+                                  County {"->"} District board
+                                </p>
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
+                                </p>
+                                {routingStatusQuery.data?.countyBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.countyBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">
+                                  District {"->"} Owner board
+                                </p>
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
+                                </p>
+                                {routingStatusQuery.data?.districtBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.districtBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium">Routing diagnostics</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  void routingStatusQuery.refetch();
+                                }}
+                                disabled={routingStatusQuery.isFetching}
+                              >
+                                {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
+                              </Button>
+                            </div>
+                            {routingStatusQuery.error ? (
+                              <p className="text-destructive text-xs">
+                                {routingStatusQuery.error instanceof Error
+                                  ? routingStatusQuery.error.message
+                                  : "Failed to load routing diagnostics"}
+                              </p>
+                            ) : null}
+                            {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
+                              <ul className="list-disc space-y-1 pl-4 text-xs">
+                                {(routingStatusQuery.data?.issues ?? []).map((issue) => (
+                                  <li key={issue} className="text-destructive">
+                                    {issue}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-muted-foreground text-xs">
+                                No routing issues detected.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">Manual rerun</p>
+                              <p className="text-muted-foreground text-xs">
+                                Re-run owner assignment for one contact item id.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Input
+                                value={routingRerunItemId}
+                                onChange={(event) => setRoutingRerunItemId(event.target.value)}
+                                placeholder="Item ID"
+                                className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                              />
+                              <Button
+                                size="sm"
+                                className="h-8 px-3 text-xs"
+                                onClick={() => {
+                                  void handleRunRoutingRerun();
+                                }}
+                                disabled={isRunningRoutingRerun}
+                              >
+                                {isRunningRoutingRerun ? "Running..." : "Run assignment"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="email-settings" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Email Settings</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure outbound email account settings for sending
+                              monday-designed templates.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={
+                                  outlookStatusQuery.data?.connected
+                                    ? "default"
+                                    : "secondary"
+                                }
+                              >
+                                {outlookStatusQuery.data?.connected
+                                  ? "Outlook connected"
+                                  : "Outlook not connected"}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  void handleConnectOutlook();
+                                }}
+                                disabled={isConnectingOutlook}
+                              >
+                                {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                              </Button>
+                              {outlookStatusQuery.data?.connected ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void handleDisconnectOutlook();
+                                  }}
+                                  disabled={isDisconnectingOutlook}
+                                >
+                                  {isDisconnectingOutlook
+                                    ? "Disconnecting..."
+                                    : "Disconnect"}
+                                </Button>
+                              ) : null}
+                            </div>
+                            <div className="text-muted-foreground text-sm">
+                              {outlookStatusQuery.data?.connection?.email ? (
+                                <p>
+                                  Connected mailbox:{" "}
+                                  {outlookStatusQuery.data.connection.email}
+                                </p>
+                              ) : (
+                                <p>
+                                  Use OAuth to connect Outlook, then use this account
+                                  for sending and engagement tracking.
+                                </p>
+                              )}
+                              {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                <p className="mt-1">
+                                  Last updated:{" "}
+                                  {new Date(
+                                    outlookStatusQuery.data.connection.updatedAt,
+                                  ).toLocaleString()}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="rounded-md border bg-muted/30 p-3">
+                              <p className="text-xs font-semibold tracking-wide uppercase">
+                                Callback URL
+                              </p>
+                              <p className="mt-1 break-all font-mono text-xs">
+                                {callbackUrl}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="feature-flags" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Feature Flags</p>
+                            <p className="text-muted-foreground text-sm">
+                              Toggle app capabilities without code changes.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <label className="flex items-start gap-3 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={featureFlags.emailMarketingEnabled}
+                                disabled={isSavingFeatureFlags}
+                                onChange={(event) => {
+                                  void handleSetEmailMarketingEnabled(
+                                    event.target.checked,
+                                  );
+                                }}
+                              />
+                              <div className="space-y-1">
+                                <p className="font-medium">Email Marketing</p>
+                                <p className="text-muted-foreground text-xs">
+                                  Enables email marketing capabilities, including the
+                                  Email action in the table.
+                                </p>
+                                {isSavingFeatureFlags ? (
+                                  <p className="text-muted-foreground text-[11px]">
+                                    Saving...
+                                  </p>
+                                ) : null}
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                  </div>
+                </div>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+      <div className="max-w-[1600px] container">
+
+        <Dialog
+          open={addContactOpen}
+          onOpenChange={(open) => {
+            setAddContactOpen(open);
+            if (!open) {
+              resetAddContactDialog();
+            }
           }}
         >
-          <DialogHeader>
-            <DialogTitle>Update Retention</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* <div className="space-y-2 rounded-md border p-3">
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add New Contact</DialogTitle>
+            </DialogHeader>
+            {addContactStep === 1 ? (
+              <AddNewContactForm
+                values={addContactValues}
+                ownerOptions={addContactOwnerOptions}
+                isSubmitting={isCheckingDuplicates || isCreatingContact}
+                onChange={(key, value) => {
+                  setAddContactValues((prev) => ({ ...prev, [key]: value }));
+                }}
+                onSubmit={() => {
+                  void handleCheckDuplicatesAndContinue();
+                }}
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Before we create, we found these records with the same email.
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    Do you want to use one of these existing records?
+                  </p>
+                </div>
+                <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
+                  {existingContactsByEmail.map((record) => (
+                    <div
+                      key={record.id}
+                      className="flex items-center justify-between gap-3 rounded-md border p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{record.name || record.id}</p>
+                        <p className="text-muted-foreground truncate text-xs">
+                          {record.email ?? "No email"} · {record.owner ?? "No owner"}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {record.url ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              window.open(record.url ?? "", "_blank", "noopener,noreferrer")
+                            }
+                          >
+                            Open
+                          </Button>
+                        ) : null}
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            toast.success("Using existing contact");
+                            setAddContactOpen(false);
+                            resetAddContactDialog();
+                          }}
+                        >
+                          Use Existing
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-between gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setAddContactStep(1)}
+                    disabled={isCreatingContact}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      void handleCreateContact();
+                    }}
+                    disabled={isCreatingContact}
+                  >
+                    {isCreatingContact ? "Creating..." : "Create New Anyway"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!retentionDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setRetentionDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Retention</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* <div className="space-y-2 rounded-md border p-3">
               <div>
                 <p className="text-sm font-medium">Business Connections Overview</p>
                 <p className="text-muted-foreground text-xs">
@@ -5891,786 +6065,821 @@ export function MondayBoardView({
                 </div>
               </div>
             </div> */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <MultiSelect
-                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
-                options={Array.from(
-                  new Set([
-                    ...retentionOptions.referredToContractors,
-                    ...retentionDraft.referredToContractors,
-                  ]),
-                )
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={retentionDraft.referredToContractors}
-                onValueChange={(values) => {
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    referredToContractors: values,
-                  }));
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hired With Contractor</label>
-              <select
-                value={retentionDraft.hiredWithContractor || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    hiredWithContractor: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.hiredWithContractor,
-                    retentionDraft.hiredWithContractor,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hire Date</label>
-              <div className="flex items-center gap-2">
-                <Popover
-                  open={retentionHireDatePopoverOpen}
-                  onOpenChange={setRetentionHireDatePopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 flex-1 justify-start font-normal"
-                    >
-                      {retentionDraft.hireDate || "Select date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                    <Calendar
-                      mode="single"
-                      selected={
-                        retentionDraft.hireDate
-                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                          : undefined
-                      }
-                      onSelect={(date) => {
-                        if (!date) return;
-                        setRetentionDraft((prev) => ({
-                          ...prev,
-                          hireDate: toDateOnlyLocal(date),
-                        }));
-                        setRetentionHireDatePopoverOpen(false);
-                      }}
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                  }}
-                  disabled={!retentionDraft.hireDate}
-                >
-                  Clear
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Retention Period</label>
-              <select
-                value={retentionDraft.retentionPeriod || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    retentionPeriod: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.retentionPeriod,
-                    retentionDraft.retentionPeriod,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setRetentionDialogRecord(null)}
-                disabled={isSavingRetention}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveRetention();
-                }}
-                disabled={isSavingRetention}
-              >
-                {isSavingRetention ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!statusDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setStatusDialogRecord(null);
-        }}
-      >
-        <DialogContent
-          className="max-w-lg"
-          onInteractOutside={(event) => {
-            event.preventDefault();
-          }}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Update Status</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                value={statusDraft || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setStatusDraft(value === "__none__" ? "" : value);
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setStatusDialogRecord(null)}
-                disabled={isSavingStatus}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveStatus();
-                }}
-                disabled={isSavingStatus}
-              >
-                {isSavingStatus ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!ownerDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setOwnerDialogRecord(null);
-        }}
-      >
-        <DialogContent
-          className="max-w-lg"
-          onInteractOutside={(event) => {
-            event.preventDefault();
-          }}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Update Owner</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Owner</label>
-              <Select
-                value={ownerDraft || "__none__"}
-                onValueChange={(value) => {
-                  setOwnerDraft(value === "__none__" ? "" : value);
-                }}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue placeholder="Select owner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Select value</SelectItem>
-                  {Array.from(
-                    new Map(
-                      [
-                        ...ownerOptions.map((option) => [option.value, option] as const),
-                        ownerDraft.trim().length > 0
-                          ? [
-                            ownerDraft,
-                            {
-                              value: ownerDraft,
-                              label: `User ${ownerDraft}`,
-                              name: null,
-                              photoThumb: null,
-                            },
-                          ]
-                          : null,
-                      ].filter(
-                        (
-                          entry,
-                        ): entry is readonly [
-                          string,
-                          {
-                            value: string;
-                            label: string;
-                            name: string | null;
-                            photoThumb: string | null;
-                          },
-                        ] => !!entry,
-                      ),
-                    ),
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Referred To Contractor(s)</label>
+                <MultiSelect
+                  key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                  options={Array.from(
+                    new Set([
+                      ...retentionOptions.referredToContractors,
+                      ...retentionDraft.referredToContractors,
+                    ]),
                   )
-                    .map(([, option]) => option)
-                    .map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="size-5">
-                            {option.photoThumb ? (
-                              <AvatarImage
-                                src={option.photoThumb}
-                                alt={option.name ?? option.value}
-                              />
-                            ) : null}
-                            <AvatarFallback className="text-[10px] font-semibold">
-                              {getNameInitials(option.name ?? option.value)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">
-                            {option.name ?? option.label}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setOwnerDialogRecord(null)}
-                disabled={isSavingOwner}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveOwner();
-                }}
-                disabled={isSavingOwner}
-              >
-                {isSavingOwner ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!tagsDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setTagsDialogRecord(null);
-        }}
-      >
-        <DialogContent
-          className="max-w-lg overflow-visible"
-          onInteractOutside={(event) => {
-            event.preventDefault();
-          }}
-          onEscapeKeyDown={(event) => {
-            event.preventDefault();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Update Tags</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Tags</label>
-              <MultiSelect
-                key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
-                options={sortFiscalYearTagsDesc(
-                  Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
-                    (value) => value.trim().length > 0,
-                  ),
-                )
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={tagsDraft}
-                onValueChange={(values) => setTagsDraft(values)}
-                placeholder="Select tags"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setTagsDialogRecord(null)}
-                disabled={isSavingTags}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveTags();
-                }}
-                disabled={isSavingTags}
-              >
-                {isSavingTags ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!contactHistoryDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setContactHistoryDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
-            </DialogTitle>
-          </DialogHeader>
-          {contactHistoryDialogRecord ? (
-            <div className="space-y-4">
-              {(() => {
-                const record = contactHistoryDialogRecord;
-                const addressDisplay = getAddressDisplayParts(record.address);
-                return (
-                  <div className="rounded-md border p-4">
-                    <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <Avatar className="size-12">
-                          <AvatarFallback className="text-sm font-semibold">
-                            {getNameInitials(record.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold">{record.name}</p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.email ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.phone ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {addressDisplay.full ? (
-                              <>
-                                {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                                {addressDisplay.cityStateZip ? (
-                                  <span className="text-[15px] font-semibold text-foreground">
-                                    {addressDisplay.cityStateZip}
-                                  </span>
-                                ) : (
-                                  addressDisplay.full
-                                )}
-                              </>
-                            ) : (
-                              "—"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="w-full max-w-sm">
-                        <ApprovalProgressIndicator
-                          progressValue={record.batteryProgress}
-                          steps={approvalSteps}
-                          rawProgressValue={record.batteryRawValue}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {!staticMode ? (
-                <section className="space-y-2 rounded-md border p-3">
-                  <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                    Quick Actions
-                  </p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-                    {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
-                      <Button
-                        key={action.type}
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                        disabled={isCreatingContactUpdate}
-                        onClick={() => {
-                          setContactUpdateType(action.type);
-                          void handleCreateContactUpdate({
-                            updateType: action.type,
-                            body: action.defaultBody,
-                            keepSelectedType: true,
-                          });
-                        }}
-                      >
-                        {action.label}
-                      </Button>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              <div className="grid gap-4 md:grid-cols-3">
-                <section className="space-y-2 md:col-span-2">
-                  <p className="text-sm font-medium">Conversation history (Updates)</p>
-                  {!staticMode ? (
-                    <div className="space-y-2 rounded-md border p-3">
-                      <label className="text-xs font-medium tracking-wide uppercase">
-                        Add update
-                      </label>
-                      <div className="grid gap-2 md:grid-cols-[220px_1fr]">
-                        <div>
-                          <p className="text-muted-foreground mb-1 text-xs">Update type</p>
-                          <Select
-                            value={contactUpdateType}
-                            onValueChange={(value) => {
-                              setContactUpdateType(value as ContactUpdateType);
-                            }}
-                            disabled={isCreatingContactUpdate}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select update type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {CONTACT_UPDATE_TYPE_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                  {option.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                      <Textarea
-                        value={contactUpdateDraft}
-                        onChange={(event) => setContactUpdateDraft(event.target.value)}
-                        placeholder={`Write a ${contactUpdateTypeLabel(contactUpdateType).toLowerCase()} for this contact...`}
-                        rows={4}
-                        disabled={isCreatingContactUpdate}
-                      />
-                      <div className="flex justify-end">
-                        <Button
-                          size="sm"
-                          onClick={() => {
-                            void handleCreateContactUpdate();
-                          }}
-                          disabled={isCreatingContactUpdate || contactUpdateDraft.trim().length === 0}
-                        >
-                          {isCreatingContactUpdate ? "Posting..." : "Post update"}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                  <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
-                    {staticMode ? (
-                      <p className="text-muted-foreground text-sm">
-                        Update history is unavailable in static mode.
-                      </p>
-                    ) : contactUpdatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">Loading updates...</p>
-                    ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        No updates found for this record.
-                      </p>
-                    ) : (
-                      (contactUpdatesQuery.data?.updates ?? []).map((update) => (
-                        <div key={update.id} className="rounded-md border p-3">
-                          <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span>{update.creatorName ?? "Unknown user"}</span>
-                              <Badge variant="outline" className="text-[10px]">
-                                {contactUpdateTypeLabel(update.updateType)}
-                              </Badge>
-                              {update.source === "subitem" && update.subitemName ? (
-                                <Badge variant="secondary" className="text-[10px]">
-                                  {update.subitemName}
-                                </Badge>
-                              ) : null}
-                            </div>
-                            <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
-                          </div>
-                          {update.body.trim().length === 0 ? (
-                            <p className="text-muted-foreground text-sm">No message body</p>
-                          ) : hasHtmlLikeMarkup(update.body) ? (
-                            <div
-                              className="prose prose-sm dark:prose-invert max-w-none"
-                              dangerouslySetInnerHTML={{ __html: update.body }}
-                            />
-                          ) : (
-                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                              {update.body}
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
-
-                <aside className="space-y-3 md:col-span-1">
-                  <div className="rounded-md border p-3">
-                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                      Contact card header
-                    </p>
-                    <div className="space-y-1 text-xs">
-                      <p className="wrap-break-word">
-                        <span className="font-bold">ID:</span>{" "}
-                        {contactHistoryDialogRecord.id}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="font-bold">District:</span>{" "}
-                        {contactHistoryDialogRecord.statusText ?? "—"}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="font-bold">Owner:</span>{" "}
-                        {contactHistoryDialogRecord.peopleText ?? "—"}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="font-bold">Updated:</span>{" "}
-                        {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="font-bold">Created:</span>{" "}
-                        {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                      Additional contact information
-                    </p>
-                    <div className="max-h-56 space-y-1 overflow-y-auto pr-1 text-xs">
-                      {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
-                        <div
-                          key={`${detail.label}-${detail.value}`}
-                          className="grid grid-cols-[88px_1fr] gap-3"
-                        >
-                          <span className="truncate font-bold">{detail.label}</span>
-                          <span className="wrap-break-word">{detail.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
+                    .filter((value) => value.trim().length > 0)
+                    .map((value) => ({ label: value, value }))}
+                  defaultValue={retentionDraft.referredToContractors}
+                  onValueChange={(values) => {
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      referredToContractors: values,
+                    }));
+                  }}
+                  placeholder="Select contractor(s)"
+                  disablePortal
+                  popoverSide="bottom"
+                  popoverAvoidCollisions={false}
+                />
               </div>
-
-              <div className="flex justify-end">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Hired With Contractor</label>
+                <select
+                  value={retentionDraft.hiredWithContractor || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      hiredWithContractor: value === "__none__" ? "" : value,
+                    }));
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(
+                    new Set([
+                      ...retentionOptions.hiredWithContractor,
+                      retentionDraft.hiredWithContractor,
+                    ]),
+                  )
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Hire Date</label>
+                <div className="flex items-center gap-2">
+                  <Popover
+                    open={retentionHireDatePopoverOpen}
+                    onOpenChange={setRetentionHireDatePopoverOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 flex-1 justify-start font-normal"
+                      >
+                        {retentionDraft.hireDate || "Select date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                      <Calendar
+                        mode="single"
+                        selected={
+                          retentionDraft.hireDate
+                            ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                            : undefined
+                        }
+                        onSelect={(date) => {
+                          if (!date) return;
+                          setRetentionDraft((prev) => ({
+                            ...prev,
+                            hireDate: toDateOnlyLocal(date),
+                          }));
+                          setRetentionHireDatePopoverOpen(false);
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
+                    }}
+                    disabled={!retentionDraft.hireDate}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Retention Period</label>
+                <select
+                  value={retentionDraft.retentionPeriod || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      retentionPeriod: value === "__none__" ? "" : value,
+                    }));
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(
+                    new Set([
+                      ...retentionOptions.retentionPeriod,
+                      retentionDraft.retentionPeriod,
+                    ]),
+                  )
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => setContactHistoryDialogRecord(null)}
+                  onClick={() => setRetentionDialogRecord(null)}
+                  disabled={isSavingRetention}
                 >
-                  Close
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveRetention();
+                  }}
+                  disabled={isSavingRetention}
+                >
+                  {isSavingRetention ? "Saving..." : "Save"}
                 </Button>
               </div>
             </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      <EntityList<MondayRecord>
-        // title="Board Records"
-        // description="List view optimized for board operations."
-        data={filteredRecords}
-        columns={columns}
-        enableRowSelection
-        enableVirtualization
-        virtualRowHeight={VIRTUAL_ROW_HEIGHT[tableDensity]}
-        virtualOverscan={10}
-        hideFilters
-        isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-        enableSearch={false}
-        viewModes={[]}
-        defaultViewMode="list"
-        initialSort={{ id: "createdAt", direction: "desc" }}
-        getRowId={(item) => item.id}
-        entityActions={entityActions}
-        bulkActions={({ selectedItems, clearSelection }) => (
-          <div className="flex w-full flex-wrap items-center justify-between gap-2">
-            <p className="text-muted-foreground text-xs">
-              {selectedItems.length} selected
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+        <Dialog
+          open={!!statusDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setStatusDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Status</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Status</label>
+                <select
+                  value={statusDraft || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusDraft(value === "__none__" ? "" : value);
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
                 <Button
-                  key={action.type}
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                  disabled={!!bulkQuickActionType}
+                  variant="outline"
+                  onClick={() => setStatusDialogRecord(null)}
+                  disabled={isSavingStatus}
+                >
+                  Cancel
+                </Button>
+                <Button
                   onClick={() => {
-                    bulkClearSelectionRef.current = clearSelection;
-                    setBulkQuickActionConfirmation({
-                      action,
-                      selectedItems: [...selectedItems],
-                    });
+                    void handleSaveStatus();
+                  }}
+                  disabled={isSavingStatus}
+                >
+                  {isSavingStatus ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!ownerDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setOwnerDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Owner</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Owner</label>
+                <Select
+                  value={ownerDraft || "__none__"}
+                  onValueChange={(value) => {
+                    setOwnerDraft(value === "__none__" ? "" : value);
                   }}
                 >
-                  {bulkQuickActionType === action.type ? "Applying..." : action.label}
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="Select owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select value</SelectItem>
+                    {Array.from(
+                      new Map(
+                        [
+                          ...ownerOptions.map((option) => [option.value, option] as const),
+                          ownerDraft.trim().length > 0
+                            ? [
+                              ownerDraft,
+                              {
+                                value: ownerDraft,
+                                label: `User ${ownerDraft}`,
+                                name: null,
+                                photoThumb: null,
+                              },
+                            ]
+                            : null,
+                        ].filter(
+                          (
+                            entry,
+                          ): entry is readonly [
+                            string,
+                            {
+                              value: string;
+                              label: string;
+                              name: string | null;
+                              photoThumb: string | null;
+                            },
+                          ] => !!entry,
+                        ),
+                      ),
+                    )
+                      .map(([, option]) => option)
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="size-5">
+                              {option.photoThumb ? (
+                                <AvatarImage
+                                  src={option.photoThumb}
+                                  alt={option.name ?? option.value}
+                                />
+                              ) : null}
+                              <AvatarFallback className="text-[10px] font-semibold">
+                                {getNameInitials(option.name ?? option.value)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">
+                              {option.name ?? option.label}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setOwnerDialogRecord(null)}
+                  disabled={isSavingOwner}
+                >
+                  Cancel
                 </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveOwner();
+                  }}
+                  disabled={isSavingOwner}
+                >
+                  {isSavingOwner ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!tagsDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setTagsDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg overflow-visible"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Tags</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tags</label>
+                <MultiSelect
+                  key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
+                  options={sortFiscalYearTagsDesc(
+                    Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
+                      (value) => value.trim().length > 0,
+                    ),
+                  )
+                    .map((value) => ({ label: value, value }))}
+                  defaultValue={tagsDraft}
+                  onValueChange={(values) => setTagsDraft(values)}
+                  placeholder="Select tags"
+                  disablePortal
+                  popoverSide="bottom"
+                  popoverAvoidCollisions={false}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setTagsDialogRecord(null)}
+                  disabled={isSavingTags}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveTags();
+                  }}
+                  disabled={isSavingTags}
+                >
+                  {isSavingTags ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!contactHistoryDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setContactHistoryDialogRecord(null);
+          }}
+        >
+          <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+              </DialogTitle>
+            </DialogHeader>
+            {contactHistoryDialogRecord ? (
+              <div className="space-y-4">
+                {(() => {
+                  const record = contactHistoryDialogRecord;
+                  const addressDisplay = getAddressDisplayParts(record.address);
+                  return (
+                    <div className="rounded-md border p-4">
+                      <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <Avatar className="size-12">
+                            <AvatarFallback className="text-sm font-semibold">
+                              {getNameInitials(record.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold">{record.name}</p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {record.email ?? "—"}
+                            </p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {record.phone ?? "—"}
+                            </p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {addressDisplay.full ? (
+                                <>
+                                  {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                                  {addressDisplay.cityStateZip ? (
+                                    <span className="text-[15px] font-semibold text-foreground">
+                                      {addressDisplay.cityStateZip}
+                                    </span>
+                                  ) : (
+                                    addressDisplay.full
+                                  )}
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="w-full max-w-sm">
+                          <ApprovalProgressIndicator
+                            progressValue={record.batteryProgress}
+                            steps={approvalSteps}
+                            rawProgressValue={record.batteryRawValue}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {!staticMode ? (
+                  <section className="space-y-2 rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                      Quick Actions
+                    </p>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                      {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                        <Button
+                          key={action.type}
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                          disabled={isCreatingContactUpdate}
+                          onClick={() => {
+                            setContactUpdateType(action.type);
+                            void handleCreateContactUpdate({
+                              updateType: action.type,
+                              body: action.defaultBody,
+                              keepSelectedType: true,
+                            });
+                          }}
+                        >
+                          {action.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="grid gap-4 md:grid-cols-3">
+                  <section className="space-y-2 md:col-span-2">
+                    <p className="text-sm font-medium">Conversation history (Updates)</p>
+                    {!staticMode ? (
+                      <div className="space-y-2 rounded-md border p-3">
+                        <label className="text-xs font-medium tracking-wide uppercase">
+                          Add update
+                        </label>
+                        <div className="grid gap-2 md:grid-cols-[220px_1fr]">
+                          <div>
+                            <p className="text-muted-foreground mb-1 text-xs">Update type</p>
+                            <Select
+                              value={contactUpdateType}
+                              onValueChange={(value) => {
+                                setContactUpdateType(value as ContactUpdateType);
+                              }}
+                              disabled={isCreatingContactUpdate}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select update type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CONTACT_UPDATE_TYPE_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <Textarea
+                          value={contactUpdateDraft}
+                          onChange={(event) => setContactUpdateDraft(event.target.value)}
+                          placeholder={`Write a ${contactUpdateTypeLabel(contactUpdateType).toLowerCase()} for this contact...`}
+                          rows={4}
+                          disabled={isCreatingContactUpdate}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              void handleCreateContactUpdate();
+                            }}
+                            disabled={isCreatingContactUpdate || contactUpdateDraft.trim().length === 0}
+                          >
+                            {isCreatingContactUpdate ? "Posting..." : "Post update"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
+                      {staticMode ? (
+                        <p className="text-muted-foreground text-sm">
+                          Update history is unavailable in static mode.
+                        </p>
+                      ) : contactUpdatesQuery.isLoading ? (
+                        <p className="text-muted-foreground text-sm">Loading updates...</p>
+                      ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
+                        <p className="text-muted-foreground text-sm">
+                          No updates found for this record.
+                        </p>
+                      ) : (
+                        (contactUpdatesQuery.data?.updates ?? []).map((update) => (
+                          <div key={update.id} className="rounded-md border p-3">
+                            <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{update.creatorName ?? "Unknown user"}</span>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {contactUpdateTypeLabel(update.updateType)}
+                                </Badge>
+                                {update.source === "subitem" && update.subitemName ? (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    {update.subitemName}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
+                            </div>
+                            {update.body.trim().length === 0 ? (
+                              <p className="text-muted-foreground text-sm">No message body</p>
+                            ) : hasHtmlLikeMarkup(update.body) ? (
+                              <div
+                                className="prose prose-sm dark:prose-invert max-w-none"
+                                dangerouslySetInnerHTML={{ __html: update.body }}
+                              />
+                            ) : (
+                              <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                {update.body}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </section>
+
+                  <aside className="space-y-3 md:col-span-1">
+                    <div className="rounded-md border p-3">
+                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                        Contact card header
+                      </p>
+                      <div className="space-y-1 text-xs">
+                        <p className="wrap-break-word">
+                          <span className="font-bold">ID:</span>{" "}
+                          {contactHistoryDialogRecord.id}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">District:</span>{" "}
+                          {contactHistoryDialogRecord.statusText ?? "—"}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Owner:</span>{" "}
+                          {contactHistoryDialogRecord.peopleText ?? "—"}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Updated:</span>{" "}
+                          {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Created:</span>{" "}
+                          {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                        Additional contact information
+                      </p>
+                      <div className="max-h-56 space-y-1 overflow-y-auto pr-1 text-xs">
+                        {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
+                          <div
+                            key={`${detail.label}-${detail.value}`}
+                            className="grid grid-cols-[88px_1fr] gap-3"
+                          >
+                            <span className="truncate font-bold">{detail.label}</span>
+                            <span className="wrap-break-word">{detail.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </aside>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setContactHistoryDialogRecord(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {isTouchScopedView && userScopedDisplayMode === "grid" ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {(authLoading || (!staticMode && recordsQuery.isLoading))
+              ? Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
+              ))
+              : filteredRecords.map((record) => (
+                <ContactCard
+                  key={record.id}
+                  record={record}
+                  approvalSteps={approvalSteps}
+                  onClick={openContactHistoryDialog}
+                />
               ))}
+          </div>
+        ) : (
+          <EntityList<MondayRecord>
+            // title="Board Records"
+            // description="List view optimized for board operations."
+            data={filteredRecords}
+            columns={columns}
+            enableRowSelection
+            enableVirtualization
+            virtualRowHeight={VIRTUAL_ROW_HEIGHT[tableDensity]}
+            virtualOverscan={10}
+            hideFilters
+            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+            enableSearch={false}
+            viewModes={[]}
+            defaultViewMode="list"
+            enableFooter={!isTouchScopedView || boardGeneralSettings.pageSize !== 0}
+            initialPageSize={isTouchScopedView && boardGeneralSettings.pageSize > 0 ? boardGeneralSettings.pageSize : 20}
+            showRowCount
+            initialSort={{ id: "createdAt", direction: "desc" }}
+            getRowId={(item) => item.id}
+            entityActions={entityActions}
+            bulkActions={({ selectedItems, clearSelection }) => (
+              <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {selectedItems.length} selected
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                    <Button
+                      key={action.type}
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      disabled={!!bulkQuickActionType}
+                      onClick={() => {
+                        bulkClearSelectionRef.current = clearSelection;
+                        setBulkQuickActionConfirmation({
+                          action,
+                          selectedItems: [...selectedItems],
+                        });
+                      }}
+                    >
+                      {bulkQuickActionType === action.type ? "Applying..." : action.label}
+                    </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={clearSelection}
+                    disabled={!!bulkQuickActionType}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
+          />
+        )}
+
+        <Dialog
+          open={!!bulkQuickActionConfirmation}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (bulkQuickActionType) return;
+            setBulkQuickActionConfirmation(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
+              <DialogDescription>
+                {bulkQuickActionConfirmation
+                  ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
+                  : "Confirm this bulk action."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
               <Button
-                type="button"
-                size="sm"
                 variant="outline"
-                onClick={clearSelection}
+                onClick={() => setBulkQuickActionConfirmation(null)}
                 disabled={!!bulkQuickActionType}
               >
-                Clear
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const confirmation = bulkQuickActionConfirmation;
+                  if (!confirmation) return;
+                  setBulkQuickActionConfirmation(null);
+                  void handleBulkQuickActionUpdates(
+                    confirmation.selectedItems,
+                    () => bulkClearSelectionRef.current?.(),
+                    confirmation.action,
+                  );
+                }}
+                disabled={!!bulkQuickActionType}
+              >
+                {bulkQuickActionType ? "Applying..." : "Confirm"}
               </Button>
             </div>
-          </div>
-        )}
-      />
+          </DialogContent>
+        </Dialog>
 
-      <Dialog
-        open={!!bulkQuickActionConfirmation}
-        onOpenChange={(open) => {
-          if (open) return;
-          if (bulkQuickActionType) return;
-          setBulkQuickActionConfirmation(null);
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
-            <DialogDescription>
-              {bulkQuickActionConfirmation
-                ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
-                : "Confirm this bulk action."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setBulkQuickActionConfirmation(null)}
-              disabled={!!bulkQuickActionType}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const confirmation = bulkQuickActionConfirmation;
-                if (!confirmation) return;
-                setBulkQuickActionConfirmation(null);
-                void handleBulkQuickActionUpdates(
-                  confirmation.selectedItems,
-                  () => bulkClearSelectionRef.current?.(),
-                  confirmation.action,
-                );
-              }}
-              disabled={!!bulkQuickActionType}
-            >
-              {bulkQuickActionType ? "Applying..." : "Confirm"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!resumePreview}
-        onOpenChange={(open) => {
-          if (!open) setResumePreview(null);
-        }}
-      >
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              Resume · {resumePreview?.recordName ?? "Contact"}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Resume preview dialog with open in new tab fallback.
-            </DialogDescription>
-          </DialogHeader>
-          {resumePreview ? (
-            <div className="space-y-3">
-              {(() => {
-                const lowerName = resumePreview.fileName.toLowerCase();
-                const isPdf = lowerName.endsWith(".pdf");
-                const isImage =
-                  lowerName.endsWith(".png") ||
-                  lowerName.endsWith(".jpg") ||
-                  lowerName.endsWith(".jpeg") ||
-                  lowerName.endsWith(".gif") ||
-                  lowerName.endsWith(".webp") ||
-                  lowerName.endsWith(".svg");
-                return (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                      <a
-                        href={resumePreview.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary text-xs underline"
-                      >
-                        Open in new tab
-                      </a>
-                    </div>
-                    <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                      {isPdf ? (
-                        <iframe
-                          src={resumePreview.href}
-                          title={`Resume preview: ${resumePreview.fileName}`}
-                          className="h-full w-full"
-                        />
-                      ) : isImage ? (
-                        <object
-                          data={resumePreview.href}
-                          className="h-full w-full"
+        <Dialog
+          open={!!resumePreview}
+          onOpenChange={(open) => {
+            if (!open) setResumePreview(null);
+          }}
+        >
+          <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>
+                Resume · {resumePreview?.recordName ?? "Contact"}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Resume preview dialog with open in new tab fallback.
+              </DialogDescription>
+            </DialogHeader>
+            {resumePreview ? (
+              <div className="space-y-3">
+                {(() => {
+                  const lowerName = resumePreview.fileName.toLowerCase();
+                  const isPdf = lowerName.endsWith(".pdf");
+                  const isImage =
+                    lowerName.endsWith(".png") ||
+                    lowerName.endsWith(".jpg") ||
+                    lowerName.endsWith(".jpeg") ||
+                    lowerName.endsWith(".gif") ||
+                    lowerName.endsWith(".webp") ||
+                    lowerName.endsWith(".svg");
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
+                        <a
+                          href={resumePreview.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary text-xs underline"
                         >
+                          Open in new tab
+                        </a>
+                      </div>
+                      <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
+                        {isPdf ? (
+                          <iframe
+                            src={resumePreview.href}
+                            title={`Resume preview: ${resumePreview.fileName}`}
+                            className="h-full w-full"
+                          />
+                        ) : isImage ? (
+                          <object
+                            data={resumePreview.href}
+                            className="h-full w-full"
+                          >
+                            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                              <p className="text-sm font-medium">Image preview unavailable</p>
+                              <a
+                                href={resumePreview.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary text-xs underline"
+                              >
+                                Open resume in new tab
+                              </a>
+                            </div>
+                          </object>
+                        ) : (
                           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                            <p className="text-sm font-medium">Image preview unavailable</p>
+                            <p className="text-sm font-medium">
+                              This file type cannot be previewed inline.
+                            </p>
                             <a
                               href={resumePreview.href}
                               target="_blank"
@@ -6680,209 +6889,195 @@ export function MondayBoardView({
                               Open resume in new tab
                             </a>
                           </div>
-                        </object>
-                      ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                          <p className="text-sm font-medium">
-                            This file type cannot be previewed inline.
-                          </p>
-                          <a
-                            href={resumePreview.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary text-xs underline"
-                          >
-                            Open resume in new tab
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!sendEmailRecord}
-        onOpenChange={(open) => {
-          if (!open) closeSendEmailDialog();
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
-          <DialogHeader>
-            <DialogTitle>Send Email</DialogTitle>
-          </DialogHeader>
-          {sendEmailRecord ? (
-            <div className="space-y-4">
-              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
-                Recipient:{" "}
-                <span className="font-medium text-slate-900">
-                  {sendEmailRecord.name}
-                  {" · "}
-                  {sendEmailRecord.email ?? "No email"}
-                </span>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              {sendEmailStep === 1 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    Step 1: Choose an email template
-                  </p>
-                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {emailTemplates.map((template) => {
-                        const isActive = template.id === sendEmailTemplateId;
-                        const resolvedTemplateName = interpolateTemplateVariables(
-                          template.name,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const resolvedRenderedHtml = interpolateTemplateVariables(
-                          template.renderedHtml,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const resolvedContent = interpolateTemplateVariables(
-                          template.content,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
-                        const hasPlainContent = resolvedContent.trim().length > 0;
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            className={[
-                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
-                              isActive
-                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
-                            ].join(" ")}
-                            onClick={() => {
-                              setSendEmailTemplateId(template.id);
-                            }}
-                          >
-                            <p className="line-clamp-1 font-medium text-slate-900">
-                              {resolvedTemplateName}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Updated {formatUpdatedAt(template.updatedAt)}
-                            </p>
-                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
-                              {hasRenderedHtml ? (
-                                <div
-                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
-                                  style={{ whiteSpace: "pre-wrap" }}
-                                  dangerouslySetInnerHTML={{
-                                    __html: resolvedRenderedHtml,
-                                  }}
-                                />
-                              ) : hasPlainContent ? (
-                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
-                                  {resolvedContent}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-slate-500">No preview content.</p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">
-                        No templates found.
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={closeSendEmailDialog}>
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={() => setSendEmailStep(2)}
-                      disabled={!sendEmailTemplate}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
+            ) : null}
+          </DialogContent>
+        </Dialog>
 
-              {sendEmailStep === 2 && sendEmailTemplate ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 2: Preview template</p>
-                  <div className="rounded-md border p-4">
-                    <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                    <p className="mt-1 text-base font-medium">
-                      {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+        <Dialog
+          open={!!sendEmailRecord}
+          onOpenChange={(open) => {
+            if (!open) closeSendEmailDialog();
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
+            <DialogHeader>
+              <DialogTitle>Send Email</DialogTitle>
+            </DialogHeader>
+            {sendEmailRecord ? (
+              <div className="space-y-4">
+                <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                  Recipient:{" "}
+                  <span className="font-medium text-slate-900">
+                    {sendEmailRecord.name}
+                    {" · "}
+                    {sendEmailRecord.email ?? "No email"}
+                  </span>
+                </div>
+                {sendEmailStep === 1 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      Step 1: Choose an email template
                     </p>
-                    <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                      Email Preview (Lead View)
-                    </p>
-                    <div className="bg-card mt-2 rounded-md border p-4">
-                      {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                    <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {emailTemplates.map((template) => {
+                          const isActive = template.id === sendEmailTemplateId;
+                          const resolvedTemplateName = interpolateTemplateVariables(
+                            template.name,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const resolvedRenderedHtml = interpolateTemplateVariables(
+                            template.renderedHtml,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const resolvedContent = interpolateTemplateVariables(
+                            template.content,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                          const hasPlainContent = resolvedContent.trim().length > 0;
+                          return (
+                            <button
+                              key={template.id}
+                              type="button"
+                              className={[
+                                "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                                isActive
+                                  ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                  : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                              ].join(" ")}
+                              onClick={() => {
+                                setSendEmailTemplateId(template.id);
+                              }}
+                            >
+                              <p className="line-clamp-1 font-medium text-slate-900">
+                                {resolvedTemplateName}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Updated {formatUpdatedAt(template.updatedAt)}
+                              </p>
+                              <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                                {hasRenderedHtml ? (
+                                  <div
+                                    className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                    style={{ whiteSpace: "pre-wrap" }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: resolvedRenderedHtml,
+                                    }}
+                                  />
+                                ) : hasPlainContent ? (
+                                  <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                    {resolvedContent}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-slate-500">No preview content.</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
                         <p className="text-muted-foreground text-sm">
-                          No content found in template.
+                          No templates found.
                         </p>
-                      ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
-                        <div
-                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                          style={{ whiteSpace: "pre-wrap" }}
-                          dangerouslySetInnerHTML={{
-                            __html: sendEmailResolvedTemplate?.html ?? "",
-                          }}
-                        />
-                      ) : (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {sendEmailResolvedTemplate?.text ?? ""}
-                        </div>
-                      )}
+                      ) : null}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={closeSendEmailDialog}>
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => setSendEmailStep(2)}
+                        disabled={!sendEmailTemplate}
+                      >
+                        Next
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
-                      Back
-                    </Button>
-                    <Button onClick={() => setSendEmailStep(3)}>Next</Button>
-                  </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {sendEmailStep === 3 && sendEmailTemplate ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 3: Confirm send</p>
-                  <div className="rounded-md border p-4 text-sm">
-                    Are you sure you want to send this email?
+                {sendEmailStep === 2 && sendEmailTemplate ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Step 2: Preview template</p>
+                    <div className="rounded-md border p-4">
+                      <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                      <p className="mt-1 text-base font-medium">
+                        {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                      </p>
+                      <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                        Email Preview (Lead View)
+                      </p>
+                      <div className="bg-card mt-2 rounded-md border p-4">
+                        {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                          <p className="text-muted-foreground text-sm">
+                            No content found in template.
+                          </p>
+                        ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                          <div
+                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                            style={{ whiteSpace: "pre-wrap" }}
+                            dangerouslySetInnerHTML={{
+                              __html: sendEmailResolvedTemplate?.html ?? "",
+                            }}
+                          />
+                        ) : (
+                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                            {sendEmailResolvedTemplate?.text ?? ""}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                        Back
+                      </Button>
+                      <Button onClick={() => setSendEmailStep(3)}>Next</Button>
+                    </div>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
-                      Back
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        void handleConfirmSendEmail();
-                      }}
-                      disabled={isSendingEmail || !sendEmailRecord.email}
-                    >
-                      {isSendingEmail ? "Sending..." : "Send Email"}
-                    </Button>
+                ) : null}
+
+                {sendEmailStep === 3 && sendEmailTemplate ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Step 3: Confirm send</p>
+                    <div className="rounded-md border p-4 text-sm">
+                      Are you sure you want to send this email?
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          void handleConfirmSendEmail();
+                        }}
+                        disabled={isSendingEmail || !sendEmailRecord.email}
+                      >
+                        {isSendingEmail ? "Sending..." : "Send Email"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                ) : null}
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </div>
       {!staticMode && recordsQuery.hasNextPage ? (
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}

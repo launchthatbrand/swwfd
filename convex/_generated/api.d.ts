@@ -335,8 +335,10 @@ export declare const api: {
       {
         colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
         createdAt: number;
+        displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        pageSize?: number;
         tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }
@@ -347,16 +349,20 @@ export declare const api: {
       {
         accountId: string;
         colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        pageSize?: number;
         tableDensity?: "expanded" | "compact";
         viewerMondayUserId: string;
       },
       {
         colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
         createdAt: number;
+        displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        pageSize?: number;
         tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }

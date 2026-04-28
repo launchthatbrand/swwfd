@@ -15,12 +15,15 @@ const fontSizeValidator = v.union(
   v.literal("large"),
 );
 const tableDensityValidator = v.union(v.literal("expanded"), v.literal("compact"));
+const displayModeValidator = v.union(v.literal("table"), v.literal("grid"));
 
 const settingsValidator = v.object({
   ownerMondayUserId: v.string(),
   colorTheme: colorThemeValidator,
   fontSize: fontSizeValidator,
   tableDensity: v.optional(tableDensityValidator),
+  pageSize: v.optional(v.number()),
+  displayMode: v.optional(displayModeValidator),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -45,6 +48,8 @@ export const getForOwnerBoard = query({
       colorTheme: DEFAULT_COLOR_THEME,
       fontSize: DEFAULT_FONT_SIZE,
       tableDensity: undefined,
+      pageSize: undefined,
+      displayMode: undefined,
       createdAt: 0,
       updatedAt: 0,
     };
@@ -63,6 +68,8 @@ export const getForOwnerBoard = query({
       colorTheme: DEFAULT_COLOR_THEME,
       fontSize: DEFAULT_FONT_SIZE,
       tableDensity: undefined,
+      pageSize: undefined,
+      displayMode: undefined,
       createdAt: 0,
       updatedAt: 0,
     };
@@ -73,6 +80,8 @@ export const getForOwnerBoard = query({
     colorTheme: existing.colorTheme,
     fontSize: existing.fontSize,
     tableDensity: existing.tableDensity,
+    pageSize: existing.pageSize,
+    displayMode: existing.displayMode,
     createdAt: existing.createdAt,
     updatedAt: existing.updatedAt,
   };
@@ -87,6 +96,8 @@ export const upsertForOwnerBoard = mutation({
     colorTheme: colorThemeValidator,
     fontSize: fontSizeValidator,
     tableDensity: v.optional(tableDensityValidator),
+    pageSize: v.optional(v.number()),
+    displayMode: v.optional(displayModeValidator),
   },
   returns: settingsValidator,
   handler: async (ctx, args) => {
@@ -110,6 +121,8 @@ export const upsertForOwnerBoard = mutation({
         colorTheme: args.colorTheme,
         fontSize: args.fontSize,
         tableDensity: args.tableDensity,
+        pageSize: args.pageSize,
+        displayMode: args.displayMode,
         updatedAt: now,
         updatedByMondayUserId: viewerMondayUserId,
       });
@@ -118,6 +131,8 @@ export const upsertForOwnerBoard = mutation({
         colorTheme: args.colorTheme,
         fontSize: args.fontSize,
         tableDensity: args.tableDensity,
+        pageSize: args.pageSize,
+        displayMode: args.displayMode,
         createdAt: existing.createdAt,
         updatedAt: now,
       };
@@ -129,6 +144,8 @@ export const upsertForOwnerBoard = mutation({
       colorTheme: args.colorTheme,
       fontSize: args.fontSize,
       tableDensity: args.tableDensity,
+      pageSize: args.pageSize,
+      displayMode: args.displayMode,
       createdAt: now,
       updatedAt: now,
       updatedByMondayUserId: viewerMondayUserId,
@@ -138,6 +155,8 @@ export const upsertForOwnerBoard = mutation({
       colorTheme: args.colorTheme,
       fontSize: args.fontSize,
       tableDensity: args.tableDensity,
+      pageSize: args.pageSize,
+      displayMode: args.displayMode,
       createdAt: now,
       updatedAt: now,
     };

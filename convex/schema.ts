@@ -197,6 +197,8 @@ export default defineSchema({
     ),
     fontSize: v.union(v.literal("default"), v.literal("medium"), v.literal("large")),
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),
+    pageSize: v.optional(v.number()),
+    displayMode: v.optional(v.union(v.literal("table"), v.literal("grid"))),
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),

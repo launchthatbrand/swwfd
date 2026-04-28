@@ -10,17 +10,22 @@ export const runtime = "nodejs";
 type BoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
 type BoardFontSize = "default" | "medium" | "large";
 type BoardTableDensity = "expanded" | "compact";
+type BoardDisplayMode = "table" | "grid";
+const VALID_PAGE_SIZES = [20, 40, 100, 0] as const; // 0 = infinite scroll
 
 interface UpsertBoardSettingsBody {
   ownerId?: string;
   colorTheme?: BoardColorTheme;
   fontSize?: BoardFontSize;
   tableDensity?: BoardTableDensity;
+  pageSize?: number;
+  displayMode?: BoardDisplayMode;
 }
 
 const COLOR_THEMES: BoardColorTheme[] = ["neutral", "sky", "emerald", "violet", "rose"];
 const FONT_SIZES: BoardFontSize[] = ["default", "medium", "large"];
 const TABLE_DENSITIES: BoardTableDensity[] = ["expanded", "compact"];
+const DISPLAY_MODES: BoardDisplayMode[] = ["table", "grid"];
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
@@ -41,6 +46,14 @@ const isBoardFontSize = (value: unknown): value is BoardFontSize => {
 
 const isBoardTableDensity = (value: unknown): value is BoardTableDensity => {
   return typeof value === "string" && TABLE_DENSITIES.includes(value as BoardTableDensity);
+};
+
+const isBoardDisplayMode = (value: unknown): value is BoardDisplayMode => {
+  return typeof value === "string" && DISPLAY_MODES.includes(value as BoardDisplayMode);
+};
+
+const isValidPageSize = (value: unknown): value is number => {
+  return typeof value === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(value);
 };
 
 export const GET = async (request: Request) => {
@@ -99,6 +112,8 @@ export const POST = async (request: Request) => {
         colorTheme: body.colorTheme,
         fontSize: body.fontSize,
         tableDensity: isBoardTableDensity(body.tableDensity) ? body.tableDensity : undefined,
+        pageSize: isValidPageSize(body.pageSize) ? body.pageSize : undefined,
+        displayMode: isBoardDisplayMode(body.displayMode) ? body.displayMode : undefined,
       },
     );
     return toJson({ ok: true, settings });
