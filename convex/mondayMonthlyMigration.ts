@@ -71,6 +71,8 @@ export const getLatestJob = query({
       createdSubitemUpdates: v.number(),
       updateProgressColumns: v.optional(v.boolean()),
       updatedProgressColumns: v.optional(v.number()),
+      monthKey: v.optional(v.string()),
+      createdTouchRecords: v.optional(v.number()),
       errorsCount: v.number(),
       warningsCount: v.number(),
       startedAt: v.number(),
@@ -108,6 +110,8 @@ export const getLatestJob = query({
       createdSubitemUpdates: latest.createdSubitemUpdates,
       updateProgressColumns: latest.updateProgressColumns,
       updatedProgressColumns: latest.updatedProgressColumns,
+      monthKey: latest.monthKey,
+      createdTouchRecords: latest.createdTouchRecords,
       errorsCount: latest.errorsCount,
       warningsCount: latest.warningsCount,
       startedAt: latest.startedAt,
@@ -128,6 +132,7 @@ export const startMigration = mutation({
     includeSubitems: v.optional(v.boolean()),
     includeSubitemUpdates: v.optional(v.boolean()),
     updateProgressColumns: v.optional(v.boolean()),
+    monthKey: v.optional(v.string()),
     pageSize: v.optional(v.number()),
   },
   returns: v.object({
@@ -159,6 +164,7 @@ export const startMigration = mutation({
     const includeSubitems = args.includeSubitems ?? true;
     const includeSubitemUpdates = args.includeSubitemUpdates ?? true;
     const updateProgressColumns = args.updateProgressColumns ?? true;
+    const monthKey = args.monthKey?.trim() || undefined;
 
     const jobId = await ctx.db.insert("mondayMonthlyMigrationJobs", {
       status: "running" satisfies MigrationStatus,
@@ -172,6 +178,8 @@ export const startMigration = mutation({
       includeSubitemUpdates,
       updateProgressColumns,
       updatedProgressColumns: 0,
+      monthKey,
+      createdTouchRecords: 0,
       pageSize: clampPageSize(args.pageSize),
       currentCursor: null,
       processedContacts: 0,
@@ -253,6 +261,7 @@ export const getJobForWorkflow = internalQuery({
       includeSubitems: v.boolean(),
       includeSubitemUpdates: v.boolean(),
       updateProgressColumns: v.optional(v.boolean()),
+      monthKey: v.optional(v.string()),
       pageSize: v.number(),
       currentCursor: v.optional(v.union(v.string(), v.null())),
     }),
@@ -272,6 +281,7 @@ export const getJobForWorkflow = internalQuery({
       includeSubitems: job.includeSubitems,
       includeSubitemUpdates: job.includeSubitemUpdates,
       updateProgressColumns: job.updateProgressColumns,
+      monthKey: job.monthKey,
       pageSize: job.pageSize,
       currentCursor: job.currentCursor,
     };
@@ -452,6 +462,7 @@ export const updateJobProgress = internalMutation({
     createdSubitemsDelta: v.number(),
     createdSubitemUpdatesDelta: v.number(),
     updatedProgressColumnsDelta: v.number(),
+    createdTouchRecordsDelta: v.number(),
     errorsDelta: v.number(),
     warningsDelta: v.number(),
   },
@@ -470,6 +481,7 @@ export const updateJobProgress = internalMutation({
       createdSubitems: job.createdSubitems + args.createdSubitemsDelta,
       createdSubitemUpdates: job.createdSubitemUpdates + args.createdSubitemUpdatesDelta,
       updatedProgressColumns: (job.updatedProgressColumns ?? 0) + args.updatedProgressColumnsDelta,
+      createdTouchRecords: (job.createdTouchRecords ?? 0) + args.createdTouchRecordsDelta,
       errorsCount: job.errorsCount + args.errorsDelta,
       warningsCount: job.warningsCount + args.warningsDelta,
       updatedAt: Date.now(),
@@ -554,6 +566,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
       let createdSubitemsDelta = 0;
       let createdSubitemUpdatesDelta = 0;
       let updatedProgressColumnsDelta = 0;
+      let createdTouchRecordsDelta = 0;
       let errorsDelta = 0;
       let warningsDelta = 0;
 
@@ -580,6 +593,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
             includeSubitems: job.includeSubitems,
             includeSubitemUpdates: job.includeSubitemUpdates,
             updateProgressColumns: job.updateProgressColumns ?? false,
+            monthKey: job.monthKey ?? null,
             sourceSubitemBoardId: page.sourceSubitemBoardId ?? null,
             cachedTargetSubitemBoardId: page.targetSubitemBoardId ?? null,
             cachedSourceSubitemBoardColumns: page.sourceSubitemBoardColumns ?? [],
@@ -604,6 +618,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         createdSubitemsDelta += migrated.createdSubitems;
         createdSubitemUpdatesDelta += migrated.createdSubitemUpdates;
         updatedProgressColumnsDelta += migrated.updatedProgressColumns;
+        createdTouchRecordsDelta += migrated.createdTouchRecords ?? 0;
         errorsDelta += migrated.errors;
         warningsDelta += migrated.warnings.length;
       }
@@ -619,6 +634,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         createdSubitemsDelta,
         createdSubitemUpdatesDelta,
         updatedProgressColumnsDelta,
+        createdTouchRecordsDelta,
         errorsDelta,
         warningsDelta,
       });

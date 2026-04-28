@@ -24,6 +24,7 @@ interface Body {
   includeSubitems?: boolean;
   includeSubitemUpdates?: boolean;
   updateProgressColumns?: boolean;
+  monthKey?: string;
   pageSize?: number;
 }
 
@@ -50,6 +51,7 @@ export const POST = async (request: Request) => {
       includeSubitems: body.includeSubitems,
       includeSubitemUpdates: body.includeSubitemUpdates,
       updateProgressColumns: body.updateProgressColumns,
+      monthKey: body.monthKey,
       pageSize: body.pageSize,
     });
     return toJson({ ok: true, result });

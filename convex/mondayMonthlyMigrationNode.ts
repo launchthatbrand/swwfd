@@ -49,6 +49,7 @@ type MigrationSourceItem = {
   mainDatabaseId: string | null;
   mirrorDatabaseId: string | null;
   relationMainId: string | null;
+  ownerIds: string[];
   updates: MigrationSourceUpdate[];
   subitems: MigrationSourceSubitem[];
 };
@@ -367,7 +368,7 @@ const fetchSourcePage = async (args: {
                 value
               }
             }
-            column_values(ids: ["main_database_id", "mirror_og_id", "board_relation__1", "email_mkwk8x9h"]) {
+            column_values {
               id
               type
               text
@@ -457,6 +458,29 @@ const fetchSourcePage = async (args: {
       })
       .filter((entry): entry is MigrationSourceSubitem => Boolean(entry));
 
+    // Extract owner IDs from the first people-type column.
+    const ownerIds = (() => {
+      const peopleCol = sourceColumns.find(
+        (col) =>
+          col.type === "multiple-person" ||
+          col.type === "people" ||
+          col.id === "people__1" ||
+          col.id === "person",
+      );
+      if (!peopleCol?.value) return [] as string[];
+      try {
+        const parsed = JSON.parse(peopleCol.value) as {
+          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+        };
+        return (parsed.personsAndTeams ?? [])
+          .filter((entry) => entry.kind === "person" && entry.id != null)
+          .map((entry) => String(entry.id))
+          .filter((id) => id.trim().length > 0);
+      } catch {
+        return [] as string[];
+      }
+    })();
+
     return {
       id: String(item.id),
       name: (item.name ?? "").trim(),
@@ -473,6 +497,7 @@ const fetchSourcePage = async (args: {
       mainDatabaseId: byId.main_database_id?.text?.trim() || null,
       mirrorDatabaseId: byId.mirror_og_id?.text?.trim() || null,
       relationMainId: parseLinkedPulseId(byId.board_relation__1?.value),
+      ownerIds,
       updates: parentUpdates,
       subitems,
     } satisfies MigrationSourceItem;
@@ -551,9 +576,11 @@ const findTargetItemByEmail = async (args: {
   }
   const email = args.email.trim().toLowerCase();
   if (!email) return null;
+  // compare_value must be inlined — Monday types it as `CompareValue`, not String.
+  const safeEmail = email.replace(/[^a-zA-Z0-9@._+\-]/g, "");
   const data = await callMondayGraphQL<Data>(
     `
-      query FindTargetByEmail($boardId: ID!, $email: String!) {
+      query FindTargetByEmail($boardId: ID!) {
         boards(ids: [$boardId]) {
           items_page(
             limit: 10
@@ -561,7 +588,7 @@ const findTargetItemByEmail = async (args: {
               rules: [
                 {
                   column_id: "email__1"
-                  compare_value: [$email]
+                  compare_value: ["${safeEmail}"]
                   operator: any_of
                 }
               ]
@@ -582,10 +609,7 @@ const findTargetItemByEmail = async (args: {
         }
       }
     `,
-    {
-      boardId: args.targetBoardId,
-      email,
-    },
+    { boardId: args.targetBoardId },
   );
   const candidates = data.boards?.[0]?.items_page?.items ?? [];
   const exact = candidates.find((candidate) => {
@@ -800,6 +824,109 @@ const updateProgressColumnOnTarget = async (args: {
   );
 };
 
+// ---------------------------------------------------------------------------
+// Touch upsert helper — one row per (contact, employee, month) on touch board
+// ---------------------------------------------------------------------------
+
+const TOUCH_RELATION_COLUMN_ID_NODE = "board_relation_mm0wbvrb";
+
+const upsertTouchRecordForMigration = async (args: {
+  touchBoardId: string;
+  contactItemId: string;
+  contactName: string;
+  ownerId: string;
+  monthKey: string;
+  touchDate: string;
+}) => {
+  const touchKey = `tk:${args.contactItemId}:${args.ownerId}:${args.monthKey}`;
+
+  // Resolve touch board columns.
+  interface ColumnMeta { id?: string | null; title?: string | null; type?: string | null; }
+  interface ColumnsData { boards?: Array<{ columns?: ColumnMeta[] }>; }
+  const colsData = await callMondayGraphQL<ColumnsData>(
+    `query ResolveTouchCols($b: ID!) { boards(ids: [$b]) { columns { id title type } } }`,
+    { b: args.touchBoardId },
+  );
+  const cols = colsData.boards?.[0]?.columns ?? [];
+  const byTitle = (needle: string) =>
+    cols.find((c) => (c.title ?? "").toLowerCase().includes(needle.toLowerCase()));
+  const byType = (type: string) => cols.find((c) => (c.type ?? "").toLowerCase() === type);
+
+  const touchDateColumnId =
+    byTitle("touch date")?.id ?? byTitle("touch_date")?.id ?? byType("date")?.id ?? null;
+  const ownerIdColumnId = byTitle("owner_id")?.id ?? byTitle("owner id")?.id ?? "text_mm0wb7qt";
+  const ownerPeopleColumnId =
+    byTitle("touched by")?.id ?? byTitle("owner")?.id ?? byType("people")?.id ?? null;
+  const sourceColumnId = byTitle("source")?.id ?? null;
+
+  // Find an existing row for this contact linked via board_relation.
+  interface TouchItem { id: string; name?: string | null; }
+  interface TouchQueryData { boards?: Array<{ items_page?: { items?: TouchItem[] } }>; }
+  // compare_value must be inlined — Monday's GraphQL schema types it as
+  // `CompareValue` (not String), so passing it as a variable causes a type error.
+  const safeRelId = TOUCH_RELATION_COLUMN_ID_NODE.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeCid = args.contactItemId.replace(/[^0-9]/g, "");
+  const queryData = await callMondayGraphQL<TouchQueryData>(
+    `
+      query FindTouchRows($b: ID!) {
+        boards(ids: [$b]) {
+          items_page(
+            limit: 50
+            query_params: { rules: [{ column_id: "${safeRelId}", compare_value: ["${safeCid}"], operator: any_of }] }
+          ) { items { id name } }
+        }
+      }
+    `,
+    { b: args.touchBoardId },
+  );
+  const existingItems = queryData.boards?.[0]?.items_page?.items ?? [];
+  const existingRow = existingItems.find((item) => (item.name ?? "").includes(`[${touchKey}]`));
+
+  if (existingRow) {
+    if (touchDateColumnId) {
+      interface UpdateData { change_simple_column_value?: { id?: string | null } | null; }
+      await callMondayGraphQL<UpdateData>(
+        `
+          mutation UpdateTouchDate($b: ID!, $i: ID!, $col: String!, $val: String!) {
+            change_simple_column_value(board_id: $b, item_id: $i, column_id: $col, value: $val) { id }
+          }
+        `,
+        {
+          b: args.touchBoardId,
+          i: existingRow.id,
+          col: touchDateColumnId,
+          val: JSON.stringify({ date: args.touchDate }),
+        },
+      );
+    }
+    return { upserted: "updated" as const };
+  }
+
+  // Create a new touchpoint row.
+  const itemName = `${args.contactName} [${touchKey}]`;
+  const columnValues: Record<string, unknown> = {};
+  if (touchDateColumnId) columnValues[touchDateColumnId] = { date: args.touchDate };
+  if (ownerPeopleColumnId && /^\d+$/.test(args.ownerId)) {
+    columnValues[ownerPeopleColumnId] = {
+      personsAndTeams: [{ id: Number(args.ownerId), kind: "person" }],
+    };
+  }
+  columnValues[ownerIdColumnId] = args.ownerId;
+  columnValues[TOUCH_RELATION_COLUMN_ID_NODE] = { item_ids: [Number(args.contactItemId)] };
+  if (sourceColumnId) columnValues[sourceColumnId] = "migration";
+
+  interface CreateData { create_item?: { id?: string | null } | null; }
+  await callMondayGraphQL<CreateData>(
+    `
+      mutation CreateTouchRow($b: ID!, $name: String!, $vals: JSON!) {
+        create_item(board_id: $b, item_name: $name, column_values: $vals, create_labels_if_missing: true) { id }
+      }
+    `,
+    { b: args.touchBoardId, name: itemName, vals: JSON.stringify(columnValues) },
+  );
+  return { upserted: "created" as const };
+};
+
 const getSourceItemValidator = () =>
   v.object({
     id: v.string(),
@@ -808,6 +935,7 @@ const getSourceItemValidator = () =>
     mainDatabaseId: v.union(v.string(), v.null()),
     mirrorDatabaseId: v.union(v.string(), v.null()),
     relationMainId: v.union(v.string(), v.null()),
+    ownerIds: v.array(v.string()),
     updates: v.array(
       v.object({
         id: v.string(),
@@ -938,6 +1066,7 @@ export const migrateSourceItemAction = internalAction({
     includeSubitems: v.boolean(),
     includeSubitemUpdates: v.boolean(),
     updateProgressColumns: v.boolean(),
+    monthKey: v.optional(v.union(v.string(), v.null())),
     sourceSubitemBoardId: v.optional(v.union(v.string(), v.null())),
     cachedTargetSubitemBoardId: v.optional(v.union(v.string(), v.null())),
     cachedSourceSubitemBoardColumns: v.optional(v.array(mondayColumnValidator)),
@@ -953,6 +1082,7 @@ export const migrateSourceItemAction = internalAction({
     createdSubitems: v.number(),
     createdSubitemUpdates: v.number(),
     updatedProgressColumns: v.number(),
+    createdTouchRecords: v.number(),
     errors: v.number(),
     createdEntries: v.array(createdEntryValidator),
     warnings: v.array(v.string()),
@@ -1015,6 +1145,7 @@ export const migrateSourceItemAction = internalAction({
         createdSubitems: 0,
         createdSubitemUpdates: 0,
         updatedProgressColumns: 0,
+        createdTouchRecords: 0,
         errors: 0,
         createdEntries: [],
         warnings: [
@@ -1028,6 +1159,7 @@ export const migrateSourceItemAction = internalAction({
     let createdSubitems = 0;
     let createdSubitemUpdates = 0;
     let updatedProgressColumns = 0;
+    let createdTouchRecords = 0;
     let errors = 0;
     const progressColumnsToUpdate = new Set<string>();
 
@@ -1260,6 +1392,32 @@ export const migrateSourceItemAction = internalAction({
       }
     }
 
+    // Upsert a touchpoint record on the touch board (one per contact-employee-month).
+    // Only fires on a real run (not dryRun) when a monthKey and ownerId are available.
+    const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
+    const monthKey = args.monthKey?.trim() ?? "";
+    const primaryOwnerId = args.sourceItem.ownerIds[0] ?? "";
+    if (!args.dryRun && touchBoardId && monthKey && primaryOwnerId) {
+      const touchDate = new Date().toISOString().slice(0, 10);
+      try {
+        const result = await upsertTouchRecordForMigration({
+          touchBoardId,
+          contactItemId: targetItemId,
+          contactName: args.sourceItem.name,
+          ownerId: primaryOwnerId,
+          monthKey,
+          touchDate,
+        });
+        createdTouchRecords += 1;
+      } catch (touchErr) {
+        warnings.push(
+          `Touch upsert failed for item ${targetItemId} (non-fatal): ${
+            touchErr instanceof Error ? touchErr.message : String(touchErr)
+          }`,
+        );
+      }
+    }
+
     return {
       processedContacts: 1,
       mappedContacts: 1,
@@ -1268,6 +1426,7 @@ export const migrateSourceItemAction = internalAction({
       createdSubitems,
       createdSubitemUpdates,
       updatedProgressColumns,
+      createdTouchRecords,
       errors,
       createdEntries,
       warnings,

@@ -2,7 +2,7 @@ import "server-only";
 
 import { env } from "~/env";
 
-import { updateMondayRecordFields } from "./client";
+import { upsertMondayTouchRecord, updateMondayRecordFields } from "./client";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const ROUTING_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -798,6 +798,22 @@ export const assignMondayContactOwnerByDistrict = async (args: {
       itemId,
       ownerId,
     });
+
+    // Non-fatal: upsert a touchpoint record (one per contact-employee-month).
+    try {
+      await upsertMondayTouchRecord({
+        contactItemId: itemId,
+        contactName: contactItem.name,
+        ownerId,
+        source: "routing",
+      });
+    } catch (touchError) {
+      console.warn("[MondayDistrictRouting] touchpoint upsert failed (non-fatal)", {
+        itemId,
+        ownerId,
+        error: touchError instanceof Error ? touchError.message : String(touchError),
+      });
+    }
 
     console.info("[MondayDistrictRouting] owner assigned", {
       source: args.source,

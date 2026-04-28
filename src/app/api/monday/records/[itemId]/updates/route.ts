@@ -4,6 +4,7 @@ import {
   createMondayRecordUpdate,
   isMondayUpdateType,
   listMondayRecordUpdates,
+  upsertMondayTouchRecord,
 } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
@@ -60,8 +61,9 @@ export const POST = async (
   request: Request,
   context: { params: Promise<{ itemId: string }> },
 ) => {
+  let session: Awaited<ReturnType<typeof requireVerifiedMondaySession>>;
   try {
-    await requireVerifiedMondaySession(request);
+    session = await requireVerifiedMondaySession(request);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unauthorized Monday session";
@@ -105,6 +107,21 @@ export const POST = async (
       body: updateBody,
       updateType,
     });
+
+    // Upsert a touchpoint record for this contact-employee-month (non-fatal).
+    upsertMondayTouchRecord({
+      contactItemId: itemId,
+      contactName: itemId,
+      ownerId: session.userId,
+      source: "app-update",
+    }).catch((e: unknown) => {
+      console.warn("[MondayTouchUpsert] non-fatal error after update creation", {
+        itemId,
+        ownerId: session.userId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    });
+
     return toJson({ ok: true, update });
   } catch (error) {
     const message =

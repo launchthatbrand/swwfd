@@ -58,6 +58,8 @@ interface MonthlyMigrationJob {
   includeSubitemUpdates: boolean;
   updateProgressColumns?: boolean;
   updatedProgressColumns?: number;
+  monthKey?: string;
+  createdTouchRecords?: number;
   pageSize: number;
   currentCursor?: string | null;
   processedContacts: number;
@@ -68,6 +70,29 @@ interface MonthlyMigrationJob {
   createdSubitemUpdates: number;
   errorsCount: number;
   warningsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  lastError?: string | null;
+}
+
+interface TouchRangeBackfillJob {
+  jobId: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  workflowId?: string;
+  dateFrom: string;
+  dateTo: string;
+  dryRun: boolean;
+  contactBoardId: string;
+  touchBoardId: string;
+  pageSize: number;
+  currentCursor?: string | null;
+  processedContacts: number;
+  inRangeContacts: number;
+  createdTouches: number;
+  updatedTouches: number;
+  skippedTouches: number;
+  errorsCount: number;
   startedAt: number;
   updatedAt: number;
   finishedAt?: number | null;
@@ -101,6 +126,82 @@ export default function MondayToolsPage() {
   const [migrationIncludeSubitems, setMigrationIncludeSubitems] = useState(true);
   const [migrationIncludeSubitemUpdates, setMigrationIncludeSubitemUpdates] = useState(true);
   const [migrationUpdateProgressColumns, setMigrationUpdateProgressColumns] = useState(true);
+  const [migrationMonthKey, setMigrationMonthKey] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
+
+  // Touch range backfill state
+  const [touchRangeJob, setTouchRangeJob] = useState<TouchRangeBackfillJob | null>(null);
+  const [touchRangeDateFrom, setTouchRangeDateFrom] = useState("2026-02-01");
+  const [touchRangeDateTo, setTouchRangeDateTo] = useState(
+    () => new Date().toISOString().slice(0, 10),
+  );
+  const [touchRangePageSize, setTouchRangePageSize] = useState("50");
+  const [touchRangeDryRun, setTouchRangeDryRun] = useState(true);
+  const [startingTouchRange, setStartingTouchRange] = useState(false);
+  const [cancellingTouchRange, setCancellingTouchRange] = useState(false);
+
+  const refreshTouchRangeStatus = async () => {
+    try {
+      const response = await fetch("/api/monday/tools/touch-range-backfill/status", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        job?: TouchRangeBackfillJob | null;
+      };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to load status");
+      setTouchRangeJob(data.job ?? null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load touch range status");
+    }
+  };
+
+  const startTouchRangeBackfill = async () => {
+    setStartingTouchRange(true);
+    try {
+      const parsedPageSize = Number(touchRangePageSize);
+      const response = await fetch("/api/monday/tools/touch-range-backfill/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dateFrom: touchRangeDateFrom.trim(),
+          dateTo: touchRangeDateTo.trim(),
+          dryRun: touchRangeDryRun,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to start");
+      toast.success("Touch range backfill started");
+      await refreshTouchRangeStatus();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start touch range backfill");
+    } finally {
+      setStartingTouchRange(false);
+    }
+  };
+
+  const cancelTouchRangeBackfill = async () => {
+    setCancellingTouchRange(true);
+    try {
+      const response = await fetch("/api/monday/tools/touch-range-backfill/cancel", {
+        method: "POST",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to cancel");
+      toast.success("Touch range backfill cancelled");
+      await refreshTouchRangeStatus();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to cancel");
+    } finally {
+      setCancellingTouchRange(false);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -177,16 +278,19 @@ export default function MondayToolsPage() {
     void refresh();
     void refreshCsvStatus();
     void refreshMonthlyMigrationStatus();
+    void refreshTouchRangeStatus();
   }, []);
 
   useEffect(() => {
     const status = job?.status;
     const csvStatus = csvJob?.status;
     const monthlyStatus = monthlyJob?.status;
+    const touchRangeStatus = touchRangeJob?.status;
     if (
       status !== "running" &&
       csvStatus !== "running" &&
-      monthlyStatus !== "running"
+      monthlyStatus !== "running" &&
+      touchRangeStatus !== "running"
     ) {
       return;
     }
@@ -194,9 +298,10 @@ export default function MondayToolsPage() {
       void refresh();
       void refreshCsvStatus();
       void refreshMonthlyMigrationStatus();
+      void refreshTouchRangeStatus();
     }, 5000);
     return () => clearInterval(timer);
-  }, [job?.status, csvJob?.status, monthlyJob?.status]);
+  }, [job?.status, csvJob?.status, monthlyJob?.status, touchRangeJob?.status]);
 
   const startBackfill = async () => {
     setStarting(true);
@@ -278,6 +383,7 @@ export default function MondayToolsPage() {
           includeSubitems: migrationIncludeSubitems,
           includeSubitemUpdates: migrationIncludeSubitemUpdates,
           updateProgressColumns: migrationUpdateProgressColumns,
+          monthKey: migrationMonthKey.trim() || undefined,
           pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
         }),
       });
@@ -651,6 +757,20 @@ export default function MondayToolsPage() {
             </label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">
+                Month key (YYYY-MM):
+              </span>
+              <input
+                type="text"
+                className="w-28 rounded border px-2 py-1 text-sm"
+                placeholder="2026-04"
+                value={migrationMonthKey}
+                onChange={(event) => setMigrationMonthKey(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => void startMonthlyMigration()}
               disabled={startingMonthlyMigration}
@@ -746,6 +866,15 @@ export default function MondayToolsPage() {
                 <p>
                   <span className="font-medium">Updated Progress Columns:</span>{" "}
                   {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()}
+                </p>
+              ) : null}
+              {monthlyJob.monthKey ? (
+                <p>
+                  <span className="font-medium">Month Key:</span>{" "}
+                  {monthlyJob.monthKey}
+                  {" · "}
+                  <span className="font-medium">Touch Records:</span>{" "}
+                  {(monthlyJob.createdTouchRecords ?? 0).toLocaleString()}
                 </p>
               ) : null}
               <p>
@@ -876,6 +1005,142 @@ export default function MondayToolsPage() {
                 </p>
               ) : null}
             </div>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Touch Range Backfill</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Creates one touchpoint record per (contact, owner, month) for all contacts
+            whose Registration Date falls within the selected date range. Uses the{" "}
+            <code className="bg-muted rounded px-1 text-xs">date1__1</code> column for
+            efficient server-side filtering — no full board scan needed.
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">From:</span>
+              <input
+                type="date"
+                className="rounded border px-2 py-1 text-sm"
+                value={touchRangeDateFrom}
+                onChange={(e) => setTouchRangeDateFrom(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">To:</span>
+              <input
+                type="date"
+                className="rounded border px-2 py-1 text-sm"
+                value={touchRangeDateTo}
+                onChange={(e) => setTouchRangeDateTo(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
+                value={touchRangePageSize}
+                min={25}
+                max={200}
+                onChange={(e) => setTouchRangePageSize(e.target.value)}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={touchRangeDryRun}
+                onChange={(e) => setTouchRangeDryRun(e.target.checked)}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void startTouchRangeBackfill()}
+              disabled={startingTouchRange}
+            >
+              {startingTouchRange
+                ? "Starting..."
+                : touchRangeDryRun
+                  ? "Start Dry Run"
+                  : "Start Backfill"}
+            </Button>
+            <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
+              Refresh Status
+            </Button>
+            {touchRangeJob?.status === "running" ? (
+              <Button
+                variant="destructive"
+                onClick={() => void cancelTouchRangeBackfill()}
+                disabled={cancellingTouchRange}
+              >
+                {cancellingTouchRange ? "Cancelling..." : "Cancel"}
+              </Button>
+            ) : null}
+          </div>
+          {touchRangeJob ? (
+            <div className="space-y-1 rounded border p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Status:</span>
+                <Badge variant={getStatusBadgeVariant(touchRangeJob.status)}>
+                  {touchRangeJob.status}
+                </Badge>
+                {touchRangeJob.dryRun ? (
+                  <Badge variant="outline" className="text-muted-foreground">
+                    dry run
+                  </Badge>
+                ) : null}
+              </div>
+              <p>
+                <span className="font-medium">Range:</span>{" "}
+                {touchRangeJob.dateFrom} → {touchRangeJob.dateTo}
+              </p>
+              <p>
+                <span className="font-medium">Scanned:</span>{" "}
+                {touchRangeJob.processedContacts.toLocaleString()} contacts ·{" "}
+                <span className="font-medium">In Range:</span>{" "}
+                {touchRangeJob.inRangeContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">
+                  {touchRangeJob.dryRun ? "Would Create:" : "Created:"}
+                </span>{" "}
+                {touchRangeJob.createdTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">
+                  {touchRangeJob.dryRun ? "Would Update:" : "Updated:"}
+                </span>{" "}
+                {touchRangeJob.updatedTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">Skipped:</span>{" "}
+                {touchRangeJob.skippedTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">Errors:</span>{" "}
+                {touchRangeJob.errorsCount.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Started:</span>{" "}
+                {new Date(touchRangeJob.startedAt).toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Updated:</span>{" "}
+                {new Date(touchRangeJob.updatedAt).toLocaleString()}
+              </p>
+              {touchRangeJob.finishedAt ? (
+                <p>
+                  <span className="font-medium">Finished:</span>{" "}
+                  {new Date(touchRangeJob.finishedAt).toLocaleString()}
+                </p>
+              ) : null}
+              {touchRangeJob.lastError ? (
+                <p className="text-destructive">
+                  <span className="font-medium">Last Error:</span> {touchRangeJob.lastError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">No touch range backfill job found.</p>
           )}
         </CardContent>
       </Card>

@@ -1815,8 +1815,7 @@ export function MondayBoardView({
   const useUserRecordsEndpoint =
     isTouchScopedView &&
     isMondayEmbeddedContext &&
-    !canOverrideUserScopeOwner &&
-    !hasForcedOwnerScope;
+    !canOverrideUserScopeOwner;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";

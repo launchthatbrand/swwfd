@@ -2600,6 +2600,202 @@ export const listMondayRecordUpdates = async (args: {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Touch board column cache & helper
+// ---------------------------------------------------------------------------
+
+const touchBoardColumnCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    touchDateColumnId: string | null;
+    ownerIdColumnId: string;
+    ownerPeopleColumnId: string | null;
+    sourceColumnId: string | null;
+    relationColumnId: string;
+  }
+>();
+
+const TOUCH_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
+
+const resolveTouchBoardColumns = async (boardId: string) => {
+  const cached = touchBoardColumnCache.get(boardId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+
+  interface ColumnMeta {
+    id?: string | null;
+    title?: string | null;
+    type?: string | null;
+  }
+  interface ColumnsData {
+    boards?: Array<{ columns?: ColumnMeta[] }>;
+  }
+  const data = await callMondayGraphQL<ColumnsData>(
+    `
+      query ResolveTouchBoardColumns($boardId: ID!) {
+        boards(ids: [$boardId]) { columns { id title type } }
+      }
+    `,
+    { boardId },
+  );
+  const cols = data.boards?.[0]?.columns ?? [];
+  const byTitle = (needle: string) =>
+    cols.find((c) => (c.title ?? "").toLowerCase().includes(needle.toLowerCase()));
+  const byType = (type: string) =>
+    cols.find((c) => (c.type ?? "").toLowerCase() === type);
+
+  const resolved = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    touchDateColumnId:
+      byTitle("touch date")?.id ?? byTitle("touch_date")?.id ?? byType("date")?.id ?? null,
+    ownerIdColumnId: byTitle("owner_id")?.id ?? byTitle("owner id")?.id ?? "text_mm0wb7qt",
+    ownerPeopleColumnId:
+      byTitle("touched by")?.id ?? byTitle("owner")?.id ?? byType("people")?.id ?? null,
+    sourceColumnId: byTitle("source")?.id ?? null,
+    relationColumnId: TOUCH_RELATION_COLUMN_ID,
+  };
+  touchBoardColumnCache.set(boardId, resolved);
+  return resolved;
+};
+
+// ---------------------------------------------------------------------------
+// upsertMondayTouchRecord — one row per (contact, employee, month)
+// ---------------------------------------------------------------------------
+
+export const upsertMondayTouchRecord = async (args: {
+  contactItemId: string;
+  contactName: string;
+  ownerId: string;
+  /** "YYYY-MM" — defaults to current calendar month */
+  monthKey?: string;
+  source?: string;
+}): Promise<{ id: string | null; upserted: "created" | "updated" | "skipped" }> => {
+  const touchBoard = getMondayTouchBoardEnv();
+  if (!touchBoard.ok) {
+    throw new Error("Missing Monday touch board configuration (MONDAY_CONTACT_TOUCHED_BOARD_ID)");
+  }
+
+  const monthKey = args.monthKey ?? new Date().toISOString().slice(0, 7);
+  const touchKey = `tk:${args.contactItemId}:${args.ownerId}:${monthKey}`;
+  const touchKeySuffix = ` [${touchKey}]`;
+
+  const cols = await resolveTouchBoardColumns(touchBoard.boardId);
+
+  // Query touch board — filter server-side by the board_relation column so we
+  // only scan rows linked to this specific contact (typically 0-10 rows).
+  interface TouchItem {
+    id: string;
+    name?: string | null;
+  }
+  interface TouchQueryData {
+    boards?: Array<{
+      items_page?: { items?: TouchItem[] };
+    }>;
+  }
+
+  // compare_value must be inlined — Monday's GraphQL schema types it as
+  // `CompareValue` (not String), so passing it as a variable causes a type error.
+  const safeRelationId = cols.relationColumnId.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeContactId = contactItemId.replace(/[^0-9]/g, "");
+  const queryData = await callMondayGraphQL<TouchQueryData>(
+    `
+      query FindTouchRowsByContact($boardId: ID!, $limit: Int!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: $limit
+            query_params: {
+              rules: [{
+                column_id: "${safeRelationId}"
+                compare_value: ["${safeContactId}"]
+                operator: any_of
+              }]
+            }
+          ) {
+            items { id name }
+          }
+        }
+      }
+    `,
+    { boardId: touchBoard.boardId, limit: 50 },
+  );
+
+  const existingItems = queryData.boards?.[0]?.items_page?.items ?? [];
+  const existingRow = existingItems.find((item) =>
+    (item.name ?? "").includes(`[${touchKey}]`),
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (existingRow) {
+    // Row already exists — just bump the touch date.
+    if (cols.touchDateColumnId) {
+      interface UpdateDateData {
+        change_simple_column_value?: { id?: string | null } | null;
+      }
+      await callMondayGraphQL<UpdateDateData>(
+        `
+          mutation UpdateTouchDate($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
+            change_simple_column_value(
+              board_id: $boardId
+              item_id: $itemId
+              column_id: $columnId
+              value: $value
+            ) { id }
+          }
+        `,
+        {
+          boardId: touchBoard.boardId,
+          itemId: existingRow.id,
+          columnId: cols.touchDateColumnId,
+          value: JSON.stringify({ date: today }),
+        },
+      );
+    }
+    return { id: existingRow.id, upserted: "updated" };
+  }
+
+  // No existing row — create a new one.
+  const itemName = `${args.contactName}${touchKeySuffix}`;
+  const columnValues: Record<string, unknown> = {};
+
+  if (cols.touchDateColumnId) {
+    columnValues[cols.touchDateColumnId] = { date: today };
+  }
+  if (cols.ownerPeopleColumnId && /^\d+$/.test(args.ownerId)) {
+    columnValues[cols.ownerPeopleColumnId] = {
+      personsAndTeams: [{ id: Number(args.ownerId), kind: "person" }],
+    };
+  }
+  columnValues[cols.ownerIdColumnId] = args.ownerId;
+  columnValues[cols.relationColumnId] = { item_ids: [Number(args.contactItemId)] };
+  if (cols.sourceColumnId && args.source) {
+    columnValues[cols.sourceColumnId] = args.source;
+  }
+
+  interface CreateData {
+    create_item?: { id?: string | null } | null;
+  }
+  const result = await callMondayGraphQL<CreateData>(
+    `
+      mutation CreateTouchRecord($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_item(
+          board_id: $boardId
+          item_name: $itemName
+          column_values: $columnValues
+          create_labels_if_missing: true
+        ) { id }
+      }
+    `,
+    {
+      boardId: touchBoard.boardId,
+      itemName,
+      columnValues: JSON.stringify(columnValues),
+    },
+  );
+
+  return { id: result.create_item?.id?.trim() ?? null, upserted: "created" };
+};
+
 export const createMondayRecordUpdate = async (args: {
   itemId: string;
   body: string;

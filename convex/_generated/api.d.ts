@@ -143,6 +143,7 @@ export declare const api: {
         createdParentUpdates: number;
         createdSubitemUpdates: number;
         createdSubitems: number;
+        createdTouchRecords?: number;
         currentCursor?: string | null;
         dryRun: boolean;
         errorsCount: number;
@@ -153,6 +154,7 @@ export declare const api: {
         jobId: Id<"mondayMonthlyMigrationJobs">;
         lastError?: string | null;
         mappedContacts: number;
+        monthKey?: string;
         monthTag: string;
         pageSize: number;
         processedContacts: number;
@@ -177,6 +179,7 @@ export declare const api: {
         includeParentUpdates?: boolean;
         includeSubitemUpdates?: boolean;
         includeSubitems?: boolean;
+        monthKey?: string;
         monthTag?: string;
         pageSize?: number;
         sourceBoardId: string;
@@ -281,6 +284,47 @@ export declare const api: {
       "public",
       { baselineDate?: string; pageSize?: number; sourceTag?: string },
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
+    >;
+  };
+  mondayTouchRangeBackfill: {
+    cancelRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayTouchRangeBackfillJobs"> },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        contactBoardId: string;
+        createdTouches: number;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        inRangeContacts: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        pageSize: number;
+        processedContacts: number;
+        skippedTouches: number;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+        updatedAt: number;
+        updatedTouches: number;
+        workflowId?: string;
+      }
+    >;
+    startRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { dateFrom: string; dateTo: string; dryRun?: boolean; pageSize?: number },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; workflowId: string }
     >;
   };
   mondayUserBoardSettings: {
@@ -586,6 +630,7 @@ export declare const internal: {
         includeParentUpdates: boolean;
         includeSubitemUpdates: boolean;
         includeSubitems: boolean;
+        monthKey?: string;
         monthTag: string;
         pageSize: number;
         sourceBoardId: string;
@@ -624,6 +669,7 @@ export declare const internal: {
         createdParentUpdatesDelta: number;
         createdSubitemUpdatesDelta: number;
         createdSubitemsDelta: number;
+        createdTouchRecordsDelta: number;
         errorsDelta: number;
         jobId: Id<"mondayMonthlyMigrationJobs">;
         mappedContactsDelta: number;
@@ -654,6 +700,7 @@ export declare const internal: {
           mainDatabaseId: string | null;
           mirrorDatabaseId: string | null;
           name: string;
+          ownerIds: Array<string>;
           relationMainId: string | null;
           subitems: Array<{
             columnValues: Array<{
@@ -728,6 +775,7 @@ export declare const internal: {
         includeParentUpdates: boolean;
         includeSubitemUpdates: boolean;
         includeSubitems: boolean;
+        monthKey?: string | null;
         monthTag: string;
         sourceBoardId: string;
         sourceBoardName: string | null;
@@ -737,6 +785,7 @@ export declare const internal: {
           mainDatabaseId: string | null;
           mirrorDatabaseId: string | null;
           name: string;
+          ownerIds: Array<string>;
           relationMainId: string | null;
           subitems: Array<{
             columnValues: Array<{
@@ -778,6 +827,7 @@ export declare const internal: {
         createdParentUpdates: number;
         createdSubitemUpdates: number;
         createdSubitems: number;
+        createdTouchRecords: number;
         errors: number;
         mappedContacts: number;
         processedContacts: number;
@@ -920,6 +970,74 @@ export declare const internal: {
         deduped: number;
         errors: number;
         skipped: number;
+      }
+    >;
+  };
+  mondayTouchRangeBackfill: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayTouchRangeBackfillJobs"> },
+      null | {
+        _id: Id<"mondayTouchRangeBackfillJobs">;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        pageSize: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdTouchesDelta: number;
+        errorsDelta: number;
+        inRangeContactsDelta: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedTouchesDelta: number;
+        updatedTouchesDelta: number;
+      },
+      null
+    >;
+  };
+  mondayTouchRangeBackfillNode: {
+    fetchAndUpsertPageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        boardId: string;
+        cursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun?: boolean;
+        pageSize: number;
+        touchBoardId: string;
+      },
+      {
+        createdTouches: number;
+        errors: number;
+        inRangeContacts: number;
+        nextCursor: string | null;
+        processedContacts: number;
+        skippedTouches: number;
+        updatedTouches: number;
       }
     >;
   };

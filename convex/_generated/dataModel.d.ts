@@ -296,6 +296,7 @@ export type DataModel = {
       createdParentUpdates: number;
       createdSubitemUpdates: number;
       createdSubitems: number;
+      createdTouchRecords?: number;
       currentCursor?: string | null;
       dryRun: boolean;
       errorsCount: number;
@@ -305,6 +306,7 @@ export type DataModel = {
       includeSubitems: boolean;
       lastError?: string | null;
       mappedContacts: number;
+      monthKey?: string;
       monthTag: string;
       pageSize: number;
       processedContacts: number;
@@ -328,6 +330,7 @@ export type DataModel = {
       | "createdParentUpdates"
       | "createdSubitems"
       | "createdSubitemUpdates"
+      | "createdTouchRecords"
       | "currentCursor"
       | "dryRun"
       | "errorsCount"
@@ -337,6 +340,7 @@ export type DataModel = {
       | "includeSubitemUpdates"
       | "lastError"
       | "mappedContacts"
+      | "monthKey"
       | "monthTag"
       | "pageSize"
       | "processedContacts"
@@ -468,6 +472,61 @@ export type DataModel = {
       | "startedAt"
       | "status"
       | "updatedAt"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayTouchRangeBackfillJobs: {
+    document: {
+      contactBoardId: string;
+      createdTouches: number;
+      currentCursor?: string | null;
+      dateFrom: string;
+      dateTo: string;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      inRangeContacts: number;
+      lastError?: string | null;
+      pageSize: number;
+      processedContacts: number;
+      skippedTouches: number;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      touchBoardId: string;
+      updatedAt: number;
+      updatedTouches: number;
+      workflowId?: string;
+      _id: Id<"mondayTouchRangeBackfillJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactBoardId"
+      | "createdTouches"
+      | "currentCursor"
+      | "dateFrom"
+      | "dateTo"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "inRangeContacts"
+      | "lastError"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedTouches"
+      | "startedAt"
+      | "status"
+      | "touchBoardId"
+      | "updatedAt"
+      | "updatedTouches"
       | "workflowId";
     indexes: {
       by_id: ["_id"];
