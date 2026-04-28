@@ -1154,9 +1154,11 @@ const ApprovalProgressIndicator = (props: {
               );
             })}
           </div>
-          <p className="text-muted-foreground font-mono text-[10px] leading-tight break-all">
-            raw: {props.rawProgressValue ?? "null"}
-          </p>
+          {props.rawProgressValue != null && (
+            <p className="text-muted-foreground font-mono text-[10px] leading-tight break-all">
+              raw: {props.rawProgressValue}
+            </p>
+          )}
         </div>
       </PopoverTrigger>
       <PopoverContent

@@ -174,34 +174,134 @@ const parseBatteryProgressValue = (
     return Math.max(0, Math.min(100, Math.round(parsed)));
   };
 
-  if (!rawValue || rawValue.trim().length === 0) return null;
-  try {
-    const parsed = JSON.parse(rawValue) as {
-      battery_value?: number | string | null;
-      value?: number | string | null;
-      text?: string | null;
-    };
-    if (
-      typeof parsed.battery_value === "number" ||
-      typeof parsed.battery_value === "string"
-    ) {
-      return parseNumber(String(parsed.battery_value));
+  if (rawValue && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        battery_value?: number | string | null;
+        value?: number | string | null;
+        text?: string | null;
+      };
+      if (
+        typeof parsed.battery_value === "number" ||
+        typeof parsed.battery_value === "string"
+      ) {
+        return parseNumber(String(parsed.battery_value));
+      }
+      if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+        return parseNumber(String(parsed.value));
+      }
+      if (typeof parsed.text === "string") {
+        return parseNumber(parsed.text);
+      }
+    } catch {
+      // Fall back to text parsing below.
     }
-    if (typeof parsed.value === "number" || typeof parsed.value === "string") {
-      return parseNumber(String(parsed.value));
-    }
-    if (typeof parsed.text === "string") {
-      return parseNumber(parsed.text);
-    }
-    const fromTextInRaw = typeof parsed.text === "string" ? parseNumber(parsed.text) : null;
-    if (fromTextInRaw !== null) return fromTextInRaw;
-  } catch {
-    // Fall back to text parsing below.
   }
 
   const fromText = text?.trim() ? parseNumber(text) : null;
   if (fromText !== null) return fromText;
   return null;
+};
+
+type ProgressColumnConfig = {
+  columnId: string;
+  selectedColumns: Array<{
+    columnId: string;
+    percentage: number;
+    doneColors: number[];
+  }>;
+};
+
+const computeProgressFromColumns = (
+  itemColumns: Array<{ id?: string | null; value?: string | null }>,
+  config: ProgressColumnConfig | null,
+): number | null => {
+  if (!config || config.selectedColumns.length === 0) return null;
+  let total = 0;
+  let anyColumnFound = false;
+  for (const { columnId, percentage, doneColors } of config.selectedColumns) {
+    const col = itemColumns.find((c) => c.id === columnId);
+    if (!col) continue;
+    anyColumnFound = true;
+    if (col.value) {
+      try {
+        const parsed = JSON.parse(col.value) as { index?: number | null };
+        if (typeof parsed.index === "number" && doneColors.includes(parsed.index)) {
+          total += percentage;
+        }
+      } catch {
+        // Column not done.
+      }
+    }
+  }
+  return anyColumnFound ? total : null;
+};
+
+const resolveContactBoardProgressConfig = async (
+  boardId: string,
+): Promise<ProgressColumnConfig | null> => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        type?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `
+      query ResolveBoardColumnsForProgress($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns {
+            id
+            type
+            settings_str
+          }
+        }
+      }
+    `,
+    { boardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const progressColumn = columns.find(
+    (c) => c?.id === "columns_battery_mm1dnmq3" || c?.type === "progress",
+  );
+  if (!progressColumn?.settings_str) return null;
+  try {
+    const settings = JSON.parse(progressColumn.settings_str) as {
+      related_columns?: {
+        columns?: Record<string, { isSelected?: boolean; percentage?: number }>;
+      };
+    };
+    const relatedCols = settings.related_columns?.columns ?? {};
+    const selectedColumns = Object.entries(relatedCols)
+      .filter(([, v]) => v.isSelected === true)
+      .map(([colId, v]) => {
+        const colMeta = columns.find((c) => c?.id === colId);
+        let doneColors: number[] = [1];
+        if (colMeta?.settings_str) {
+          try {
+            const colSettings = JSON.parse(colMeta.settings_str) as {
+              done_colors?: number[];
+            };
+            if (Array.isArray(colSettings.done_colors)) {
+              doneColors = colSettings.done_colors;
+            }
+          } catch {
+            // Use default doneColors.
+          }
+        }
+        return { columnId: colId, percentage: v.percentage ?? 0, doneColors };
+      });
+    if (selectedColumns.length === 0) return null;
+    return {
+      columnId: progressColumn.id ?? "columns_battery_mm1dnmq3",
+      selectedColumns,
+    };
+  } catch {
+    return null;
+  }
 };
 
 const extractPrimitiveStrings = (input: unknown): string[] => {
@@ -427,35 +527,37 @@ const fetchContactRecordsByIds = async (args: {
     chunks.push(ids.slice(index, index + MONDAY_ITEMS_BY_IDS_CHUNK_SIZE));
   }
 
-  const items: MondayBoardItem[] = [];
-  for (const chunk of chunks) {
-    interface Data {
-      items?: MondayBoardItem[];
-    }
-    const data = await callMondayGraphQL<Data>(
-      `
-        query ContactsByIds($itemIds: [ID!]) {
-          items(ids: $itemIds) {
-            id
-            name
-            url
-            updated_at
-            group {
-              title
-            }
-            column_values {
+  const [progressConfig, ...itemChunks] = await Promise.all([
+    resolveContactBoardProgressConfig(args.boardId),
+    ...chunks.map((chunk) => {
+      interface Data {
+        items?: MondayBoardItem[];
+      }
+      return callMondayGraphQL<Data>(
+        `
+          query ContactsByIds($itemIds: [ID!]) {
+            items(ids: $itemIds) {
               id
-              type
-              text
-              value
+              name
+              url
+              updated_at
+              group {
+                title
+              }
+              column_values {
+                id
+                type
+                text
+                value
+              }
             }
           }
-        }
-      `,
-      { itemIds: chunk },
-    );
-    items.push(...(data.items ?? []));
-  }
+        `,
+        { itemIds: chunk },
+      ).then((data) => data.items ?? []);
+    }),
+  ]);
+  const items: MondayBoardItem[] = (itemChunks as MondayBoardItem[][]).flat();
 
   const batteryDebugEntries: {
     contactItemId: string;
@@ -482,11 +584,12 @@ const fetchContactRecordsByIds = async (args: {
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
     const tagsColumn = byId("dropdown_mkvw578t");
-    const batteryColumn = byId("columns_battery_mm1dnmq3") ?? byType("battery");
-    const parsedBatteryProgress = parseBatteryProgressValue(
-      batteryColumn?.text,
-      batteryColumn?.value,
-    );
+    const batteryColumn =
+      byId("columns_battery_mm1dnmq3") ?? byType("progress") ?? byType("battery");
+    const computedProgress = computeProgressFromColumns(columns, progressConfig);
+    const parsedBatteryProgress =
+      computedProgress ??
+      parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
     batteryDebugEntries.push({
       contactItemId: item.id,
       contactName: item.name ?? "",

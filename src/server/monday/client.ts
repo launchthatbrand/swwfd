@@ -217,6 +217,15 @@ const callMondayGraphQL = async <TData>(
 
 const BOARD_COLUMN_CACHE_TTL_MS = 5 * 60 * 1000;
 const MONDAY_USER_CACHE_TTL_MS = 5 * 60 * 1000;
+type ProgressColumnConfig = {
+  columnId: string;
+  selectedColumns: Array<{
+    columnId: string;
+    percentage: number;
+    doneColors: number[];
+  }>;
+};
+
 const boardColumnCache = new Map<
   string,
   {
@@ -225,6 +234,7 @@ const boardColumnCache = new Map<
     peopleColumnId: string | null;
     dateColumnId: string | null;
     columnTitleById: Record<string, string>;
+    progressColumnConfig: ProgressColumnConfig | null;
   }
 >();
 const mondayUserCache = new Map<
@@ -336,6 +346,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
         id?: string | null;
         title?: string | null;
         type?: string | null;
+        settings_str?: string | null;
       }>;
     }>;
   }
@@ -347,6 +358,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
           id
           title
           type
+          settings_str
         }
       }
     }
@@ -370,12 +382,57 @@ const resolveBoardColumnIds = async (boardId: string) => {
     columnTitleById[id] = title;
   }
 
+  // Parse the progress (battery) column config so we can compute it from
+  // constituent status columns, since the API always returns value: null.
+  let progressColumnConfig: ProgressColumnConfig | null = null;
+  const progressColumn = columns.find(
+    (c) => c?.id === "columns_battery_mm1dnmq3" || c?.type === "progress",
+  );
+  if (progressColumn?.settings_str) {
+    try {
+      const settings = JSON.parse(progressColumn.settings_str) as {
+        related_columns?: {
+          columns?: Record<string, { isSelected?: boolean; percentage?: number }>;
+        };
+      };
+      const relatedCols = settings.related_columns?.columns ?? {};
+      const selectedColumns = Object.entries(relatedCols)
+        .filter(([, v]) => v.isSelected === true)
+        .map(([colId, v]) => {
+          const colMeta = columns.find((c) => c?.id === colId);
+          let doneColors: number[] = [1];
+          if (colMeta?.settings_str) {
+            try {
+              const colSettings = JSON.parse(colMeta.settings_str) as {
+                done_colors?: number[];
+              };
+              if (Array.isArray(colSettings.done_colors)) {
+                doneColors = colSettings.done_colors;
+              }
+            } catch {
+              // Use default doneColors.
+            }
+          }
+          return { columnId: colId, percentage: v.percentage ?? 0, doneColors };
+        });
+      if (selectedColumns.length > 0) {
+        progressColumnConfig = {
+          columnId: progressColumn.id ?? "columns_battery_mm1dnmq3",
+          selectedColumns,
+        };
+      }
+    } catch {
+      // progressColumnConfig stays null; fall back to text/value parsing.
+    }
+  }
+
   const resolved = {
     expiresAt: now + BOARD_COLUMN_CACHE_TTL_MS,
     statusColumnId,
     peopleColumnId,
     dateColumnId,
     columnTitleById,
+    progressColumnConfig,
   };
   boardColumnCache.set(boardId, resolved);
   return resolved;
@@ -472,6 +529,31 @@ const parseFilesColumnValue = (
   }
 };
 
+const computeProgressFromColumns = (
+  itemColumns: Array<{ id?: string | null; value?: string | null }>,
+  config: ProgressColumnConfig | null,
+): number | null => {
+  if (!config || config.selectedColumns.length === 0) return null;
+  let total = 0;
+  let anyColumnFound = false;
+  for (const { columnId, percentage, doneColors } of config.selectedColumns) {
+    const col = itemColumns.find((c) => c.id === columnId);
+    if (!col) continue;
+    anyColumnFound = true;
+    if (col.value) {
+      try {
+        const parsed = JSON.parse(col.value) as { index?: number | null };
+        if (typeof parsed.index === "number" && doneColors.includes(parsed.index)) {
+          total += percentage;
+        }
+      } catch {
+        // Column not done.
+      }
+    }
+  }
+  return anyColumnFound ? total : null;
+};
+
 const parseBatteryProgressValue = (
   text: string | null | undefined,
   rawValue: string | null | undefined,
@@ -484,29 +566,28 @@ const parseBatteryProgressValue = (
     return Math.max(0, Math.min(100, Math.round(parsed)));
   };
 
-  if (!rawValue || rawValue.trim().length === 0) return null;
-  try {
-    const parsed = JSON.parse(rawValue) as {
-      battery_value?: number | string | null;
-      value?: number | string | null;
-      text?: string | null;
-    };
-    if (
-      typeof parsed.battery_value === "number" ||
-      typeof parsed.battery_value === "string"
-    ) {
-      return parseNumber(String(parsed.battery_value));
+  if (rawValue && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        battery_value?: number | string | null;
+        value?: number | string | null;
+        text?: string | null;
+      };
+      if (
+        typeof parsed.battery_value === "number" ||
+        typeof parsed.battery_value === "string"
+      ) {
+        return parseNumber(String(parsed.battery_value));
+      }
+      if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+        return parseNumber(String(parsed.value));
+      }
+      if (typeof parsed.text === "string") {
+        return parseNumber(parsed.text);
+      }
+    } catch {
+      // Fall back to text parsing below.
     }
-    if (typeof parsed.value === "number" || typeof parsed.value === "string") {
-      return parseNumber(String(parsed.value));
-    }
-    if (typeof parsed.text === "string") {
-      return parseNumber(parsed.text);
-    }
-    const fromTextInRaw = typeof parsed.text === "string" ? parseNumber(parsed.text) : null;
-    if (fromTextInRaw !== null) return fromTextInRaw;
-  } catch {
-    // Fall back to text parsing below.
   }
 
   const fromText = text?.trim() ? parseNumber(text) : null;
@@ -684,12 +765,15 @@ export const listMondayBoardRecords = async (args?: {
     const tagsColumn = columns.find((column) => column.id === "dropdown_mkvw578t");
     const batteryColumn = columns.find(
       (column) =>
-        column.id === "columns_battery_mm1dnmq3" || (column.type ?? "").toLowerCase() === "battery",
+        column.id === "columns_battery_mm1dnmq3" || (column.type ?? "").toLowerCase() === "progress",
     );
-    const parsedBatteryProgress = parseBatteryProgressValue(
-      batteryColumn?.text,
-      batteryColumn?.value,
+    const computedProgress = computeProgressFromColumns(
+      columns,
+      resolvedColumnIds?.progressColumnConfig ?? null,
     );
+    const parsedBatteryProgress =
+      computedProgress ??
+      parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
     batteryDebugEntries.push({
       itemId: item.id,
       itemName: item.name ?? "",
