@@ -23,6 +23,7 @@ interface Body {
   includeParentUpdates?: boolean;
   includeSubitems?: boolean;
   includeSubitemUpdates?: boolean;
+  updateProgressColumns?: boolean;
   pageSize?: number;
 }
 
@@ -48,6 +49,7 @@ export const POST = async (request: Request) => {
       includeParentUpdates: body.includeParentUpdates,
       includeSubitems: body.includeSubitems,
       includeSubitemUpdates: body.includeSubitemUpdates,
+      updateProgressColumns: body.updateProgressColumns,
       pageSize: body.pageSize,
     });
     return toJson({ ok: true, result });

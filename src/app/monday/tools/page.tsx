@@ -56,6 +56,8 @@ interface MonthlyMigrationJob {
   includeParentUpdates: boolean;
   includeSubitems: boolean;
   includeSubitemUpdates: boolean;
+  updateProgressColumns?: boolean;
+  updatedProgressColumns?: number;
   pageSize: number;
   currentCursor?: string | null;
   processedContacts: number;
@@ -98,6 +100,7 @@ export default function MondayToolsPage() {
   const [migrationIncludeParentUpdates, setMigrationIncludeParentUpdates] = useState(true);
   const [migrationIncludeSubitems, setMigrationIncludeSubitems] = useState(true);
   const [migrationIncludeSubitemUpdates, setMigrationIncludeSubitemUpdates] = useState(true);
+  const [migrationUpdateProgressColumns, setMigrationUpdateProgressColumns] = useState(true);
 
   const refresh = async () => {
     setLoading(true);
@@ -274,6 +277,7 @@ export default function MondayToolsPage() {
           includeParentUpdates: migrationIncludeParentUpdates,
           includeSubitems: migrationIncludeSubitems,
           includeSubitemUpdates: migrationIncludeSubitemUpdates,
+          updateProgressColumns: migrationUpdateProgressColumns,
           pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
         }),
       });
@@ -635,6 +639,16 @@ export default function MondayToolsPage() {
               />
               Include subitem updates
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationUpdateProgressColumns}
+                onChange={(event) =>
+                  setMigrationUpdateProgressColumns(event.target.checked)
+                }
+              />
+              Update progress columns
+            </label>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -728,6 +742,12 @@ export default function MondayToolsPage() {
                 <span className="font-medium">Created Subitem Updates:</span>{" "}
                 {monthlyJob.createdSubitemUpdates.toLocaleString()}
               </p>
+              {monthlyJob.updateProgressColumns ? (
+                <p>
+                  <span className="font-medium">Updated Progress Columns:</span>{" "}
+                  {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()}
+                </p>
+              ) : null}
               <p>
                 <span className="font-medium">Warnings / Errors:</span>{" "}
                 {monthlyJob.warningsCount.toLocaleString()} /{" "}

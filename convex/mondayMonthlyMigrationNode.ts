@@ -754,6 +754,52 @@ const createUpdateOnTarget = async (args: { itemId: string; body: string }) => {
   return updateId;
 };
 
+const ONBOARDING_STEP_COLUMN_MAP: Array<{
+  patterns: string[];
+  columnId: string;
+}> = [
+  { patterns: ["welcome email"], columnId: "color_mm1db321" },
+  { patterns: ["phone screen"], columnId: "color_mm1dwr4k" },
+  { patterns: ["program lead", "pl contact"], columnId: "color_mm1dwtvd" },
+  { patterns: ["referred", "resume referral"], columnId: "color_mm1dnr11" },
+  { patterns: ["interview"], columnId: "color_mm1dgeqy" },
+  { patterns: ["hired"], columnId: "color_mm1d80yc" },
+  { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },
+];
+
+const classifySubitemForProgressColumn = (name: string): string | null => {
+  const normalized = normalizeText(name);
+  for (const rule of ONBOARDING_STEP_COLUMN_MAP) {
+    if (rule.patterns.some((p) => normalized.includes(p))) return rule.columnId;
+  }
+  return null;
+};
+
+const updateProgressColumnOnTarget = async (args: {
+  boardId: string;
+  itemId: string;
+  columnId: string;
+}) => {
+  interface Data {
+    change_simple_column_value?: { id?: string | null };
+  }
+  await callMondayGraphQL<Data>(
+    `
+      mutation UpdateProgressColumn($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
+        change_simple_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) {
+          id
+        }
+      }
+    `,
+    {
+      boardId: args.boardId,
+      itemId: args.itemId,
+      columnId: args.columnId,
+      value: "Done",
+    },
+  );
+};
+
 const getSourceItemValidator = () =>
   v.object({
     id: v.string(),
@@ -820,30 +866,61 @@ const createdEntryValidator = v.object({
   targetEntityId: v.union(v.string(), v.null()),
 });
 
+const mondayColumnValidator = v.object({
+  id: v.optional(v.union(v.string(), v.null())),
+  title: v.optional(v.union(v.string(), v.null())),
+  type: v.optional(v.union(v.string(), v.null())),
+  settings_str: v.optional(v.union(v.string(), v.null())),
+});
+
 export const fetchSourcePageAction = internalAction({
   args: {
     sourceBoardId: v.string(),
+    targetBoardId: v.string(),
     cursor: v.optional(v.union(v.string(), v.null())),
     pageSize: v.number(),
   },
   returns: v.object({
     sourceBoardName: v.union(v.string(), v.null()),
     sourceSubitemBoardId: v.union(v.string(), v.null()),
+    targetSubitemBoardId: v.union(v.string(), v.null()),
+    sourceSubitemBoardColumns: v.array(mondayColumnValidator),
+    targetSubitemBoardColumns: v.array(mondayColumnValidator),
     nextCursor: v.union(v.string(), v.null()),
     items: v.array(getSourceItemValidator()),
   }),
   handler: async (_ctx, args) => {
-    const page = await fetchSourcePage({
-      sourceBoardId: args.sourceBoardId,
-      cursor: args.cursor ?? null,
-      pageSize: args.pageSize,
-    });
-    const sourceBoardColumns = await fetchBoardColumns(args.sourceBoardId);
-    const sourceSubitemsColumn = getSubtasksColumn(sourceBoardColumns.columns);
-    const sourceSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(sourceSubitemsColumn);
+    // Fetch source page and both main-board columns in parallel.
+    const [page, sourceBoardColumns, targetBoardColumns] = await Promise.all([
+      fetchSourcePage({
+        sourceBoardId: args.sourceBoardId,
+        cursor: args.cursor ?? null,
+        pageSize: args.pageSize,
+      }),
+      fetchBoardColumns(args.sourceBoardId),
+      fetchBoardColumns(args.targetBoardId),
+    ]);
+
+    const sourceSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(
+      getSubtasksColumn(sourceBoardColumns.columns),
+    );
+    const targetSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(
+      getSubtasksColumn(targetBoardColumns.columns),
+    );
+
+    // Fetch both subitem boards in parallel (skip if board ID is unknown).
+    const empty = { columns: [] as MondayColumn[] };
+    const [sourceSubitemBoardResult, targetSubitemBoardResult] = await Promise.all([
+      sourceSubitemBoardId ? fetchBoardColumns(sourceSubitemBoardId) : Promise.resolve(empty),
+      targetSubitemBoardId ? fetchBoardColumns(targetSubitemBoardId) : Promise.resolve(empty),
+    ]);
+
     return {
       sourceBoardName: page.sourceBoardName,
       sourceSubitemBoardId,
+      targetSubitemBoardId,
+      sourceSubitemBoardColumns: sourceSubitemBoardResult.columns,
+      targetSubitemBoardColumns: targetSubitemBoardResult.columns,
       nextCursor: page.nextCursor,
       items: page.items,
     };
@@ -860,7 +937,11 @@ export const migrateSourceItemAction = internalAction({
     includeParentUpdates: v.boolean(),
     includeSubitems: v.boolean(),
     includeSubitemUpdates: v.boolean(),
+    updateProgressColumns: v.boolean(),
     sourceSubitemBoardId: v.optional(v.union(v.string(), v.null())),
+    cachedTargetSubitemBoardId: v.optional(v.union(v.string(), v.null())),
+    cachedSourceSubitemBoardColumns: v.optional(v.array(mondayColumnValidator)),
+    cachedTargetSubitemBoardColumns: v.optional(v.array(mondayColumnValidator)),
     sourceItem: getSourceItemValidator(),
     existingEntries: existingEntriesValidator,
   },
@@ -871,6 +952,7 @@ export const migrateSourceItemAction = internalAction({
     createdParentUpdates: v.number(),
     createdSubitems: v.number(),
     createdSubitemUpdates: v.number(),
+    updatedProgressColumns: v.number(),
     errors: v.number(),
     createdEntries: v.array(createdEntryValidator),
     warnings: v.array(v.string()),
@@ -932,6 +1014,7 @@ export const migrateSourceItemAction = internalAction({
         createdParentUpdates: 0,
         createdSubitems: 0,
         createdSubitemUpdates: 0,
+        updatedProgressColumns: 0,
         errors: 0,
         createdEntries: [],
         warnings: [
@@ -944,7 +1027,9 @@ export const migrateSourceItemAction = internalAction({
     let createdParentUpdates = 0;
     let createdSubitems = 0;
     let createdSubitemUpdates = 0;
+    let updatedProgressColumns = 0;
     let errors = 0;
+    const progressColumnsToUpdate = new Set<string>();
 
     if (args.includeParentUpdates) {
       for (const update of args.sourceItem.updates) {
@@ -990,9 +1075,15 @@ export const migrateSourceItemAction = internalAction({
     }
 
     if (args.includeSubitems && args.sourceItem.subitems.length > 0) {
-      const targetBoardColumns = await fetchBoardColumns(args.targetBoardId);
-      const targetSubitemsColumn = getSubtasksColumn(targetBoardColumns.columns);
-      const targetSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(targetSubitemsColumn);
+      let targetSubitemBoardId: string | null;
+      if (args.cachedTargetSubitemBoardId !== undefined) {
+        targetSubitemBoardId = args.cachedTargetSubitemBoardId;
+      } else {
+        const targetBoardColumns = await fetchBoardColumns(args.targetBoardId);
+        targetSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(
+          getSubtasksColumn(targetBoardColumns.columns),
+        );
+      }
       const sourceSubitemBoardId = args.sourceSubitemBoardId ?? null;
 
       if (!targetSubitemBoardId || !sourceSubitemBoardId) {
@@ -1000,8 +1091,14 @@ export const migrateSourceItemAction = internalAction({
           `Subitem board mapping missing for source item ${args.sourceItem.id}; skipping subitem migration.`,
         );
       } else {
-        const sourceSubitemBoardColumns = await fetchBoardColumns(sourceSubitemBoardId);
-        const targetSubitemBoardColumns = await fetchBoardColumns(targetSubitemBoardId);
+        const sourceSubitemBoardColumns =
+          args.cachedSourceSubitemBoardColumns
+            ? { columns: args.cachedSourceSubitemBoardColumns as MondayColumn[] }
+            : await fetchBoardColumns(sourceSubitemBoardId);
+        const targetSubitemBoardColumns =
+          args.cachedTargetSubitemBoardColumns
+            ? { columns: args.cachedTargetSubitemBoardColumns as MondayColumn[] }
+            : await fetchBoardColumns(targetSubitemBoardId);
         const sourceColumnTitleById = Object.fromEntries(
           sourceSubitemBoardColumns.columns
             .map((column) => {
@@ -1076,6 +1173,19 @@ export const migrateSourceItemAction = internalAction({
             }
           }
 
+          if (args.updateProgressColumns) {
+            const progressColumnId = classifySubitemForProgressColumn(sourceSubitem.name);
+            if (progressColumnId) {
+              const statusCol = sourceSubitem.columnValues.find(
+                (col) => col.id === "status9" || col.type === "color",
+              );
+              const isDone = normalizeText(statusCol?.text) === "done";
+              if (isDone) {
+                progressColumnsToUpdate.add(progressColumnId);
+              }
+            }
+          }
+
           if (!args.includeSubitemUpdates) continue;
           const targetSubitemId = sourceSubitemToTargetSubitem.get(sourceSubitem.id) ?? null;
           if (!targetSubitemId) {
@@ -1131,6 +1241,25 @@ export const migrateSourceItemAction = internalAction({
       }
     }
 
+    if (args.updateProgressColumns && !args.dryRun && progressColumnsToUpdate.size > 0) {
+      for (const columnId of progressColumnsToUpdate) {
+        try {
+          await updateProgressColumnOnTarget({
+            boardId: args.targetBoardId,
+            itemId: targetItemId,
+            columnId,
+          });
+          updatedProgressColumns += 1;
+        } catch (error) {
+          warnings.push(
+            `Failed to update progress column ${columnId} for target item ${targetItemId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
+
     return {
       processedContacts: 1,
       mappedContacts: 1,
@@ -1138,6 +1267,7 @@ export const migrateSourceItemAction = internalAction({
       createdParentUpdates,
       createdSubitems,
       createdSubitemUpdates,
+      updatedProgressColumns,
       errors,
       createdEntries,
       warnings,

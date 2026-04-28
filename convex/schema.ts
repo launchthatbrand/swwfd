@@ -197,6 +197,8 @@ export default defineSchema({
     createdParentUpdates: v.number(),
     createdSubitems: v.number(),
     createdSubitemUpdates: v.number(),
+    updateProgressColumns: v.optional(v.boolean()),
+    updatedProgressColumns: v.optional(v.number()),
     errorsCount: v.number(),
     warningsCount: v.number(),
     startedAt: v.number(),

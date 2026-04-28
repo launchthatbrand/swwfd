@@ -162,7 +162,9 @@ export declare const api: {
         startedAt: number;
         status: "running" | "done" | "failed" | "cancelled";
         targetBoardId: string;
+        updateProgressColumns?: boolean;
         updatedAt: number;
+        updatedProgressColumns?: number;
         warningsCount: number;
         workflowId?: string;
       }
@@ -179,6 +181,7 @@ export declare const api: {
         pageSize?: number;
         sourceBoardId: string;
         targetBoardId?: string;
+        updateProgressColumns?: boolean;
       },
       { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
     >;
@@ -557,6 +560,21 @@ export declare const internal: {
         subitemUpdateEntityIds: Array<string>;
       }
     >;
+    getExistingEntriesForSourceItemsBatch: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemIds: Array<string> },
+      Array<{
+        parentUpdateEntityIds: Array<string>;
+        sourceItemId: string;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }>
+    >;
     getJobForWorkflow: FunctionReference<
       "query",
       "internal",
@@ -574,6 +592,7 @@ export declare const internal: {
         sourceBoardName?: string | null;
         status: "running" | "done" | "failed" | "cancelled";
         targetBoardId: string;
+        updateProgressColumns?: boolean;
       }
     >;
     recordCreatedEntries: FunctionReference<
@@ -612,6 +631,7 @@ export declare const internal: {
         processedContactsDelta: number;
         skippedContactsDelta: number;
         sourceBoardName?: string | null;
+        updatedProgressColumnsDelta: number;
         warningsDelta: number;
       },
       null
@@ -621,7 +641,12 @@ export declare const internal: {
     fetchSourcePageAction: FunctionReference<
       "action",
       "internal",
-      { cursor?: string | null; pageSize: number; sourceBoardId: string },
+      {
+        cursor?: string | null;
+        pageSize: number;
+        sourceBoardId: string;
+        targetBoardId: string;
+      },
       {
         items: Array<{
           email: string | null;
@@ -657,13 +682,39 @@ export declare const internal: {
         }>;
         nextCursor: string | null;
         sourceBoardName: string | null;
+        sourceSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
         sourceSubitemBoardId: string | null;
+        targetSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        targetSubitemBoardId: string | null;
       }
     >;
     migrateSourceItemAction: FunctionReference<
       "action",
       "internal",
       {
+        cachedSourceSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardId?: string | null;
         dryRun: boolean;
         existingEntries: {
           parentUpdateEntityIds: Array<string>;
@@ -714,6 +765,7 @@ export declare const internal: {
         };
         sourceSubitemBoardId?: string | null;
         targetBoardId: string;
+        updateProgressColumns: boolean;
       },
       {
         createdEntries: Array<{
@@ -730,6 +782,7 @@ export declare const internal: {
         mappedContacts: number;
         processedContacts: number;
         skippedContacts: number;
+        updatedProgressColumns: number;
         warnings: Array<string>;
       }
     >;

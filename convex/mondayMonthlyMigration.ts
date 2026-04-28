@@ -69,6 +69,8 @@ export const getLatestJob = query({
       createdParentUpdates: v.number(),
       createdSubitems: v.number(),
       createdSubitemUpdates: v.number(),
+      updateProgressColumns: v.optional(v.boolean()),
+      updatedProgressColumns: v.optional(v.number()),
       errorsCount: v.number(),
       warningsCount: v.number(),
       startedAt: v.number(),
@@ -104,6 +106,8 @@ export const getLatestJob = query({
       createdParentUpdates: latest.createdParentUpdates,
       createdSubitems: latest.createdSubitems,
       createdSubitemUpdates: latest.createdSubitemUpdates,
+      updateProgressColumns: latest.updateProgressColumns,
+      updatedProgressColumns: latest.updatedProgressColumns,
       errorsCount: latest.errorsCount,
       warningsCount: latest.warningsCount,
       startedAt: latest.startedAt,
@@ -123,6 +127,7 @@ export const startMigration = mutation({
     includeParentUpdates: v.optional(v.boolean()),
     includeSubitems: v.optional(v.boolean()),
     includeSubitemUpdates: v.optional(v.boolean()),
+    updateProgressColumns: v.optional(v.boolean()),
     pageSize: v.optional(v.number()),
   },
   returns: v.object({
@@ -153,6 +158,7 @@ export const startMigration = mutation({
     const includeParentUpdates = args.includeParentUpdates ?? true;
     const includeSubitems = args.includeSubitems ?? true;
     const includeSubitemUpdates = args.includeSubitemUpdates ?? true;
+    const updateProgressColumns = args.updateProgressColumns ?? true;
 
     const jobId = await ctx.db.insert("mondayMonthlyMigrationJobs", {
       status: "running" satisfies MigrationStatus,
@@ -164,6 +170,8 @@ export const startMigration = mutation({
       includeParentUpdates,
       includeSubitems,
       includeSubitemUpdates,
+      updateProgressColumns,
+      updatedProgressColumns: 0,
       pageSize: clampPageSize(args.pageSize),
       currentCursor: null,
       processedContacts: 0,
@@ -244,6 +252,7 @@ export const getJobForWorkflow = internalQuery({
       includeParentUpdates: v.boolean(),
       includeSubitems: v.boolean(),
       includeSubitemUpdates: v.boolean(),
+      updateProgressColumns: v.optional(v.boolean()),
       pageSize: v.number(),
       currentCursor: v.optional(v.union(v.string(), v.null())),
     }),
@@ -262,6 +271,7 @@ export const getJobForWorkflow = internalQuery({
       includeParentUpdates: job.includeParentUpdates,
       includeSubitems: job.includeSubitems,
       includeSubitemUpdates: job.includeSubitemUpdates,
+      updateProgressColumns: job.updateProgressColumns,
       pageSize: job.pageSize,
       currentCursor: job.currentCursor,
     };
@@ -322,6 +332,68 @@ export const getExistingEntriesForSourceItem = internalQuery({
   },
 });
 
+export const getExistingEntriesForSourceItemsBatch = internalQuery({
+  args: {
+    sourceBoardId: v.string(),
+    sourceItemIds: v.array(v.string()),
+  },
+  returns: v.array(
+    v.object({
+      sourceItemId: v.string(),
+      parentUpdateEntityIds: v.array(v.string()),
+      subitemEntityIds: v.array(v.string()),
+      subitemUpdateEntityIds: v.array(v.string()),
+      sourceSubitemToTargetSubitem: v.array(
+        v.object({
+          sourceSubitemId: v.string(),
+          targetSubitemId: v.string(),
+        }),
+      ),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const results = [];
+    for (const sourceItemId of args.sourceItemIds) {
+      const entries = await ctx.db
+        .query("mondayMonthlyMigrationEntries")
+        .withIndex("by_sourceBoardId_and_sourceItemId", (q) =>
+          q.eq("sourceBoardId", args.sourceBoardId).eq("sourceItemId", sourceItemId),
+        )
+        .collect();
+      const parentUpdateEntityIds: string[] = [];
+      const subitemEntityIds: string[] = [];
+      const subitemUpdateEntityIds: string[] = [];
+      const sourceSubitemToTargetSubitem: Array<{
+        sourceSubitemId: string;
+        targetSubitemId: string;
+      }> = [];
+      for (const entry of entries) {
+        if (entry.sourceEntityType === "parent_update") {
+          parentUpdateEntityIds.push(entry.sourceEntityId);
+        } else if (entry.sourceEntityType === "subitem") {
+          subitemEntityIds.push(entry.sourceEntityId);
+          if (entry.targetEntityId && entry.targetEntityId.trim().length > 0) {
+            sourceSubitemToTargetSubitem.push({
+              sourceSubitemId: entry.sourceEntityId,
+              targetSubitemId: entry.targetEntityId,
+            });
+          }
+        } else if (entry.sourceEntityType === "subitem_update") {
+          subitemUpdateEntityIds.push(entry.sourceEntityId);
+        }
+      }
+      results.push({
+        sourceItemId,
+        parentUpdateEntityIds,
+        subitemEntityIds,
+        subitemUpdateEntityIds,
+        sourceSubitemToTargetSubitem,
+      });
+    }
+    return results;
+  },
+});
+
 export const recordCreatedEntries = internalMutation({
   args: {
     jobId: v.id("mondayMonthlyMigrationJobs"),
@@ -379,6 +451,7 @@ export const updateJobProgress = internalMutation({
     createdParentUpdatesDelta: v.number(),
     createdSubitemsDelta: v.number(),
     createdSubitemUpdatesDelta: v.number(),
+    updatedProgressColumnsDelta: v.number(),
     errorsDelta: v.number(),
     warningsDelta: v.number(),
   },
@@ -396,6 +469,7 @@ export const updateJobProgress = internalMutation({
       createdParentUpdates: job.createdParentUpdates + args.createdParentUpdatesDelta,
       createdSubitems: job.createdSubitems + args.createdSubitemsDelta,
       createdSubitemUpdates: job.createdSubitemUpdates + args.createdSubitemUpdatesDelta,
+      updatedProgressColumns: (job.updatedProgressColumns ?? 0) + args.updatedProgressColumnsDelta,
       errorsCount: job.errorsCount + args.errorsDelta,
       warningsCount: job.warningsCount + args.warningsDelta,
       updatedAt: Date.now(),
@@ -446,6 +520,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         internalAny.mondayMonthlyMigrationNode.fetchSourcePageAction,
         {
           sourceBoardId: job.sourceBoardId,
+          targetBoardId: job.targetBoardId,
           cursor: job.currentCursor ?? null,
           pageSize: job.pageSize,
         },
@@ -460,23 +535,38 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         break;
       }
 
+      // Batch-fetch existing dedup entries for all items on this page in one step.
+      const existingEntriesBatch = await step.runQuery(
+        internalAny.mondayMonthlyMigration.getExistingEntriesForSourceItemsBatch,
+        {
+          sourceBoardId: job.sourceBoardId,
+          sourceItemIds: page.items.map((item: any) => item.id),
+        },
+      );
+      const existingEntriesMap = new Map<string, any>(
+        existingEntriesBatch.map((entry: any) => [entry.sourceItemId, entry]),
+      );
+
       let processedContactsDelta = 0;
       let mappedContactsDelta = 0;
       let skippedContactsDelta = 0;
       let createdParentUpdatesDelta = 0;
       let createdSubitemsDelta = 0;
       let createdSubitemUpdatesDelta = 0;
+      let updatedProgressColumnsDelta = 0;
       let errorsDelta = 0;
       let warningsDelta = 0;
 
+      const emptyEntries = {
+        parentUpdateEntityIds: [],
+        subitemEntityIds: [],
+        subitemUpdateEntityIds: [],
+        sourceSubitemToTargetSubitem: [],
+      };
+
       for (const sourceItem of page.items) {
-        const existingEntries = await step.runQuery(
-          internalAny.mondayMonthlyMigration.getExistingEntriesForSourceItem,
-          {
-            sourceBoardId: job.sourceBoardId,
-            sourceItemId: sourceItem.id,
-          },
-        );
+        const { sourceItemId: _sid, ...existingEntries } =
+          existingEntriesMap.get(sourceItem.id) ?? { sourceItemId: sourceItem.id, ...emptyEntries };
 
         const migrated = await step.runAction(
           internalAny.mondayMonthlyMigrationNode.migrateSourceItemAction,
@@ -489,7 +579,11 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
             includeParentUpdates: job.includeParentUpdates,
             includeSubitems: job.includeSubitems,
             includeSubitemUpdates: job.includeSubitemUpdates,
+            updateProgressColumns: job.updateProgressColumns ?? false,
             sourceSubitemBoardId: page.sourceSubitemBoardId ?? null,
+            cachedTargetSubitemBoardId: page.targetSubitemBoardId ?? null,
+            cachedSourceSubitemBoardColumns: page.sourceSubitemBoardColumns ?? [],
+            cachedTargetSubitemBoardColumns: page.targetSubitemBoardColumns ?? [],
             sourceItem,
             existingEntries,
           },
@@ -509,6 +603,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         createdParentUpdatesDelta += migrated.createdParentUpdates;
         createdSubitemsDelta += migrated.createdSubitems;
         createdSubitemUpdatesDelta += migrated.createdSubitemUpdates;
+        updatedProgressColumnsDelta += migrated.updatedProgressColumns;
         errorsDelta += migrated.errors;
         warningsDelta += migrated.warnings.length;
       }
@@ -523,6 +618,7 @@ export const runMonthlyMigrationWorkflow = workflowAny.define({
         createdParentUpdatesDelta,
         createdSubitemsDelta,
         createdSubitemUpdatesDelta,
+        updatedProgressColumnsDelta,
         errorsDelta,
         warningsDelta,
       });

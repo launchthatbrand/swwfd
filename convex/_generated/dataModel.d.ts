@@ -314,7 +314,9 @@ export type DataModel = {
       startedAt: number;
       status: "running" | "done" | "failed" | "cancelled";
       targetBoardId: string;
+      updateProgressColumns?: boolean;
       updatedAt: number;
+      updatedProgressColumns?: number;
       warningsCount: number;
       workflowId?: string;
       _id: Id<"mondayMonthlyMigrationJobs">;
@@ -345,6 +347,8 @@ export type DataModel = {
       | "status"
       | "targetBoardId"
       | "updatedAt"
+      | "updatedProgressColumns"
+      | "updateProgressColumns"
       | "warningsCount"
       | "workflowId";
     indexes: {
