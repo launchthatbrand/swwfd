@@ -553,7 +553,7 @@ const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   colorTheme: "neutral",
   fontSize: "medium",
   tableDensity: "expanded",
-  pageSize: 40,
+  pageSize: 0,
   displayMode: "table",
 };
 
@@ -1631,7 +1631,7 @@ const ContactCard = ({
     <button
       type="button"
       onClick={() => onClick(record)}
-      className="hover:border-primary/50 hover:shadow-primary/5 group flex w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md"
+      className="hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md"
     >
       <div className="flex items-start gap-3">
         <Avatar className="size-10 shrink-0">
@@ -4667,7 +4667,7 @@ export function MondayBoardView({
         </div>
       ) : null} */}
 
-      <div className={`rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
+      <div className={`sticky top-0 z-20 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Search */}
           <div className="relative min-w-0 flex-1">
@@ -5246,140 +5246,114 @@ export function MondayBoardView({
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                   <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
                     <TabsContent value="general-settings" className="mt-0">
-                      <div className="space-y-4">
-                        <div className="space-y-1">
-                          <p className="text-sm font-medium">General Settings</p>
-                          <p className="text-muted-foreground text-sm">
-                            Customize font size and color for this employee board.
-                          </p>
-                          <p className="text-muted-foreground text-xs">
-                            Scope:{" "}
-                            {presetScopeOwnerId.length > 0
-                              ? `Owner ${presetScopeOwnerId}`
-                              : "No owner board selected"}
-                          </p>
-                        </div>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-4 rounded-md border p-4">
-                            <div className="space-y-2">
-                              <label
-                                htmlFor="board-font-size"
-                                className="text-xs font-semibold tracking-wide uppercase"
-                              >
-                                Font Size
-                              </label>
-                              <Select
-                                value={boardGeneralSettingsDraft.fontSize}
-                                onValueChange={(value) => {
-                                  if (!isUserBoardFontSize(value)) return;
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    fontSize: value,
-                                  }));
-                                }}
-                              >
-                                <SelectTrigger id="board-font-size" className="h-9">
-                                  <SelectValue placeholder="Select font size" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                      <div className="space-y-0 divide-y divide-border/60">
 
-                            <div className="space-y-2">
-                              <label
-                                htmlFor="board-color-theme"
-                                className="text-xs font-semibold tracking-wide uppercase"
-                              >
-                                Color Theme
-                              </label>
-                              <Select
-                                value={boardGeneralSettingsDraft.colorTheme}
-                                onValueChange={(value) => {
-                                  if (!isUserBoardColorTheme(value)) return;
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    colorTheme: value,
-                                  }));
-                                }}
-                              >
-                                <SelectTrigger id="board-color-theme" className="h-9">
-                                  <SelectValue placeholder="Select color theme" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      <span className="inline-flex items-center gap-2">
-                                        <span
-                                          className={`inline-block h-2.5 w-2.5 rounded-full ${option.swatchClassName}`}
-                                        />
-                                        {option.label}
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <p className="text-muted-foreground text-xs">
-                                {USER_BOARD_COLOR_THEME_OPTIONS.find(
-                                  (option) =>
-                                    option.value === boardGeneralSettingsDraft.colorTheme,
-                                )?.description ?? "Choose a color theme for this board."}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div
-                            className={`space-y-3 rounded-md border p-4 ${boardDraftThemeStyles.previewClassName}`}
-                          >
-                            <p className="text-xs font-semibold tracking-wide uppercase">
-                              Preview
+                        {/* Header row */}
+                        <div className="flex items-center justify-between pb-4">
+                          <div>
+                            <p className="text-sm font-semibold">Appearance</p>
+                            <p className="text-muted-foreground text-xs">
+                              Scope: {presetScopeOwnerId.length > 0 ? `Owner ${presetScopeOwnerId}` : "No owner selected"}
                             </p>
-                            <div className="space-y-2 rounded-md border bg-background/80 p-3">
-                              <p className="text-sm font-medium">Header & controls</p>
-                              <p className="text-muted-foreground text-xs">
-                                The board UI applies this color styling and font scaling.
-                              </p>
-                            </div>
-                            <div className="rounded-md border bg-background/80 p-3">
-                              <p className="text-xs">
-                                Font scale preview:{" "}
-                                {
-                                  USER_BOARD_FONT_SIZE_OPTIONS.find(
-                                    (option) =>
-                                      option.value === boardGeneralSettingsDraft.fontSize,
-                                  )?.label
-                                }
-                              </p>
-                              <div className="mt-2">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
-                                  disabled
-                                >
-                                  Quick Action Preview
-                                </Button>
-                              </div>
-                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft(boardGeneralSettings);
+                              }}
+                              disabled={!hasUnsavedBoardGeneralSettings}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                void handleSaveBoardGeneralSettings();
+                              }}
+                              disabled={
+                                isSavingBoardGeneralSettings ||
+                                !sessionToken ||
+                                presetScopeOwnerId.length === 0 ||
+                                !hasUnsavedBoardGeneralSettings
+                              }
+                            >
+                              {isSavingBoardGeneralSettings ? "Saving…" : "Save"}
+                            </Button>
                           </div>
                         </div>
 
-                        <div className="space-y-2 rounded-md border p-4">
-                          <label className="text-xs font-semibold tracking-wide uppercase">
-                            Table Density
-                          </label>
-                          <p className="text-muted-foreground text-xs">
-                            {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
-                              (o) => o.value === boardGeneralSettingsDraft.tableDensity,
-                            )?.description}
-                          </p>
-                          <div className="mt-1 flex gap-2">
+                        {/* Color Theme */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Color Theme</p>
+                            <p className="text-muted-foreground text-xs">
+                              {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                (o) => o.value === boardGeneralSettingsDraft.colorTheme,
+                              )?.description ?? "Accent color for the board UI."}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                title={option.label}
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    colorTheme: option.value,
+                                  }));
+                                }}
+                                className={`h-7 w-7 rounded-full transition-all ${option.swatchClassName} ${boardGeneralSettingsDraft.colorTheme === option.value
+                                  ? "ring-2 ring-offset-2 ring-primary scale-110"
+                                  : "opacity-60 hover:opacity-100 hover:scale-105"
+                                  }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Font Size */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Font Size</p>
+                            <p className="text-muted-foreground text-xs">Scale the board text and action buttons.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    fontSize: option.value,
+                                  }));
+                                }}
+                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.fontSize === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Table Density */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Row Density</p>
+                            <p className="text-muted-foreground text-xs">
+                              {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
+                                (o) => o.value === boardGeneralSettingsDraft.tableDensity,
+                              )?.description}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
                             {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
                               <button
                                 key={option.value}
@@ -5390,24 +5364,24 @@ export function MondayBoardView({
                                     tableDensity: option.value,
                                   }));
                                 }}
-                                className={`flex flex-1 flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                className={`flex h-8 items-center gap-2 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
                                   }`}
                               >
-                                <span className="flex flex-col gap-0.5">
+                                <span className="flex flex-col gap-px">
                                   {option.value === "expanded" ? (
                                     <>
-                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-70" />
-                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
-                                      <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-80" />
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
                                     </>
                                   ) : (
                                     <>
-                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-70" />
-                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
-                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
-                                      <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-80" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
                                     </>
                                   )}
                                 </span>
@@ -5417,14 +5391,13 @@ export function MondayBoardView({
                           </div>
                         </div>
 
-                        <div className="space-y-2 rounded-md border p-4">
-                          <label className="text-xs font-semibold tracking-wide uppercase">
-                            Records Per Page
-                          </label>
-                          <p className="text-muted-foreground text-xs">
-                            How many records to load at once in the table/grid view.
-                          </p>
-                          <div className="mt-1 flex flex-wrap gap-2">
+                        {/* Records Per Page */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Records Per Page</p>
+                            <p className="text-muted-foreground text-xs">How many records to show per page.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
                             {USER_BOARD_PAGE_SIZE_OPTIONS.map((option) => (
                               <button
                                 key={option.value}
@@ -5435,9 +5408,9 @@ export function MondayBoardView({
                                     pageSize: option.value,
                                   }));
                                 }}
-                                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
                                   }`}
                               >
                                 {option.label}
@@ -5446,14 +5419,13 @@ export function MondayBoardView({
                           </div>
                         </div>
 
-                        <div className="space-y-2 rounded-md border p-4">
-                          <label className="text-xs font-semibold tracking-wide uppercase">
-                            Default View
-                          </label>
-                          <p className="text-muted-foreground text-xs">
-                            Whether to default to table or grid layout when opening this board.
-                          </p>
-                          <div className="mt-1 flex gap-2">
+                        {/* Default View */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Default View</p>
+                            <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
                             {(["table", "grid"] as UserBoardDisplayMode[]).map((mode) => (
                               <button
                                 key={mode}
@@ -5464,9 +5436,9 @@ export function MondayBoardView({
                                     displayMode: mode,
                                   }));
                                 }}
-                                className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
-                                  ? "border-primary bg-primary/10 text-primary"
-                                  : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                className={`flex h-8 items-center gap-1.5 px-3 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
                                   }`}
                               >
                                 {mode === "table" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
@@ -5476,30 +5448,23 @@ export function MondayBoardView({
                           </div>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2">
+                        {/* Preview strip */}
+                        <div className={`flex items-center justify-between rounded-md px-4 py-3 mt-3 ${boardDraftThemeStyles.previewClassName}`}>
+                          <p className="text-xs text-muted-foreground">
+                            Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
+                            {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
+                          </p>
                           <Button
-                            onClick={() => {
-                              void handleSaveBoardGeneralSettings();
-                            }}
-                            disabled={
-                              isSavingBoardGeneralSettings ||
-                              !sessionToken ||
-                              presetScopeOwnerId.length === 0 ||
-                              !hasUnsavedBoardGeneralSettings
-                            }
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                            disabled
                           >
-                            {isSavingBoardGeneralSettings ? "Saving..." : "Save Settings"}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            onClick={() => {
-                              setBoardGeneralSettingsDraft(boardGeneralSettings);
-                            }}
-                            disabled={!hasUnsavedBoardGeneralSettings}
-                          >
-                            Reset
+                            Quick Action
                           </Button>
                         </div>
+
                       </div>
                     </TabsContent>
 
