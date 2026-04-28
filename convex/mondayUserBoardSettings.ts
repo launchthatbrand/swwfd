@@ -14,11 +14,13 @@ const fontSizeValidator = v.union(
   v.literal("medium"),
   v.literal("large"),
 );
+const tableDensityValidator = v.union(v.literal("expanded"), v.literal("compact"));
 
 const settingsValidator = v.object({
   ownerMondayUserId: v.string(),
   colorTheme: colorThemeValidator,
   fontSize: fontSizeValidator,
+  tableDensity: v.optional(tableDensityValidator),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -38,39 +40,42 @@ export const getForOwnerBoard = query({
     const accountId = normalizeInput(args.accountId);
     const ownerMondayUserId = normalizeInput(args.ownerMondayUserId);
     if (!accountId || !ownerMondayUserId) {
-      return {
-        ownerMondayUserId: ownerMondayUserId || "",
-        colorTheme: DEFAULT_COLOR_THEME,
-        fontSize: DEFAULT_FONT_SIZE,
-        createdAt: 0,
-        updatedAt: 0,
-      };
-    }
-
-    const existing = await ctx.db
-      .query("mondayUserBoardSettings")
-      .withIndex("by_account_and_owner", (q) =>
-        q.eq("accountId", accountId).eq("ownerMondayUserId", ownerMondayUserId),
-      )
-      .unique();
-
-    if (!existing) {
-      return {
-        ownerMondayUserId,
-        colorTheme: DEFAULT_COLOR_THEME,
-        fontSize: DEFAULT_FONT_SIZE,
-        createdAt: 0,
-        updatedAt: 0,
-      };
-    }
-
     return {
-      ownerMondayUserId: existing.ownerMondayUserId,
-      colorTheme: existing.colorTheme,
-      fontSize: existing.fontSize,
-      createdAt: existing.createdAt,
-      updatedAt: existing.updatedAt,
+      ownerMondayUserId: ownerMondayUserId || "",
+      colorTheme: DEFAULT_COLOR_THEME,
+      fontSize: DEFAULT_FONT_SIZE,
+      tableDensity: undefined,
+      createdAt: 0,
+      updatedAt: 0,
     };
+  }
+
+  const existing = await ctx.db
+    .query("mondayUserBoardSettings")
+    .withIndex("by_account_and_owner", (q) =>
+      q.eq("accountId", accountId).eq("ownerMondayUserId", ownerMondayUserId),
+    )
+    .unique();
+
+  if (!existing) {
+    return {
+      ownerMondayUserId,
+      colorTheme: DEFAULT_COLOR_THEME,
+      fontSize: DEFAULT_FONT_SIZE,
+      tableDensity: undefined,
+      createdAt: 0,
+      updatedAt: 0,
+    };
+  }
+
+  return {
+    ownerMondayUserId: existing.ownerMondayUserId,
+    colorTheme: existing.colorTheme,
+    fontSize: existing.fontSize,
+    tableDensity: existing.tableDensity,
+    createdAt: existing.createdAt,
+    updatedAt: existing.updatedAt,
+  };
   },
 });
 
@@ -81,6 +86,7 @@ export const upsertForOwnerBoard = mutation({
     viewerMondayUserId: v.string(),
     colorTheme: colorThemeValidator,
     fontSize: fontSizeValidator,
+    tableDensity: v.optional(tableDensityValidator),
   },
   returns: settingsValidator,
   handler: async (ctx, args) => {
@@ -103,6 +109,7 @@ export const upsertForOwnerBoard = mutation({
       await ctx.db.patch(existing._id, {
         colorTheme: args.colorTheme,
         fontSize: args.fontSize,
+        tableDensity: args.tableDensity,
         updatedAt: now,
         updatedByMondayUserId: viewerMondayUserId,
       });
@@ -110,6 +117,7 @@ export const upsertForOwnerBoard = mutation({
         ownerMondayUserId,
         colorTheme: args.colorTheme,
         fontSize: args.fontSize,
+        tableDensity: args.tableDensity,
         createdAt: existing.createdAt,
         updatedAt: now,
       };
@@ -120,6 +128,7 @@ export const upsertForOwnerBoard = mutation({
       ownerMondayUserId,
       colorTheme: args.colorTheme,
       fontSize: args.fontSize,
+      tableDensity: args.tableDensity,
       createdAt: now,
       updatedAt: now,
       updatedByMondayUserId: viewerMondayUserId,
@@ -128,6 +137,7 @@ export const upsertForOwnerBoard = mutation({
       ownerMondayUserId,
       colorTheme: args.colorTheme,
       fontSize: args.fontSize,
+      tableDensity: args.tableDensity,
       createdAt: now,
       updatedAt: now,
     };

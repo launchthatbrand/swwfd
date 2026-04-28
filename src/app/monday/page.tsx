@@ -384,11 +384,39 @@ interface SavedAdvancedFilterPreset {
 
 type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
 type UserBoardFontSize = "default" | "medium" | "large";
+type UserBoardTableDensity = "expanded" | "compact";
+
+const USER_BOARD_TABLE_DENSITY_OPTIONS: {
+  value: UserBoardTableDensity;
+  label: string;
+  description: string;
+}[] = [
+    {
+      value: "expanded",
+      label: "Expanded",
+      description: "Taller rows with full contact details and progress bar",
+    },
+    {
+      value: "compact",
+      label: "Compact",
+      description: "Shorter rows — name and email only, more records visible",
+    },
+  ];
+
+
+const isUserBoardTableDensity = (value: unknown): value is UserBoardTableDensity =>
+  value === "expanded" || value === "compact";
+
+const VIRTUAL_ROW_HEIGHT: Record<UserBoardTableDensity, number> = {
+  expanded: 72,
+  compact: 56,
+};
 
 interface UserBoardGeneralSettings {
   ownerMondayUserId?: string;
   colorTheme: UserBoardColorTheme;
   fontSize: UserBoardFontSize;
+  tableDensity: UserBoardTableDensity;
   createdAt?: number;
   updatedAt?: number;
 }
@@ -505,6 +533,7 @@ const USER_BOARD_COLOR_THEME_STYLES: Record<
 const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   colorTheme: "neutral",
   fontSize: "medium",
+  tableDensity: "expanded",
 };
 
 const ADVANCED_FILTER_FIELDS: {
@@ -843,6 +872,9 @@ const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralSettings
     fontSize: isUserBoardFontSize(candidate.fontSize)
       ? candidate.fontSize
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.fontSize,
+    tableDensity: isUserBoardTableDensity(candidate.tableDensity)
+      ? candidate.tableDensity
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.tableDensity,
     createdAt: typeof candidate.createdAt === "number" ? candidate.createdAt : undefined,
     updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : undefined,
   };
@@ -1610,6 +1642,7 @@ export function MondayBoardView({
     useState<UserBoardGeneralSettings>({
       ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
     });
+  const tableDensity = boardGeneralSettings.tableDensity;
   const [isSavingBoardGeneralSettings, setIsSavingBoardGeneralSettings] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactStep, setAddContactStep] = useState<1 | 2>(1);
@@ -1807,7 +1840,8 @@ export function MondayBoardView({
     USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettingsDraft.fontSize];
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
-    boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize;
+    boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
+    boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity;
   const canCreateUpdatesAsLoggedInMondayUser =
     isMondayEmbeddedContext &&
     !!identity?.userId &&
@@ -2788,9 +2822,10 @@ export function MondayBoardView({
     }
     if (
       !isUserBoardColorTheme(boardGeneralSettingsDraft.colorTheme) ||
-      !isUserBoardFontSize(boardGeneralSettingsDraft.fontSize)
+      !isUserBoardFontSize(boardGeneralSettingsDraft.fontSize) ||
+      !isUserBoardTableDensity(boardGeneralSettingsDraft.tableDensity)
     ) {
-      toast.error("Choose a valid font size and color theme");
+      toast.error("Choose a valid font size, color theme, and table density");
       return;
     }
 
@@ -2807,6 +2842,7 @@ export function MondayBoardView({
           ownerId: presetScopeOwnerId,
           colorTheme: boardGeneralSettingsDraft.colorTheme,
           fontSize: boardGeneralSettingsDraft.fontSize,
+          tableDensity: boardGeneralSettingsDraft.tableDensity,
         }),
       });
       const data = (await response.json()) as MondayUserBoardSettingsResponse;
@@ -4128,75 +4164,85 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => {
         const details = getContactTooltipDetails(item);
         const addressDisplay = getAddressDisplayParts(item.address);
+        const isCompact = tableDensity === "compact";
         return (
-          <button
-            type="button"
-            onClick={() => openContactHistoryDialog(item)}
-            className="hover:bg-accent/40 flex w-full cursor-pointer gap-3 rounded-md p-2 text-left"
-          >
-            <Avatar className="mt-0.5 size-9">
-              <AvatarFallback className="text-xs font-semibold">
-                {getNameInitials(item.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="space-y-1">
-                    <span className="block font-medium">{item.name}</span>
-                    <span className="block truncate text-xs">
-                      {item.email ?? "No email"}
-                    </span>
-                    {addressDisplay.full ? (
-                      <div className="text-muted-foreground block text-xs">
-                        <span className="block">
-                          {addressDisplay.streetLine ?? addressDisplay.full}
-                        </span>
-                        {addressDisplay.localityLine ? (
-                          <span className="block text-sm font-semibold text-foreground">
-                            {addressDisplay.localityLine}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-muted-foreground block text-xs">No address</span>
-                    )}
-                    <span className="text-muted-foreground block text-xs">
-                      {item.phone ?? "No phone"}
-                    </span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="right"
-                  align="start"
-                  sideOffset={8}
-                  className="max-w-md border border-slate-200 bg-white p-3 text-slate-900 shadow-lg dark:border-slate-200 dark:bg-white dark:text-slate-900"
-                >
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold tracking-wide uppercase">
-                      Contact details
-                    </p>
-                    <div className="max-h-72 space-y-1 overflow-y-auto">
-                      {details.map((detail) => (
-                        <div
-                          key={`${detail.label}-${detail.value}`}
-                          className="grid grid-cols-[100px_1fr] gap-2 text-xs"
-                        >
-                          <span className="font-bold">{detail.label}</span>
-                          <span className="wrap-break-word">{detail.value}</span>
-                        </div>
-                      ))}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => openContactHistoryDialog(item)}
+                className={`hover:bg-accent/40 flex w-full cursor-pointer gap-2.5 rounded-md text-left ${isCompact ? "items-center p-1.5" : "p-2"}`}
+              >
+                <Avatar className={isCompact ? "size-7 shrink-0" : "mt-0.5 size-9 shrink-0"}>
+                  <AvatarFallback className="text-xs font-semibold">
+                    {getNameInitials(item.name)}
+                  </AvatarFallback>
+                </Avatar>
+                {isCompact ? (
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <div className="flex min-w-0 items-baseline gap-1.5 overflow-hidden">
+                      <span className="shrink-0 truncate font-medium">{item.name}</span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {item.email ?? "—"}
+                      </span>
                     </div>
+                    <ApprovalProgressIndicator
+                      progressValue={item.batteryProgress}
+                      steps={approvalSteps}
+                      rawProgressValue={item.batteryRawValue}
+                    />
                   </div>
-                </TooltipContent>
-              </Tooltip>
-              <ApprovalProgressIndicator
-                progressValue={item.batteryProgress}
-                steps={approvalSteps}
-                rawProgressValue={item.batteryRawValue}
-              />
-            </div>
-          </button>
+                ) : (
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="space-y-1">
+                      <span className="block font-medium">{item.name}</span>
+                      <span className="block truncate text-xs">
+                        {item.email ?? "No email"}
+                      </span>
+                      {addressDisplay.localityLine ? (
+                        <span className="block text-sm font-semibold text-foreground">
+                          {addressDisplay.localityLine}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground block text-xs">No address</span>
+                      )}
+                      <span className="text-muted-foreground block text-xs">
+                        {item.phone ?? "No phone"}
+                      </span>
+                    </div>
+                    <ApprovalProgressIndicator
+                      progressValue={item.batteryProgress}
+                      steps={approvalSteps}
+                      rawProgressValue={item.batteryRawValue}
+                    />
+                  </div>
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              align="start"
+              sideOffset={8}
+              className="max-w-md border border-slate-200 bg-white p-3 text-slate-900 shadow-lg dark:border-slate-200 dark:bg-white dark:text-slate-900"
+            >
+              <div className="space-y-2">
+                <p className="text-xs font-semibold tracking-wide uppercase">
+                  Contact details
+                </p>
+                <div className="max-h-72 space-y-1 overflow-y-auto">
+                  {details.map((detail) => (
+                    <div
+                      key={`${detail.label}-${detail.value}`}
+                      className="grid grid-cols-[100px_1fr] gap-2 text-xs"
+                    >
+                      <span className="font-bold">{detail.label}</span>
+                      <span className="wrap-break-word">{detail.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </TooltipContent>
+          </Tooltip>
         );
       },
     },
@@ -4267,55 +4313,70 @@ export function MondayBoardView({
       accessorKey: "referredToContractors",
       cell: (item: MondayRecord) => {
         const referredValues = splitCsvValues(item.referredToContractors);
+        const MAX_VISIBLE = 2;
+        const visibleReferred = referredValues.slice(0, MAX_VISIBLE);
+        const extraReferred = referredValues.length - MAX_VISIBLE;
         return (
           <button
             type="button"
             onClick={() => openRetentionDialog(item)}
-            className="hover:bg-accent/40 flex w-full max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
+            className="hover:bg-accent/40 flex w-full min-w-[150px] max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
           >
-            <div className="w-full space-y-1">
-              <span className="block text-xs font-medium">Referred:</span>
+            {/* Referred row — single line */}
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Referred:</span>
               {referredValues.length > 0 ? (
-                <div className="flex max-w-full flex-wrap gap-1">
-                  {referredValues.map((value) => (
-                    <BusinessInfoHoverCard
-                      key={value}
-                      companyName={value}
-                    >
+                <>
+                  {visibleReferred.map((value) => (
+                    <BusinessInfoHoverCard key={value} companyName={value}>
                       <Badge
                         variant="secondary"
-                        className="max-w-full cursor-help truncate text-[10px]"
+                        className="max-w-[100px] shrink-0 cursor-help truncate text-[10px]"
                         title={value}
                       >
                         {value}
                       </Badge>
                     </BusinessInfoHoverCard>
                   ))}
-                </div>
+                  {extraReferred > 0 && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      +{extraReferred}
+                    </Badge>
+                  )}
+                </>
               ) : (
                 <span className="text-muted-foreground text-xs">—</span>
               )}
             </div>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Hired With:</span>{" "}
+            {/* Hired With row — single line */}
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Hired With:</span>
               {item.hiredWithContractor?.trim() ? (
                 <BusinessInfoHoverCard companyName={item.hiredWithContractor}>
-                  <Badge variant="secondary" className="ml-1 cursor-help text-[10px]">
+                  <Badge
+                    variant="secondary"
+                    className="max-w-[120px] shrink-0 cursor-help truncate text-[10px]"
+                    title={item.hiredWithContractor}
+                  >
                     {item.hiredWithContractor}
                   </Badge>
                 </BusinessInfoHoverCard>
               ) : (
-                "—"
+                <span className="text-muted-foreground text-xs">—</span>
               )}
-            </span>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Hire Date:</span>{" "}
-              {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
-            </span>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Period:</span>{" "}
-              {item.retentionPeriod ?? "—"}
-            </span>
+            </div>
+            {/* Hire Date row — single line */}
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Hire Date:</span>
+              <span className="truncate text-xs">
+                {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+              </span>
+            </div>
+            {/* Period row — single line */}
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Period:</span>
+              <span className="truncate text-xs">{item.retentionPeriod ?? "—"}</span>
+            </div>
           </button>
         );
       },
@@ -4473,7 +4534,7 @@ export function MondayBoardView({
 
   return (
     <div className="monday-like-page container mx-auto max-w-[1600px] space-y-3 py-4">
-      {identity ? (
+      {/* {identity ? (
         <div className="text-muted-foreground text-xs">
           Connected account: {identity.accountId} · user: {identity.userId} · board:{" "}
           {boardName}
@@ -4488,7 +4549,7 @@ export function MondayBoardView({
             : ""}
           {canOverrideUserScopeOwner ? " · owner scope admin override enabled" : ""}
         </div>
-      ) : null}
+      ) : null} */}
 
       <div className={`rounded-lg border px-3 py-2 ${boardThemeStyles.shellCardClassName}`}>
         <div className="space-y-2">
@@ -5193,6 +5254,53 @@ export function MondayBoardView({
                                 </div>
                               </div>
 
+                              <div className="space-y-2 rounded-md border p-4">
+                                <label className="text-xs font-semibold tracking-wide uppercase">
+                                  Table Density
+                                </label>
+                                <p className="text-muted-foreground text-xs">
+                                  {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
+                                    (o) => o.value === boardGeneralSettingsDraft.tableDensity,
+                                  )?.description}
+                                </p>
+                                <div className="mt-1 flex gap-2">
+                                  {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          tableDensity: option.value,
+                                        }));
+                                      }}
+                                      className={`flex flex-1 flex-col items-center gap-1.5 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
+                                        ? "border-primary bg-primary/10 text-primary"
+                                        : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                                        }`}
+                                    >
+                                      <span className="flex flex-col gap-0.5">
+                                        {option.value === "expanded" ? (
+                                          <>
+                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-70" />
+                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
+                                            <span className="block h-2 w-16 rounded-sm bg-current opacity-30" />
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-70" />
+                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                            <span className="block h-1 w-16 rounded-sm bg-current opacity-30" />
+                                          </>
+                                        )}
+                                      </span>
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
                               <div className="flex flex-wrap items-center gap-2">
                                 <Button
                                   onClick={() => {
@@ -5322,172 +5430,172 @@ export function MondayBoardView({
                           ) : null}
                           {isMondaySettingsAdmin ? (
                             <TabsContent value="user-zip-map" className="mt-0">
-                            <div className="space-y-4">
-                              <div className="space-y-1">
-                                <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                                <p className="text-muted-foreground text-sm">
-                                  Configure and monitor district routing for newly created contact
-                                  records.
-                                </p>
-                              </div>
-
-                              <div className="grid gap-3 md:grid-cols-3">
-                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                    Routing Status
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {routingStatusQuery.isLoading
-                                      ? "Loading..."
-                                      : routingStatusQuery.data?.enabled
-                                        ? routingStatusQuery.data.ok
-                                          ? "Configured"
-                                          : "Configured with issues"
-                                        : "Not configured"}
-                                  </p>
-                                </div>
-                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                    County Mappings
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {routingStatusQuery.data?.countyMappingsCount ?? 0}
-                                  </p>
-                                </div>
-                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                    District Owner Mappings
-                                  </p>
-                                  <p className="mt-1 text-sm font-medium">
-                                    {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
-                                  </p>
-                                </div>
-                              </div>
-
-                              <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
-                                <p className="text-sm font-medium">Routing boards</p>
-                                <div className="grid gap-3 md:grid-cols-3">
-                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                    <p className="text-xs font-semibold uppercase">Contact board</p>
-                                    <p className="text-muted-foreground mt-1 break-all text-xs">
-                                      {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
-                                    </p>
-                                    {routingStatusQuery.data?.contactBoardUrl ? (
-                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                        <a
-                                          href={routingStatusQuery.data.contactBoardUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                        >
-                                          Open board
-                                        </a>
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                    <p className="text-xs font-semibold uppercase">
-                                      County {"->"} District board
-                                    </p>
-                                    <p className="text-muted-foreground mt-1 break-all text-xs">
-                                      {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
-                                    </p>
-                                    {routingStatusQuery.data?.countyBoardUrl ? (
-                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                        <a
-                                          href={routingStatusQuery.data.countyBoardUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                        >
-                                          Open board
-                                        </a>
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                    <p className="text-xs font-semibold uppercase">
-                                      District {"->"} Owner board
-                                    </p>
-                                    <p className="text-muted-foreground mt-1 break-all text-xs">
-                                      {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
-                                    </p>
-                                    {routingStatusQuery.data?.districtBoardUrl ? (
-                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                        <a
-                                          href={routingStatusQuery.data.districtBoardUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                        >
-                                          Open board
-                                        </a>
-                                      </Button>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-sm font-medium">Routing diagnostics</p>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    className="h-7 text-xs"
-                                    onClick={() => {
-                                      void routingStatusQuery.refetch();
-                                    }}
-                                    disabled={routingStatusQuery.isFetching}
-                                  >
-                                    {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
-                                  </Button>
-                                </div>
-                                {routingStatusQuery.error ? (
-                                  <p className="text-destructive text-xs">
-                                    {routingStatusQuery.error instanceof Error
-                                      ? routingStatusQuery.error.message
-                                      : "Failed to load routing diagnostics"}
-                                  </p>
-                                ) : null}
-                                {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
-                                  <ul className="list-disc space-y-1 pl-4 text-xs">
-                                    {(routingStatusQuery.data?.issues ?? []).map((issue) => (
-                                      <li key={issue} className="text-destructive">
-                                        {issue}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-muted-foreground text-xs">
-                                    No routing issues detected.
-                                  </p>
-                                )}
-                              </div>
-
-                              <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                              <div className="space-y-4">
                                 <div className="space-y-1">
-                                  <p className="text-sm font-medium">Manual rerun</p>
-                                  <p className="text-muted-foreground text-xs">
-                                    Re-run owner assignment for one contact item id.
+                                  <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                                  <p className="text-muted-foreground text-sm">
+                                    Configure and monitor district routing for newly created contact
+                                    records.
                                   </p>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Input
-                                    value={routingRerunItemId}
-                                    onChange={(event) => setRoutingRerunItemId(event.target.value)}
-                                    placeholder="Item ID"
-                                    className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    className="h-8 px-3 text-xs"
-                                    onClick={() => {
-                                      void handleRunRoutingRerun();
-                                    }}
-                                    disabled={isRunningRoutingRerun}
-                                  >
-                                    {isRunningRoutingRerun ? "Running..." : "Run assignment"}
-                                  </Button>
+
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                      Routing Status
+                                    </p>
+                                    <p className="mt-1 text-sm font-medium">
+                                      {routingStatusQuery.isLoading
+                                        ? "Loading..."
+                                        : routingStatusQuery.data?.enabled
+                                          ? routingStatusQuery.data.ok
+                                            ? "Configured"
+                                            : "Configured with issues"
+                                          : "Not configured"}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                      County Mappings
+                                    </p>
+                                    <p className="mt-1 text-sm font-medium">
+                                      {routingStatusQuery.data?.countyMappingsCount ?? 0}
+                                    </p>
+                                  </div>
+                                  <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                    <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                      District Owner Mappings
+                                    </p>
+                                    <p className="mt-1 text-sm font-medium">
+                                      {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
+
+                                <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
+                                  <p className="text-sm font-medium">Routing boards</p>
+                                  <div className="grid gap-3 md:grid-cols-3">
+                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                      <p className="text-xs font-semibold uppercase">Contact board</p>
+                                      <p className="text-muted-foreground mt-1 break-all text-xs">
+                                        {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
+                                      </p>
+                                      {routingStatusQuery.data?.contactBoardUrl ? (
+                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                          <a
+                                            href={routingStatusQuery.data.contactBoardUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            Open board
+                                          </a>
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                      <p className="text-xs font-semibold uppercase">
+                                        County {"->"} District board
+                                      </p>
+                                      <p className="text-muted-foreground mt-1 break-all text-xs">
+                                        {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
+                                      </p>
+                                      {routingStatusQuery.data?.countyBoardUrl ? (
+                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                          <a
+                                            href={routingStatusQuery.data.countyBoardUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            Open board
+                                          </a>
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                    <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                      <p className="text-xs font-semibold uppercase">
+                                        District {"->"} Owner board
+                                      </p>
+                                      <p className="text-muted-foreground mt-1 break-all text-xs">
+                                        {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
+                                      </p>
+                                      {routingStatusQuery.data?.districtBoardUrl ? (
+                                        <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                          <a
+                                            href={routingStatusQuery.data.districtBoardUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                          >
+                                            Open board
+                                          </a>
+                                        </Button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-medium">Routing diagnostics</p>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs"
+                                      onClick={() => {
+                                        void routingStatusQuery.refetch();
+                                      }}
+                                      disabled={routingStatusQuery.isFetching}
+                                    >
+                                      {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
+                                    </Button>
+                                  </div>
+                                  {routingStatusQuery.error ? (
+                                    <p className="text-destructive text-xs">
+                                      {routingStatusQuery.error instanceof Error
+                                        ? routingStatusQuery.error.message
+                                        : "Failed to load routing diagnostics"}
+                                    </p>
+                                  ) : null}
+                                  {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
+                                    <ul className="list-disc space-y-1 pl-4 text-xs">
+                                      {(routingStatusQuery.data?.issues ?? []).map((issue) => (
+                                        <li key={issue} className="text-destructive">
+                                          {issue}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  ) : (
+                                    <p className="text-muted-foreground text-xs">
+                                      No routing issues detected.
+                                    </p>
+                                  )}
+                                </div>
+
+                                <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium">Manual rerun</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Re-run owner assignment for one contact item id.
+                                    </p>
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Input
+                                      value={routingRerunItemId}
+                                      onChange={(event) => setRoutingRerunItemId(event.target.value)}
+                                      placeholder="Item ID"
+                                      className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      className="h-8 px-3 text-xs"
+                                      onClick={() => {
+                                        void handleRunRoutingRerun();
+                                      }}
+                                      disabled={isRunningRoutingRerun}
+                                    >
+                                      {isRunningRoutingRerun ? "Running..." : "Run assignment"}
+                                    </Button>
+                                  </div>
+                                </div>
                               </div>
                             </TabsContent>
                           ) : null}
@@ -6417,7 +6525,7 @@ export function MondayBoardView({
         columns={columns}
         enableRowSelection
         enableVirtualization
-        virtualRowHeight={72}
+        virtualRowHeight={VIRTUAL_ROW_HEIGHT[tableDensity]}
         virtualOverscan={10}
         hideFilters
         isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
@@ -6777,7 +6885,7 @@ export function MondayBoardView({
         </DialogContent>
       </Dialog>
       {!staticMode && recordsQuery.hasNextPage ? (
-        <div ref={loadMoreAnchorRef} className="h-10" />
+        <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>
   );

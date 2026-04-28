@@ -290,6 +290,7 @@ export declare const api: {
         createdAt: number;
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }
     >;
@@ -301,6 +302,7 @@ export declare const api: {
         colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        tableDensity?: "expanded" | "compact";
         viewerMondayUserId: string;
       },
       {
@@ -308,6 +310,7 @@ export declare const api: {
         createdAt: number;
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
+        tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }
     >;

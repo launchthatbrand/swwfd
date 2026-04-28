@@ -481,6 +481,7 @@ export type DataModel = {
       createdAt: number;
       fontSize: "default" | "medium" | "large";
       ownerMondayUserId: string;
+      tableDensity?: "expanded" | "compact";
       updatedAt: number;
       updatedByMondayUserId: string;
       _id: Id<"mondayUserBoardSettings">;
@@ -494,6 +495,7 @@ export type DataModel = {
       | "createdAt"
       | "fontSize"
       | "ownerMondayUserId"
+      | "tableDensity"
       | "updatedAt"
       | "updatedByMondayUserId";
     indexes: {

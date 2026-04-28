@@ -9,15 +9,18 @@ export const runtime = "nodejs";
 
 type BoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
 type BoardFontSize = "default" | "medium" | "large";
+type BoardTableDensity = "expanded" | "compact";
 
 interface UpsertBoardSettingsBody {
   ownerId?: string;
   colorTheme?: BoardColorTheme;
   fontSize?: BoardFontSize;
+  tableDensity?: BoardTableDensity;
 }
 
 const COLOR_THEMES: BoardColorTheme[] = ["neutral", "sky", "emerald", "violet", "rose"];
 const FONT_SIZES: BoardFontSize[] = ["default", "medium", "large"];
+const TABLE_DENSITIES: BoardTableDensity[] = ["expanded", "compact"];
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
@@ -34,6 +37,10 @@ const isBoardColorTheme = (value: unknown): value is BoardColorTheme => {
 
 const isBoardFontSize = (value: unknown): value is BoardFontSize => {
   return typeof value === "string" && FONT_SIZES.includes(value as BoardFontSize);
+};
+
+const isBoardTableDensity = (value: unknown): value is BoardTableDensity => {
+  return typeof value === "string" && TABLE_DENSITIES.includes(value as BoardTableDensity);
 };
 
 export const GET = async (request: Request) => {
@@ -76,6 +83,9 @@ export const POST = async (request: Request) => {
   if (!isBoardFontSize(body.fontSize)) {
     return toJson({ ok: false, error: "fontSize is invalid" }, 400);
   }
+  if (body.tableDensity !== undefined && !isBoardTableDensity(body.tableDensity)) {
+    return toJson({ ok: false, error: "tableDensity is invalid" }, 400);
+  }
 
   try {
     const identity = await requireVerifiedMondaySession(request);
@@ -88,6 +98,7 @@ export const POST = async (request: Request) => {
         viewerMondayUserId: identity.userId,
         colorTheme: body.colorTheme,
         fontSize: body.fontSize,
+        tableDensity: isBoardTableDensity(body.tableDensity) ? body.tableDensity : undefined,
       },
     );
     return toJson({ ok: true, settings });
