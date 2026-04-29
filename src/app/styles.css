@@ -4,6 +4,7 @@
 
 @source "../../../../packages/core/ui/src/*.{ts,tsx}";
 @source "../../../../packages/core/ui/src/**/*.{ts,tsx}";
+@source "../../../../packages/plugins/support/src/**/*.{ts,tsx}";
 
 @custom-variant dark (&:where(.dark, .dark *));
 @custom-variant light (&:where(.light, .light *));
