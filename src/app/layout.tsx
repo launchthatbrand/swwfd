@@ -6,7 +6,7 @@ import type { Metadata, Viewport } from "next";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { Providers } from "./providers";
 import StandardLayout from "@acme/ui/layout/StandardLayout";
-import { TRPCReactProvider } from "~/trpc/react";
+
 import { ThemeProvider } from "@acme/ui/theme";
 import { Toaster } from "@acme/ui/toast";
 import { cn } from "@acme/ui";
@@ -99,8 +99,7 @@ export default async function RootLayout(props: {
           children: (
             <Providers host={host}>
               <ThemeProvider>
-                <TRPCReactProvider>
-                  <StandardLayout
+                <StandardLayout
                     appName="SWWFD"
                     sidebar={showSidebar ? props.sidebar : undefined}
                     header={showHeader ? props.header : null}
@@ -109,14 +108,10 @@ export default async function RootLayout(props: {
                     sidebarOpenOnHover={true}
                     sidebarDefaultOpen={false}
                   >
-                    {/* Next.js may insert an extra wrapper <div> around route segments.
-                        Make our immediate children lay out in a column so that wrapper
-                        stretches to full width (instead of sizing to its content). */}
                     <div className="flex min-w-0 flex-1 flex-col">
                       {props.children}
                     </div>
                   </StandardLayout>
-                </TRPCReactProvider>
                 <Toaster />
               </ThemeProvider>
             </Providers>
