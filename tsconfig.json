@@ -4,7 +4,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "target": "ES2022",
-    "lib": ["ES2022", "dom", "dom.iterable"],
+    "lib": [
+      "ES2022",
+      "dom",
+      "dom.iterable"
+    ],
     "allowJs": true,
     "resolveJsonModule": true,
     "moduleDetection": "force",
@@ -17,13 +21,27 @@
     "module": "Preserve",
     "moduleResolution": "Bundler",
     "noEmit": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "paths": {
-      "~/*": ["./src/*"],
-      "@convex-config/*": ["./convex/*"]
+      "~/*": [
+        "./src/*"
+      ],
+      "@convex-config/*": [
+        "./convex/*"
+      ]
     },
-    "plugins": [{ "name": "next" }]
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": [".", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    ".",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
