@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { MultiSelect } from "@acme/ui/multi-select";
+import { MultiSelect } from "@launchthatapp/ui/multi-select";
 
 const makeDemoTags = () => {
   const tags: string[] = [];

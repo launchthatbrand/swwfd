@@ -5,11 +5,11 @@ import type { Metadata, Viewport } from "next";
 
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { Providers } from "./providers";
-import StandardLayout from "@acme/ui/layout/StandardLayout";
+import StandardLayout from "@launchthatapp/ui/layout/StandardLayout";
 
-import { ThemeProvider } from "@acme/ui/theme";
-import { Toaster } from "@acme/ui/toast";
-import { cn } from "@acme/ui";
+import { ThemeProvider } from "@launchthatapp/ui/theme";
+import { Toaster } from "@launchthatapp/ui/toast";
+import { cn } from "@launchthatapp/ui";
 import { env } from "~/env";
 import { headers } from "next/headers";
 // import "@launchthatbrand/activepieces-ui/styles.css";

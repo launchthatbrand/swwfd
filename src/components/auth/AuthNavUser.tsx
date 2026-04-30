@@ -3,7 +3,7 @@
 import * as React from "react";
 import { LogOut, User } from "lucide-react";
 
-import { cn } from "@acme/ui";
+import { cn } from "@launchthatapp/ui";
 import { AuthLoading, Authenticated, Unauthenticated } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";

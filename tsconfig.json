@@ -6,10 +6,10 @@
     "paths": {
       "~/*": ["./src/*"],
       "@convex-config/*": ["./convex/*"],
-      "launchthat-plugin-core-tenant": [
+      "@launchthatapp/plugin-core-tenant": [
         "../../packages/plugins/core-tenant/src/index.ts"
       ],
-      "launchthat-plugin-core-tenant/*": [
+      "@launchthatapp/plugin-core-tenant/*": [
         "../../packages/plugins/core-tenant/src/*"
       ]
     },

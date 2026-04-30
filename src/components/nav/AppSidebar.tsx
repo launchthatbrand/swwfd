@@ -20,8 +20,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarSeparator,
-} from "@acme/ui/sidebar";
-import { cn } from "@acme/ui";
+} from "@launchthatapp/ui/sidebar";
+import { cn } from "@launchthatapp/ui";
 
 interface NavItem {
   label: string;

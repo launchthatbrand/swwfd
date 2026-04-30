@@ -13,7 +13,7 @@ import {
 import type {
   ColumnDefinition,
   EntityAction,
-} from "@acme/ui/entity-list";
+} from "@launchthatapp/ui/entity-list";
 import {
   Dialog,
   DialogContent,
@@ -21,31 +21,31 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@acme/ui/dialog";
-import { Popover, PopoverContent, PopoverTrigger } from "@acme/ui/popover";
+} from "@launchthatapp/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@launchthatapp/ui/popover";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@acme/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@acme/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@acme/ui/tooltip";
+} from "@launchthatapp/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@launchthatapp/ui/tooltip";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
-import { Badge } from "@acme/ui/badge";
-import { Button } from "@acme/ui/button";
-import { Calendar } from "@acme/ui/calendar";
-import { EntityList } from "@acme/ui/entity-list";
-import { Input } from "@acme/ui/input";
+import { Badge } from "@launchthatapp/ui/badge";
+import { Button } from "@launchthatapp/ui/button";
+import { Calendar } from "@launchthatapp/ui/calendar";
+import { EntityList } from "@launchthatapp/ui/entity-list";
+import { Input } from "@launchthatapp/ui/input";
 import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
-import { MultiSelect } from "@acme/ui/multi-select";
-import { Progress } from "@acme/ui/progress";
+import { MultiSelect } from "@launchthatapp/ui/multi-select";
+import { Progress } from "@launchthatapp/ui/progress";
 import mondaySdkInitialize from "monday-sdk-js";
-import { toast } from "@acme/ui/toast";
+import { toast } from "@launchthatapp/ui/toast";
 
 interface MondayRecord extends Record<string, unknown> {
   id: string;

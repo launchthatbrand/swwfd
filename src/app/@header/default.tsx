@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatedThemeToggler, MobileNav, MobileNavHeader, MobileNavMenu, MobileNavToggle, NavBody, NavItems, Navbar, NavbarButton, Separator } from "@acme/ui";
+import { AnimatedThemeToggler, MobileNav, MobileNavHeader, MobileNavMenu, MobileNavToggle, NavBody, NavItems, Navbar, NavbarButton, Separator } from "@launchthatapp/ui";
 
 import Image from "next/image";
 import Link from "next/link";
