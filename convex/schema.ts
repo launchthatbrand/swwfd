@@ -100,6 +100,35 @@ export default defineSchema({
     .index("by_startedAt", ["startedAt"])
     .index("by_status", ["status"]),
 
+  mondayTouchRangeBackfillJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    workflowId: v.optional(v.string()),
+    dateFrom: v.string(),
+    dateTo: v.string(),
+    dryRun: v.boolean(),
+    contactBoardId: v.string(),
+    touchBoardId: v.string(),
+    pageSize: v.number(),
+    currentCursor: v.optional(v.union(v.string(), v.null())),
+    processedContacts: v.number(),
+    inRangeContacts: v.number(),
+    createdTouches: v.number(),
+    updatedTouches: v.number(),
+    skippedTouches: v.number(),
+    errorsCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"]),
+
   mondayTouchCsvExportJobs: defineTable({
     status: v.union(
       v.literal("running"),
@@ -130,35 +159,6 @@ export default defineSchema({
     content: v.string(),
     createdAt: v.number(),
   }).index("by_jobId_and_chunkIndex", ["jobId", "chunkIndex"]),
-
-  mondayTouchRangeBackfillJobs: defineTable({
-    status: v.union(
-      v.literal("running"),
-      v.literal("done"),
-      v.literal("failed"),
-      v.literal("cancelled"),
-    ),
-    workflowId: v.optional(v.string()),
-    dateFrom: v.string(),
-    dateTo: v.string(),
-    dryRun: v.boolean(),
-    contactBoardId: v.string(),
-    touchBoardId: v.string(),
-    pageSize: v.number(),
-    currentCursor: v.optional(v.union(v.string(), v.null())),
-    processedContacts: v.number(),
-    inRangeContacts: v.number(),
-    createdTouches: v.number(),
-    updatedTouches: v.number(),
-    skippedTouches: v.number(),
-    errorsCount: v.number(),
-    startedAt: v.number(),
-    updatedAt: v.number(),
-    finishedAt: v.optional(v.union(v.number(), v.null())),
-    lastError: v.optional(v.union(v.string(), v.null())),
-  })
-    .index("by_startedAt", ["startedAt"])
-    .index("by_status", ["status"]),
 
   mondayGlobalSettings: defineTable({
     key: v.string(),

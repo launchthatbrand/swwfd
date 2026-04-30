@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   hasMondayTouchConfig,
   listMondayTouchBoardRecords,
+  upsertMondayTouchRecord,
 } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
@@ -181,3 +182,55 @@ export const GET = async (request: Request) => {
   }
 };
 
+export const POST = async (request: Request) => {
+  try {
+    await requireVerifiedMondaySession(request);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unauthorized Monday session";
+    return toJson({ ok: false, error: message }, 401);
+  }
+
+  if (!hasMondayTouchConfig()) {
+    return toJson(
+      { ok: false, error: "Missing Monday touch configuration" },
+      400,
+    );
+  }
+
+  let body: {
+    contactItemId?: string;
+    contactName?: string;
+    ownerId?: string;
+    source?: string;
+  };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return toJson({ ok: false, error: "Invalid JSON body" }, 400);
+  }
+
+  const contactItemId = body.contactItemId?.trim();
+  const contactName = body.contactName?.trim();
+  const ownerId = body.ownerId?.trim();
+  if (!contactItemId || !contactName || !ownerId) {
+    return toJson(
+      { ok: false, error: "Missing required fields: contactItemId, contactName, ownerId" },
+      400,
+    );
+  }
+
+  try {
+    const result = await upsertMondayTouchRecord({
+      contactItemId,
+      contactName,
+      ownerId,
+      source: body.source?.trim() || "update",
+    });
+    return toJson({ ok: true, ...result });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to upsert touch record";
+    return toJson({ ok: false, error: message }, 500);
+  }
+};

@@ -6,7 +6,7 @@ await jiti.import("./src/env");
 
 /** @type {import("next").NextConfig} */
 const config = {
-  transpilePackages: ["@launchthatapp/ui"],
+  transpilePackages: ["@launchthatapp/ui", "@launchthatapp/dnd"],
 
   typescript: { ignoreBuildErrors: true },
 

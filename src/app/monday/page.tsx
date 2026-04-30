@@ -4,7 +4,11 @@ import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import {
   ChevronLeft,
   ChevronRight,
+  Columns3,
   ExternalLink,
+  Filter,
+  LayoutGrid,
+  List,
   Mail,
   RefreshCcw,
   Settings,
@@ -32,771 +36,156 @@ import {
 } from "@launchthatapp/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@launchthatapp/ui/tooltip";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
 import { Calendar } from "@launchthatapp/ui/calendar";
-import { EntityList } from "@launchthatapp/ui/entity-list";
+
 import { Input } from "@launchthatapp/ui/input";
-import Link from "next/link";
 import type { MondayClientSdk } from "monday-sdk-js";
 import { MultiSelect } from "@launchthatapp/ui/multi-select";
-import { Progress } from "@launchthatapp/ui/progress";
+import { Textarea } from "@launchthatapp/ui/textarea";
 import mondaySdkInitialize from "monday-sdk-js";
 import { toast } from "@launchthatapp/ui/toast";
 
-interface MondayRecord extends Record<string, unknown> {
-  id: string;
-  contactId?: string | null;
-  touchItemId?: string | null;
-  touchedAt?: string | null;
-  touchedBy?: string | null;
-  touchSource?: string | null;
-  name: string;
-  url: string | null;
-  groupTitle: string | null;
-  statusText: string | null;
-  peopleText: string | null;
-  ownerIds: string[];
-  ownerProfiles: {
-    id: string;
-    name: string | null;
-    email?: string | null;
-    photoThumb: string | null;
-  }[];
-  email: string | null;
-  phone: string | null;
-  address: string | null;
-  referredToContractors: string | null;
-  hiredWithContractor: string | null;
-  hireDate: string | null;
-  retentionPeriod: string | null;
-  tags: string | null;
-  batteryProgress: number | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  contactDetails: {
-    label: string;
-    value: string;
-  }[];
-  resumeFiles: {
-    assetId: string | null;
-    name: string;
-    url: string | null;
-  }[];
-}
+import type {
+  AddNewContactValues,
+  AdvancedFilterCondition,
+  AdvancedFilterField,
+  AdvancedFilterMatchMode,
+  AdvancedFilterOperator,
+  ApprovalStepConfig,
+  KanbanMoveConfirmation,
+  MondayBoardViewMode,
+  MondayBoardViewProps,
+  MondayContactCandidate,
+  MondayContactsLookupResponse,
+  MondayCreateContactResponse,
+  MondayCreateRecordUpdateResponse,
+  MondayEmailTemplate,
+  MondayEmailTemplatesResponse,
+  MondayFeatureFlags,
+  MondayFeatureFlagsResponse,
+  MondayIdentity,
+  MondayRecord,
+  MondayRecordEditOptionsResponse,
+  MondayRecordUpdate,
+  MondayRecordUpdatesResponse,
+  MondayResponse,
+  MondayResumeUploadResponse,
+  MondayRoutingAssignResponse,
+  MondayRoutingAssignResult,
+  MondayRoutingStatus,
+  MondayRoutingStatusResponse,
+  MondaySendEmailResponse,
+  MondayUserBoardSettingsResponse,
+  MondayUserFilterPresetUpsertResponse,
+  MondayUserFilterPresetsResponse,
+  MondayUserProfileResponse,
+  OutlookConnectionStatusResponse,
+  ResumePreviewState,
+  SavedAdvancedFilterPreset,
+  UserBoardColorTheme,
+  UserBoardDisplayMode,
+  UserBoardFontSize,
+  UserBoardGeneralSettings,
+  UserBoardTableDensity,
+} from "./types";
+export type { MondayBoardViewMode } from "./types";
 
-interface MondayResponse {
-  ok: boolean;
-  error?: string;
-  boardName?: string | null;
-  records?: MondayRecord[];
-  nextCursor?: string | null;
-  approvalSteps?: ApprovalStepConfig[];
-}
+import {
+  APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE,
+  APPROVAL_STEPS,
+  CONTACT_UPDATE_ACTION_BUTTONS,
+  CONTACT_UPDATE_TYPE_OPTIONS,
+  DEFAULT_MONDAY_FEATURE_FLAGS,
+  DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+  isEmbeddedMondaySessionToken,
+  isUserBoardColorTheme,
+  isUserBoardDisplayMode,
+  isUserBoardFontSize,
+  isUserBoardPageSize,
+  isUserBoardTableDensity,
+  KANBAN_STEP_CONFIG,
+  MONDAY_DEV_BYPASS_TOKEN,
+  MONDAY_OWNER_SCOPE_ADMIN_USER_IDS,
+  QUESTIONNAIRE_UPDATE_ACTION,
+  UPDATE_SUBITEM_NAME_BY_TYPE,
+  USER_BOARD_ACTION_BUTTON_SIZE_CLASS,
+  USER_BOARD_COLOR_THEME_OPTIONS,
+  USER_BOARD_COLOR_THEME_STYLES,
+  USER_BOARD_FONT_SIZE_OPTIONS,
+  USER_BOARD_FONT_SIZE_SCALE,
+  USER_BOARD_PAGE_SIZE_OPTIONS,
+  USER_BOARD_TABLE_DENSITY_OPTIONS,
+} from "./constants";
+import type { ContactUpdateType, QuickContactActionButton } from "./constants";
 
-interface MondayEmailTemplate {
-  id: string;
-  name: string;
-  url: string | null;
-  updatedAt: string | null;
-  content: string;
-  renderedHtml: string;
-  docLink: string | null;
-}
+import {
+  ADVANCED_DATE_OPERATORS,
+  ADVANCED_FILTER_FIELDS,
+  ADVANCED_OPERATOR_LABELS,
+  ADVANCED_TEXT_OPERATORS,
+  applyMondayThemeClass,
+  buildKanbanColumns,
+  buildMockBusinessInfo,
+  contactUpdateTypeLabel,
+  createAdvancedFilterCondition,
+  createAdvancedFilterId,
+  doesRecordMatchAdvancedFilters,
+  doesSubitemMatchUpdateType,
+  extractBoardIdFromContextPayload,
+  extractThemeFromContextPayload,
+  formatDateTimeParts,
+  formatUpdatedAt,
+  getAddressDisplayParts,
+  getContactTooltipDetails,
+  getDistrictChipClassName,
+  getMonthBounds,
+  getNameInitials,
+  getRecordStepIndex,
+  hasHtmlLikeMarkup,
+  hasUnsubscribe,
+  interpolateTemplateVariables,
+  isAdvancedConditionActive,
+  isAdvancedFilterField,
+  isAdvancedFilterOperator,
+  normalizeOwnerIds,
+  normalizeOwnerProfiles,
+  normalizeResumeFiles,
+  normalizeDateOnlyFromRecord,
+  parseAdvancedCondition,
+  parseSavedAdvancedFilterPreset,
+  parseUserBoardGeneralSettings,
+  readTokenFromLocation,
+  readTokenFromSdkResponse,
+  sortFiscalYearTagsDesc,
+  splitCsvValues,
+  toDateOnly,
+  toDateOnlyLocal,
+  uniqueSorted,
+  getAdvancedOperatorsForField,
+  getDefaultAdvancedOperatorForField,
+  isAdvancedDateField,
+  isAdvancedDateOperator,
+  getBoardColumnTargetForCondition,
+  normalizeAdvancedDate,
+  getRecordFieldValues,
+  LEGACY_FIELD_TO_BOARD_COLUMN_LABEL,
+} from "./helpers";
 
-interface MondayEmailTemplatesResponse {
-  ok: boolean;
-  error?: string;
-  boardName?: string | null;
-  boardId?: string;
-  workdocColumnId?: string;
-  templates?: MondayEmailTemplate[];
-}
-
-interface MondayIdentity {
-  userId: string;
-  accountId: string;
-  boardId?: string;
-  appClientId?: string;
-  expiresAt?: number;
-}
-
-interface MondayUserProfileResponse {
-  ok: boolean;
-  error?: string;
-  user?: {
-    id: string;
-    email: string | null;
-    name: string | null;
-  } | null;
-}
-
-interface OutlookConnectionStatusResponse {
-  ok: boolean;
-  error?: string;
-  connected?: boolean;
-  callbackPath?: string;
-  connection?: {
-    email: string | null;
-    displayName: string | null;
-    accessTokenExpiresAt: number;
-    scopes: string[];
-    updatedAt: number;
-  } | null;
-}
-
-interface MondayRecordEditOptionsResponse {
-  ok: boolean;
-  error?: string;
-  options?: {
-    referredToContractors: string[];
-    hiredWithContractor: string[];
-    retentionPeriod: string[];
-    tags: string[];
-  };
-}
-
-interface MondayContactCandidate {
-  id: string;
-  name: string;
-  url: string | null;
-  email: string | null;
-  owner: string | null;
-  updatedAt: string | null;
-}
-
-interface MondayContactsLookupResponse {
-  ok: boolean;
-  error?: string;
-  identity?: { userId: string };
-  existing?: MondayContactCandidate[];
-}
-
-interface MondayCreateContactResponse {
-  ok: boolean;
-  error?: string;
-  created?: { id: string };
-}
-
-interface MondayRecordUpdate {
-  id: string;
-  body: string;
-  createdAt: string | null;
-  updatedAt: string | null;
-  creatorId: string | null;
-  creatorName: string | null;
-}
-
-interface MondayRecordUpdatesResponse {
-  ok: boolean;
-  error?: string;
-  itemId?: string;
-  itemName?: string | null;
-  updates?: MondayRecordUpdate[];
-}
-
-interface MondayResumeUploadResponse {
-  ok: boolean;
-  error?: string;
-}
-
-interface ResumePreviewState {
-  fileName: string;
-  href: string;
-  recordName: string;
-}
-
-interface MockBusinessInfo {
-  name: string;
-  industry: string;
-  city: string;
-  state: string;
-  teamSize: number;
-  activeProjects: number;
-  reliabilityScore: number;
-}
-
-interface ApprovalStepConfig {
-  id: string;
-  title: string;
-}
-
-interface MondaySendEmailResponse {
-  ok: boolean;
-  error?: string;
-}
-
-interface AddNewContactValues {
-  firstName: string;
-  lastName: string;
-  email: string;
-  address: string;
-  ownerId: string;
-}
-
-const formatUpdatedAt = (value: string | null) => {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-};
-
-const hasHtmlLikeMarkup = (value: string) => /<[a-z][\s\S]*>/i.test(value);
-
-const getNameInitials = (name: string) => {
-  const parts = name
-    .split(" ")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) return "?";
-  const first = parts[0] ?? "";
-  if (parts.length === 1) return first.slice(0, 2).toUpperCase();
-  const second = parts[1] ?? "";
-  return `${first[0] ?? ""}${second[0] ?? ""}`.toUpperCase();
-};
-
-const getAddressDisplayParts = (address: string | null | undefined) => {
-  if (!address) return { prefix: null, cityStateZip: null, full: null };
-  const parts = address
-    .split(",")
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-  if (parts.length === 0) return { prefix: null, cityStateZip: null, full: null };
-  if (parts.length < 3) {
-    return { prefix: null, cityStateZip: null, full: parts.join(", ") };
-  }
-  const cityStateZip = parts.slice(-3).join(", ");
-  const prefix = parts.slice(0, -3).join(", ");
-  const full = prefix ? `${prefix}, ${cityStateZip}` : cityStateZip;
-  return { prefix: prefix || null, cityStateZip, full };
-};
-
-const getDistrictChipClassName = (value: string) => {
-  const normalized = value.trim().toLowerCase();
-  if (normalized.includes("district 1"))
-    return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
-  if (normalized.includes("district 2"))
-    return "bg-amber-500/15 text-amber-700 border-amber-500/30";
-  if (normalized.includes("district 3"))
-    return "bg-pink-500/15 text-pink-700 border-pink-500/30";
-  if (normalized.includes("district 4"))
-    return "bg-cyan-500/15 text-cyan-700 border-cyan-500/30";
-  if (normalized.includes("district 5"))
-    return "bg-violet-500/15 text-violet-700 border-violet-500/30";
-  if (normalized.includes("district 6"))
-    return "bg-teal-500/15 text-teal-700 border-teal-700/30";
-  if (normalized.includes("district 7"))
-    return "bg-sky-500/15 text-sky-700 border-sky-500/30";
-  return "bg-muted text-foreground border-border";
-};
-
-const APPROVAL_STEPS: ApprovalStepConfig[] = [
-  { id: "color_mm1db321", title: "Approval Step 1" },
-  { id: "color_mm1dwtvd", title: "Approval Step 2" },
-  { id: "color_mm1dwr4k", title: "Approval Step 3" },
-  { id: "color_mm1dnr11", title: "Approval Step 4" },
-  { id: "color_mm1dgeqy", title: "Approval Step 5" },
-  { id: "color_mm1d80yc", title: "Approval Step 6" },
-  { id: "color_mm1djwjj", title: "Approval Step 7" },
-  { id: "color_mm1d4e3y", title: "Approval Step 8" },
-];
-
-const buildMockBusinessInfo = (name: string): MockBusinessInfo => {
-  const normalized = name.trim() || "Unknown Contractor";
-  const seed = Array.from(normalized).reduce(
-    (sum, char) => sum + char.charCodeAt(0),
-    0,
-  );
-  const industries = [
-    "General Contracting",
-    "Remodeling",
-    "Electrical",
-    "Plumbing",
-    "HVAC",
-    "Roofing",
-  ] as const;
-  const cities = ["Austin", "Houston", "Dallas", "Phoenix", "Denver", "Tampa"] as const;
-  const states = ["TX", "AZ", "CO", "FL", "GA", "NC"] as const;
-
-  return {
-    name: normalized,
-    industry: industries[seed % industries.length] ?? "General Contracting",
-    city: cities[seed % cities.length] ?? "Austin",
-    state: states[seed % states.length] ?? "TX",
-    teamSize: 8 + (seed % 65),
-    activeProjects: 1 + (seed % 14),
-    reliabilityScore: 72 + (seed % 27),
-  };
-};
-
-const BusinessInfoHoverCard = (props: {
-  companyName: string;
-  children: React.ReactNode;
-}) => {
-  const [open, setOpen] = useState(false);
-  const info = useMemo(
-    () => buildMockBusinessInfo(props.companyName),
-    [props.companyName],
-  );
-
-  return (
-    <Popover open={open}>
-      <PopoverTrigger asChild>
-        <div
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-          className="inline-flex"
-        >
-          {props.children}
-        </div>
-      </PopoverTrigger>
-      <PopoverContent
-        portal={false}
-        side="top"
-        align="start"
-        className="w-[min(22rem,calc(100vw-2rem))]"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-      >
-        <div className="space-y-1.5">
-          <p className="text-sm font-semibold wrap-break-word">{info.name}</p>
-          <p className="text-muted-foreground text-xs wrap-break-word">
-            {info.industry} · {info.city}, {info.state}
-          </p>
-          <div className="text-muted-foreground grid grid-cols-2 gap-2 pt-1 text-xs">
-            <span>Team size: {info.teamSize}</span>
-            <span>Projects: {info.activeProjects}</span>
-            <span className="col-span-2">
-              Reliability score: {info.reliabilityScore}/100
-            </span>
-          </div>
-          <p className="text-muted-foreground pt-1 text-[11px] leading-snug wrap-break-word whitespace-normal">
-            Mock business data preview. Replace with CRM/company profile data when
-            integration is ready.
-          </p>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-};
-
-const ApprovalProgressIndicator = (props: {
-  progressValue: number | null;
-  steps: ApprovalStepConfig[];
-}) => {
-  const [open, setOpen] = useState(false);
-  const safeProgress = Math.max(0, Math.min(100, Math.round(props.progressValue ?? 0)));
-  const stepCount = Math.max(props.steps.length, 1);
-  const stepSize = 100 / stepCount;
-  const completedSteps = Math.floor(safeProgress / stepSize);
-
-  return (
-    <Popover open={open}>
-      <PopoverTrigger asChild>
-        <div
-          className="mt-1 space-y-1"
-          onMouseEnter={() => setOpen(true)}
-          onMouseLeave={() => setOpen(false)}
-        >
-          <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
-            <span>Progress</span>
-            <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
-          </div>
-          <div className="relative h-2 overflow-hidden rounded-full bg-muted/80">
-            <div
-              className="bg-primary h-full transition-all"
-              style={{ width: `${safeProgress}%` }}
-            />
-            {props.steps.map((step, index) => {
-              const left =
-                props.steps.length === 1
-                  ? 0
-                  : (index / (props.steps.length - 1)) * 100;
-              const completed = safeProgress >= (index + 1) * stepSize;
-              return (
-                <span
-                  key={step.id}
-                  className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${completed ? "bg-foreground/60" : "bg-border/70"
-                    }`}
-                  style={{ left: `${left}%` }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      </PopoverTrigger>
-      <PopoverContent
-        portal={false}
-        side="top"
-        align="start"
-        className="w-72"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-      >
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold">Onboarding Progress</p>
-            <span className="text-muted-foreground text-xs">
-              {completedSteps}/{props.steps.length} steps
-            </span>
-          </div>
-          <div className="space-y-1">
-            {props.steps.map((step, index) => {
-              const completed = safeProgress >= (index + 1) * stepSize;
-              return (
-                <div
-                  key={step.id}
-                  className="flex items-center justify-between gap-2 rounded-sm px-1 py-0.5 text-xs"
-                >
-                  <span className="truncate">
-                    {index + 1}. {step.title}
-                  </span>
-                  <span
-                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${completed
-                      ? "bg-emerald-500/15 text-emerald-700"
-                      : "bg-muted text-muted-foreground"
-                      }`}
-                  >
-                    {completed ? "Done" : "Pending"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
-};
-
-const normalizeOwnerProfiles = (
-  input: unknown,
-): {
-  id: string;
-  name: string | null;
-  email?: string | null;
-  photoThumb: string | null;
-}[] => {
-  if (!Array.isArray(input)) return [];
-  return input
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const owner = entry as {
-        id?: unknown;
-        name?: unknown;
-        email?: unknown;
-        photoThumb?: unknown;
-      };
-      const id = typeof owner.id === "string" ? owner.id.trim() : "";
-      if (id.length === 0) return null;
-      return {
-        id,
-        name: typeof owner.name === "string" ? owner.name.trim() || null : null,
-        email:
-          typeof owner.email === "string" ? owner.email.trim() || null : null,
-        photoThumb:
-          typeof owner.photoThumb === "string"
-            ? owner.photoThumb.trim() || null
-            : null,
-      };
-    })
-    .filter((owner): owner is NonNullable<typeof owner> => owner !== null);
-};
-
-const normalizeOwnerIds = (input: unknown) => {
-  if (!Array.isArray(input)) return [] as string[];
-  return input
-    .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-    .filter((entry) => entry.length > 0);
-};
-
-const normalizeResumeFiles = (
-  input: unknown,
-): { assetId: string | null; name: string; url: string | null }[] => {
-  if (!Array.isArray(input)) return [];
-  return input
-    .map((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const file = entry as {
-        assetId?: unknown;
-        name?: unknown;
-        url?: unknown;
-      };
-      const name =
-        typeof file.name === "string" && file.name.trim().length > 0
-          ? file.name.trim()
-          : "File";
-      const assetId =
-        typeof file.assetId === "string" && file.assetId.trim().length > 0
-          ? file.assetId.trim()
-          : null;
-      const url =
-        typeof file.url === "string" && file.url.trim().length > 0
-          ? file.url.trim()
-          : null;
-      if (!assetId && !url) return null;
-      return { assetId, name, url };
-    })
-    .filter(
-      (
-        file,
-      ): file is { assetId: string | null; name: string; url: string | null } =>
-        file !== null,
-    );
-};
-
-const formatDateTimeParts = (value: string | null) => {
-  if (!value) return { date: "—", time: "" };
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return { date: value, time: "" };
-  return {
-    date: parsed.toLocaleDateString(),
-    time: parsed.toLocaleTimeString(),
-  };
-};
-
-const toDateOnly = (value: Date) => {
-  const year = value.getUTCFullYear();
-  const month = String(value.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(value.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const getMonthBounds = (monthAnchor: Date) => {
-  const start = new Date(
-    Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth(), 1),
-  );
-  const end = new Date(
-    Date.UTC(monthAnchor.getUTCFullYear(), monthAnchor.getUTCMonth() + 1, 0),
-  );
-
-  return {
-    from: toDateOnly(start),
-    to: toDateOnly(end),
-    label: start.toLocaleDateString(undefined, {
-      month: "long",
-      year: "numeric",
-      timeZone: "UTC",
-    }),
-  };
-};
-
-const uniqueSorted = (values: (string | null)[]) => {
-  return Array.from(new Set(values.filter(Boolean) as string[])).sort((a, b) =>
-    a.localeCompare(b),
-  );
-};
-
-const interpolateTemplateVariables = (
-  source: string,
-  vars: { ownerName: string; ownerEmail: string },
-) => {
-  return source
-    .replace(/\{\{\s*owner\.name\s*\}\}/gi, vars.ownerName)
-    .replace(/\{\{\s*owner\.email\s*\}\}/gi, vars.ownerEmail);
-};
-
-const splitCsvValues = (value: string | null | undefined) => {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-};
-
-const sortFiscalYearTagsDesc = (values: string[]) => {
-  const fiscalYearPattern = /^fy(\d{2})\b/i;
-  const toFiscalYear = (value: string) => {
-    const match = fiscalYearPattern.exec(value.trim());
-    if (!match?.[1]) return null;
-    const parsed = Number(match[1]);
-    return Number.isFinite(parsed) ? parsed : null;
-  };
-
-  return [...values].sort((a, b) => {
-    const yearA = toFiscalYear(a);
-    const yearB = toFiscalYear(b);
-    if (yearA !== null && yearB !== null && yearA !== yearB) {
-      return yearB - yearA;
-    }
-    if (yearA !== null && yearB === null) return -1;
-    if (yearA === null && yearB !== null) return 1;
-    return a.localeCompare(b);
-  });
-};
-
-const normalizeDateOnlyFromRecord = (value: string | null | undefined) => {
-  if (!value) return "";
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const parsed = Date.parse(trimmed);
-  if (Number.isNaN(parsed)) return "";
-  return new Date(parsed).toISOString().slice(0, 10);
-};
-
-const toDateOnlyLocal = (value: Date) => {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-function AddNewContactForm(props: {
-  values: AddNewContactValues;
-  ownerOptions: { value: string; label: string }[];
-  isSubmitting: boolean;
-  onChange: <K extends keyof AddNewContactValues>(
-    key: K,
-    value: AddNewContactValues[K],
-  ) => void;
-  onSubmit: () => void;
-}) {
-  const { values, ownerOptions, isSubmitting, onChange, onSubmit } = props;
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label className="text-sm font-medium">First Name</label>
-          <Input
-            value={values.firstName}
-            onChange={(event) => onChange("firstName", event.target.value)}
-            placeholder="First name"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-sm font-medium">Last Name</label>
-          <Input
-            value={values.lastName}
-            onChange={(event) => onChange("lastName", event.target.value)}
-            placeholder="Last name"
-          />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Email</label>
-        <Input
-          type="email"
-          value={values.email}
-          onChange={(event) => onChange("email", event.target.value)}
-          placeholder="name@example.com"
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Address</label>
-        <Input
-          value={values.address}
-          onChange={(event) => onChange("address", event.target.value)}
-          placeholder="Street, City, State, Zip"
-        />
-      </div>
-      <div className="space-y-1">
-        <label className="text-sm font-medium">Owner</label>
-        <select
-          value={values.ownerId}
-          onChange={(event) => onChange("ownerId", event.target.value)}
-          className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-        >
-          {ownerOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="flex justify-end">
-        <Button
-          onClick={() => onSubmit()}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? "Checking..." : "Continue"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-const readTokenFromLocation = () => {
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("sessionToken");
-  return token && token.trim().length > 0 ? token.trim() : null;
-};
-
-const readTokenFromSdkResponse = (value: unknown) => {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
-  }
-  if (typeof value === "object" && value !== null) {
-    const maybeData = (value as { data?: unknown }).data;
-    if (typeof maybeData === "string" && maybeData.trim().length > 0) {
-      return maybeData.trim();
-    }
-  }
-  return null;
-};
-
-const applyMondayThemeClass = (theme: unknown) => {
-  const normalizedTheme = typeof theme === "string" ? theme.toLowerCase() : "";
-  const resolvedTheme =
-    normalizedTheme === "dark" || normalizedTheme === "black" ? "dark" : "light";
-  const root = document.documentElement;
-  console.info("[MondayThemeSync] Applying theme", {
-    mondayTheme: theme,
-    normalizedTheme,
-    resolvedTheme,
-    beforeClasses: root.className,
-  });
-  root.classList.remove("light", "dark");
-  root.classList.add(resolvedTheme);
-  console.info("[MondayThemeSync] Applied root classes", { afterClasses: root.className });
-};
-
-const extractThemeFromContextPayload = (value: unknown) => {
-  if (typeof value !== "object" || value === null) return null;
-  const data = (value as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) return null;
-  const theme = (data as { theme?: unknown }).theme;
-  return typeof theme === "string" ? theme : null;
-};
-
-const hasUnsubscribe = (
-  value: unknown,
-): value is {
-  unsubscribe: () => void;
-} => {
-  if (typeof value !== "object" || value === null) return false;
-  if (!("unsubscribe" in value)) return false;
-  const maybeUnsubscribe = (value as { unsubscribe?: unknown }).unsubscribe;
-  return typeof maybeUnsubscribe === "function";
-};
-
-const getContactTooltipDetails = (record: MondayRecord) => {
-  if (Array.isArray(record.contactDetails) && record.contactDetails.length > 0) {
-    return record.contactDetails.slice(0, 16);
-  }
-  return [
-    { label: "Name", value: record.name },
-    { label: "Email", value: record.email ?? "—" },
-    { label: "Phone", value: record.phone ?? "—" },
-    { label: "Address", value: record.address ?? "—" },
-    { label: "Owner", value: record.peopleText ?? "—" },
-    { label: "Status", value: record.statusText ?? "—" },
-  ];
-};
-
-export type MondayBoardViewMode = "all" | "userScoped";
-
-interface MondayBoardViewProps {
-  viewMode?: MondayBoardViewMode;
-  initialOwnerFilter?: string;
-  forcedOwnerId?: string;
-}
-
-const ADMIN_OWNER_OVERRIDE_EMAIL = "desmond.tatilian@qcausa.com";
-const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
+import {
+  AddNewContactForm,
+  ApprovalProgressIndicator,
+  BoardTable,
+  BusinessInfoHoverCard,
+  ContactCard,
+  KanbanBoard,
+  NameCellContent,
+  QuestionnaireFormDialog,
+} from "./components";
 
 export function MondayBoardView({
   viewMode = "all",
@@ -804,16 +193,45 @@ export function MondayBoardView({
   forcedOwnerId: forcedOwnerIdProp,
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
+  const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<UserBoardDisplayMode>("table");
   const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
   const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [staticMode, setStaticMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
   const [ownerFilter, setOwnerFilter] = useState(
     () => (forcedOwnerId.length > 0 ? forcedOwnerId : (initialOwnerFilter?.trim() ?? "")),
   );
+  const [advancedFilterMatchMode, setAdvancedFilterMatchMode] =
+    useState<AdvancedFilterMatchMode>("all");
+  const [advancedFilterConditions, setAdvancedFilterConditions] = useState<
+    AdvancedFilterCondition[]
+  >([]);
+  const [savedAdvancedFilterPresets, setSavedAdvancedFilterPresets] = useState<
+    SavedAdvancedFilterPreset[]
+  >([]);
+  const [activeSavedAdvancedFilterId, setActiveSavedAdvancedFilterId] = useState<
+    string | null
+  >(null);
+  const [pendingSavedAdvancedFilterName, setPendingSavedAdvancedFilterName] =
+    useState("");
+  const [isSavingAdvancedFilterPreset, setIsSavingAdvancedFilterPreset] =
+    useState(false);
+  const [deletingAdvancedFilterPresetIds, setDeletingAdvancedFilterPresetIds] = useState<
+    Record<string, boolean>
+  >({});
+  const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
+    ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+  });
+  const [boardGeneralSettingsDraft, setBoardGeneralSettingsDraft] =
+    useState<UserBoardGeneralSettings>({
+      ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+    });
+  const tableDensity = boardGeneralSettings.tableDensity;
+  const [isSavingBoardGeneralSettings, setIsSavingBoardGeneralSettings] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactStep, setAddContactStep] = useState<1 | 2>(1);
   const [addContactValues, setAddContactValues] = useState<AddNewContactValues>({
@@ -835,6 +253,25 @@ export function MondayBoardView({
   const [ownerDialogRecord, setOwnerDialogRecord] = useState<MondayRecord | null>(null);
   const [contactHistoryDialogRecord, setContactHistoryDialogRecord] =
     useState<MondayRecord | null>(null);
+  const [pendingDialogItemId, setPendingDialogItemId] = useState<string | null>(null);
+  const [contactUpdateDraft, setContactUpdateDraft] = useState("");
+  const [contactUpdateType, setContactUpdateType] =
+    useState<ContactUpdateType>("general");
+  const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
+  const [bulkQuickActionType, setBulkQuickActionType] = useState<
+    Exclude<ContactUpdateType, "general"> | null
+  >(null);
+  const [bulkQuickActionConfirmation, setBulkQuickActionConfirmation] = useState<{
+    action: QuickContactActionButton;
+    selectedItems: MondayRecord[];
+  } | null>(null);
+  const [questionnaireDialogRecords, setQuestionnaireDialogRecords] = useState<
+    MondayRecord[]
+  >([]);
+  const bulkClearSelectionRef = useRef<(() => void) | null>(null);
+  const [kanbanMoveConfirmation, setKanbanMoveConfirmation] =
+    useState<KanbanMoveConfirmation | null>(null);
+  const [isExecutingKanbanMove, setIsExecutingKanbanMove] = useState(false);
   const [retentionDraft, setRetentionDraft] = useState({
     referredToContractors: [] as string[],
     hiredWithContractor: "",
@@ -860,8 +297,14 @@ export function MondayBoardView({
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
+    DEFAULT_MONDAY_FEATURE_FLAGS,
+  );
+  const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
+  const [routingRerunItemId, setRoutingRerunItemId] = useState("");
+  const [isRunningRoutingRerun, setIsRunningRoutingRerun] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeMonth, setActiveMonth] = useState(
@@ -872,12 +315,6 @@ export function MondayBoardView({
     const sdk: MondayClientSdk = mondaySdkInitialize();
     console.info("[MondayThemeSync] Initialized monday-sdk-js instance");
     return sdk;
-  }, []);
-
-  useEffect(() => {
-    // Activepieces route temporarily swaps token formats via `ap-hsl-vars`.
-    // Ensure Monday page always renders with the default app token set.
-    document.documentElement.classList.remove("ap-hsl-vars");
   }, []);
 
   useEffect(() => {
@@ -963,10 +400,53 @@ export function MondayBoardView({
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
+  const isMondaySettingsAdmin = !!identity?.userId && MONDAY_OWNER_SCOPE_ADMIN_USER_IDS.includes(identity.userId);
+  const canOverrideUserScopeOwner =
+    viewMode === "userScoped" &&
+    !hasForcedOwnerScope &&
+    isMondayEmbeddedContext &&
+    isMondaySettingsAdmin;
+  const useUserRecordsEndpoint =
+    isTouchScopedView &&
+    isMondayEmbeddedContext &&
+    !canOverrideUserScopeOwner &&
+    debouncedSearch.trim().length < 2;
+  const presetScopeOwnerId = useMemo(() => {
+    if (hasForcedOwnerScope) return forcedOwnerId;
+    if (viewMode !== "userScoped") return "";
+    const ownerFromFilter = ownerFilter.trim();
+    if (ownerFromFilter.length > 0) return ownerFromFilter;
+    return identity?.userId.trim() ?? "";
+  }, [forcedOwnerId, hasForcedOwnerScope, identity?.userId, ownerFilter, viewMode]);
+  const boardThemeStyles = useMemo(
+    () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
+    [boardGeneralSettings.colorTheme],
+  );
+  const boardDraftThemeStyles = useMemo(
+    () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettingsDraft.colorTheme],
+    [boardGeneralSettingsDraft.colorTheme],
+  );
+  const boardFontScale = USER_BOARD_FONT_SIZE_SCALE[boardGeneralSettings.fontSize];
+  const boardFontScalePercent = Math.round(boardFontScale * 100);
+  const quickActionButtonSizeClass =
+    USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettings.fontSize];
+  const quickActionButtonDraftSizeClass =
+    USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettingsDraft.fontSize];
+  const hasUnsavedBoardGeneralSettings =
+    boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
+    boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
+    boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
+    boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
+    boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode;
+  const canCreateUpdatesAsLoggedInMondayUser =
+    isMondayEmbeddedContext &&
+    !!identity?.userId &&
+    sessionToken !== MONDAY_DEV_BYPASS_TOKEN;
   const recordsQuery = useInfiniteQuery({
     queryKey: [
       "monday-records",
       viewMode,
+      useUserRecordsEndpoint ? "user-records" : "records",
       monthBounds.from,
       monthBounds.to,
       debouncedSearch,
@@ -977,18 +457,21 @@ export function MondayBoardView({
     enabled: !!sessionToken && !staticMode,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const recordsEndpoint = isTouchScopedView
+      const recordsEndpoint = useUserRecordsEndpoint
         ? "/api/monday/user-records"
         : "/api/monday/records";
       const params = new URLSearchParams();
       params.set("limit", "100");
       if (pageParam) params.set("cursor", pageParam);
       const normalizedSearch = debouncedSearch.trim();
+      const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
       if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
       if (statusFilter.trim()) params.set("status", statusFilter.trim());
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
-      params.set("dateFrom", monthBounds.from);
-      params.set("dateTo", monthBounds.to);
+      if (!isFullDbSearch) {
+        params.set("dateFrom", monthBounds.from);
+        params.set("dateTo", monthBounds.to);
+      }
 
       const response = await fetch(`${recordsEndpoint}?${params.toString()}`, {
         method: "GET",
@@ -1009,14 +492,35 @@ export function MondayBoardView({
 
   const shouldAutoLoadMore =
     !staticMode &&
-    !isTouchScopedView &&
+    !useUserRecordsEndpoint &&
     debouncedSearch.trim().length === 0 &&
     statusFilter.trim().length === 0 &&
     ownerFilter.trim().length === 0;
 
+  const featureFlagsQuery = useQuery({
+    queryKey: ["monday-feature-flags", sessionToken],
+    enabled: !!sessionToken && !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/feature-flags", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayFeatureFlagsResponse;
+      if (!response.ok || !data.ok || !data.featureFlags) {
+        throw new Error(data.error ?? "Failed to load feature flags");
+      }
+      return data.featureFlags;
+    },
+    staleTime: 30_000,
+  });
+
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
-    enabled: !!sessionToken && !staticMode && (settingsOpen || !!sendEmailRecord),
+    enabled:
+      !!sessionToken &&
+      !staticMode &&
+      (!!sendEmailRecord || (settingsOpen && isMondaySettingsAdmin)),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("boardId", "18401299370");
@@ -1075,7 +579,12 @@ export function MondayBoardView({
 
   const outlookStatusQuery = useQuery({
     queryKey: ["monday-outlook-status", sessionToken, identity?.userId, settingsOpen],
-    enabled: !!sessionToken && !!identity?.userId && settingsOpen && !staticMode,
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      settingsOpen &&
+      isMondaySettingsAdmin &&
+      !staticMode,
     queryFn: async () => {
       const response = await fetch("/api/monday/email/outlook/status", {
         method: "GET",
@@ -1087,6 +596,29 @@ export function MondayBoardView({
         throw new Error(data.error ?? "Failed to load Outlook connection status");
       }
       return data;
+    },
+    staleTime: 30_000,
+  });
+
+  const routingStatusQuery = useQuery({
+    queryKey: ["monday-routing-status", sessionToken, identity?.userId, settingsOpen],
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      settingsOpen &&
+      isMondaySettingsAdmin &&
+      !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/routing/status", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayRoutingStatusResponse;
+      if (!response.ok || !data.ok || !data.status) {
+        throw new Error(data.error ?? "Failed to load district routing status");
+      }
+      return data.status;
     },
     staleTime: 30_000,
   });
@@ -1124,15 +656,64 @@ export function MondayBoardView({
     staleTime: 30_000,
   });
 
+  const userFilterPresetsQuery = useQuery({
+    queryKey: ["monday-user-filter-presets", sessionToken, presetScopeOwnerId],
+    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(`/api/monday/user-filter-presets?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayUserFilterPresetsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load saved filters");
+      }
+      const presets = (data.presets ?? [])
+        .map((entry) => parseSavedAdvancedFilterPreset(entry))
+        .filter((entry): entry is SavedAdvancedFilterPreset => entry !== null)
+        .slice(0, 25);
+      return presets;
+    },
+    staleTime: 30_000,
+  });
+
+  const userBoardSettingsQuery = useQuery({
+    queryKey: ["monday-user-board-settings", sessionToken, presetScopeOwnerId],
+    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(`/api/monday/settings/user-board?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayUserBoardSettingsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load board settings");
+      }
+      return parseUserBoardGeneralSettings(data.settings);
+    },
+    staleTime: 30_000,
+  });
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const ownerParam = params.get("owner");
+    const ownerIdParam = params.get("ownerId");
+    const ownerParam = ownerIdParam ?? params.get("owner");
+    const itemIdParam = params.get("itemId");
     const staticParam = params.get("static");
     const outlookParam = params.get("outlook");
     const outlookMessage = params.get("outlookMessage");
 
-    if (ownerParam && ownerParam.trim().length > 0) {
+    if (!hasForcedOwnerScope && ownerParam && ownerParam.trim().length > 0) {
       setOwnerFilter(ownerParam.trim());
+    }
+    if (itemIdParam && itemIdParam.trim().length > 0) {
+      setPendingDialogItemId(itemIdParam.trim());
     }
     if (staticParam === "1" || staticParam === "true") {
       setStaticMode(true);
@@ -1142,7 +723,43 @@ export function MondayBoardView({
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, []);
+  }, [hasForcedOwnerScope]);
+
+  useEffect(() => {
+    setSavedAdvancedFilterPresets([]);
+    setActiveSavedAdvancedFilterId(null);
+    setBoardGeneralSettings({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
+    setBoardGeneralSettingsDraft({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
+  }, [presetScopeOwnerId]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userFilterPresetsQuery.data) return;
+    setSavedAdvancedFilterPresets(userFilterPresetsQuery.data);
+    setActiveSavedAdvancedFilterId((prev) => {
+      if (!prev) return prev;
+      return userFilterPresetsQuery.data.some((preset) => preset.id === prev) ? prev : null;
+    });
+  }, [presetScopeOwnerId, userFilterPresetsQuery.data]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userBoardSettingsQuery.data) return;
+    setBoardGeneralSettings(userBoardSettingsQuery.data);
+    setBoardGeneralSettingsDraft(userBoardSettingsQuery.data);
+    if (isUserBoardDisplayMode(userBoardSettingsQuery.data.displayMode)) {
+      setUserScopedDisplayMode(userBoardSettingsQuery.data.displayMode);
+    }
+  }, [presetScopeOwnerId, userBoardSettingsQuery.data]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const previousFontSize = root.style.fontSize;
+    root.style.fontSize = `${boardFontScalePercent}%`;
+    return () => {
+      root.style.fontSize = previousFontSize;
+    };
+  }, [boardFontScalePercent]);
 
   useEffect(() => {
     const handleOutlookOAuthMessage = (event: MessageEvent) => {
@@ -1170,12 +787,14 @@ export function MondayBoardView({
           accountId: "static-account",
           userId: "53441186",
         });
+        setIsMondayEmbeddedContext(false);
         setAuthLoading(false);
         return;
       }
 
       setAuthLoading(true);
       setIdentity(null);
+      setIsMondayEmbeddedContext(false);
 
       try {
         let maybeToken = readTokenFromLocation();
@@ -1203,6 +822,7 @@ export function MondayBoardView({
           if (devAuthResponse.ok && devAuthData.ok && devAuthData.identity) {
             setSessionToken(devAuthData.sessionToken ?? MONDAY_DEV_BYPASS_TOKEN);
             setIdentity(devAuthData.identity);
+            setIsMondayEmbeddedContext(false);
             return;
           }
           throw new Error(
@@ -1234,12 +854,14 @@ export function MondayBoardView({
 
         setSessionToken(authData.sessionToken ?? maybeToken);
         setIdentity(authData.identity);
+        setIsMondayEmbeddedContext(isEmbeddedMondaySessionToken(maybeToken));
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
             : "Failed to initialize Monday embed session";
         toast.error(message);
+        setIsMondayEmbeddedContext(false);
       } finally {
         setAuthLoading(false);
       }
@@ -1249,15 +871,39 @@ export function MondayBoardView({
   }, [monday, staticMode]);
 
   useEffect(() => {
+    if (hasForcedOwnerScope) return;
     if (viewMode !== "userScoped") return;
     if (!identity?.userId) return;
-    const overrideEnabled =
-      (userProfileQuery.data?.email?.toLowerCase() ?? null) === ADMIN_OWNER_OVERRIDE_EMAIL;
-    setOwnerFilter((currentValue) => {
-      if (currentValue.trim().length > 0) return currentValue;
-      return overrideEnabled ? "" : identity.userId;
-    });
-  }, [identity?.userId, userProfileQuery.data?.email, viewMode]);
+    if (!isMondayEmbeddedContext) return;
+    if (canOverrideUserScopeOwner) return;
+    setOwnerFilter(identity.userId);
+  }, [
+    canOverrideUserScopeOwner,
+    hasForcedOwnerScope,
+    identity?.userId,
+    isMondayEmbeddedContext,
+    viewMode,
+  ]);
+
+  useEffect(() => {
+    if (!hasForcedOwnerScope) return;
+    setOwnerFilter(forcedOwnerId);
+  }, [forcedOwnerId, hasForcedOwnerScope]);
+
+  useEffect(() => {
+    if (!featureFlagsQuery.data) return;
+    setFeatureFlags(featureFlagsQuery.data);
+  }, [featureFlagsQuery.data]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!featureFlagsQuery.error) return;
+    const message =
+      featureFlagsQuery.error instanceof Error
+        ? featureFlagsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [featureFlagsQuery.error, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1272,13 +918,14 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
+    if (!isMondaySettingsAdmin) return;
     if (!emailTemplatesQuery.error) return;
     const message =
       emailTemplatesQuery.error instanceof Error
         ? emailTemplatesQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [emailTemplatesQuery.error, settingsOpen, staticMode]);
+  }, [emailTemplatesQuery.error, isMondaySettingsAdmin, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1289,6 +936,26 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [staticMode, userProfileQuery.error]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!userFilterPresetsQuery.error) return;
+    const message =
+      userFilterPresetsQuery.error instanceof Error
+        ? userFilterPresetsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [staticMode, userFilterPresetsQuery.error]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!userBoardSettingsQuery.error) return;
+    const message =
+      userBoardSettingsQuery.error instanceof Error
+        ? userBoardSettingsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [staticMode, userBoardSettingsQuery.error]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1303,13 +970,14 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
+    if (!isMondaySettingsAdmin) return;
     if (!outlookStatusQuery.error) return;
     const message =
       outlookStatusQuery.error instanceof Error
         ? outlookStatusQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [outlookStatusQuery.error, settingsOpen, staticMode]);
+  }, [isMondaySettingsAdmin, outlookStatusQuery.error, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1405,6 +1073,7 @@ export function MondayBoardView({
         ],
         resumeFiles: [],
         batteryProgress: index % 5 === 0 ? null : (index * 7) % 101,
+        batteryRawValue: null,
       };
     });
   }, [staticMode]);
@@ -1491,16 +1160,45 @@ export function MondayBoardView({
     () => (staticMode ? [] : (emailTemplatesQuery.data?.templates ?? [])),
     [emailTemplatesQuery.data?.templates, staticMode],
   );
-  const currentUserEmail = userProfileQuery.data?.email?.toLowerCase() ?? null;
-  const canOverrideUserScopeOwner =
-    viewMode === "userScoped" && currentUserEmail === ADMIN_OWNER_OVERRIDE_EMAIL;
   const isOwnerFilterEditable =
-    !hasForcedOwnerScope && (viewMode === "all" || canOverrideUserScopeOwner);
+    !hasForcedOwnerScope &&
+    (viewMode === "all" || !isMondayEmbeddedContext || canOverrideUserScopeOwner);
 
   useEffect(() => {
-    if (!hasForcedOwnerScope) return;
-    setOwnerFilter(forcedOwnerId);
-  }, [forcedOwnerId, hasForcedOwnerScope]);
+    const itemId = pendingDialogItemId?.trim();
+    if (!itemId) return;
+
+    const matchedRecord = records.find((record) => {
+      const recordId = record.id.trim();
+      const contactId = record.contactId?.trim() ?? "";
+      const touchItemId = record.touchItemId?.trim() ?? "";
+      return recordId === itemId || contactId === itemId || touchItemId === itemId;
+    });
+
+    if (matchedRecord) {
+      openContactHistoryDialog(matchedRecord);
+      setPendingDialogItemId(null);
+      return;
+    }
+
+    if (authLoading || recordsQuery.isLoading || recordsQuery.isFetchingNextPage) {
+      return;
+    }
+
+    if (!staticMode && recordsQuery.hasNextPage) {
+      void recordsQuery.fetchNextPage();
+      return;
+    }
+
+    toast.error(`Unable to find item ${itemId} in the current view`);
+    setPendingDialogItemId(null);
+  }, [
+    authLoading,
+    pendingDialogItemId,
+    records,
+    recordsQuery,
+    staticMode,
+  ]);
 
   useEffect(() => {
     if (viewMode !== "userScoped") return;
@@ -1509,8 +1207,10 @@ export function MondayBoardView({
     const params = new URLSearchParams(window.location.search);
     if (ownerFilter.trim().length > 0) {
       params.set("owner", ownerFilter.trim());
+      params.set("ownerId", ownerFilter.trim());
     } else {
       params.delete("owner");
+      params.delete("ownerId");
     }
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
@@ -1624,6 +1324,153 @@ export function MondayBoardView({
     }
   };
 
+  const handleSetEmailMarketingEnabled = async (enabled: boolean) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMondaySettingsAdmin) {
+      toast.error("Only admins can change feature flags");
+      return;
+    }
+    setIsSavingFeatureFlags(true);
+    try {
+      const response = await fetch("/api/monday/settings/feature-flags", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ emailMarketingEnabled: enabled }),
+      });
+      const data = (await response.json()) as MondayFeatureFlagsResponse;
+      if (!response.ok || !data.ok || !data.featureFlags) {
+        throw new Error(data.error ?? "Failed to save feature flags");
+      }
+      setFeatureFlags(data.featureFlags);
+      await featureFlagsQuery.refetch();
+      toast.success("Feature flag updated");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to update feature flag";
+      toast.error(message);
+    } finally {
+      setIsSavingFeatureFlags(false);
+    }
+  };
+
+  const handleRunRoutingRerun = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMondaySettingsAdmin) {
+      toast.error("Only admins can run routing tools");
+      return;
+    }
+    const itemId = routingRerunItemId.trim();
+    if (!itemId) {
+      toast.error("Enter a contact item id");
+      return;
+    }
+
+    setIsRunningRoutingRerun(true);
+    try {
+      const response = await fetch("/api/monday/tools/routing/assign", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          itemId,
+          force: true,
+        }),
+      });
+      const data = (await response.json()) as MondayRoutingAssignResponse;
+      if (!response.ok || !data.result) {
+        throw new Error(data.error ?? "Failed to run routing assignment");
+      }
+      const result = data.result;
+      if (!result.ok) {
+        throw new Error(result.message || "Routing assignment did not succeed");
+      }
+      toast.success(
+        `Routing result: ${result.status} · district ${result.districtCode ?? "N/A"} · owner ${result.ownerId ?? "N/A"}`,
+      );
+      await Promise.all([routingStatusQuery.refetch(), recordsQuery.refetch()]);
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to run routing assignment";
+      toast.error(message);
+    } finally {
+      setIsRunningRoutingRerun(false);
+    }
+  };
+
+  const handleSaveBoardGeneralSettings = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Select an owner board before saving settings");
+      return;
+    }
+    if (
+      !isUserBoardColorTheme(boardGeneralSettingsDraft.colorTheme) ||
+      !isUserBoardFontSize(boardGeneralSettingsDraft.fontSize) ||
+      !isUserBoardTableDensity(boardGeneralSettingsDraft.tableDensity)
+    ) {
+      toast.error("Choose a valid font size, color theme, and table density");
+      return;
+    }
+
+    setIsSavingBoardGeneralSettings(true);
+    try {
+      const response = await fetch("/api/monday/settings/user-board", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          ownerId: presetScopeOwnerId,
+          colorTheme: boardGeneralSettingsDraft.colorTheme,
+          fontSize: boardGeneralSettingsDraft.fontSize,
+          tableDensity: boardGeneralSettingsDraft.tableDensity,
+          pageSize: boardGeneralSettingsDraft.pageSize,
+          displayMode: boardGeneralSettingsDraft.displayMode,
+        }),
+      });
+      const data = (await response.json()) as MondayUserBoardSettingsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to save board settings");
+      }
+
+      const parsedSettings = parseUserBoardGeneralSettings(data.settings);
+      setBoardGeneralSettings(parsedSettings);
+      setBoardGeneralSettingsDraft(parsedSettings);
+      if (isUserBoardDisplayMode(parsedSettings.displayMode)) {
+        setUserScopedDisplayMode(parsedSettings.displayMode);
+      }
+      await userBoardSettingsQuery.refetch();
+      toast.success("General settings saved for this employee board");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save general settings";
+      toast.error(message);
+    } finally {
+      setIsSavingBoardGeneralSettings(false);
+    }
+  };
+
   const openSendEmailDialog = (record: MondayRecord) => {
     setSendEmailRecord(record);
     setSendEmailStep(1);
@@ -1664,6 +1511,14 @@ export function MondayBoardView({
     });
     return { subject, html, text };
   }, [sendEmailOwnerVars.ownerEmail, sendEmailOwnerVars.ownerName, sendEmailTemplate]);
+  useEffect(() => {
+    if (featureFlags.emailMarketingEnabled) return;
+    if (!sendEmailRecord) return;
+    setSendEmailRecord(null);
+    setSendEmailStep(1);
+    setSendEmailTemplateId(null);
+    setIsSendingEmail(false);
+  }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
   const handleConfirmSendEmail = async () => {
     if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
@@ -1773,6 +1628,44 @@ export function MondayBoardView({
     if (hasForcedOwnerScope) return `Owner: ${forcedOwnerId}`;
     return "Owner: me";
   }, [forcedOwnerId, hasForcedOwnerScope, ownerFilter, ownerOptions]);
+  const boardColumnFilterOptions = useMemo(() => {
+    const labels = new Set<string>();
+    for (const record of records) {
+      for (const detail of record.contactDetails) {
+        const label = detail.label.trim();
+        if (!label) continue;
+        labels.add(label);
+      }
+    }
+    return Array.from(labels).sort((a, b) => a.localeCompare(b));
+  }, [records]);
+  const boardColumnFilterKindByLabel = useMemo(() => {
+    const byLabel = new Map<string, string[]>();
+    for (const record of records) {
+      for (const detail of record.contactDetails) {
+        const label = detail.label.trim();
+        const value = detail.value.trim();
+        if (!label || !value) continue;
+        const existing = byLabel.get(label);
+        if (existing) {
+          if (existing.length < 8) existing.push(value);
+        } else {
+          byLabel.set(label, [value]);
+        }
+      }
+    }
+
+    const kinds = new Map<string, "text" | "date">();
+    for (const label of boardColumnFilterOptions) {
+      const samples = byLabel.get(label) ?? [];
+      const labelSuggestsDate = /\b(date|time)\b/i.test(label);
+      const hasDateSamples =
+        samples.length > 0 &&
+        samples.every((sample) => normalizeAdvancedDate(sample).length > 0);
+      kinds.set(label, labelSuggestsDate || hasDateSamples ? "date" : "text");
+    }
+    return kinds;
+  }, [boardColumnFilterOptions, records]);
 
   const statusOptions = useMemo(() => {
     return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
@@ -1780,6 +1673,246 @@ export function MondayBoardView({
       value,
     }));
   }, [records]);
+  const activeAdvancedFilterConditions = useMemo(
+    () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
+    [advancedFilterConditions],
+  );
+  const filteredRecords = useMemo(() => {
+    if (activeAdvancedFilterConditions.length === 0) return records;
+    return records.filter((record) =>
+      doesRecordMatchAdvancedFilters(
+        record,
+        activeAdvancedFilterConditions,
+        advancedFilterMatchMode,
+      ),
+    );
+  }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+
+  const handleAddAdvancedFilterCondition = () => {
+    setActiveSavedAdvancedFilterId(null);
+    const defaultTarget = boardColumnFilterOptions[0] ?? "";
+    const defaultKind = boardColumnFilterKindByLabel.get(defaultTarget) ?? "text";
+    setAdvancedFilterConditions((prev) => [
+      ...prev,
+      {
+        ...createAdvancedFilterCondition("detail", defaultTarget),
+        operator: defaultKind === "date" ? "on_or_after" : "contains",
+      },
+    ]);
+  };
+
+  const handleRemoveAdvancedFilterCondition = (conditionId: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.filter((condition) => condition.id !== conditionId),
+    );
+  };
+
+  const handleChangeAdvancedFilterOperator = (
+    conditionId: string,
+    operator: AdvancedFilterOperator,
+  ) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return {
+          ...condition,
+          operator,
+          value:
+            operator === "is_empty" || operator === "is_not_empty" ? "" : condition.value,
+          valueTo: operator === "between" ? condition.valueTo : "",
+        };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterTarget = (conditionId: string, target: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        const normalizedTarget = target.trim();
+        const kind = boardColumnFilterKindByLabel.get(normalizedTarget) ?? "text";
+        const allowedOperators =
+          kind === "date" ? ADVANCED_DATE_OPERATORS : ADVANCED_TEXT_OPERATORS;
+        const operator = allowedOperators.includes(condition.operator)
+          ? condition.operator
+          : kind === "date"
+            ? "on_or_after"
+            : "contains";
+        return {
+          ...condition,
+          field: "detail",
+          target: normalizedTarget,
+          operator,
+        };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterValue = (conditionId: string, value: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return { ...condition, value };
+      }),
+    );
+  };
+
+  const handleChangeAdvancedFilterValueTo = (conditionId: string, valueTo: string) => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions((prev) =>
+      prev.map((condition) => {
+        if (condition.id !== conditionId) return condition;
+        return { ...condition, valueTo };
+      }),
+    );
+  };
+
+  const handleClearAdvancedFilters = () => {
+    setActiveSavedAdvancedFilterId(null);
+    setAdvancedFilterConditions([]);
+    setAdvancedFilterMatchMode("all");
+  };
+
+  const handleSaveAdvancedFilterPreset = async () => {
+    const name = pendingSavedAdvancedFilterName.trim();
+    if (!name) {
+      toast.error("Enter a name before saving a filter preset");
+      return;
+    }
+    if (activeAdvancedFilterConditions.length === 0) {
+      toast.error("Add at least one filter condition before saving");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Missing owner board scope for saved filters");
+      return;
+    }
+
+    const normalizedName = name.toLowerCase();
+    const existingPreset = savedAdvancedFilterPresets.find(
+      (preset) => preset.name.toLowerCase() === normalizedName,
+    );
+    const conditionsForSave = activeAdvancedFilterConditions
+      .map((condition) => {
+        const target = getBoardColumnTargetForCondition(condition);
+        if (!target) return null;
+        return {
+          ...condition,
+          field: "detail" as const,
+          target,
+        };
+      })
+      .filter((condition) => condition !== null) as AdvancedFilterCondition[];
+    if (conditionsForSave.length === 0) {
+      toast.error("Select at least one board column before saving");
+      return;
+    }
+    setIsSavingAdvancedFilterPreset(true);
+    try {
+      const response = await fetch("/api/monday/user-filter-presets", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          ownerId: presetScopeOwnerId,
+          presetId: existingPreset?.id,
+          name,
+          matchMode: advancedFilterMatchMode,
+          conditions: conditionsForSave,
+        }),
+      });
+      const data = (await response.json()) as MondayUserFilterPresetUpsertResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to save filter preset");
+      }
+      const parsedPreset = parseSavedAdvancedFilterPreset(data.preset);
+      if (!parsedPreset) {
+        throw new Error("Invalid filter preset returned from server");
+      }
+
+      setSavedAdvancedFilterPresets((prev) => {
+        const withoutExisting = prev.filter((entry) => entry.id !== parsedPreset.id);
+        return [parsedPreset, ...withoutExisting].slice(0, 25);
+      });
+      setActiveSavedAdvancedFilterId(parsedPreset.id);
+      setPendingSavedAdvancedFilterName("");
+      toast.success(
+        existingPreset ? `Updated filter preset "${name}"` : `Saved filter preset "${name}"`,
+      );
+      await userFilterPresetsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save filter preset";
+      toast.error(message);
+    } finally {
+      setIsSavingAdvancedFilterPreset(false);
+    }
+  };
+
+  const handleApplySavedAdvancedFilterPreset = (preset: SavedAdvancedFilterPreset) => {
+    setAdvancedFilterMatchMode(preset.matchMode);
+    setAdvancedFilterConditions(
+      preset.conditions.map((condition) => ({
+        ...condition,
+        id: createAdvancedFilterId(),
+      })),
+    );
+    setActiveSavedAdvancedFilterId(preset.id);
+    setPendingSavedAdvancedFilterName(preset.name);
+    toast.success(`Applied filter preset "${preset.name}"`);
+  };
+
+  const handleDeleteSavedAdvancedFilterPreset = async (presetId: string) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!presetScopeOwnerId) {
+      toast.error("Missing owner board scope for saved filters");
+      return;
+    }
+    setDeletingAdvancedFilterPresetIds((prev) => ({ ...prev, [presetId]: true }));
+    try {
+      const params = new URLSearchParams();
+      params.set("ownerId", presetScopeOwnerId);
+      const response = await fetch(
+        `/api/monday/user-filter-presets/${encodeURIComponent(presetId)}?${params.toString()}`,
+        {
+          method: "DELETE",
+          cache: "no-store",
+          headers: { "x-monday-session-token": sessionToken },
+        },
+      );
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to delete filter preset");
+      }
+      setSavedAdvancedFilterPresets((prev) => prev.filter((preset) => preset.id !== presetId));
+      setActiveSavedAdvancedFilterId((prev) => (prev === presetId ? null : prev));
+      await userFilterPresetsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to delete filter preset";
+      toast.error(message);
+    } finally {
+      setDeletingAdvancedFilterPresetIds((prev) => {
+        const next = { ...prev };
+        delete next[presetId];
+        return next;
+      });
+    }
+  };
 
   const retentionOptions = useMemo(() => {
     const fromApi = editOptionsQuery.data;
@@ -1835,6 +1968,703 @@ export function MondayBoardView({
   };
   const openContactHistoryDialog = (record: MondayRecord) => {
     setContactHistoryDialogRecord(record);
+    setContactUpdateDraft("");
+    setContactUpdateType("general");
+  };
+
+  const resolveContactUpdateTargetRecordId = (record: MondayRecord) => {
+    const contactId = record.contactId?.trim();
+    if (contactId && contactId.length > 0) return contactId;
+    return record.id;
+  };
+
+  const syncContactHistoryDialogFromRecords = (refreshedRecords: MondayRecord[]) => {
+    setContactHistoryDialogRecord((prev) => {
+      if (!prev) return prev;
+      const prevContactId = prev.contactId?.trim() ?? "";
+      const matchedRecord = refreshedRecords.find((candidate) => {
+        const candidateId = candidate.id.trim();
+        const candidateContactId = candidate.contactId?.trim() ?? "";
+        const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
+        return (
+          candidateId === prev.id ||
+          candidateId === prevContactId ||
+          candidateContactId === prev.id ||
+          candidateContactId === prevContactId ||
+          candidateTouchItemId === prev.id
+        );
+      });
+      if (!matchedRecord) return prev;
+      const matchedBatteryProgress =
+        typeof matchedRecord.batteryProgress === "number" &&
+          Number.isFinite(matchedRecord.batteryProgress)
+          ? Math.max(0, Math.min(100, Math.round(matchedRecord.batteryProgress)))
+          : null;
+      return {
+        ...prev,
+        ...matchedRecord,
+        ownerProfiles: normalizeOwnerProfiles(matchedRecord.ownerProfiles),
+        ownerIds: normalizeOwnerIds(matchedRecord.ownerIds),
+        resumeFiles: normalizeResumeFiles(matchedRecord.resumeFiles),
+        batteryProgress: matchedBatteryProgress,
+      };
+    });
+  };
+
+  const openQuestionnaireDialogForRecords = useCallback(
+    (items: MondayRecord[]) => {
+      if (staticMode) {
+        toast.error("Unavailable in static mode");
+        return;
+      }
+      if (!sessionToken) {
+        toast.error("Missing monday session token");
+        return;
+      }
+      const map = new Map<string, MondayRecord>();
+      for (const record of items) {
+        const id = resolveContactUpdateTargetRecordId(record);
+        if (!id.trim()) continue;
+        if (!map.has(id)) {
+          map.set(id, record);
+        }
+      }
+      const list = [...map.values()];
+      if (list.length === 0) {
+        toast.error("No valid contact records");
+        return;
+      }
+      setQuestionnaireDialogRecords(list);
+    },
+    [sessionToken, staticMode],
+  );
+
+  const handleQuestionnaireSaved = useCallback(async () => {
+    const refreshedRecordsResult = await recordsQuery.refetch();
+    const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+      (page) => page.records ?? [],
+    );
+    syncContactHistoryDialogFromRecords(refreshedRecords);
+    await contactUpdatesQuery.refetch();
+    toast.success("Questionnaire updated");
+  }, [contactUpdatesQuery, recordsQuery, syncContactHistoryDialogFromRecords]);
+
+  const callMondayContextApi = async <TData,>(
+    query: string,
+    variables: Record<string, unknown>,
+  ): Promise<TData> => {
+    if (typeof monday.api !== "function") {
+      throw new Error("Monday client API is unavailable in this context");
+    }
+    const result = (await monday.api(query, { variables })) as
+      | {
+        data?: TData;
+        errors?: { message?: string | null }[];
+      }
+      | null
+      | undefined;
+    const errors = result?.errors ?? [];
+    if (errors.length > 0) {
+      const message = errors
+        .map((entry) => entry.message ?? "")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .join(" | ");
+      throw new Error(message || "Monday API returned an unknown error");
+    }
+    if (!result?.data) {
+      throw new Error("Monday API returned no data");
+    }
+    return result.data;
+  };
+
+  const normalizeForSubitemTypeMatch = (value: string) => {
+    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
+  };
+
+  const doesSubitemMatchUpdateType = (
+    subitemName: string,
+    type: Exclude<ContactUpdateType, "general">,
+  ) => {
+    const normalized = normalizeForSubitemTypeMatch(subitemName);
+    switch (type) {
+      case "welcome_email":
+        return normalized.includes("welcome");
+      case "followup":
+        return (
+          normalized.includes("follow-up") ||
+          normalized.includes("follow up") ||
+          normalized.includes("followup")
+        );
+      case "questionnaire":
+        return normalized.includes("question");
+      case "resume":
+        return normalized.includes("resume") && !normalized.includes("referral");
+      case "resume_referral":
+        return normalized.includes("resume referral");
+      default:
+        return false;
+    }
+  };
+
+  const resolveMondayContextBoardId = async () => {
+    const identityBoardId = identity?.boardId?.trim() ?? "";
+    if (identityBoardId.length > 0) return identityBoardId;
+    try {
+      const contextPayload = (await monday.get("context")) as unknown;
+      return extractBoardIdFromContextPayload(contextPayload);
+    } catch {
+      return "";
+    }
+  };
+
+  const createMondayRecordUpdateAsContextUser = async (args: {
+    itemId: string;
+    body: string;
+    updateType?: ContactUpdateType;
+  }) => {
+    const itemId = args.itemId.trim();
+    const body = args.body.trim();
+    if (!itemId || !body) {
+      throw new Error("Missing Monday update context");
+    }
+    const updateType = args.updateType ?? "general";
+
+    let targetItemId = itemId;
+    let source: "item" | "subitem" = "item";
+    let subitemName: string | null = null;
+    if (updateType !== "general") {
+      interface ExistingSubitemsData {
+        items?: {
+          subitems?: {
+            id?: string | number | null;
+            name?: string | null;
+          }[];
+        }[];
+      }
+      const existingSubitemsData = await callMondayContextApi<ExistingSubitemsData>(
+        `
+          query GetItemSubitems($itemIds: [ID!]) {
+            items(ids: $itemIds) {
+              subitems {
+                id
+                name
+              }
+            }
+          }
+        `,
+        { itemIds: [itemId] },
+      );
+      const matchedSubitem = (existingSubitemsData.items?.[0]?.subitems ?? []).find((subitem) => {
+        const subitemIdRaw = subitem.id;
+        const subitemId =
+          subitemIdRaw === null || subitemIdRaw === undefined
+            ? ""
+            : String(subitemIdRaw).trim();
+        const name = subitem.name?.trim() ?? "";
+        if (!subitemId || !name) return false;
+        return doesSubitemMatchUpdateType(name, updateType);
+      });
+
+      if (matchedSubitem?.id !== null && matchedSubitem?.id !== undefined) {
+        targetItemId = String(matchedSubitem.id).trim();
+        subitemName = matchedSubitem.name?.trim() ?? UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+      } else {
+        interface CreateSubitemData {
+          create_subitem?: {
+            id?: string | number | null;
+          } | null;
+        }
+        const desiredSubitemName = UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+        const createdSubitemData = await callMondayContextApi<CreateSubitemData>(
+          `
+            mutation CreateSubitem($parentItemId: ID!, $itemName: String!) {
+              create_subitem(parent_item_id: $parentItemId, item_name: $itemName) {
+                id
+              }
+            }
+          `,
+          {
+            parentItemId: itemId,
+            itemName: desiredSubitemName,
+          },
+        );
+        const createdSubitemIdRaw = createdSubitemData.create_subitem?.id;
+        const createdSubitemId =
+          createdSubitemIdRaw === null || createdSubitemIdRaw === undefined
+            ? ""
+            : String(createdSubitemIdRaw).trim();
+        if (!createdSubitemId) {
+          throw new Error("Failed to create subitem for typed update");
+        }
+        targetItemId = createdSubitemId;
+        subitemName = desiredSubitemName;
+      }
+      source = "subitem";
+    }
+
+    interface CreateUpdateData {
+      create_update?: {
+        id?: string | number | null;
+        body?: string | null;
+      } | null;
+    }
+    const createUpdateData = await callMondayContextApi<CreateUpdateData>(
+      `
+        mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
+          create_update(item_id: $itemId, body: $body) {
+            id
+            body
+          }
+        }
+      `,
+      {
+        itemId: targetItemId,
+        body,
+      },
+    );
+    const createdUpdateIdRaw = createUpdateData.create_update?.id;
+    const createdUpdateId =
+      createdUpdateIdRaw === null || createdUpdateIdRaw === undefined
+        ? ""
+        : String(createdUpdateIdRaw).trim();
+    if (!createdUpdateId) {
+      throw new Error("Monday did not return a new update id");
+    }
+
+    let warning: string | null = null;
+    let approvalStepMarked = false;
+    if (updateType !== "general") {
+      const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
+      const boardId = await resolveMondayContextBoardId();
+      if (!approvalStepColumnId) {
+        warning = "No onboarding step mapping exists for this update type";
+      } else if (!boardId) {
+        warning = "Missing boardId in monday context; skipped onboarding step update";
+      } else {
+        try {
+          await callMondayContextApi<{
+            change_multiple_column_values?: { id?: string | number | null } | null;
+          }>(
+            `
+              mutation MarkApprovalStepDone(
+                $boardId: ID!
+                $itemId: ID!
+                $columnValues: JSON!
+              ) {
+                change_multiple_column_values(
+                  board_id: $boardId
+                  item_id: $itemId
+                  column_values: $columnValues
+                  create_labels_if_missing: true
+                ) {
+                  id
+                }
+              }
+            `,
+            {
+              boardId,
+              itemId,
+              columnValues: JSON.stringify({
+                [approvalStepColumnId]: { label: "Done" },
+              }),
+            },
+          );
+          approvalStepMarked = true;
+        } catch (error) {
+          warning =
+            error instanceof Error
+              ? error.message
+              : "Failed to mark onboarding step done";
+        }
+      }
+    }
+
+    return {
+      id: createdUpdateId,
+      body: createUpdateData.create_update?.body ?? body,
+      updateType,
+      source,
+      subitemName,
+      approvalStepMarked,
+      warning,
+    } satisfies NonNullable<MondayCreateRecordUpdateResponse["update"]>;
+  };
+
+  const handleCreateContactUpdate = async (
+    options?: {
+      body?: string;
+      updateType?: ContactUpdateType;
+      keepSelectedType?: boolean;
+    },
+  ) => {
+    if (staticMode) {
+      toast.error("Updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken || !contactHistoryDialogRecord) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    const updateType = options?.updateType ?? contactUpdateType;
+    const body = (options?.body ?? contactUpdateDraft).trim();
+    if (!body) {
+      toast.error("Enter an update before posting");
+      return;
+    }
+
+    setIsCreatingContactUpdate(true);
+    try {
+      const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+      let data: MondayCreateRecordUpdateResponse;
+      if (canCreateUpdatesAsLoggedInMondayUser) {
+        const update = await createMondayRecordUpdateAsContextUser({
+          itemId: targetRecordId,
+          body,
+          updateType,
+        });
+        data = { ok: true, update };
+      } else {
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({ body, updateType }),
+          },
+        );
+        data = (await response.json()) as MondayCreateRecordUpdateResponse;
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "Failed to post Monday update");
+        }
+      }
+
+      setContactUpdateDraft("");
+      if (!options?.keepSelectedType) {
+        setContactUpdateType("general");
+      }
+
+      if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
+        const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+        fetch("/api/monday/touches", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            contactItemId: contactId,
+            contactName: contactHistoryDialogRecord.name ?? "",
+            ownerId: identity.userId,
+            source: "update",
+          }),
+        }).catch(() => {});
+      }
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactUpdatesQuery.refetch(),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      if (data.update?.warning) {
+        toast.success("Update posted to monday.com");
+        toast.error(`Onboarding step sync warning: ${data.update.warning}`);
+      } else if (data.update?.approvalStepMarked) {
+        toast.success("Update posted and onboarding step marked complete");
+      } else {
+        toast.success("Update posted to monday.com");
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      toast.error(message);
+    } finally {
+      setIsCreatingContactUpdate(false);
+    }
+  };
+
+  const handleBulkQuickActionUpdates = async (
+    selectedItems: MondayRecord[],
+    clearSelection: () => void,
+    action: QuickContactActionButton,
+  ) => {
+    if (staticMode) {
+      toast.error("Bulk updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session token");
+      return;
+    }
+    if (selectedItems.length === 0) {
+      toast.error("Select at least one record");
+      return;
+    }
+
+    const targetsByRecordId = new Map<string, MondayRecord>();
+    for (const record of selectedItems) {
+      const targetRecordId = resolveContactUpdateTargetRecordId(record);
+      if (!targetRecordId.trim()) continue;
+      if (!targetsByRecordId.has(targetRecordId)) {
+        targetsByRecordId.set(targetRecordId, record);
+      }
+    }
+    const targets = Array.from(targetsByRecordId.entries());
+    if (targets.length === 0) {
+      toast.error("No valid contact records in selection");
+      return;
+    }
+
+    setBulkQuickActionType(action.type);
+    try {
+      const results = await Promise.all(
+        targets.map(async ([targetRecordId]) => {
+          try {
+            let data: MondayCreateRecordUpdateResponse;
+            if (canCreateUpdatesAsLoggedInMondayUser) {
+              const update = await createMondayRecordUpdateAsContextUser({
+                itemId: targetRecordId,
+                body: action.defaultBody,
+                updateType: action.type,
+              });
+              data = { ok: true, update };
+            } else {
+              const response = await fetch(
+                `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+                {
+                  method: "POST",
+                  cache: "no-store",
+                  headers: {
+                    "content-type": "application/json",
+                    "x-monday-session-token": sessionToken,
+                  },
+                  body: JSON.stringify({
+                    body: action.defaultBody,
+                    updateType: action.type,
+                  }),
+                },
+              );
+              data = (await response.json()) as MondayCreateRecordUpdateResponse;
+              if (!response.ok || !data.ok) {
+                throw new Error(data.error ?? "Failed to post Monday update");
+              }
+            }
+            return {
+              ok: true,
+              warning: data.update?.warning ?? null,
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              warning: null,
+              error:
+                error instanceof Error ? error.message : "Failed to post Monday update",
+            };
+          }
+        }),
+      );
+
+      const successCount = results.filter((result) => result.ok).length;
+      const warningCount = results.filter((result) => result.warning).length;
+      const failed = results.filter((result) => !result.ok);
+      const failedCount = failed.length;
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      clearSelection();
+
+      if (successCount > 0) {
+        toast.success(
+          `Applied "${action.label}" to ${successCount} record${successCount === 1 ? "" : "s"}.`,
+        );
+      }
+      if (warningCount > 0) {
+        toast.error(
+          `${warningCount} record${warningCount === 1 ? "" : "s"} had onboarding sync warnings.`,
+        );
+      }
+      if (failedCount > 0) {
+        const firstError = failed[0]?.error ?? "Unknown error";
+        toast.error(
+          `Failed to apply action to ${failedCount} record${failedCount === 1 ? "" : "s"}: ${firstError}`,
+        );
+      }
+    } finally {
+      setBulkQuickActionType(null);
+    }
+  };
+
+  const handleKanbanStepMove = async (move: KanbanMoveConfirmation) => {
+    if (staticMode) {
+      toast.error("Updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session context");
+      return;
+    }
+
+    setIsExecutingKanbanMove(true);
+    try {
+      const targetRecordId = resolveContactUpdateTargetRecordId(move.record);
+
+      if (move.direction === "forward") {
+        const stepConfig = KANBAN_STEP_CONFIG[move.toStepIndex - 1];
+        if (!stepConfig) {
+          toast.error("Invalid target step");
+          return;
+        }
+
+        if (stepConfig.updateType && canCreateUpdatesAsLoggedInMondayUser) {
+          await createMondayRecordUpdateAsContextUser({
+            itemId: targetRecordId,
+            body: stepConfig.defaultBody,
+            updateType: stepConfig.updateType,
+          });
+        } else if (stepConfig.updateType) {
+          const response = await fetch(
+            `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+            {
+              method: "POST",
+              cache: "no-store",
+              headers: {
+                "content-type": "application/json",
+                "x-monday-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                body: stepConfig.defaultBody,
+                updateType: stepConfig.updateType,
+              }),
+            },
+          );
+          const data = (await response.json()) as MondayCreateRecordUpdateResponse;
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error ?? "Failed to post Monday update");
+          }
+        } else {
+          if (canCreateUpdatesAsLoggedInMondayUser) {
+            const boardId = await resolveMondayContextBoardId();
+            await callMondayContextApi<{ create_update?: { id?: string } }>(
+              `mutation CreateUpdate($itemId: ID!, $body: String!) { create_update(item_id: $itemId, body: $body) { id } }`,
+              { itemId: targetRecordId, body: stepConfig.defaultBody },
+            );
+            if (boardId) {
+              await callMondayContextApi<{
+                change_multiple_column_values?: { id?: string } | null;
+              }>(
+                `mutation MarkStepDone($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+                  change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues, create_labels_if_missing: true) { id }
+                }`,
+                {
+                  boardId,
+                  itemId: targetRecordId,
+                  columnValues: JSON.stringify({ [stepConfig.stepColumnId]: { label: "Done" } }),
+                },
+              );
+            }
+          } else {
+            await fetch(
+              `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  body: stepConfig.defaultBody,
+                  updateType: "general",
+                }),
+              },
+            );
+            await fetch(
+              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  stepColumnId: stepConfig.stepColumnId,
+                  action: "done",
+                }),
+              },
+            );
+          }
+        }
+        toast.success(`Moved "${move.record.name}" forward`);
+      } else {
+        const stepConfig = KANBAN_STEP_CONFIG[move.fromStepIndex - 1];
+        if (!stepConfig) {
+          toast.error("Invalid source step");
+          return;
+        }
+
+        if (canCreateUpdatesAsLoggedInMondayUser) {
+          const boardId = await resolveMondayContextBoardId();
+          if (boardId) {
+            await callMondayContextApi<{
+              change_multiple_column_values?: { id?: string } | null;
+            }>(
+              `mutation ResetStep($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+                change_multiple_column_values(board_id: $boardId, item_id: $itemId, column_values: $columnValues, create_labels_if_missing: true) { id }
+              }`,
+              {
+                boardId,
+                itemId: targetRecordId,
+                columnValues: JSON.stringify({ [stepConfig.stepColumnId]: { label: "" } }),
+              },
+            );
+          }
+        } else {
+          const response = await fetch(
+            `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+            {
+              method: "POST",
+              cache: "no-store",
+              headers: {
+                "content-type": "application/json",
+                "x-monday-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                stepColumnId: stepConfig.stepColumnId,
+                action: "reset",
+              }),
+            },
+          );
+          const data = (await response.json()) as { ok: boolean; error?: string };
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error ?? "Failed to reset step");
+          }
+        }
+        toast.success(`Moved "${move.record.name}" back`);
+      }
+
+      await recordsQuery.refetch();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to move record";
+      toast.error(message);
+    } finally {
+      setIsExecutingKanbanMove(false);
+      setKanbanMoveConfirmation(null);
+    }
   };
 
   const handleSaveRetention = async () => {
@@ -2154,79 +2984,14 @@ export function MondayBoardView({
       id: "name",
       header: "Item",
       accessorKey: "name",
-      cell: (item: MondayRecord) => {
-        const details = getContactTooltipDetails(item);
-        const addressDisplay = getAddressDisplayParts(item.address);
-        return (
-          <button
-            type="button"
-            onClick={() => openContactHistoryDialog(item)}
-            className="hover:bg-accent/40 flex w-full cursor-pointer gap-3 rounded-md p-2 text-left"
-          >
-            <Avatar className="mt-0.5 size-9">
-              <AvatarFallback className="text-xs font-semibold">
-                {getNameInitials(item.name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="space-y-1">
-                    <span className="block font-medium">{item.name}</span>
-                    <span className="text-muted-foreground block truncate text-xs">
-                      {item.email ?? "No email"}
-                    </span>
-                    {addressDisplay.full ? (
-                      <span className="text-muted-foreground block text-xs">
-                        {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                        {addressDisplay.cityStateZip ? (
-                          <span className="text-sm font-semibold text-foreground">
-                            {addressDisplay.cityStateZip}
-                          </span>
-                        ) : (
-                          addressDisplay.full
-                        )}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground block text-xs">No address</span>
-                    )}
-                    <span className="text-muted-foreground block text-xs">
-                      {item.phone ?? "No phone"}
-                    </span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="right"
-                  align="start"
-                  sideOffset={8}
-                  className="max-w-md border border-slate-200 bg-white p-3 text-slate-900 shadow-lg dark:border-slate-200 dark:bg-white dark:text-slate-900"
-                >
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold tracking-wide uppercase">
-                      Contact details
-                    </p>
-                    <div className="max-h-72 space-y-1 overflow-y-auto">
-                      {details.map((detail) => (
-                        <div
-                          key={`${detail.label}-${detail.value}`}
-                          className="grid grid-cols-[100px_1fr] gap-2 text-xs"
-                        >
-                          <span className="text-muted">{detail.label}</span>
-                          <span className="wrap-break-word">{detail.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-              <ApprovalProgressIndicator
-                progressValue={item.batteryProgress}
-                steps={approvalSteps}
-              />
-            </div>
-          </button>
-        );
-      },
+      cell: (item: MondayRecord) => (
+        <NameCellContent
+          item={item}
+          tableDensity={tableDensity}
+          approvalSteps={approvalSteps}
+          onOpen={() => openContactHistoryDialog(item)}
+        />
+      ),
     },
     {
       id: "statusText",
@@ -2254,40 +3019,68 @@ export function MondayBoardView({
       id: "peopleText",
       header: "Owner",
       accessorKey: "peopleText",
-      cell: (item: MondayRecord) => (
-        <button
-          type="button"
-          onClick={() => openOwnerDialog(item)}
-          className="hover:bg-accent/40 flex w-full cursor-pointer items-center justify-center rounded-md p-2 text-center"
-        >
-          {item.ownerProfiles.length > 0 ? (
-            <div className="flex flex-col items-center gap-1">
-              <div className="flex items-center justify-center -space-x-2">
-                {item.ownerProfiles.slice(0, 3).map((owner) => (
-                  <Avatar
-                    key={owner.id}
-                    className="size-8 border-2 border-background shadow-sm"
-                  >
-                    {owner.photoThumb ? (
-                      <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
-                    ) : null}
-                    <AvatarFallback className="text-xs font-semibold">
-                      {getNameInitials(owner.name ?? owner.id)}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-              </div>
-              <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
-                {item.ownerProfiles
-                  .map((owner) => owner.name?.trim() ?? owner.id)
-                  .join(", ")}
-              </span>
-            </div>
-          ) : (
-            <span className="text-xs">{item.peopleText ?? "—"}</span>
-          )}
-        </button>
-      ),
+      cell: (item: MondayRecord) => {
+        const isCompactOwner = tableDensity === "compact";
+        return (
+          <button
+            type="button"
+            onClick={() => openOwnerDialog(item)}
+            className={`hover:bg-accent/40 flex w-full cursor-pointer items-center rounded-md text-center ${isCompactOwner ? "justify-start gap-1.5 px-2 py-1" : "justify-center p-2"}`}
+          >
+            {item.ownerProfiles.length > 0 ? (
+              isCompactOwner ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center -space-x-1.5">
+                    {item.ownerProfiles.slice(0, 3).map((owner) => (
+                      <Avatar
+                        key={owner.id}
+                        className="size-5 border border-background"
+                      >
+                        {owner.photoThumb ? (
+                          <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                        ) : null}
+                        <AvatarFallback className="text-[8px] font-semibold">
+                          {getNameInitials(owner.name ?? owner.id)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ))}
+                  </div>
+                  <span className="truncate text-xs">
+                    {item.ownerProfiles
+                      .map((owner) => owner.name?.trim() ?? owner.id)
+                      .join(", ")}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center justify-center -space-x-2">
+                    {item.ownerProfiles.slice(0, 3).map((owner) => (
+                      <Avatar
+                        key={owner.id}
+                        className="size-8 border-2 border-background shadow-sm"
+                      >
+                        {owner.photoThumb ? (
+                          <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                        ) : null}
+                        <AvatarFallback className="text-xs font-semibold">
+                          {getNameInitials(owner.name ?? owner.id)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ))}
+                  </div>
+                  <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
+                    {item.ownerProfiles
+                      .map((owner) => owner.name?.trim() ?? owner.id)
+                      .join(", ")}
+                  </span>
+                </div>
+              )
+            ) : (
+              <span className="text-xs">{item.peopleText ?? "—"}</span>
+            )}
+          </button>
+        );
+      },
     },
     {
       id: "retention",
@@ -2295,55 +3088,109 @@ export function MondayBoardView({
       accessorKey: "referredToContractors",
       cell: (item: MondayRecord) => {
         const referredValues = splitCsvValues(item.referredToContractors);
+        const MAX_VISIBLE = 2;
+        const visibleReferred = referredValues.slice(0, MAX_VISIBLE);
+        const extraReferred = referredValues.length - MAX_VISIBLE;
+        const isCompact = tableDensity === "compact";
+
+        if (isCompact) {
+          return (
+            <button
+              type="button"
+              onClick={() => openRetentionDialog(item)}
+              title={[
+                referredValues.length > 0 ? `Referred: ${referredValues.join(", ")}` : null,
+                item.hiredWithContractor?.trim() ? `Hired: ${item.hiredWithContractor.trim()}` : null,
+                item.hireDate ? `Date: ${formatUpdatedAt(item.hireDate)}` : null,
+                item.retentionPeriod?.trim() ? `Period: ${item.retentionPeriod.trim()}` : null,
+              ].filter(Boolean).join(" · ")}
+              className="hover:bg-accent/40 flex w-full min-w-[280px] max-w-[520px] cursor-pointer items-center gap-x-3 overflow-hidden rounded-md px-2 py-1 text-left"
+            >
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden text-xs">
+                <span className="shrink-0 font-medium">Referred:</span>
+                <span className={`truncate ${referredValues.length > 0 ? "" : "text-muted-foreground"}`}>
+                  {referredValues.length > 0 ? referredValues.join(", ") : "—"}
+                </span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden text-xs">
+                <span className="shrink-0 font-medium">Hired:</span>
+                <span className={`truncate ${item.hiredWithContractor?.trim() ? "" : "text-muted-foreground"}`}>
+                  {item.hiredWithContractor?.trim() || "—"}
+                </span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden text-xs">
+                <span className="shrink-0 font-medium">Date:</span>
+                <span className={`truncate ${item.hireDate ? "" : "text-muted-foreground"}`}>
+                  {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+                </span>
+              </span>
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden text-xs">
+                <span className="shrink-0 font-medium">Period:</span>
+                <span className={`truncate ${item.retentionPeriod?.trim() ? "" : "text-muted-foreground"}`}>
+                  {item.retentionPeriod?.trim() || "—"}
+                </span>
+              </span>
+            </button>
+          );
+        }
+
         return (
           <button
             type="button"
             onClick={() => openRetentionDialog(item)}
-            className="hover:bg-accent/40 flex w-full max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
+            className="hover:bg-accent/40 flex w-full min-w-[100px] max-w-[340px] cursor-pointer flex-col items-start gap-1 rounded-md p-2 text-left"
           >
-            <div className="w-full space-y-1">
-              <span className="block text-xs font-medium">Referred:</span>
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Referred:</span>
               {referredValues.length > 0 ? (
-                <div className="flex max-w-full flex-wrap gap-1">
-                  {referredValues.map((value) => (
-                    <BusinessInfoHoverCard
-                      key={value}
-                      companyName={value}
-                    >
+                <>
+                  {visibleReferred.map((value) => (
+                    <BusinessInfoHoverCard key={value} companyName={value}>
                       <Badge
                         variant="secondary"
-                        className="max-w-full cursor-help truncate text-[10px]"
+                        className="max-w-[100px] shrink-0 cursor-help truncate text-[10px]"
                         title={value}
                       >
                         {value}
                       </Badge>
                     </BusinessInfoHoverCard>
                   ))}
-                </div>
+                  {extraReferred > 0 && (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      +{extraReferred}
+                    </Badge>
+                  )}
+                </>
               ) : (
                 <span className="text-muted-foreground text-xs">—</span>
               )}
             </div>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Hired With:</span>{" "}
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Hired With:</span>
               {item.hiredWithContractor?.trim() ? (
                 <BusinessInfoHoverCard companyName={item.hiredWithContractor}>
-                  <Badge variant="secondary" className="ml-1 cursor-help text-[10px]">
+                  <Badge
+                    variant="secondary"
+                    className="max-w-[120px] shrink-0 cursor-help truncate text-[10px]"
+                    title={item.hiredWithContractor}
+                  >
                     {item.hiredWithContractor}
                   </Badge>
                 </BusinessInfoHoverCard>
               ) : (
-                "—"
+                <span className="text-muted-foreground text-xs">—</span>
               )}
-            </span>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Hire Date:</span>{" "}
-              {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
-            </span>
-            <span className="block w-full truncate text-xs">
-              <span className="font-medium">Period:</span>{" "}
-              {item.retentionPeriod ?? "—"}
-            </span>
+            </div>
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Hire Date:</span>
+              <span className="truncate text-xs">
+                {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+              </span>
+            </div>
+            <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
+              <span className="shrink-0 text-xs font-medium">Period:</span>
+              <span className="truncate text-xs">{item.retentionPeriod ?? "—"}</span>
+            </div>
           </button>
         );
       },
@@ -2354,20 +3201,21 @@ export function MondayBoardView({
       accessorKey: "tags",
       cell: (item: MondayRecord) => {
         const tagValues = splitCsvValues(item.tags);
+        const isCompactTags = tableDensity === "compact";
         return (
           <button
             type="button"
             onClick={() => openTagsDialog(item)}
             title={item.tags ?? ""}
-            className="hover:bg-accent/40 w-full cursor-pointer rounded-md p-2 text-left"
+            className={`hover:bg-accent/40 w-full cursor-pointer rounded-md text-left ${isCompactTags ? "px-2 py-1" : "p-2"}`}
           >
             {tagValues.length > 0 ? (
-              <div className="flex max-w-[260px] flex-wrap gap-1">
+              <div className={`flex gap-1 ${isCompactTags ? "min-w-[200px] max-w-[400px] flex-nowrap overflow-hidden" : "max-w-[260px] flex-wrap"}`}>
                 {tagValues.map((tag) => (
                   <Badge
                     key={tag}
                     variant="secondary"
-                    className="max-w-full truncate text-[10px]"
+                    className="max-w-full shrink-0 truncate text-[10px]"
                     title={tag}
                   >
                     {tag}
@@ -2389,8 +3237,9 @@ export function MondayBoardView({
         const firstFile = item.resumeFiles[0] ?? null;
         const isUploading = uploadingResumeByRecordId[item.id] === true;
         const fileHref = firstFile ? getResumeFileHref(firstFile) : null;
+        const fileInputId = `resume-upload-${item.id}`;
         return (
-          <div className="space-y-2 p-1">
+          <div className="flex items-center gap-2 px-2 py-1">
             {firstFile ? (
               <button
                 type="button"
@@ -2405,30 +3254,36 @@ export function MondayBoardView({
                     recordName: item.name,
                   });
                 }}
-                className="text-primary block truncate text-xs underline"
+                className="text-primary hover:text-primary/80 min-w-0 truncate text-xs underline underline-offset-2"
                 title={firstFile.name}
               >
                 {firstFile.name}
               </button>
             ) : (
-              <span className="text-muted-foreground block text-xs">No file</span>
+              <span className="text-muted-foreground text-xs">—</span>
             )}
-            <div className="flex items-center gap-2">
-              <input
-                type="file"
-                className="max-w-[170px] text-xs"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  void handleUploadResume(item, file);
-                  event.currentTarget.value = "";
-                }}
-                disabled={isUploading || staticMode}
-              />
-              {isUploading ? (
-                <span className="text-muted-foreground text-xs">Uploading...</span>
-              ) : null}
-            </div>
+            <input
+              id={fileInputId}
+              type="file"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleUploadResume(item, file);
+                event.currentTarget.value = "";
+              }}
+              disabled={isUploading || staticMode}
+            />
+            {isUploading ? (
+              <span className="text-muted-foreground shrink-0 text-[10px]">Uploading…</span>
+            ) : (
+              <label
+                htmlFor={fileInputId}
+                className="bg-muted hover:bg-accent text-muted-foreground hover:text-foreground inline-flex shrink-0 cursor-pointer items-center rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors"
+              >
+                {firstFile ? "Replace" : "Upload"}
+              </label>
+            )}
           </div>
         );
       },
@@ -2481,530 +3336,1373 @@ export function MondayBoardView({
       },
       isDisabled: (record) => !record.url,
     },
-    {
-      id: "send-email",
-      label: "Send Email",
-      icon: <Mail className="h-4 w-4" />,
-      variant: "secondary",
-      onClick: (record) => {
-        openSendEmailDialog(record);
-      },
-      isDisabled: (record) => !record.email || !sessionToken || staticMode,
-    },
+    ...(featureFlags.emailMarketingEnabled
+      ? ([
+        {
+          id: "send-email",
+          label: "Send Email",
+          icon: <Mail className="h-4 w-4" />,
+          variant: "secondary",
+          onClick: (record: MondayRecord) => {
+            openSendEmailDialog(record);
+          },
+          isDisabled: (record: MondayRecord) =>
+            !record.email || !sessionToken || staticMode,
+        },
+      ] satisfies EntityAction<MondayRecord>[])
+      : []),
 
   ];
 
   return (
-    <div className="monday-like-page container mx-auto max-w-[1600px] space-y-3 py-4">
-      {identity ? (
-        <div className="text-muted-foreground text-xs">
-          Connected account: {identity.accountId} · user: {identity.userId} · board:{" "}
-          {boardName}
-          {staticMode ? " · static mode" : ""}
-          {viewMode === "userScoped" && !isOwnerFilterEditable
-            ? hasForcedOwnerScope
-              ? ` · owner scope locked to board owner ${forcedOwnerId}`
-              : " · owner scope locked to current user"
-            : ""}
-          {canOverrideUserScopeOwner ? " · owner scope override enabled" : ""}
-        </div>
-      ) : null}
-
-      <div className="bg-card/70 rounded-lg border px-3 py-2">
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="w-full max-w-xl min-w-[280px] flex-1 space-y-1">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search records (server, 2+ chars)"
-                className="bg-background/90 h-8 max-w-xl text-sm"
-              />
-              {search.trim().length > 0 && search.trim().length < 2 ? (
-                <p className="text-muted-foreground text-xs">
-                  Type at least 2 characters to run server search.
-                </p>
-              ) : null}
-            </div>
-            <div className="bg-background flex items-center gap-1 rounded-md border p-1">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-2.5"
-                onClick={() => {
-                  setActiveMonth(
-                    (prev) =>
-                      new Date(
-                        Date.UTC(
-                          prev.getUTCFullYear(),
-                          prev.getUTCMonth() - 1,
-                          1,
-                        ),
-                      ),
-                  );
-                }}
-              >
-                <ChevronLeft className="mr-1.5 h-4 w-4" />
-                Prev month
-              </Button>
-              <Badge variant="outline" className="h-8 rounded-sm px-2 text-xs">
-                {monthBounds.label}
-              </Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-2.5"
-                onClick={() => {
-                  setActiveMonth(
-                    (prev) =>
-                      new Date(
-                        Date.UTC(
-                          prev.getUTCFullYear(),
-                          prev.getUTCMonth() + 1,
-                          1,
-                        ),
-                      ),
-                  );
-                }}
-              >
-                Next month
-                <ChevronRight className="ml-1.5 h-4 w-4" />
-              </Button>
-            </div>
+    <div className="monday-like-page mx-auto space-y-3 pb-10">
+      <div data-board-filter-bar className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {/* Search */}
+          <div className="relative min-w-0 flex-1">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search (2+ chars)…"
+              className="bg-background h-8 w-full text-xs shadow-sm"
+            />
+            {search.trim().length > 0 && search.trim().length < 2 ? (
+              <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
+                2+ chars needed
+              </p>
+            ) : null}
           </div>
-          <div className="border-t pt-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
-                <select
-                  value={ownerFilter || "__all_owner__"}
-                  onChange={(event) => {
-                    if (!isOwnerFilterEditable) return;
-                    const value = event.target.value;
-                    setOwnerFilter(value === "__all_owner__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-8 w-60 rounded-md border px-2.5 text-xs"
-                  disabled={!isOwnerFilterEditable}
-                >
-                  {isOwnerFilterEditable ? (
-                    <option value="__all_owner__">Owner: all</option>
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Owner + district filters */}
+          <select
+            value={ownerFilter || "__all_owner__"}
+            onChange={(event) => {
+              if (!isOwnerFilterEditable) return;
+              const value = event.target.value;
+              setOwnerFilter(value === "__all_owner__" ? "" : value);
+            }}
+            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+            style={{ maxWidth: "160px" }}
+            disabled={!isOwnerFilterEditable}
+          >
+            {isOwnerFilterEditable ? (
+              <option value="__all_owner__">Owner: all</option>
+            ) : (
+              <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
+                {lockedOwnerLabel}
+              </option>
+            )}
+            {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+              <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+            ) : null}
+            {ownerOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter || "__all_status__"}
+            onChange={(event) => {
+              const value = event.target.value;
+              setStatusFilter(value === "__all_status__" ? "" : value);
+            }}
+            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+            style={{ maxWidth: "150px" }}
+          >
+            <option value="__all_status__">District: all</option>
+            {statusOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
+                <Filter className="h-3.5 w-3.5" />
+                {activeAdvancedFilterConditions.length > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-4 px-1 py-0 leading-none text-[10px]">
+                    {activeAdvancedFilterConditions.length}
+                  </Badge>
+                )}
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
+              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                <DialogTitle>Advanced Filters</DialogTitle>
+                <DialogDescription>
+                  Build multi-condition logic, preview result count, and save presets per
+                  owner board.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-5 overflow-y-auto px-6 py-5">
+                <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
+                      {activeAdvancedFilterConditions.length} active
+                    </Badge>
+                    <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
+                      {advancedFilterConditions.length} total
+                    </Badge>
+                    <span className="text-muted-foreground text-xs">
+                      Showing {filteredRecords.length} of {records.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label
+                      htmlFor="advanced-filter-match-mode"
+                      className="text-muted-foreground text-xs font-medium"
+                    >
+                      Match mode
+                    </label>
+                    <select
+                      id="advanced-filter-match-mode"
+                      value={advancedFilterMatchMode}
+                      onChange={(event) => {
+                        const value = event.target.value === "any" ? "any" : "all";
+                        setActiveSavedAdvancedFilterId(null);
+                        setAdvancedFilterMatchMode(value);
+                      }}
+                      className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
+                    >
+                      <option value="all">Match all conditions</option>
+                      <option value="any">Match any condition</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">Conditions</p>
+                      <p className="text-muted-foreground text-xs">
+                        Add or remove conditions that run against Monday board columns.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 border-2 px-3 text-xs shadow-sm"
+                        onClick={handleAddAdvancedFilterCondition}
+                      >
+                        Add condition
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-3 text-xs"
+                        onClick={handleClearAdvancedFilters}
+                        disabled={advancedFilterConditions.length === 0}
+                      >
+                        Clear all
+                      </Button>
+                    </div>
+                  </div>
+
+                  {advancedFilterConditions.length === 0 ? (
+                    <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
+                      <p className="text-muted-foreground text-sm">
+                        No conditions yet. Add a condition to start filtering records.
+                      </p>
+                    </div>
                   ) : (
-                    <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
-                      {lockedOwnerLabel}
-                    </option>
+                    <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                      {advancedFilterConditions.map((condition, index) => {
+                        const conditionTarget = getBoardColumnTargetForCondition(condition);
+                        const boardColumnKind =
+                          boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                        const operatorOptions =
+                          boardColumnKind === "date"
+                            ? ADVANCED_DATE_OPERATORS
+                            : ADVANCED_TEXT_OPERATORS;
+                        const shouldHideValueInput =
+                          condition.operator === "is_empty" ||
+                          condition.operator === "is_not_empty";
+                        const isDateField = boardColumnKind === "date";
+                        const targetLabelLower = conditionTarget.toLowerCase();
+                        const usesOwnerOptions =
+                          targetLabelLower === "owner" && ownerOptions.length > 0;
+                        const usesDistrictOptions =
+                          (targetLabelLower === "status" ||
+                            targetLabelLower === "district") &&
+                          statusOptions.length > 0;
+                        const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                        return (
+                          <div
+                            key={condition.id}
+                            className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
+                              ? "border-border/75 bg-background"
+                              : "border-border/75 bg-muted/25"
+                              }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
+                              <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
+                                Condition {index + 1}
+                              </p>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-xs"
+                                onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                            <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
+                              <label className="space-y-1">
+                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                  Column
+                                </span>
+                                <select
+                                  value={conditionTarget}
+                                  onChange={(event) =>
+                                    handleChangeAdvancedFilterTarget(
+                                      condition.id,
+                                      event.target.value,
+                                    )
+                                  }
+                                  className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                >
+                                  {!hasBoardColumnOptions ? (
+                                    <option value="">No board columns loaded</option>
+                                  ) : null}
+                                  {hasBoardColumnOptions ? (
+                                    <option value="">Select board column</option>
+                                  ) : null}
+                                  {boardColumnFilterOptions.map((label) => (
+                                    <option key={label} value={label}>
+                                      {label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              <label className="space-y-1">
+                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                  Operator
+                                </span>
+                                <select
+                                  value={condition.operator}
+                                  onChange={(event) => {
+                                    if (!isAdvancedFilterOperator(event.target.value)) return;
+                                    handleChangeAdvancedFilterOperator(
+                                      condition.id,
+                                      event.target.value,
+                                    );
+                                  }}
+                                  className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                >
+                                  {operatorOptions.map((operator) => (
+                                    <option key={operator} value={operator}>
+                                      {ADVANCED_OPERATOR_LABELS[operator]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+
+                              {!shouldHideValueInput ? (
+                                <label className="space-y-1">
+                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                    Value
+                                  </span>
+                                  {usesOwnerOptions ? (
+                                    <select
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                    >
+                                      <option value="">Select owner</option>
+                                      {!ownerOptions.some(
+                                        (option) => option.value === condition.value,
+                                      ) && condition.value.trim().length > 0 ? (
+                                        <option value={condition.value}>
+                                          {`Owner ${condition.value} (selected)`}
+                                        </option>
+                                      ) : null}
+                                      {ownerOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : usesDistrictOptions ? (
+                                    <select
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                    >
+                                      <option value="">Select district</option>
+                                      {!statusOptions.some(
+                                        (option) => option.value === condition.value,
+                                      ) && condition.value.trim().length > 0 ? (
+                                        <option value={condition.value}>
+                                          {`District ${condition.value} (selected)`}
+                                        </option>
+                                      ) : null}
+                                      {statusOptions.map((option) => (
+                                        <option key={option.value} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <Input
+                                      type={isDateField ? "date" : "text"}
+                                      value={condition.value}
+                                      onChange={(event) =>
+                                        handleChangeAdvancedFilterValue(
+                                          condition.id,
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Value"
+                                      className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                    />
+                                  )}
+                                </label>
+                              ) : (
+                                <div className="pb-1">
+                                  <p className="text-muted-foreground text-xs">
+                                    No value input required for this operator.
+                                  </p>
+                                </div>
+                              )}
+
+                              {condition.operator === "between" ? (
+                                <label className="space-y-1">
+                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                    {isDateField ? "End date" : "Second value"}
+                                  </span>
+                                  <Input
+                                    type={isDateField ? "date" : "text"}
+                                    value={condition.valueTo}
+                                    onChange={(event) =>
+                                      handleChangeAdvancedFilterValueTo(
+                                        condition.id,
+                                        event.target.value,
+                                      )
+                                    }
+                                    placeholder={isDateField ? "End date" : "Second value"}
+                                    className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                  />
+                                </label>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                  {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-                    <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-                  ) : null}
-                  {ownerOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={statusFilter || "__all_status__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusFilter(value === "__all_status__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-8 w-[200px] rounded-md border px-2.5 text-xs"
-                >
-                  <option value="__all_status__">District: all</option>
-                  {statusOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 *:shrink-0">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8"
-                  onClick={() => {
-                    if (staticMode) return;
-                    void recordsQuery.refetch();
-                  }}
-                  disabled={staticMode || recordsQuery.isFetching}
-                >
-                  <RefreshCcw className="mr-1.5 h-4 w-4" />
-                  Reload
-                </Button>
-                {viewMode === "userScoped" ? (
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="h-8"
-                    onClick={() => {
-                      resetAddContactDialog();
-                      setAddContactOpen(true);
-                    }}
-                    disabled={authLoading || !identity?.userId}
-                  >
-                    <UserPlus className="mr-1.5 h-4 w-4" />
-                    Add Contact
-                  </Button>
-                ) : null}
-                {!staticMode && recordsQuery.hasNextPage ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="h-8"
-                    onClick={() => {
-                      void recordsQuery.fetchNextPage();
-                    }}
-                    disabled={recordsQuery.isFetchingNextPage}
-                  >
-                    {recordsQuery.isFetchingNextPage ? "Loading..." : "Load more"}
-                  </Button>
-                ) : null}
-                <Button asChild size="sm" variant="outline" className="h-8">
-                  <Link
-                    href="https://developer.monday.com/api-reference/reference/items-page"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    API docs
-                  </Link>
-                </Button>
-                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="h-8">
-                      <Settings className="mr-1.5 h-4 w-4" />
-                      Settings
+                </div>
+
+                <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
+                  <div>
+                    <p className="text-sm font-medium">Saved Presets</p>
+                    <p className="text-muted-foreground text-xs">
+                      Save the active filter setup and reuse it for this owner board.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      value={pendingSavedAdvancedFilterName}
+                      onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                      placeholder="Saved filter name"
+                      className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-2 px-3 text-xs shadow-sm"
+                      onClick={handleSaveAdvancedFilterPreset}
+                      disabled={
+                        isSavingAdvancedFilterPreset ||
+                        !sessionToken ||
+                        presetScopeOwnerId.length === 0
+                      }
+                    >
+                      {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-4xl">
-                    <DialogHeader>
-                      <DialogTitle>Monday Settings</DialogTitle>
-                    </DialogHeader>
-                    <Tabs defaultValue="email-templates" className="flex gap-4">
-                      <TabsList className="h-auto w-56 shrink-0 flex-col items-stretch">
+                  </div>
+                  {presetScopeOwnerId.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      Select an owner board to enable preset saving.
+                    </p>
+                  ) : null}
+
+                  {savedAdvancedFilterPresets.length > 0 ? (
+                    <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
+                      {savedAdvancedFilterPresets.map((preset) => (
+                        <div
+                          key={preset.id}
+                          className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
+                        >
+                          <Button
+                            size="sm"
+                            variant={
+                              activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                            }
+                            className="h-8 rounded-r-none px-2 text-xs"
+                            onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
+                          >
+                            {preset.name}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-muted-foreground h-8 px-1.5 text-xs"
+                            onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                            disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
+                          >
+                            {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">
+                      No saved filter presets yet.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Month navigation */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            onClick={() => {
+              setActiveMonth(
+                (prev) =>
+                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
+              );
+            }}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
+            {monthBounds.label}
+          </Badge>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            onClick={() => {
+              setActiveMonth(
+                (prev) =>
+                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
+              );
+            }}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+
+          {viewMode === "userScoped" ? (
+            <>
+              <div className="bg-border/60 h-5 w-px shrink-0" />
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 shrink-0 px-2.5"
+                onClick={() => {
+                  resetAddContactDialog();
+                  setAddContactOpen(true);
+                }}
+                disabled={authLoading || !identity?.userId}
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Add
+              </Button>
+              <div className="flex overflow-hidden rounded-md border shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("table")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Table view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("grid")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "grid" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Grid view"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("kanban")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Kanban view"
+                >
+                  <Columns3 className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-border/60 h-5 w-px shrink-0" />
+              <div className="flex overflow-hidden rounded-md border shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("table")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Table view"
+                >
+                  <List className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUserScopedDisplayMode("kanban")}
+                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                  title="Kanban view"
+                >
+                  <Columns3 className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          )}
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          {/* Reload */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            title="Reload"
+            onClick={() => {
+              if (staticMode) return;
+              void recordsQuery.refetch();
+            }}
+            disabled={staticMode || recordsQuery.isFetching}
+          >
+            <RefreshCcw className="h-4 w-4" />
+          </Button>
+
+          {!staticMode && recordsQuery.hasNextPage ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 shrink-0 px-2.5 text-xs"
+              onClick={() => {
+                void recordsQuery.fetchNextPage();
+              }}
+              disabled={recordsQuery.isFetchingNextPage}
+            >
+              {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+            </Button>
+          ) : null}
+
+          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
+              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                <DialogTitle>Monday Settings</DialogTitle>
+              </DialogHeader>
+              <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
+                <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
+                  <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
+                    <TabsTrigger
+                      value="general-settings"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      General Settings
+                    </TabsTrigger>
+                    {isMondaySettingsAdmin ? (
+                      <>
                         <TabsTrigger
                           value="email-templates"
-                          className="w-full justify-start text-left"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                         >
                           Email Templates
                         </TabsTrigger>
                         <TabsTrigger
                           value="email-settings"
-                          className="w-full justify-start text-left"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                         >
                           Email Settings
                         </TabsTrigger>
                         <TabsTrigger
                           value="user-zip-map"
-                          className="w-full justify-start text-left"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                         >
                           User {"<->"} Zipcode map
                         </TabsTrigger>
-                      </TabsList>
-                      <div className="min-h-80 flex-1 rounded-md border p-4">
-                        <TabsContent value="email-templates" className="mt-0">
-                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">
-                                Templates ({emailTemplates.length})
-                              </p>
-                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                                {emailTemplates.map((template) => {
-                                  const isActive = template.id === selectedTemplate?.id;
-                                  return (
-                                    <button
-                                      key={template.id}
-                                      type="button"
-                                      className={[
-                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                        isActive
-                                          ? "border-primary bg-primary/10"
-                                          : "hover:bg-muted/60",
-                                      ].join(" ")}
-                                      onClick={() => {
-                                        setSelectedTemplateId(template.id);
-                                      }}
-                                    >
-                                      <p className="line-clamp-1 font-medium">{template.name}</p>
-                                      <p className="text-muted-foreground mt-1 text-xs">
-                                        Updated {formatUpdatedAt(template.updatedAt)}
-                                      </p>
-                                    </button>
-                                  );
-                                })}
-                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    No templates found on board 18401299370.
-                                  </p>
-                                ) : null}
-                                {emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    Loading templates...
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="bg-background min-h-[420px] rounded-md border p-4">
-                              {selectedTemplate ? (
-                                <div className="space-y-4">
-                                  <div className="border-b pb-3">
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Subject
-                                    </p>
-                                    <p className="mt-1 text-base font-medium">
-                                      {selectedTemplate.name}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Email Preview (Lead View)
-                                    </p>
-                                    <div className="bg-card mt-2 rounded-md border p-4">
-                                      {selectedTemplate.content.trim().length === 0 ? (
-                                        <p className="text-muted-foreground text-sm">
-                                          No content found in column doc_mm0wq4r.
-                                        </p>
-                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                        <div
-                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                          style={{ whiteSpace: "pre-wrap" }}
-                                          dangerouslySetInnerHTML={{
-                                            __html: selectedTemplate.renderedHtml,
-                                          }}
-                                        />
-                                      ) : (
-                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                          {selectedTemplate.content}
-                                        </div>
-                                      )}
-                                      {selectedTemplate.docLink ? (
-                                        <p className="mt-3 text-xs">
-                                          <a
-                                            href={selectedTemplate.docLink}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-primary underline underline-offset-2"
-                                          >
-                                            Open source Monday Workdoc
-                                          </a>
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-muted-foreground text-sm">
-                                  Select an email template to preview.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="user-zip-map" className="mt-0">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                            <p className="text-muted-foreground text-sm">
-                              Define zipcode ownership and routing by user.
+                        <TabsTrigger
+                          value="feature-flags"
+                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                        >
+                          Feature Flags
+                        </TabsTrigger>
+                      </>
+                    ) : null}
+                  </TabsList>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-5">
+                  <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
+                    <TabsContent value="general-settings" className="mt-0">
+                      <div className="space-y-0 divide-y divide-border/60">
+
+                        {/* Header row */}
+                        <div className="flex items-center justify-between pb-4">
+                          <div>
+                            <p className="text-sm font-semibold">Appearance</p>
+                            <p className="text-muted-foreground text-xs">
+                              Scope: {presetScopeOwnerId.length > 0 ? `Owner ${presetScopeOwnerId}` : "No owner selected"}
                             </p>
                           </div>
-                        </TabsContent>
-                        <TabsContent value="email-settings" className="mt-0">
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">Email Settings</p>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft(boardGeneralSettings);
+                              }}
+                              disabled={!hasUnsavedBoardGeneralSettings}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                void handleSaveBoardGeneralSettings();
+                              }}
+                              disabled={
+                                isSavingBoardGeneralSettings ||
+                                !sessionToken ||
+                                presetScopeOwnerId.length === 0 ||
+                                !hasUnsavedBoardGeneralSettings
+                              }
+                            >
+                              {isSavingBoardGeneralSettings ? "Saving…" : "Save"}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {/* Color Theme */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Color Theme</p>
+                            <p className="text-muted-foreground text-xs">
+                              {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                (o) => o.value === boardGeneralSettingsDraft.colorTheme,
+                              )?.description ?? "Accent color for the board UI."}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-1.5">
+                            {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                title={option.label}
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    colorTheme: option.value,
+                                  }));
+                                }}
+                                className={`h-7 w-7 rounded-full transition-all ${option.swatchClassName} ${boardGeneralSettingsDraft.colorTheme === option.value
+                                  ? "ring-2 ring-offset-2 ring-primary scale-110"
+                                  : "opacity-60 hover:opacity-100 hover:scale-105"
+                                  }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Font Size */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Font Size</p>
+                            <p className="text-muted-foreground text-xs">Scale the board text and action buttons.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    fontSize: option.value,
+                                  }));
+                                }}
+                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.fontSize === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Table Density */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Row Density</p>
+                            <p className="text-muted-foreground text-xs">
+                              {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
+                                (o) => o.value === boardGeneralSettingsDraft.tableDensity,
+                              )?.description}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    tableDensity: option.value,
+                                  }));
+                                }}
+                                className={`flex h-8 items-center gap-2 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                <span className="flex flex-col gap-px">
+                                  {option.value === "expanded" ? (
+                                    <>
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-80" />
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-80" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                    </>
+                                  )}
+                                </span>
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Records Per Page */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Records Per Page</p>
+                            <p className="text-muted-foreground text-xs">How many records to show per page.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {USER_BOARD_PAGE_SIZE_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    pageSize: option.value,
+                                  }));
+                                }}
+                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Default View */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Default View</p>
+                            <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {(["table", "grid", "kanban"] as UserBoardDisplayMode[]).map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    displayMode: mode,
+                                  }));
+                                }}
+                                className={`flex h-8 items-center gap-1.5 px-3 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Preview strip */}
+                        <div className={`flex items-center justify-between rounded-md px-4 py-3 mt-3 ${boardDraftThemeStyles.previewClassName}`}>
+                          <p className="text-xs text-muted-foreground">
+                            Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
+                            {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
+                          </p>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                            disabled
+                          >
+                            Quick Action
+                          </Button>
+                        </div>
+
+                      </div>
+                    </TabsContent>
+
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="email-templates" className="mt-0">
+                        <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">
+                              Templates ({emailTemplates.length})
+                            </p>
+                            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                              {emailTemplates.map((template) => {
+                                const isActive = template.id === selectedTemplate?.id;
+                                return (
+                                  <button
+                                    key={template.id}
+                                    type="button"
+                                    className={[
+                                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                      isActive
+                                        ? "border-primary bg-primary/10"
+                                        : "hover:bg-muted/60",
+                                    ].join(" ")}
+                                    onClick={() => {
+                                      setSelectedTemplateId(template.id);
+                                    }}
+                                  >
+                                    <p className="line-clamp-1 font-medium">{template.name}</p>
+                                    <p className="text-muted-foreground mt-1 text-xs">
+                                      Updated {formatUpdatedAt(template.updatedAt)}
+                                    </p>
+                                  </button>
+                                );
+                              })}
+                              {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                <p className="text-muted-foreground text-sm">
+                                  No templates found on board 18401299370.
+                                </p>
+                              ) : null}
+                              {emailTemplatesQuery.isLoading ? (
+                                <p className="text-muted-foreground text-sm">
+                                  Loading templates...
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="bg-background min-h-[420px] rounded-md border p-4">
+                            {selectedTemplate ? (
+                              <div className="space-y-4">
+                                <div className="border-b pb-3">
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Subject
+                                  </p>
+                                  <p className="mt-1 text-base font-medium">
+                                    {selectedTemplate.name}
+                                  </p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Email Preview (Lead View)
+                                  </p>
+                                  <div className="bg-card mt-2 rounded-md border p-4">
+                                    {selectedTemplate.content.trim().length === 0 ? (
+                                      <p className="text-muted-foreground text-sm">
+                                        No content found in column doc_mm0wq4r.
+                                      </p>
+                                    ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                      <div
+                                        className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                        style={{ whiteSpace: "pre-wrap" }}
+                                        dangerouslySetInnerHTML={{
+                                          __html: selectedTemplate.renderedHtml,
+                                        }}
+                                      />
+                                    ) : (
+                                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                        {selectedTemplate.content}
+                                      </div>
+                                    )}
+                                    {selectedTemplate.docLink ? (
+                                      <p className="mt-3 text-xs">
+                                        <a
+                                          href={selectedTemplate.docLink}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="text-primary underline underline-offset-2"
+                                        >
+                                          Open source Monday Workdoc
+                                        </a>
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
                               <p className="text-muted-foreground text-sm">
-                                Configure outbound email account settings for sending
-                                monday-designed templates.
+                                Select an email template to preview.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="user-zip-map" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure and monitor district routing for newly created contact
+                              records.
+                            </p>
+                          </div>
+
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                Routing Status
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.isLoading
+                                  ? "Loading..."
+                                  : routingStatusQuery.data?.enabled
+                                    ? routingStatusQuery.data.ok
+                                      ? "Configured"
+                                      : "Configured with issues"
+                                    : "Not configured"}
                               </p>
                             </div>
-                            <div className="space-y-3 rounded-md border p-4">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant={
-                                    outlookStatusQuery.data?.connected
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {outlookStatusQuery.data?.connected
-                                    ? "Outlook connected"
-                                    : "Outlook not connected"}
-                                </Badge>
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    void handleConnectOutlook();
-                                  }}
-                                  disabled={isConnectingOutlook}
-                                >
-                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                                </Button>
-                                {outlookStatusQuery.data?.connected ? (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => {
-                                      void handleDisconnectOutlook();
-                                    }}
-                                    disabled={isDisconnectingOutlook}
-                                  >
-                                    {isDisconnectingOutlook
-                                      ? "Disconnecting..."
-                                      : "Disconnect"}
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                County Mappings
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.data?.countyMappingsCount ?? 0}
+                              </p>
+                            </div>
+                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                District Owner Mappings
+                              </p>
+                              <p className="mt-1 text-sm font-medium">
+                                {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
+                            <p className="text-sm font-medium">Routing boards</p>
+                            <div className="grid gap-3 md:grid-cols-3">
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">Contact board</p>
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
+                                </p>
+                                {routingStatusQuery.data?.contactBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.contactBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
                                   </Button>
                                 ) : null}
                               </div>
-                              <div className="text-muted-foreground text-sm">
-                                {outlookStatusQuery.data?.connection?.email ? (
-                                  <p>
-                                    Connected mailbox:{" "}
-                                    {outlookStatusQuery.data.connection.email}
-                                  </p>
-                                ) : (
-                                  <p>
-                                    Use OAuth to connect Outlook, then use this account
-                                    for sending and engagement tracking.
-                                  </p>
-                                )}
-                                {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                  <p className="mt-1">
-                                    Last updated:{" "}
-                                    {new Date(
-                                      outlookStatusQuery.data.connection.updatedAt,
-                                    ).toLocaleString()}
-                                  </p>
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">
+                                  County {"->"} District board
+                                </p>
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
+                                </p>
+                                {routingStatusQuery.data?.countyBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.countyBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
+                                  </Button>
                                 ) : null}
                               </div>
-                              <div className="rounded-md border bg-muted/30 p-3">
-                                <p className="text-xs font-semibold tracking-wide uppercase">
-                                  Callback URL
+                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                <p className="text-xs font-semibold uppercase">
+                                  District {"->"} Owner board
                                 </p>
-                                <p className="mt-1 break-all font-mono text-xs">
-                                  {callbackUrl}
+                                <p className="text-muted-foreground mt-1 break-all text-xs">
+                                  {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
                                 </p>
+                                {routingStatusQuery.data?.districtBoardUrl ? (
+                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                    <a
+                                      href={routingStatusQuery.data.districtBoardUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                    >
+                                      Open board
+                                    </a>
+                                  </Button>
+                                ) : null}
                               </div>
                             </div>
                           </div>
-                        </TabsContent>
-                      </div>
-                    </Tabs>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          </div>
+
+                          <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium">Routing diagnostics</p>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                onClick={() => {
+                                  void routingStatusQuery.refetch();
+                                }}
+                                disabled={routingStatusQuery.isFetching}
+                              >
+                                {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
+                              </Button>
+                            </div>
+                            {routingStatusQuery.error ? (
+                              <p className="text-destructive text-xs">
+                                {routingStatusQuery.error instanceof Error
+                                  ? routingStatusQuery.error.message
+                                  : "Failed to load routing diagnostics"}
+                              </p>
+                            ) : null}
+                            {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
+                              <ul className="list-disc space-y-1 pl-4 text-xs">
+                                {(routingStatusQuery.data?.issues ?? []).map((issue) => (
+                                  <li key={issue} className="text-destructive">
+                                    {issue}
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-muted-foreground text-xs">
+                                No routing issues detected.
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">Manual rerun</p>
+                              <p className="text-muted-foreground text-xs">
+                                Re-run owner assignment for one contact item id.
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Input
+                                value={routingRerunItemId}
+                                onChange={(event) => setRoutingRerunItemId(event.target.value)}
+                                placeholder="Item ID"
+                                className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                              />
+                              <Button
+                                size="sm"
+                                className="h-8 px-3 text-xs"
+                                onClick={() => {
+                                  void handleRunRoutingRerun();
+                                }}
+                                disabled={isRunningRoutingRerun}
+                              >
+                                {isRunningRoutingRerun ? "Running..." : "Run assignment"}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="email-settings" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium">Email Settings</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure outbound email account settings for sending
+                              monday-designed templates.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge
+                                variant={
+                                  outlookStatusQuery.data?.connected
+                                    ? "default"
+                                    : "secondary"
+                                }
+                              >
+                                {outlookStatusQuery.data?.connected
+                                  ? "Outlook connected"
+                                  : "Outlook not connected"}
+                              </Badge>
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  void handleConnectOutlook();
+                                }}
+                                disabled={isConnectingOutlook}
+                              >
+                                {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                              </Button>
+                              {outlookStatusQuery.data?.connected ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void handleDisconnectOutlook();
+                                  }}
+                                  disabled={isDisconnectingOutlook}
+                                >
+                                  {isDisconnectingOutlook
+                                    ? "Disconnecting..."
+                                    : "Disconnect"}
+                                </Button>
+                              ) : null}
+                            </div>
+                            <div className="text-muted-foreground text-sm">
+                              {outlookStatusQuery.data?.connection?.email ? (
+                                <p>
+                                  Connected mailbox:{" "}
+                                  {outlookStatusQuery.data.connection.email}
+                                </p>
+                              ) : (
+                                <p>
+                                  Use OAuth to connect Outlook, then use this account
+                                  for sending and engagement tracking.
+                                </p>
+                              )}
+                              {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                <p className="mt-1">
+                                  Last updated:{" "}
+                                  {new Date(
+                                    outlookStatusQuery.data.connection.updatedAt,
+                                  ).toLocaleString()}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div className="rounded-md border bg-muted/30 p-3">
+                              <p className="text-xs font-semibold tracking-wide uppercase">
+                                Callback URL
+                              </p>
+                              <p className="mt-1 break-all font-mono text-xs">
+                                {callbackUrl}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMondaySettingsAdmin ? (
+                      <TabsContent value="feature-flags" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Feature Flags</p>
+                            <p className="text-muted-foreground text-sm">
+                              Toggle app capabilities without code changes.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <label className="flex items-start gap-3 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={featureFlags.emailMarketingEnabled}
+                                disabled={isSavingFeatureFlags}
+                                onChange={(event) => {
+                                  void handleSetEmailMarketingEnabled(
+                                    event.target.checked,
+                                  );
+                                }}
+                              />
+                              <div className="space-y-1">
+                                <p className="font-medium">Email Marketing</p>
+                                <p className="text-muted-foreground text-xs">
+                                  Enables email marketing capabilities, including the
+                                  Email action in the table.
+                                </p>
+                                {isSavingFeatureFlags ? (
+                                  <p className="text-muted-foreground text-[11px]">
+                                    Saving...
+                                  </p>
+                                ) : null}
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                  </div>
+                </div>
+              </Tabs>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
+      <div className="max-w-[1600px] container">
 
-      <Dialog
-        open={addContactOpen}
-        onOpenChange={(open) => {
-          setAddContactOpen(open);
-          if (!open) {
-            resetAddContactDialog();
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add New Contact</DialogTitle>
-          </DialogHeader>
-          {addContactStep === 1 ? (
-            <AddNewContactForm
-              values={addContactValues}
-              ownerOptions={addContactOwnerOptions}
-              isSubmitting={isCheckingDuplicates || isCreatingContact}
-              onChange={(key, value) => {
-                setAddContactValues((prev) => ({ ...prev, [key]: value }));
-              }}
-              onSubmit={() => {
-                void handleCheckDuplicatesAndContinue();
-              }}
-            />
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  Before we create, we found these records with the same email.
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  Do you want to use one of these existing records?
-                </p>
-              </div>
-              <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                {existingContactsByEmail.map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex items-center justify-between gap-3 rounded-md border p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{record.name || record.id}</p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {record.email ?? "No email"} · {record.owner ?? "No owner"}
-                      </p>
-                      <p className="text-muted-foreground text-xs">
-                        Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {record.url ? (
+        <Dialog
+          open={addContactOpen}
+          onOpenChange={(open) => {
+            setAddContactOpen(open);
+            if (!open) {
+              resetAddContactDialog();
+            }
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add New Contact</DialogTitle>
+            </DialogHeader>
+            {addContactStep === 1 ? (
+              <AddNewContactForm
+                values={addContactValues}
+                ownerOptions={addContactOwnerOptions}
+                isSubmitting={isCheckingDuplicates || isCreatingContact}
+                onChange={(key, value) => {
+                  setAddContactValues((prev) => ({ ...prev, [key]: value }));
+                }}
+                onSubmit={() => {
+                  void handleCheckDuplicatesAndContinue();
+                }}
+              />
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">
+                    Before we create, we found these records with the same email.
+                  </p>
+                  <p className="text-muted-foreground text-sm">
+                    Do you want to use one of these existing records?
+                  </p>
+                </div>
+                <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
+                  {existingContactsByEmail.map((record) => (
+                    <div
+                      key={record.id}
+                      className="flex items-center justify-between gap-3 rounded-md border p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{record.name || record.id}</p>
+                        <p className="text-muted-foreground truncate text-xs">
+                          {record.email ?? "No email"} · {record.owner ?? "No owner"}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {record.url ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              window.open(record.url ?? "", "_blank", "noopener,noreferrer")
+                            }
+                          >
+                            Open
+                          </Button>
+                        ) : null}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            window.open(record.url ?? "", "_blank", "noopener,noreferrer")
-                          }
+                          onClick={() => {
+                            toast.success("Using existing contact");
+                            setAddContactOpen(false);
+                            resetAddContactDialog();
+                          }}
                         >
-                          Open
+                          Use Existing
                         </Button>
-                      ) : null}
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          toast.success("Using existing contact");
-                          setAddContactOpen(false);
-                          resetAddContactDialog();
-                        }}
-                      >
-                        Use Existing
-                      </Button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
+                <div className="flex justify-between gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setAddContactStep(1)}
+                    disabled={isCreatingContact}
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      void handleCreateContact();
+                    }}
+                    disabled={isCreatingContact}
+                  >
+                    {isCreatingContact ? "Creating..." : "Create New Anyway"}
+                  </Button>
+                </div>
               </div>
-              <div className="flex justify-between gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setAddContactStep(1)}
-                  disabled={isCreatingContact}
-                >
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleCreateContact();
-                  }}
-                  disabled={isCreatingContact}
-                >
-                  {isCreatingContact ? "Creating..." : "Create New Anyway"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+            )}
+          </DialogContent>
+        </Dialog>
 
-      <Dialog
-        open={!!retentionDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setRetentionDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Update Retention</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* <div className="space-y-2 rounded-md border p-3">
+        <Dialog
+          open={!!retentionDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setRetentionDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Retention</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {/* <div className="space-y-2 rounded-md border p-3">
               <div>
                 <p className="text-sm font-medium">Business Connections Overview</p>
                 <p className="text-muted-foreground text-xs">
@@ -3051,596 +4749,899 @@ export function MondayBoardView({
                 </div>
               </div>
             </div> */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <MultiSelect
-                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
-                options={Array.from(
-                  new Set([
-                    ...retentionOptions.referredToContractors,
-                    ...retentionDraft.referredToContractors,
-                  ]),
-                )
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={retentionDraft.referredToContractors}
-                onValueChange={(values) => {
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    referredToContractors: values,
-                  }));
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hired With Contractor</label>
-              <select
-                value={retentionDraft.hiredWithContractor || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    hiredWithContractor: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.hiredWithContractor,
-                    retentionDraft.hiredWithContractor,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hire Date</label>
-              <div className="flex items-center gap-2">
-                <Popover
-                  open={retentionHireDatePopoverOpen}
-                  onOpenChange={setRetentionHireDatePopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 flex-1 justify-start font-normal"
-                    >
-                      {retentionDraft.hireDate || "Select date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                    <Calendar
-                      mode="single"
-                      selected={
-                        retentionDraft.hireDate
-                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                          : undefined
-                      }
-                      onSelect={(date) => {
-                        if (!date) return;
-                        setRetentionDraft((prev) => ({
-                          ...prev,
-                          hireDate: toDateOnlyLocal(date),
-                        }));
-                        setRetentionHireDatePopoverOpen(false);
-                      }}
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                  }}
-                  disabled={!retentionDraft.hireDate}
-                >
-                  Clear
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Retention Period</label>
-              <select
-                value={retentionDraft.retentionPeriod || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    retentionPeriod: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.retentionPeriod,
-                    retentionDraft.retentionPeriod,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setRetentionDialogRecord(null)}
-                disabled={isSavingRetention}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveRetention();
-                }}
-                disabled={isSavingRetention}
-              >
-                {isSavingRetention ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!statusDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setStatusDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Update Status</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                value={statusDraft || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setStatusDraft(value === "__none__" ? "" : value);
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setStatusDialogRecord(null)}
-                disabled={isSavingStatus}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveStatus();
-                }}
-                disabled={isSavingStatus}
-              >
-                {isSavingStatus ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!ownerDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setOwnerDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Update Owner</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Owner</label>
-              <Select
-                value={ownerDraft || "__none__"}
-                onValueChange={(value) => {
-                  setOwnerDraft(value === "__none__" ? "" : value);
-                }}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue placeholder="Select owner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Select value</SelectItem>
-                  {Array.from(
-                    new Map(
-                      [
-                        ...ownerOptions.map((option) => [option.value, option] as const),
-                        ownerDraft.trim().length > 0
-                          ? [
-                            ownerDraft,
-                            {
-                              value: ownerDraft,
-                              label: `User ${ownerDraft}`,
-                              name: null,
-                              photoThumb: null,
-                            },
-                          ]
-                          : null,
-                      ].filter(
-                        (
-                          entry,
-                        ): entry is readonly [
-                          string,
-                          {
-                            value: string;
-                            label: string;
-                            name: string | null;
-                            photoThumb: string | null;
-                          },
-                        ] => !!entry,
-                      ),
-                    ),
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Referred To Contractor(s)</label>
+                <MultiSelect
+                  key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                  options={Array.from(
+                    new Set([
+                      ...retentionOptions.referredToContractors,
+                      ...retentionDraft.referredToContractors,
+                    ]),
                   )
-                    .map(([, option]) => option)
-                    .map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="size-5">
-                            {option.photoThumb ? (
-                              <AvatarImage
-                                src={option.photoThumb}
-                                alt={option.name ?? option.value}
-                              />
-                            ) : null}
-                            <AvatarFallback className="text-[10px] font-semibold">
-                              {getNameInitials(option.name ?? option.value)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">
-                            {option.name ?? option.label}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setOwnerDialogRecord(null)}
-                disabled={isSavingOwner}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveOwner();
-                }}
-                disabled={isSavingOwner}
-              >
-                {isSavingOwner ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!tagsDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setTagsDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-w-lg overflow-visible">
-          <DialogHeader>
-            <DialogTitle>Update Tags</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Tags</label>
-              <MultiSelect
-                key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
-                options={sortFiscalYearTagsDesc(
-                  Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
-                    (value) => value.trim().length > 0,
-                  ),
-                )
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={tagsDraft}
-                onValueChange={(values) => setTagsDraft(values)}
-                placeholder="Select tags"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setTagsDialogRecord(null)}
-                disabled={isSavingTags}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveTags();
-                }}
-                disabled={isSavingTags}
-              >
-                {isSavingTags ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!contactHistoryDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setContactHistoryDialogRecord(null);
-        }}
-      >
-        <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
-              {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
-            </DialogTitle>
-          </DialogHeader>
-          {contactHistoryDialogRecord ? (
-            <div className="space-y-4">
-              {(() => {
-                const record = contactHistoryDialogRecord;
-                const addressDisplay = getAddressDisplayParts(record.address);
-                return (
-                  <div className="rounded-md border p-4">
-                    <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <Avatar className="size-12">
-                          <AvatarFallback className="text-sm font-semibold">
-                            {getNameInitials(record.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold">{record.name}</p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.email ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.phone ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {addressDisplay.full ? (
-                              <>
-                                {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                                {addressDisplay.cityStateZip ? (
-                                  <span className="text-[15px] font-semibold text-foreground">
-                                    {addressDisplay.cityStateZip}
-                                  </span>
-                                ) : (
-                                  addressDisplay.full
-                                )}
-                              </>
-                            ) : (
-                              "—"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="w-full max-w-sm space-y-1">
-                        <div className="text-muted-foreground flex items-center justify-between text-[10px] uppercase">
-                          <span>Progress</span>
-                          <span>
-                            {record.batteryProgress !== null
-                              ? `${record.batteryProgress}%`
-                              : "—"}
-                          </span>
-                        </div>
-                        <Progress value={record.batteryProgress ?? 0} className="h-2" />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div className="grid gap-4 md:grid-cols-4">
-                <section className="space-y-2 md:col-span-3">
-                  <p className="text-sm font-medium">Conversation history (Updates)</p>
-                  <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
-                    {staticMode ? (
-                      <p className="text-muted-foreground text-sm">
-                        Update history is unavailable in static mode.
-                      </p>
-                    ) : contactUpdatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">Loading updates...</p>
-                    ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        No updates found for this record.
-                      </p>
-                    ) : (
-                      (contactUpdatesQuery.data?.updates ?? []).map((update) => (
-                        <div key={update.id} className="rounded-md border p-3">
-                          <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
-                            <span>{update.creatorName ?? "Unknown user"}</span>
-                            <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
-                          </div>
-                          {update.body.trim().length === 0 ? (
-                            <p className="text-muted-foreground text-sm">No message body</p>
-                          ) : hasHtmlLikeMarkup(update.body) ? (
-                            <div
-                              className="prose prose-sm dark:prose-invert max-w-none"
-                              dangerouslySetInnerHTML={{ __html: update.body }}
-                            />
-                          ) : (
-                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                              {update.body}
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
-
-                <aside className="space-y-3 md:col-span-1">
-                  <div className="rounded-md border p-3">
-                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                      Contact card header
-                    </p>
-                    <div className="space-y-1 text-xs">
-                      <p className="wrap-break-word">
-                        <span className="text-muted-foreground">ID:</span>{" "}
-                        {contactHistoryDialogRecord.id}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="text-muted-foreground">District:</span>{" "}
-                        {contactHistoryDialogRecord.statusText ?? "—"}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Owner:</span>{" "}
-                        {contactHistoryDialogRecord.peopleText ?? "—"}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Updated:</span>{" "}
-                        {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
-                      </p>
-                      <p className="wrap-break-word">
-                        <span className="text-muted-foreground">Created:</span>{" "}
-                        {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="rounded-md border p-3">
-                    <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                      Additional contact information
-                    </p>
-                    <div className="max-h-56 space-y-1 overflow-y-auto pr-1 text-xs">
-                      {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
-                        <div
-                          key={`${detail.label}-${detail.value}`}
-                          className="grid grid-cols-[88px_1fr] gap-2"
-                        >
-                          <span className="text-muted">{detail.label}</span>
-                          <span className="wrap-break-word">{detail.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
+                    .filter((value) => value.trim().length > 0)
+                    .map((value) => ({ label: value, value }))}
+                  defaultValue={retentionDraft.referredToContractors}
+                  onValueChange={(values) => {
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      referredToContractors: values,
+                    }));
+                  }}
+                  placeholder="Select contractor(s)"
+                  disablePortal
+                  popoverSide="bottom"
+                  popoverAvoidCollisions={false}
+                />
               </div>
-
-              <div className="flex justify-end">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Hired With Contractor</label>
+                <select
+                  value={retentionDraft.hiredWithContractor || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      hiredWithContractor: value === "__none__" ? "" : value,
+                    }));
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(
+                    new Set([
+                      ...retentionOptions.hiredWithContractor,
+                      retentionDraft.hiredWithContractor,
+                    ]),
+                  )
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Hire Date</label>
+                <div className="flex items-center gap-2">
+                  <Popover
+                    open={retentionHireDatePopoverOpen}
+                    onOpenChange={setRetentionHireDatePopoverOpen}
+                  >
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 flex-1 justify-start font-normal"
+                      >
+                        {retentionDraft.hireDate || "Select date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                      <Calendar
+                        mode="single"
+                        selected={
+                          retentionDraft.hireDate
+                            ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                            : undefined
+                        }
+                        onSelect={(date) => {
+                          if (!date) return;
+                          setRetentionDraft((prev) => ({
+                            ...prev,
+                            hireDate: toDateOnlyLocal(date),
+                          }));
+                          setRetentionHireDatePopoverOpen(false);
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
+                    }}
+                    disabled={!retentionDraft.hireDate}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Retention Period</label>
+                <select
+                  value={retentionDraft.retentionPeriod || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setRetentionDraft((prev) => ({
+                      ...prev,
+                      retentionPeriod: value === "__none__" ? "" : value,
+                    }));
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(
+                    new Set([
+                      ...retentionOptions.retentionPeriod,
+                      retentionDraft.retentionPeriod,
+                    ]),
+                  )
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => setContactHistoryDialogRecord(null)}
+                  onClick={() => setRetentionDialogRecord(null)}
+                  disabled={isSavingRetention}
                 >
-                  Close
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveRetention();
+                  }}
+                  disabled={isSavingRetention}
+                >
+                  {isSavingRetention ? "Saving..." : "Save"}
                 </Button>
               </div>
             </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
 
-      <EntityList<MondayRecord>
-        // title="Board Records"
-        // description="List view optimized for board operations."
-        data={records}
-        columns={columns}
-        enableVirtualization
-        virtualRowHeight={72}
-        virtualOverscan={10}
-        hideFilters
-        isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-        enableSearch={false}
-        viewModes={[]}
-        defaultViewMode="list"
-        initialSort={{ id: "createdAt", direction: "desc" }}
-        getRowId={(item) => item.id}
-        entityActions={entityActions}
-      />
+        <Dialog
+          open={!!statusDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setStatusDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Status</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Status</label>
+                <select
+                  value={statusDraft || "__none__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusDraft(value === "__none__" ? "" : value);
+                  }}
+                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                >
+                  <option value="__none__">Select value</option>
+                  {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setStatusDialogRecord(null)}
+                  disabled={isSavingStatus}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveStatus();
+                  }}
+                  disabled={isSavingStatus}
+                >
+                  {isSavingStatus ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      <Dialog
-        open={!!resumePreview}
-        onOpenChange={(open) => {
-          if (!open) setResumePreview(null);
-        }}
-      >
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              Resume · {resumePreview?.recordName ?? "Contact"}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Resume preview dialog with open in new tab fallback.
-            </DialogDescription>
-          </DialogHeader>
-          {resumePreview ? (
-            <div className="space-y-3">
-              {(() => {
-                const lowerName = resumePreview.fileName.toLowerCase();
-                const isPdf = lowerName.endsWith(".pdf");
-                const isImage =
-                  lowerName.endsWith(".png") ||
-                  lowerName.endsWith(".jpg") ||
-                  lowerName.endsWith(".jpeg") ||
-                  lowerName.endsWith(".gif") ||
-                  lowerName.endsWith(".webp") ||
-                  lowerName.endsWith(".svg");
-                return (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                      <a
-                        href={resumePreview.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary text-xs underline"
-                      >
-                        Open in new tab
-                      </a>
+        <Dialog
+          open={!!ownerDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setOwnerDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Owner</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Owner</label>
+                <Select
+                  value={ownerDraft || "__none__"}
+                  onValueChange={(value) => {
+                    setOwnerDraft(value === "__none__" ? "" : value);
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full">
+                    <SelectValue placeholder="Select owner" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Select value</SelectItem>
+                    {Array.from(
+                      new Map(
+                        [
+                          ...ownerOptions.map((option) => [option.value, option] as const),
+                          ownerDraft.trim().length > 0
+                            ? [
+                              ownerDraft,
+                              {
+                                value: ownerDraft,
+                                label: `User ${ownerDraft}`,
+                                name: null,
+                                photoThumb: null,
+                              },
+                            ]
+                            : null,
+                        ].filter(
+                          (
+                            entry,
+                          ): entry is readonly [
+                            string,
+                            {
+                              value: string;
+                              label: string;
+                              name: string | null;
+                              photoThumb: string | null;
+                            },
+                          ] => !!entry,
+                        ),
+                      ),
+                    )
+                      .map(([, option]) => option)
+                      .map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <div className="flex items-center gap-2">
+                            <Avatar className="size-5">
+                              {option.photoThumb ? (
+                                <AvatarImage
+                                  src={option.photoThumb}
+                                  alt={option.name ?? option.value}
+                                />
+                              ) : null}
+                              <AvatarFallback className="text-[10px] font-semibold">
+                                {getNameInitials(option.name ?? option.value)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">
+                              {option.name ?? option.label}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setOwnerDialogRecord(null)}
+                  disabled={isSavingOwner}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveOwner();
+                  }}
+                  disabled={isSavingOwner}
+                >
+                  {isSavingOwner ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!tagsDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setTagsDialogRecord(null);
+          }}
+        >
+          <DialogContent
+            className="max-w-lg overflow-visible"
+            onInteractOutside={(event) => {
+              event.preventDefault();
+            }}
+            onEscapeKeyDown={(event) => {
+              event.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Update Tags</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Tags</label>
+                <MultiSelect
+                  key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
+                  options={sortFiscalYearTagsDesc(
+                    Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
+                      (value) => value.trim().length > 0,
+                    ),
+                  )
+                    .map((value) => ({ label: value, value }))}
+                  defaultValue={tagsDraft}
+                  onValueChange={(values) => setTagsDraft(values)}
+                  placeholder="Select tags"
+                  disablePortal
+                  popoverSide="bottom"
+                  popoverAvoidCollisions={false}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setTagsDialogRecord(null)}
+                  disabled={isSavingTags}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleSaveTags();
+                  }}
+                  disabled={isSavingTags}
+                >
+                  {isSavingTags ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!contactHistoryDialogRecord}
+          onOpenChange={(open) => {
+            if (!open) setContactHistoryDialogRecord(null);
+          }}
+        >
+          <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+              </DialogTitle>
+            </DialogHeader>
+            {contactHistoryDialogRecord ? (
+              <div className="space-y-4">
+                {(() => {
+                  const record = contactHistoryDialogRecord;
+                  const addressDisplay = getAddressDisplayParts(record.address);
+                  return (
+                    <div className="rounded-md border p-4">
+                      <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <Avatar className="size-12">
+                            <AvatarFallback className="text-sm font-semibold">
+                              {getNameInitials(record.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="truncate text-base font-semibold">{record.name}</p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {record.email ?? "—"}
+                            </p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {record.phone ?? "—"}
+                            </p>
+                            <p className="text-muted-foreground truncate text-sm">
+                              {addressDisplay.full ? (
+                                <>
+                                  {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                                  {addressDisplay.cityStateZip ? (
+                                    <span className="text-[15px] font-semibold text-foreground">
+                                      {addressDisplay.cityStateZip}
+                                    </span>
+                                  ) : (
+                                    addressDisplay.full
+                                  )}
+                                </>
+                              ) : (
+                                "—"
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="w-full max-w-sm">
+                          <ApprovalProgressIndicator
+                            progressValue={record.batteryProgress}
+                            steps={approvalSteps}
+                            rawProgressValue={record.batteryRawValue}
+                          />
+                        </div>
+                      </div>
                     </div>
-                    <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                      {isPdf ? (
-                        <iframe
-                          src={resumePreview.href}
-                          title={`Resume preview: ${resumePreview.fileName}`}
-                          className="h-full w-full"
-                        />
-                      ) : isImage ? (
-                        <object
-                          data={resumePreview.href}
-                          className="h-full w-full"
+                  );
+                })()}
+
+                {!staticMode ? (
+                  <section className="space-y-2 rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+                      Quick Actions
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                        <Button
+                          key={action.type}
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className={`cursor-pointer justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                          disabled={isCreatingContactUpdate}
+                          onClick={() => {
+                            setContactUpdateType(action.type);
+                            void handleCreateContactUpdate({
+                              updateType: action.type,
+                              body: action.defaultBody,
+                              keepSelectedType: true,
+                            });
+                          }}
                         >
+                          {action.label}
+                        </Button>
+                      ))}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className={`cursor-pointer justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                        disabled={isCreatingContactUpdate}
+                        onClick={() => {
+                          if (contactHistoryDialogRecord) {
+                            openQuestionnaireDialogForRecords([contactHistoryDialogRecord]);
+                          }
+                        }}
+                      >
+                        {QUESTIONNAIRE_UPDATE_ACTION.label}
+                      </Button>
+                    </div>
+                  </section>
+                ) : null}
+
+                <Tabs defaultValue="updates" className="w-full">
+                  <TabsList>
+                    <TabsTrigger value="updates">Updates</TabsTrigger>
+                    <TabsTrigger value="info">Additional Information</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="updates" className="mt-3 space-y-2">
+                    {!staticMode ? (
+                      <div className="space-y-2 rounded-md border p-3">
+                        <label className="text-xs font-medium tracking-wide uppercase">
+                          Add update
+                        </label>
+                        <div className="grid gap-2 md:grid-cols-[220px_1fr]">
+                          <div>
+                            <p className="text-muted-foreground mb-1 text-xs">Update type</p>
+                            <Select
+                              value={contactUpdateType}
+                              onValueChange={(value) => {
+                                setContactUpdateType(value as ContactUpdateType);
+                              }}
+                              disabled={isCreatingContactUpdate}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select update type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {CONTACT_UPDATE_TYPE_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <Textarea
+                          value={contactUpdateDraft}
+                          onChange={(event) => setContactUpdateDraft(event.target.value)}
+                          placeholder={`Write a ${contactUpdateTypeLabel(contactUpdateType).toLowerCase()} for this contact...`}
+                          rows={4}
+                          disabled={isCreatingContactUpdate}
+                        />
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              void handleCreateContactUpdate();
+                            }}
+                            disabled={isCreatingContactUpdate || contactUpdateDraft.trim().length === 0}
+                          >
+                            {isCreatingContactUpdate ? "Posting..." : "Post update"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
+                      {staticMode ? (
+                        <p className="text-muted-foreground text-sm">
+                          Update history is unavailable in static mode.
+                        </p>
+                      ) : contactUpdatesQuery.isLoading ? (
+                        <p className="text-muted-foreground text-sm">Loading updates...</p>
+                      ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
+                        <p className="text-muted-foreground text-sm">
+                          No updates found for this record.
+                        </p>
+                      ) : (
+                        (contactUpdatesQuery.data?.updates ?? []).map((update) => (
+                          <div key={update.id} className="rounded-md border p-3">
+                            <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span>{update.creatorName ?? "Unknown user"}</span>
+                                <Badge variant="outline" className="text-[10px]">
+                                  {contactUpdateTypeLabel(update.updateType)}
+                                </Badge>
+                                {update.source === "subitem" && update.subitemName ? (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    {update.subitemName}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
+                            </div>
+                            {update.body.trim().length === 0 ? (
+                              <p className="text-muted-foreground text-sm">No message body</p>
+                            ) : hasHtmlLikeMarkup(update.body) ? (
+                              <div
+                                className="prose prose-sm dark:prose-invert max-w-none"
+                                dangerouslySetInnerHTML={{ __html: update.body }}
+                              />
+                            ) : (
+                              <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                {update.body}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="info" className="mt-3 space-y-3">
+                    <div className="rounded-md border p-3">
+                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                        Contact card header
+                      </p>
+                      <div className="space-y-1 text-xs">
+                        <p className="wrap-break-word">
+                          <span className="font-bold">ID:</span>{" "}
+                          {contactHistoryDialogRecord.id}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">District:</span>{" "}
+                          {contactHistoryDialogRecord.statusText ?? "—"}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Owner:</span>{" "}
+                          {contactHistoryDialogRecord.peopleText ?? "—"}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Updated:</span>{" "}
+                          {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
+                        </p>
+                        <p className="wrap-break-word">
+                          <span className="font-bold">Created:</span>{" "}
+                          {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
+                        Additional contact information
+                      </p>
+                      <div className="space-y-1 overflow-y-auto pr-1 text-xs">
+                        {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
+                          <div
+                            key={`${detail.label}-${detail.value}`}
+                            className="grid grid-cols-[88px_1fr] gap-3"
+                          >
+                            <span className="truncate font-bold">{detail.label}</span>
+                            <span className="wrap-break-word">{detail.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                <div className="flex justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setContactHistoryDialogRecord(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        <QuestionnaireFormDialog
+          open={questionnaireDialogRecords.length > 0}
+          onOpenChange={(next) => {
+            if (!next) setQuestionnaireDialogRecords([]);
+          }}
+          records={questionnaireDialogRecords}
+          sessionToken={sessionToken ?? ""}
+          staticMode={staticMode}
+          resolveItemId={resolveContactUpdateTargetRecordId}
+          onSaved={handleQuestionnaireSaved}
+        />
+
+        {userScopedDisplayMode === "kanban" ? (
+          <KanbanBoard
+            records={filteredRecords}
+            approvalSteps={approvalSteps}
+            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+            onMoveRequest={setKanbanMoveConfirmation}
+            onRecordClick={openContactHistoryDialog}
+          />
+        ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {(authLoading || (!staticMode && recordsQuery.isLoading))
+              ? Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
+              ))
+              : filteredRecords.map((record) => (
+                <ContactCard
+                  key={record.id}
+                  record={record}
+                  approvalSteps={approvalSteps}
+                  onClick={openContactHistoryDialog}
+                />
+              ))}
+          </div>
+        ) : (
+          <BoardTable
+            data={filteredRecords}
+            columns={columns}
+            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+            initialSort={{ id: "createdAt", direction: "desc" }}
+            getRowId={(item) => item.id}
+            entityActions={entityActions}
+            bulkActions={({ selectedItems, clearSelection }) => (
+              <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                <p className="text-muted-foreground text-xs">
+                  {selectedItems.length} selected
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+                    <Button
+                      key={action.type}
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      disabled={!!bulkQuickActionType}
+                      onClick={() => {
+                        bulkClearSelectionRef.current = clearSelection;
+                        setBulkQuickActionConfirmation({
+                          action,
+                          selectedItems: [...selectedItems],
+                        });
+                      }}
+                    >
+                      {bulkQuickActionType === action.type ? "Applying..." : action.label}
+                    </Button>
+                  ))}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                    disabled={!!bulkQuickActionType}
+                    onClick={() => {
+                      openQuestionnaireDialogForRecords([...selectedItems]);
+                    }}
+                  >
+                    {QUESTIONNAIRE_UPDATE_ACTION.label}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={clearSelection}
+                    disabled={!!bulkQuickActionType}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
+          />
+        )}
+
+        <Dialog
+          open={!!bulkQuickActionConfirmation}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (bulkQuickActionType) return;
+            setBulkQuickActionConfirmation(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
+              <DialogDescription>
+                {bulkQuickActionConfirmation
+                  ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
+                  : "Confirm this bulk action."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setBulkQuickActionConfirmation(null)}
+                disabled={!!bulkQuickActionType}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  const confirmation = bulkQuickActionConfirmation;
+                  if (!confirmation) return;
+                  setBulkQuickActionConfirmation(null);
+                  void handleBulkQuickActionUpdates(
+                    confirmation.selectedItems,
+                    () => bulkClearSelectionRef.current?.(),
+                    confirmation.action,
+                  );
+                }}
+                disabled={!!bulkQuickActionType}
+              >
+                {bulkQuickActionType ? "Applying..." : "Confirm"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!kanbanMoveConfirmation}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (isExecutingKanbanMove) return;
+            setKanbanMoveConfirmation(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Confirm Move</DialogTitle>
+              <DialogDescription>
+                {kanbanMoveConfirmation
+                  ? `Move "${kanbanMoveConfirmation.record.name}" ${kanbanMoveConfirmation.direction === "forward" ? "forward to" : "back to"} "${kanbanMoveConfirmation.toStepIndex === 0
+                    ? "Not Started"
+                    : approvalSteps[kanbanMoveConfirmation.toStepIndex - 1]?.title ?? `Step ${kanbanMoveConfirmation.toStepIndex}`
+                  }"?`
+                  : "Confirm this move."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setKanbanMoveConfirmation(null)}
+                disabled={isExecutingKanbanMove}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!kanbanMoveConfirmation) return;
+                  void handleKanbanStepMove(kanbanMoveConfirmation);
+                }}
+                disabled={isExecutingKanbanMove}
+              >
+                {isExecutingKanbanMove ? "Moving..." : "Confirm"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!resumePreview}
+          onOpenChange={(open) => {
+            if (!open) setResumePreview(null);
+          }}
+        >
+          <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>
+                Resume · {resumePreview?.recordName ?? "Contact"}
+              </DialogTitle>
+              <DialogDescription className="sr-only">
+                Resume preview dialog with open in new tab fallback.
+              </DialogDescription>
+            </DialogHeader>
+            {resumePreview ? (
+              <div className="space-y-3">
+                {(() => {
+                  const lowerName = resumePreview.fileName.toLowerCase();
+                  const isPdf = lowerName.endsWith(".pdf");
+                  const isImage =
+                    lowerName.endsWith(".png") ||
+                    lowerName.endsWith(".jpg") ||
+                    lowerName.endsWith(".jpeg") ||
+                    lowerName.endsWith(".gif") ||
+                    lowerName.endsWith(".webp") ||
+                    lowerName.endsWith(".svg");
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
+                        <a
+                          href={resumePreview.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary text-xs underline"
+                        >
+                          Open in new tab
+                        </a>
+                      </div>
+                      <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
+                        {isPdf ? (
+                          <iframe
+                            src={resumePreview.href}
+                            title={`Resume preview: ${resumePreview.fileName}`}
+                            className="h-full w-full"
+                          />
+                        ) : isImage ? (
+                          <object
+                            data={resumePreview.href}
+                            className="h-full w-full"
+                          >
+                            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                              <p className="text-sm font-medium">Image preview unavailable</p>
+                              <a
+                                href={resumePreview.href}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary text-xs underline"
+                              >
+                                Open resume in new tab
+                              </a>
+                            </div>
+                          </object>
+                        ) : (
                           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                            <p className="text-sm font-medium">Image preview unavailable</p>
+                            <p className="text-sm font-medium">
+                              This file type cannot be previewed inline.
+                            </p>
                             <a
                               href={resumePreview.href}
                               target="_blank"
@@ -3650,211 +5651,197 @@ export function MondayBoardView({
                               Open resume in new tab
                             </a>
                           </div>
-                        </object>
-                      ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                          <p className="text-sm font-medium">
-                            This file type cannot be previewed inline.
-                          </p>
-                          <a
-                            href={resumePreview.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary text-xs underline"
-                          >
-                            Open resume in new tab
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!sendEmailRecord}
-        onOpenChange={(open) => {
-          if (!open) closeSendEmailDialog();
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
-          <DialogHeader>
-            <DialogTitle>Send Email</DialogTitle>
-          </DialogHeader>
-          {sendEmailRecord ? (
-            <div className="space-y-4">
-              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
-                Recipient:{" "}
-                <span className="font-medium text-slate-900">
-                  {sendEmailRecord.name}
-                  {" · "}
-                  {sendEmailRecord.email ?? "No email"}
-                </span>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              {sendEmailStep === 1 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    Step 1: Choose an email template
-                  </p>
-                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {emailTemplates.map((template) => {
-                        const isActive = template.id === sendEmailTemplateId;
-                        const resolvedTemplateName = interpolateTemplateVariables(
-                          template.name,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const resolvedRenderedHtml = interpolateTemplateVariables(
-                          template.renderedHtml,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const resolvedContent = interpolateTemplateVariables(
-                          template.content,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
-                        );
-                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
-                        const hasPlainContent = resolvedContent.trim().length > 0;
-                        return (
-                          <button
-                            key={template.id}
-                            type="button"
-                            className={[
-                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
-                              isActive
-                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
-                            ].join(" ")}
-                            onClick={() => {
-                              setSendEmailTemplateId(template.id);
-                            }}
-                          >
-                            <p className="line-clamp-1 font-medium text-slate-900">
-                              {resolvedTemplateName}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Updated {formatUpdatedAt(template.updatedAt)}
-                            </p>
-                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
-                              {hasRenderedHtml ? (
-                                <div
-                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
-                                  style={{ whiteSpace: "pre-wrap" }}
-                                  dangerouslySetInnerHTML={{
-                                    __html: resolvedRenderedHtml,
-                                  }}
-                                />
-                              ) : hasPlainContent ? (
-                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
-                                  {resolvedContent}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-slate-500">No preview content.</p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">
-                        No templates found.
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={closeSendEmailDialog}>
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={() => setSendEmailStep(2)}
-                      disabled={!sendEmailTemplate}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
+            ) : null}
+          </DialogContent>
+        </Dialog>
 
-              {sendEmailStep === 2 && sendEmailTemplate ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 2: Preview template</p>
-                  <div className="rounded-md border p-4">
-                    <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                    <p className="mt-1 text-base font-medium">
-                      {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+        <Dialog
+          open={!!sendEmailRecord}
+          onOpenChange={(open) => {
+            if (!open) closeSendEmailDialog();
+          }}
+        >
+          <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
+            <DialogHeader>
+              <DialogTitle>Send Email</DialogTitle>
+            </DialogHeader>
+            {sendEmailRecord ? (
+              <div className="space-y-4">
+                <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                  Recipient:{" "}
+                  <span className="font-medium text-slate-900">
+                    {sendEmailRecord.name}
+                    {" · "}
+                    {sendEmailRecord.email ?? "No email"}
+                  </span>
+                </div>
+                {sendEmailStep === 1 ? (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      Step 1: Choose an email template
                     </p>
-                    <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                      Email Preview (Lead View)
-                    </p>
-                    <div className="bg-card mt-2 rounded-md border p-4">
-                      {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                    <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {emailTemplates.map((template) => {
+                          const isActive = template.id === sendEmailTemplateId;
+                          const resolvedTemplateName = interpolateTemplateVariables(
+                            template.name,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const resolvedRenderedHtml = interpolateTemplateVariables(
+                            template.renderedHtml,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const resolvedContent = interpolateTemplateVariables(
+                            template.content,
+                            {
+                              ownerName: sendEmailOwnerVars.ownerName,
+                              ownerEmail: sendEmailOwnerVars.ownerEmail,
+                            },
+                          );
+                          const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                          const hasPlainContent = resolvedContent.trim().length > 0;
+                          return (
+                            <button
+                              key={template.id}
+                              type="button"
+                              className={[
+                                "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                                isActive
+                                  ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                  : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                              ].join(" ")}
+                              onClick={() => {
+                                setSendEmailTemplateId(template.id);
+                              }}
+                            >
+                              <p className="line-clamp-1 font-medium text-slate-900">
+                                {resolvedTemplateName}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                Updated {formatUpdatedAt(template.updatedAt)}
+                              </p>
+                              <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                                {hasRenderedHtml ? (
+                                  <div
+                                    className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                    style={{ whiteSpace: "pre-wrap" }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: resolvedRenderedHtml,
+                                    }}
+                                  />
+                                ) : hasPlainContent ? (
+                                  <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                    {resolvedContent}
+                                  </p>
+                                ) : (
+                                  <p className="text-xs text-slate-500">No preview content.</p>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
                         <p className="text-muted-foreground text-sm">
-                          No content found in template.
+                          No templates found.
                         </p>
-                      ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
-                        <div
-                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                          style={{ whiteSpace: "pre-wrap" }}
-                          dangerouslySetInnerHTML={{
-                            __html: sendEmailResolvedTemplate?.html ?? "",
-                          }}
-                        />
-                      ) : (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {sendEmailResolvedTemplate?.text ?? ""}
-                        </div>
-                      )}
+                      ) : null}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={closeSendEmailDialog}>
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={() => setSendEmailStep(2)}
+                        disabled={!sendEmailTemplate}
+                      >
+                        Next
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
-                      Back
-                    </Button>
-                    <Button onClick={() => setSendEmailStep(3)}>Next</Button>
-                  </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {sendEmailStep === 3 && sendEmailTemplate ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 3: Confirm send</p>
-                  <div className="rounded-md border p-4 text-sm">
-                    Are you sure you want to send this email?
+                {sendEmailStep === 2 && sendEmailTemplate ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Step 2: Preview template</p>
+                    <div className="rounded-md border p-4">
+                      <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                      <p className="mt-1 text-base font-medium">
+                        {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                      </p>
+                      <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                        Email Preview (Lead View)
+                      </p>
+                      <div className="bg-card mt-2 rounded-md border p-4">
+                        {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                          <p className="text-muted-foreground text-sm">
+                            No content found in template.
+                          </p>
+                        ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                          <div
+                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                            style={{ whiteSpace: "pre-wrap" }}
+                            dangerouslySetInnerHTML={{
+                              __html: sendEmailResolvedTemplate?.html ?? "",
+                            }}
+                          />
+                        ) : (
+                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                            {sendEmailResolvedTemplate?.text ?? ""}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                        Back
+                      </Button>
+                      <Button onClick={() => setSendEmailStep(3)}>Next</Button>
+                    </div>
                   </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
-                      Back
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        void handleConfirmSendEmail();
-                      }}
-                      disabled={isSendingEmail || !sendEmailRecord.email}
-                    >
-                      {isSendingEmail ? "Sending..." : "Send Email"}
-                    </Button>
+                ) : null}
+
+                {sendEmailStep === 3 && sendEmailTemplate ? (
+                  <div className="space-y-3">
+                    <p className="text-sm font-medium">Step 3: Confirm send</p>
+                    <div className="rounded-md border p-4 text-sm">
+                      Are you sure you want to send this email?
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          void handleConfirmSendEmail();
+                        }}
+                        disabled={isSendingEmail || !sendEmailRecord.email}
+                      >
+                        {isSendingEmail ? "Sending..." : "Send Email"}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+                ) : null}
+              </div>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </div>
       {!staticMode && recordsQuery.hasNextPage ? (
-        <div ref={loadMoreAnchorRef} className="h-10" />
+        <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>
   );

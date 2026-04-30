@@ -41,6 +41,12 @@ type MergedRecord = {
   statusText: string | null;
   peopleText: string | null;
   ownerIds: string[];
+  ownerProfiles: Array<{
+    id: string;
+    name: string | null;
+    email: string | null;
+    photoThumb: string | null;
+  }>;
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -49,9 +55,16 @@ type MergedRecord = {
   hireDate: string | null;
   retentionPeriod: string | null;
   tags: string | null;
+  batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
+  resumeFiles: Array<{
+    assetId: string | null;
+    name: string;
+    url: string | null;
+  }>;
 };
 
 type TouchRecord = {
@@ -199,6 +212,192 @@ const toColumnDisplayValue = (
     return rawValue;
   }
   return rawValue;
+};
+
+const APPROVAL_STEP_COLUMN_IDS = [
+  "color_mm1db321",
+  "color_mm1dwtvd",
+  "color_mm1dwr4k",
+  "color_mm1dnr11",
+  "color_mm1dgeqy",
+  "color_mm1d80yc",
+  "color_mm1djwjj",
+  "color_mm1d4e3y",
+] as const;
+
+interface ProgressColumnConfig {
+  columnId: string;
+  selectedColumns: Array<{
+    columnId: string;
+    percentage: number;
+    doneColors: number[];
+  }>;
+}
+
+interface ContactBoardMeta {
+  approvalSteps: Array<{ id: string; title: string }>;
+  progressColumnConfig: ProgressColumnConfig | null;
+}
+
+const resolveContactBoardMeta = async (
+  contactBoardId: string,
+): Promise<ContactBoardMeta> => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  try {
+    const data = await callMondayGraphQL<Data>(
+      `
+        query ResolveContactColumns($boardId: ID!) {
+          boards(ids: [$boardId]) {
+            columns { id title type settings_str }
+          }
+        }
+      `,
+      { boardId: contactBoardId },
+    );
+    const columns = data.boards?.[0]?.columns ?? [];
+    const titleById: Record<string, string> = {};
+    for (const col of columns) {
+      const id = col?.id?.trim();
+      const title = col?.title?.trim();
+      if (id && title) titleById[id] = title;
+    }
+
+    let progressColumnConfig: ProgressColumnConfig | null = null;
+    const progressColumn = columns.find(
+      (c) =>
+        c?.id === "columns_battery_mm1dnmq3" || c?.type === "progress",
+    );
+    if (progressColumn?.settings_str) {
+      try {
+        const settings = JSON.parse(progressColumn.settings_str) as {
+          related_columns?: {
+            columns?: Record<
+              string,
+              { isSelected?: boolean; percentage?: number }
+            >;
+          };
+        };
+        const relatedCols = settings.related_columns?.columns ?? {};
+        const selectedColumns = Object.entries(relatedCols)
+          .filter(([, v]) => v.isSelected === true)
+          .map(([colId, v]) => {
+            const colMeta = columns.find((c) => c?.id === colId);
+            let doneColors: number[] = [1];
+            if (colMeta?.settings_str) {
+              try {
+                const colSettings = JSON.parse(colMeta.settings_str) as {
+                  done_colors?: number[];
+                };
+                if (Array.isArray(colSettings.done_colors)) {
+                  doneColors = colSettings.done_colors;
+                }
+              } catch {
+                // default
+              }
+            }
+            return {
+              columnId: colId,
+              percentage: v.percentage ?? 0,
+              doneColors,
+            };
+          });
+        if (selectedColumns.length > 0) {
+          progressColumnConfig = {
+            columnId: progressColumn.id ?? "columns_battery_mm1dnmq3",
+            selectedColumns,
+          };
+        }
+      } catch {
+        // stays null
+      }
+    }
+
+    return {
+      approvalSteps: APPROVAL_STEP_COLUMN_IDS.map((id, index) => ({
+        id,
+        title: titleById[id] ?? `Approval Step ${index + 1}`,
+      })),
+      progressColumnConfig,
+    };
+  } catch {
+    return {
+      approvalSteps: APPROVAL_STEP_COLUMN_IDS.map((id, index) => ({
+        id,
+        title: `Approval Step ${index + 1}`,
+      })),
+      progressColumnConfig: null,
+    };
+  }
+};
+
+const computeProgressFromColumns = (
+  itemColumns: Array<{ id?: string | null; value?: string | null }>,
+  config: ProgressColumnConfig | null,
+): number | null => {
+  if (!config || config.selectedColumns.length === 0) return null;
+  let total = 0;
+  let anyColumnFound = false;
+  for (const { columnId, percentage, doneColors } of config.selectedColumns) {
+    const col = itemColumns.find((c) => c.id === columnId);
+    if (!col) continue;
+    anyColumnFound = true;
+    if (col.value) {
+      try {
+        const parsed = JSON.parse(col.value) as { index?: number | null };
+        if (
+          typeof parsed.index === "number" &&
+          doneColors.includes(parsed.index)
+        ) {
+          total += percentage;
+        }
+      } catch {
+        // not done
+      }
+    }
+  }
+  return anyColumnFound ? total : null;
+};
+
+const parseBatteryProgressValue = (
+  text: string | null | undefined,
+  rawValue: string | null | undefined,
+): number | null => {
+  const parseNumber = (value: string) => {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+  };
+  if (rawValue && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        battery_value?: number | string | null;
+        value?: number | string | null;
+        text?: string | null;
+      };
+      if (
+        typeof parsed.battery_value === "number" ||
+        typeof parsed.battery_value === "string"
+      )
+        return parseNumber(String(parsed.battery_value));
+      if (typeof parsed.value === "number" || typeof parsed.value === "string")
+        return parseNumber(String(parsed.value));
+      if (typeof parsed.text === "string") return parseNumber(parsed.text);
+    } catch {
+      // fall through
+    }
+  }
+  return text?.trim() ? parseNumber(text) : null;
 };
 
 const resolveTouchColumns = async (touchBoardId: string) => {
@@ -370,9 +569,86 @@ const touchMatchesFilters = (args: {
   return true;
 };
 
+const fetchOwnerProfiles = async (
+  ownerIds: string[],
+): Promise<
+  Map<
+    string,
+    { id: string; name: string | null; email: string | null; photoThumb: string | null }
+  >
+> => {
+  if (ownerIds.length === 0) return new Map();
+  interface Data {
+    users?: Array<{
+      id?: string | number | null;
+      name?: string | null;
+      email?: string | null;
+      photo_thumb?: string | null;
+    }>;
+  }
+  try {
+    const data = await callMondayGraphQL<Data>(
+      `query GetUsers($ids: [ID!]) { users(ids: $ids) { id name email photo_thumb } }`,
+      { ids: ownerIds },
+    );
+    const map = new Map<
+      string,
+      { id: string; name: string | null; email: string | null; photoThumb: string | null }
+    >();
+    for (const user of data.users ?? []) {
+      const id = user.id != null ? String(user.id).trim() : "";
+      if (!id) continue;
+      map.set(id, {
+        id,
+        name: user.name?.trim() ?? null,
+        email: user.email?.trim() ?? null,
+        photoThumb: user.photo_thumb?.trim() ?? null,
+      });
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+};
+
+const parseResumeFiles = (
+  columns: MondayColumnValue[],
+): Array<{ assetId: string | null; name: string; url: string | null }> => {
+  const filesColumn = columns.find((c) => c.id === "files__1");
+  if (!filesColumn?.value) return [];
+  try {
+    const parsed = JSON.parse(filesColumn.value) as {
+      files?: Array<{
+        assetId?: number | string | null;
+        name?: string | null;
+        fileType?: string | null;
+      }>;
+    };
+    return (parsed.files ?? [])
+      .filter((f) => {
+        const name = (f.name ?? "").toLowerCase();
+        return (
+          name.includes("resume") ||
+          name.includes("cv") ||
+          name.endsWith(".pdf") ||
+          name.endsWith(".doc") ||
+          name.endsWith(".docx")
+        );
+      })
+      .map((f) => ({
+        assetId: f.assetId != null ? String(f.assetId) : null,
+        name: f.name ?? "Resume",
+        url: null,
+      }));
+  } catch {
+    return [];
+  }
+};
+
 const fetchContactRecordsByIds = async (args: {
   boardId: string;
   itemIds: string[];
+  progressColumnConfig: ProgressColumnConfig | null;
 }) => {
   // Monday's `items(ids: ...)` resolver effectively caps results to 25 per call,
   // even when passing larger ID arrays. Keep chunk size at 25 to avoid silent drops.
@@ -445,6 +721,13 @@ const fetchContactRecordsByIds = async (args: {
     const ownerIds = parsePeopleIds(peopleColumn?.value);
     const hireDate = parseDateValue(hireDateColumn);
 
+    const batteryColumn = columns.find(
+      (c) => c.id === "columns_battery_mm1dnmq3" || (c.type ?? "").toLowerCase() === "progress",
+    );
+    const computedProgress = computeProgressFromColumns(columns, args.progressColumnConfig);
+    const batteryProgress =
+      computedProgress ?? parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
+
     let createdAt: string | null = parseDateValue(dateColumn);
     if (!createdAt && creationLogColumn?.value) {
       try {
@@ -474,6 +757,7 @@ const fetchContactRecordsByIds = async (args: {
       statusText: statusColumn?.text ?? null,
       peopleText: peopleColumn?.text ?? null,
       ownerIds,
+      ownerProfiles: [] as MergedRecord["ownerProfiles"],
       email: emailColumn?.text ?? null,
       phone: phoneColumn?.text ?? null,
       address,
@@ -482,9 +766,12 @@ const fetchContactRecordsByIds = async (args: {
       hireDate: hireDate,
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
+      batteryProgress,
+      batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAt ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
       contactDetails: details,
+      resumeFiles: parseResumeFiles(columns),
     };
   };
 
@@ -492,6 +779,21 @@ const fetchContactRecordsByIds = async (args: {
   for (const item of items) {
     map.set(item.id, toContactRecord(item));
   }
+
+  const allOwnerIds = Array.from(
+    new Set(
+      Array.from(map.values()).flatMap((r) => r.ownerIds),
+    ),
+  );
+  const ownerProfileMap = await fetchOwnerProfiles(allOwnerIds);
+  for (const record of map.values()) {
+    record.ownerProfiles = record.ownerIds
+      .map((id) => ownerProfileMap.get(id))
+      .filter(
+        (p): p is NonNullable<typeof p> => p !== undefined,
+      );
+  }
+
   return map;
 };
 
@@ -527,7 +829,11 @@ export const GET = async (request: Request) => {
   const startedAt = Date.now();
 
   try {
-    const touchColumns = await resolveTouchColumns(config.touchBoardId);
+    const [touchColumns, contactBoardMeta] = await Promise.all([
+      resolveTouchColumns(config.touchBoardId),
+      resolveContactBoardMeta(config.contactBoardId),
+    ]);
+    const { approvalSteps, progressColumnConfig } = contactBoardMeta;
     const canApplyDateRule =
       !!touchColumns.touchDateColumnId &&
       isIsoDateOnly(dateFromText) &&
@@ -612,6 +918,7 @@ export const GET = async (request: Request) => {
     const contactMap = await fetchContactRecordsByIds({
       boardId: config.contactBoardId,
       itemIds: contactIds,
+      progressColumnConfig,
     });
 
     const merged: MergedRecord[] = [];
@@ -683,6 +990,7 @@ export const GET = async (request: Request) => {
       boardName: boardName ?? "Monday Board",
       records: merged,
       nextCursor: cursor,
+      approvalSteps,
     });
   } catch (error) {
     const message =
