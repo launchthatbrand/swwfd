@@ -130,6 +130,7 @@ export default function MondayToolsPage() {
     () => new Date().toISOString().slice(0, 7),
   );
 
+  // Touch range backfill state
   const [touchRangeJob, setTouchRangeJob] = useState<TouchRangeBackfillJob | null>(null);
   const [touchRangeDateFrom, setTouchRangeDateFrom] = useState("2026-02-01");
   const [touchRangeDateTo, setTouchRangeDateTo] = useState(
@@ -757,7 +758,7 @@ export default function MondayToolsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground whitespace-nowrap">
+              <span className="whitespace-nowrap text-muted-foreground">
                 Month key (YYYY-MM):
               </span>
               <input
@@ -1020,7 +1021,7 @@ export default function MondayToolsPage() {
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground whitespace-nowrap">From:</span>
+              <span className="whitespace-nowrap text-muted-foreground">From:</span>
               <input
                 type="date"
                 className="rounded border px-2 py-1 text-sm"
@@ -1029,7 +1030,7 @@ export default function MondayToolsPage() {
               />
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground whitespace-nowrap">To:</span>
+              <span className="whitespace-nowrap text-muted-foreground">To:</span>
               <input
                 type="date"
                 className="rounded border px-2 py-1 text-sm"
@@ -1038,7 +1039,7 @@ export default function MondayToolsPage() {
               />
             </label>
             <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground whitespace-nowrap">Page size:</span>
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
               <input
                 type="number"
                 className="w-20 rounded border px-2 py-1 text-sm"

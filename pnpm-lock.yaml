@@ -20,6 +20,12 @@ importers:
       '@convex-dev/workflow':
         specifier: ^0.3.3
         version: 0.3.12(@convex-dev/workpool@0.4.6(convex-helpers@0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.2.5))(react@19.2.5)(typescript@5.9.3)(zod@3.25.76))(convex@1.36.1(react@19.2.5)))(convex-helpers@0.1.115(@standard-schema/spec@1.1.0)(convex@1.36.1(react@19.2.5))(react@19.2.5)(typescript@5.9.3)(zod@3.25.76))(convex@1.36.1(react@19.2.5))
+      '@dnd-kit/core':
+        specifier: ^6.3.1
+        version: 6.3.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@launchthatapp/dnd':
+        specifier: ^0.1.1
+        version: 0.1.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@launchthatapp/ui':
         specifier: ^0.1.1
         version: 0.1.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(@types/three@0.184.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(unified@11.0.5)(use-sync-external-store@1.6.0(react@19.2.5))(zod@3.25.76)
@@ -89,6 +95,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.2.5(react@19.2.5)
+      react-hook-form:
+        specifier: ^7.74.0
+        version: 7.74.0(react@19.2.5)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -784,6 +793,12 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@launchthatapp/dnd@0.1.1':
+    resolution: {integrity: sha512-5cF+Ts+97aDUvxkcX+9TCgvDXCwqWEmTkGJYse8kGxs3JuCmP8VvM15j2SlIL2Q/+F/Zo4DsTizT8sLoJUCLFQ==, tarball: https://npm.pkg.github.com/download/@launchthatapp/dnd/0.1.1/2712e816823b05ff1a59bd24e377494b0a967b8b}
+    peerDependencies:
+      react: 19.0.0
+      react-dom: 19.0.0
 
   '@launchthatapp/ui@0.1.1':
     resolution: {integrity: sha512-ZwmrHdptAu4uJYO4RsFhxYEEIUnrqcIZxkrHSmQq2+lfINjJk9XOMpp4vRWq94Oaotx46CalWK4cOGY0+ymYXw==, tarball: https://npm.pkg.github.com/download/@launchthatapp/ui/0.1.1/260bf7b794d592e689ce7e3c66200bc95c26989e}
@@ -6224,6 +6239,17 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@launchthatapp/dnd@0.1.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
+    dependencies:
+      '@dnd-kit/core': 6.3.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      '@dnd-kit/modifiers': 9.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)
+      '@dnd-kit/sortable': 8.0.0(@dnd-kit/core@6.3.1(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)
+      '@dnd-kit/utilities': 3.2.2(react@19.2.5)
+      d3-hierarchy: 3.1.2
+      lucide-react: 0.555.0(react@19.2.5)
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
 
   '@launchthatapp/ui@0.1.1(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(@types/three@0.184.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(unified@11.0.5)(use-sync-external-store@1.6.0(react@19.2.5))(zod@3.25.76)':
     dependencies:

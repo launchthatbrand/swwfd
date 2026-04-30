@@ -61,6 +61,7 @@ export const GET = async (request: Request) => {
       await listMondayBoardRecords({
       cursor,
       limit,
+      search: search || undefined,
       dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
       dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
       owner: owner || undefined,
