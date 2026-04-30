@@ -791,19 +791,29 @@ export type MondayBoardViewMode = "all" | "userScoped";
 
 interface MondayBoardViewProps {
   viewMode?: MondayBoardViewMode;
+  initialOwnerFilter?: string;
+  forcedOwnerId?: string;
 }
 
 const ADMIN_OWNER_OVERRIDE_EMAIL = "desmond.tatilian@qcausa.com";
 const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
 
-export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
+export function MondayBoardView({
+  viewMode = "all",
+  initialOwnerFilter,
+  forcedOwnerId: forcedOwnerIdProp,
+}: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
+  const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
+  const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [staticMode, setStaticMode] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState(
+    () => (forcedOwnerId.length > 0 ? forcedOwnerId : (initialOwnerFilter?.trim() ?? "")),
+  );
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactStep, setAddContactStep] = useState<1 | 2>(1);
   const [addContactValues, setAddContactValues] = useState<AddNewContactValues>({
@@ -1484,10 +1494,17 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
   const currentUserEmail = userProfileQuery.data?.email?.toLowerCase() ?? null;
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" && currentUserEmail === ADMIN_OWNER_OVERRIDE_EMAIL;
-  const isOwnerFilterEditable = viewMode === "all" || canOverrideUserScopeOwner;
+  const isOwnerFilterEditable =
+    !hasForcedOwnerScope && (viewMode === "all" || canOverrideUserScopeOwner);
+
+  useEffect(() => {
+    if (!hasForcedOwnerScope) return;
+    setOwnerFilter(forcedOwnerId);
+  }, [forcedOwnerId, hasForcedOwnerScope]);
 
   useEffect(() => {
     if (viewMode !== "userScoped") return;
+    if (hasForcedOwnerScope) return;
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (ownerFilter.trim().length > 0) {
@@ -1498,7 +1515,7 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [ownerFilter, viewMode]);
+  }, [hasForcedOwnerScope, ownerFilter, viewMode]);
 
   useEffect(() => {
     if (emailTemplates.length === 0) return;
@@ -1748,6 +1765,14 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
     if (ownerFilter.trim().length === 0) return true;
     return ownerOptions.some((option) => option.value === ownerFilter);
   }, [ownerFilter, ownerOptions]);
+  const lockedOwnerLabel = useMemo(() => {
+    const normalizedOwner = ownerFilter.trim() || forcedOwnerId;
+    if (!normalizedOwner) return "Owner: locked";
+    const option = ownerOptions.find((entry) => entry.value === normalizedOwner);
+    if (option) return `Owner: ${option.label}`;
+    if (hasForcedOwnerScope) return `Owner: ${forcedOwnerId}`;
+    return "Owner: me";
+  }, [forcedOwnerId, hasForcedOwnerScope, ownerFilter, ownerOptions]);
 
   const statusOptions = useMemo(() => {
     return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
@@ -2477,7 +2502,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
           {boardName}
           {staticMode ? " · static mode" : ""}
           {viewMode === "userScoped" && !isOwnerFilterEditable
-            ? " · owner scope locked to current user"
+            ? hasForcedOwnerScope
+              ? ` · owner scope locked to board owner ${forcedOwnerId}`
+              : " · owner scope locked to current user"
             : ""}
           {canOverrideUserScopeOwner ? " · owner scope override enabled" : ""}
         </div>
@@ -2561,7 +2588,9 @@ export function MondayBoardView({ viewMode = "all" }: MondayBoardViewProps) {
                   {isOwnerFilterEditable ? (
                     <option value="__all_owner__">Owner: all</option>
                   ) : (
-                    <option value={identity?.userId ?? "__all_owner__"}>Owner: me</option>
+                    <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
+                      {lockedOwnerLabel}
+                    </option>
                   )}
                   {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
                     <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>

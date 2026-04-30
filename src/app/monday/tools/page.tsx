@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { ComponentProps } from "react";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
@@ -8,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@launchthatapp/ui/card
 import { Input } from "@launchthatapp/ui/input";
 import { toast } from "@launchthatapp/ui/toast";
 
-type BackfillJob = {
+interface BackfillJob {
   jobId: string;
   status: "running" | "done" | "failed" | "cancelled";
   workflowId?: string;
@@ -24,9 +25,9 @@ type BackfillJob = {
   updatedAt: number;
   finishedAt?: number | null;
   lastError?: string | null;
-};
+}
 
-type CsvExportJob = {
+interface CsvExportJob {
   jobId: string;
   status: "running" | "done" | "failed" | "cancelled";
   workflowId?: string;
@@ -41,15 +42,73 @@ type CsvExportJob = {
   updatedAt: number;
   finishedAt?: number | null;
   lastError?: string | null;
-};
+}
+
+interface MonthlyMigrationJob {
+  jobId: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  workflowId?: string;
+  sourceBoardId: string;
+  sourceBoardName?: string | null;
+  targetBoardId: string;
+  monthTag: string;
+  dryRun: boolean;
+  includeParentUpdates: boolean;
+  includeSubitems: boolean;
+  includeSubitemUpdates: boolean;
+  updateProgressColumns?: boolean;
+  updatedProgressColumns?: number;
+  monthKey?: string;
+  createdTouchRecords?: number;
+  pageSize: number;
+  currentCursor?: string | null;
+  processedContacts: number;
+  mappedContacts: number;
+  skippedContacts: number;
+  createdParentUpdates: number;
+  createdSubitems: number;
+  createdSubitemUpdates: number;
+  errorsCount: number;
+  warningsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  lastError?: string | null;
+}
+
+interface TouchRangeBackfillJob {
+  jobId: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  workflowId?: string;
+  dateFrom: string;
+  dateTo: string;
+  dryRun: boolean;
+  contactBoardId: string;
+  touchBoardId: string;
+  pageSize: number;
+  currentCursor?: string | null;
+  processedContacts: number;
+  inRangeContacts: number;
+  createdTouches: number;
+  updatedTouches: number;
+  skippedTouches: number;
+  errorsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  lastError?: string | null;
+}
 
 export default function MondayToolsPage() {
   const [job, setJob] = useState<BackfillJob | null>(null);
   const [csvJob, setCsvJob] = useState<CsvExportJob | null>(null);
+  const [monthlyJob, setMonthlyJob] = useState<MonthlyMigrationJob | null>(null);
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [startingMonthlyMigration, setStartingMonthlyMigration] = useState(false);
+  const [cancellingMonthlyMigration, setCancellingMonthlyMigration] = useState(false);
   const [downloadingCsv, setDownloadingCsv] = useState(false);
   const [downloadingCsvParts, setDownloadingCsvParts] = useState(false);
   const [baselineDate, setBaselineDate] = useState(
@@ -58,6 +117,90 @@ export default function MondayToolsPage() {
   const [sourceTag, setSourceTag] = useState("");
   const [pageSize, setPageSize] = useState("100");
   const [csvRowsPerFile, setCsvRowsPerFile] = useState("8000");
+  const [migrationSourceBoardId, setMigrationSourceBoardId] = useState("18406885282");
+  const [migrationTargetBoardId, setMigrationTargetBoardId] = useState("");
+  const [migrationMonthTag, setMigrationMonthTag] = useState("april_2026");
+  const [migrationPageSize, setMigrationPageSize] = useState("20");
+  const [migrationDryRun, setMigrationDryRun] = useState(true);
+  const [migrationIncludeParentUpdates, setMigrationIncludeParentUpdates] = useState(true);
+  const [migrationIncludeSubitems, setMigrationIncludeSubitems] = useState(true);
+  const [migrationIncludeSubitemUpdates, setMigrationIncludeSubitemUpdates] = useState(true);
+  const [migrationUpdateProgressColumns, setMigrationUpdateProgressColumns] = useState(true);
+  const [migrationMonthKey, setMigrationMonthKey] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
+
+  const [touchRangeJob, setTouchRangeJob] = useState<TouchRangeBackfillJob | null>(null);
+  const [touchRangeDateFrom, setTouchRangeDateFrom] = useState("2026-02-01");
+  const [touchRangeDateTo, setTouchRangeDateTo] = useState(
+    () => new Date().toISOString().slice(0, 10),
+  );
+  const [touchRangePageSize, setTouchRangePageSize] = useState("50");
+  const [touchRangeDryRun, setTouchRangeDryRun] = useState(true);
+  const [startingTouchRange, setStartingTouchRange] = useState(false);
+  const [cancellingTouchRange, setCancellingTouchRange] = useState(false);
+
+  const refreshTouchRangeStatus = async () => {
+    try {
+      const response = await fetch("/api/monday/tools/touch-range-backfill/status", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        job?: TouchRangeBackfillJob | null;
+      };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to load status");
+      setTouchRangeJob(data.job ?? null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load touch range status");
+    }
+  };
+
+  const startTouchRangeBackfill = async () => {
+    setStartingTouchRange(true);
+    try {
+      const parsedPageSize = Number(touchRangePageSize);
+      const response = await fetch("/api/monday/tools/touch-range-backfill/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          dateFrom: touchRangeDateFrom.trim(),
+          dateTo: touchRangeDateTo.trim(),
+          dryRun: touchRangeDryRun,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to start");
+      toast.success("Touch range backfill started");
+      await refreshTouchRangeStatus();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to start touch range backfill");
+    } finally {
+      setStartingTouchRange(false);
+    }
+  };
+
+  const cancelTouchRangeBackfill = async () => {
+    setCancellingTouchRange(true);
+    try {
+      const response = await fetch("/api/monday/tools/touch-range-backfill/cancel", {
+        method: "POST",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to cancel");
+      toast.success("Touch range backfill cancelled");
+      await refreshTouchRangeStatus();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to cancel");
+    } finally {
+      setCancellingTouchRange(false);
+    }
+  };
 
   const refresh = async () => {
     setLoading(true);
@@ -106,21 +249,58 @@ export default function MondayToolsPage() {
     }
   };
 
+  const refreshMonthlyMigrationStatus = async () => {
+    try {
+      const response = await fetch("/api/monday/tools/monthly-migration/status", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        job?: MonthlyMigrationJob | null;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load monthly migration status");
+      }
+      setMonthlyJob(data.job ?? null);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to load monthly migration status";
+      toast.error(message);
+    }
+  };
+
   useEffect(() => {
     void refresh();
     void refreshCsvStatus();
+    void refreshMonthlyMigrationStatus();
+    void refreshTouchRangeStatus();
   }, []);
 
   useEffect(() => {
     const status = job?.status;
     const csvStatus = csvJob?.status;
-    if (status !== "running" && csvStatus !== "running") return;
+    const monthlyStatus = monthlyJob?.status;
+    const touchRangeStatus = touchRangeJob?.status;
+    if (
+      status !== "running" &&
+      csvStatus !== "running" &&
+      monthlyStatus !== "running" &&
+      touchRangeStatus !== "running"
+    ) {
+      return;
+    }
     const timer = setInterval(() => {
       void refresh();
       void refreshCsvStatus();
+      void refreshMonthlyMigrationStatus();
+      void refreshTouchRangeStatus();
     }, 5000);
     return () => clearInterval(timer);
-  }, [job?.status, csvJob?.status]);
+  }, [job?.status, csvJob?.status, monthlyJob?.status, touchRangeJob?.status]);
 
   const startBackfill = async () => {
     setStarting(true);
@@ -178,6 +358,80 @@ export default function MondayToolsPage() {
       toast.error(message);
     } finally {
       setCancelling(false);
+    }
+  };
+
+  const startMonthlyMigration = async () => {
+    setStartingMonthlyMigration(true);
+    try {
+      const parsedPageSize = Number(migrationPageSize);
+      const sourceBoardId = migrationSourceBoardId.trim();
+      if (!sourceBoardId) {
+        throw new Error("Source board id is required");
+      }
+      const response = await fetch("/api/monday/tools/monthly-migration/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sourceBoardId,
+          targetBoardId: migrationTargetBoardId.trim() || undefined,
+          monthTag: migrationMonthTag.trim() || undefined,
+          dryRun: migrationDryRun,
+          includeParentUpdates: migrationIncludeParentUpdates,
+          includeSubitems: migrationIncludeSubitems,
+          includeSubitemUpdates: migrationIncludeSubitemUpdates,
+          updateProgressColumns: migrationUpdateProgressColumns,
+          monthKey: migrationMonthKey.trim() || undefined,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to start monthly migration");
+      }
+      toast.success(
+        migrationDryRun
+          ? "Monthly migration dry-run started"
+          : "Monthly migration started",
+      );
+      await refreshMonthlyMigrationStatus();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start monthly migration";
+      toast.error(message);
+    } finally {
+      setStartingMonthlyMigration(false);
+    }
+  };
+
+  const cancelMonthlyMigration = async () => {
+    setCancellingMonthlyMigration(true);
+    try {
+      const response = await fetch("/api/monday/tools/monthly-migration/cancel", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jobId: monthlyJob?.jobId }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to cancel monthly migration");
+      }
+      toast.success("Monthly migration cancelled");
+      await refreshMonthlyMigrationStatus();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to cancel monthly migration";
+      toast.error(message);
+    } finally {
+      setCancellingMonthlyMigration(false);
     }
   };
 
@@ -299,19 +553,23 @@ export default function MondayToolsPage() {
     }
   };
 
-  const statusBadgeVariant = useMemo(() => {
-    switch (job?.status) {
-      case "running":
-        return "default";
-      case "done":
-        return "secondary";
-      case "failed":
-      case "cancelled":
-        return "destructive";
-      default:
-        return "outline";
-    }
-  }, [job?.status]);
+  const getStatusBadgeVariant = useMemo(() => {
+    return (
+      status: "running" | "done" | "failed" | "cancelled" | undefined,
+    ): ComponentProps<typeof Badge>["variant"] => {
+      switch (status) {
+        case "running":
+          return "default";
+        case "done":
+          return "secondary";
+        case "failed":
+        case "cancelled":
+          return "destructive";
+        default:
+          return "outline";
+      }
+    };
+  }, []);
 
   return (
     <main className="container mx-auto max-w-3xl space-y-4 py-6">
@@ -407,6 +665,239 @@ export default function MondayToolsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Monthly Board Migration</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-muted-foreground text-sm">
+            Migrate a monthly board into the main API board by using each row&apos;s
+            <code className="mx-1">main_database_id</code>
+            and preserving updates/subitems.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Source Board ID</label>
+              <Input
+                value={migrationSourceBoardId}
+                onChange={(event) => setMigrationSourceBoardId(event.target.value)}
+                placeholder="18406885282"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Target Board ID (optional)</label>
+              <Input
+                value={migrationTargetBoardId}
+                onChange={(event) => setMigrationTargetBoardId(event.target.value)}
+                placeholder="7241111668"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Month Tag</label>
+              <Input
+                value={migrationMonthTag}
+                onChange={(event) => setMigrationMonthTag(event.target.value)}
+                placeholder="april_2026"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Page Size</label>
+              <Input
+                value={migrationPageSize}
+                onChange={(event) => setMigrationPageSize(event.target.value)}
+                placeholder="20"
+              />
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationDryRun}
+                onChange={(event) => setMigrationDryRun(event.target.checked)}
+              />
+              Dry run (no Monday writes)
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeParentUpdates}
+                onChange={(event) =>
+                  setMigrationIncludeParentUpdates(event.target.checked)
+                }
+              />
+              Include parent updates
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeSubitems}
+                onChange={(event) => setMigrationIncludeSubitems(event.target.checked)}
+              />
+              Include subitems
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeSubitemUpdates}
+                onChange={(event) =>
+                  setMigrationIncludeSubitemUpdates(event.target.checked)
+                }
+              />
+              Include subitem updates
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationUpdateProgressColumns}
+                onChange={(event) =>
+                  setMigrationUpdateProgressColumns(event.target.checked)
+                }
+              />
+              Update progress columns
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground whitespace-nowrap">
+                Month key (YYYY-MM):
+              </span>
+              <input
+                type="text"
+                className="w-28 rounded border px-2 py-1 text-sm"
+                placeholder="2026-04"
+                value={migrationMonthKey}
+                onChange={(event) => setMigrationMonthKey(event.target.value)}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void startMonthlyMigration()}
+              disabled={startingMonthlyMigration}
+            >
+              {startingMonthlyMigration
+                ? "Starting..."
+                : migrationDryRun
+                  ? "Start Dry Run"
+                  : "Start Migration"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void refreshMonthlyMigrationStatus()}
+            >
+              Refresh Migration Status
+            </Button>
+            {monthlyJob?.status === "running" ? (
+              <Button
+                variant="destructive"
+                onClick={() => void cancelMonthlyMigration()}
+                disabled={cancellingMonthlyMigration}
+              >
+                {cancellingMonthlyMigration ? "Cancelling..." : "Cancel Migration"}
+              </Button>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Latest Monthly Migration Job</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!monthlyJob ? (
+            <p className="text-muted-foreground text-sm">
+              No monthly migration job found.
+            </p>
+          ) : (
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Status:</span>
+                <Badge variant={getStatusBadgeVariant(monthlyJob.status)}>
+                  {monthlyJob.status}
+                </Badge>
+              </div>
+              <p>
+                <span className="font-medium">Job ID:</span> {monthlyJob.jobId}
+              </p>
+              <p>
+                <span className="font-medium">Workflow ID:</span>{" "}
+                {monthlyJob.workflowId ?? "—"}
+              </p>
+              <p>
+                <span className="font-medium">Source Board:</span>{" "}
+                {monthlyJob.sourceBoardId}
+                {monthlyJob.sourceBoardName ? ` (${monthlyJob.sourceBoardName})` : ""}
+              </p>
+              <p>
+                <span className="font-medium">Target Board:</span>{" "}
+                {monthlyJob.targetBoardId}
+              </p>
+              <p>
+                <span className="font-medium">Month Tag:</span> {monthlyJob.monthTag}
+              </p>
+              <p>
+                <span className="font-medium">Mode:</span>{" "}
+                {monthlyJob.dryRun ? "Dry run" : "Write mode"} ·{" "}
+                <span className="font-medium">Page Size:</span> {monthlyJob.pageSize}
+              </p>
+              <p>
+                <span className="font-medium">Processed Contacts:</span>{" "}
+                {monthlyJob.processedContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Mapped / Skipped:</span>{" "}
+                {monthlyJob.mappedContacts.toLocaleString()} /{" "}
+                {monthlyJob.skippedContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Created Parent Updates:</span>{" "}
+                {monthlyJob.createdParentUpdates.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Created Subitems:</span>{" "}
+                {monthlyJob.createdSubitems.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Created Subitem Updates:</span>{" "}
+                {monthlyJob.createdSubitemUpdates.toLocaleString()}
+              </p>
+              {monthlyJob.updateProgressColumns ? (
+                <p>
+                  <span className="font-medium">Updated Progress Columns:</span>{" "}
+                  {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()}
+                </p>
+              ) : null}
+              {monthlyJob.monthKey ? (
+                <p>
+                  <span className="font-medium">Month Key:</span>{" "}
+                  {monthlyJob.monthKey}
+                  {" · "}
+                  <span className="font-medium">Touch Records:</span>{" "}
+                  {(monthlyJob.createdTouchRecords ?? 0).toLocaleString()}
+                </p>
+              ) : null}
+              <p>
+                <span className="font-medium">Warnings / Errors:</span>{" "}
+                {monthlyJob.warningsCount.toLocaleString()} /{" "}
+                {monthlyJob.errorsCount.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Updated:</span>{" "}
+                {new Date(monthlyJob.updatedAt).toLocaleString()}
+              </p>
+              {monthlyJob.lastError ? (
+                <p className="text-destructive">
+                  <span className="font-medium">Last Error:</span>{" "}
+                  {monthlyJob.lastError}
+                </p>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Latest CSV Export Job</CardTitle>
         </CardHeader>
         <CardContent>
@@ -416,7 +907,9 @@ export default function MondayToolsPage() {
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">Status:</span>
-                <Badge variant={statusBadgeVariant as any}>{csvJob.status}</Badge>
+                <Badge variant={getStatusBadgeVariant(csvJob.status)}>
+                  {csvJob.status}
+                </Badge>
               </div>
               <p>
                 <span className="font-medium">Job ID:</span> {csvJob.jobId}
@@ -460,7 +953,9 @@ export default function MondayToolsPage() {
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="font-medium">Status:</span>
-                <Badge variant={statusBadgeVariant as any}>{job.status}</Badge>
+                <Badge variant={getStatusBadgeVariant(job.status)}>
+                  {job.status}
+                </Badge>
               </div>
               <p>
                 <span className="font-medium">Job ID:</span> {job.jobId}
@@ -509,6 +1004,142 @@ export default function MondayToolsPage() {
                 </p>
               ) : null}
             </div>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Touch Range Backfill</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Creates one touchpoint record per (contact, owner, month) for all contacts
+            whose Registration Date falls within the selected date range. Uses the{" "}
+            <code className="bg-muted rounded px-1 text-xs">date1__1</code> column for
+            efficient server-side filtering — no full board scan needed.
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground whitespace-nowrap">From:</span>
+              <input
+                type="date"
+                className="rounded border px-2 py-1 text-sm"
+                value={touchRangeDateFrom}
+                onChange={(e) => setTouchRangeDateFrom(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground whitespace-nowrap">To:</span>
+              <input
+                type="date"
+                className="rounded border px-2 py-1 text-sm"
+                value={touchRangeDateTo}
+                onChange={(e) => setTouchRangeDateTo(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-muted-foreground whitespace-nowrap">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
+                value={touchRangePageSize}
+                min={25}
+                max={200}
+                onChange={(e) => setTouchRangePageSize(e.target.value)}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={touchRangeDryRun}
+                onChange={(e) => setTouchRangeDryRun(e.target.checked)}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void startTouchRangeBackfill()}
+              disabled={startingTouchRange}
+            >
+              {startingTouchRange
+                ? "Starting..."
+                : touchRangeDryRun
+                  ? "Start Dry Run"
+                  : "Start Backfill"}
+            </Button>
+            <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
+              Refresh Status
+            </Button>
+            {touchRangeJob?.status === "running" ? (
+              <Button
+                variant="destructive"
+                onClick={() => void cancelTouchRangeBackfill()}
+                disabled={cancellingTouchRange}
+              >
+                {cancellingTouchRange ? "Cancelling..." : "Cancel"}
+              </Button>
+            ) : null}
+          </div>
+          {touchRangeJob ? (
+            <div className="space-y-1 rounded border p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Status:</span>
+                <Badge variant={getStatusBadgeVariant(touchRangeJob.status)}>
+                  {touchRangeJob.status}
+                </Badge>
+                {touchRangeJob.dryRun ? (
+                  <Badge variant="outline" className="text-muted-foreground">
+                    dry run
+                  </Badge>
+                ) : null}
+              </div>
+              <p>
+                <span className="font-medium">Range:</span>{" "}
+                {touchRangeJob.dateFrom} → {touchRangeJob.dateTo}
+              </p>
+              <p>
+                <span className="font-medium">Scanned:</span>{" "}
+                {touchRangeJob.processedContacts.toLocaleString()} contacts ·{" "}
+                <span className="font-medium">In Range:</span>{" "}
+                {touchRangeJob.inRangeContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">
+                  {touchRangeJob.dryRun ? "Would Create:" : "Created:"}
+                </span>{" "}
+                {touchRangeJob.createdTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">
+                  {touchRangeJob.dryRun ? "Would Update:" : "Updated:"}
+                </span>{" "}
+                {touchRangeJob.updatedTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">Skipped:</span>{" "}
+                {touchRangeJob.skippedTouches.toLocaleString()} ·{" "}
+                <span className="font-medium">Errors:</span>{" "}
+                {touchRangeJob.errorsCount.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Started:</span>{" "}
+                {new Date(touchRangeJob.startedAt).toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Updated:</span>{" "}
+                {new Date(touchRangeJob.updatedAt).toLocaleString()}
+              </p>
+              {touchRangeJob.finishedAt ? (
+                <p>
+                  <span className="font-medium">Finished:</span>{" "}
+                  {new Date(touchRangeJob.finishedAt).toLocaleString()}
+                </p>
+              ) : null}
+              {touchRangeJob.lastError ? (
+                <p className="text-destructive">
+                  <span className="font-medium">Last Error:</span> {touchRangeJob.lastError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">No touch range backfill job found.</p>
           )}
         </CardContent>
       </Card>
