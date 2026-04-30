@@ -142,6 +142,30 @@ export const KANBAN_STEP_CONFIG: {
   { updateType: null, defaultBody: "Retained (30-60-90)", stepColumnId: "color_mm1d4e3y" },
 ];
 
+export type StepActionVariant = "default" | "questionnaire" | "generic";
+
+export interface StepActionConfig {
+  stepIndex: number;
+  columnId: string;
+  updateType: Exclude<ContactUpdateType, "general"> | null;
+  defaultBody: string;
+  actionLabel: string;
+  actionVariant: StepActionVariant;
+  /** When true, the step is tracked on the board but hidden from the stepper UI (auto-completed elsewhere). */
+  hiddenFromStepper?: boolean;
+}
+
+export const STEP_ACTION_CONFIG: StepActionConfig[] = [
+  { stepIndex: 0, columnId: "color_mm1db321", updateType: "welcome_email", defaultBody: "Welcome Email Sent", actionLabel: "Send Welcome Email", actionVariant: "default" },
+  { stepIndex: 1, columnId: "color_mm1dwtvd", updateType: "followup", defaultBody: "Follow-Up Email Sent", actionLabel: "Send Follow-Up", actionVariant: "default", hiddenFromStepper: true },
+  { stepIndex: 2, columnId: "color_mm1dwr4k", updateType: "questionnaire", defaultBody: "Questionnaire Sent", actionLabel: "Complete Questionnaire", actionVariant: "questionnaire" },
+  { stepIndex: 3, columnId: "color_mm1dnr11", updateType: "resume", defaultBody: "Resume Received", actionLabel: "Mark Resume Received", actionVariant: "default" },
+  { stepIndex: 4, columnId: "color_mm1dgeqy", updateType: "resume_referral", defaultBody: "Resume Referral", actionLabel: "Submit Resume Referral", actionVariant: "default" },
+  { stepIndex: 5, columnId: "color_mm1d80yc", updateType: null, defaultBody: "Interviewing", actionLabel: "Mark Interviewing", actionVariant: "generic" },
+  { stepIndex: 6, columnId: "color_mm1djwjj", updateType: null, defaultBody: "Hired", actionLabel: "Mark as Hired", actionVariant: "generic" },
+  { stepIndex: 7, columnId: "color_mm1d4e3y", updateType: null, defaultBody: "Retained (30-60-90)", actionLabel: "Mark Retained", actionVariant: "generic" },
+];
+
 // --- User board settings ---
 
 export const USER_BOARD_PAGE_SIZE_OPTIONS: { value: UserBoardPageSize; label: string }[] = [

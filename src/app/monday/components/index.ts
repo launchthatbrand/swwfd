@@ -5,4 +5,5 @@ export { BusinessInfoHoverCard } from "./BusinessInfoHoverCard";
 export { ContactCard } from "./ContactCard";
 export { KanbanBoard } from "./KanbanBoard";
 export { NameCellContent } from "./NameCellContent";
+export { OnboardingStepper } from "./OnboardingStepper";
 export { QuestionnaireFormDialog } from "./QuestionnaireFormDialog";

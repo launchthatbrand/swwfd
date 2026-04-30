@@ -112,6 +112,7 @@ import {
   MONDAY_DEV_BYPASS_TOKEN,
   MONDAY_OWNER_SCOPE_ADMIN_USER_IDS,
   QUESTIONNAIRE_UPDATE_ACTION,
+  STEP_ACTION_CONFIG,
   UPDATE_SUBITEM_NAME_BY_TYPE,
   USER_BOARD_ACTION_BUTTON_SIZE_CLASS,
   USER_BOARD_COLOR_THEME_OPTIONS,
@@ -184,6 +185,7 @@ import {
   ContactCard,
   KanbanBoard,
   NameCellContent,
+  OnboardingStepper,
   QuestionnaireFormDialog,
 } from "./components";
 
@@ -5188,48 +5190,57 @@ export function MondayBoardView({
                   );
                 })()}
 
-                {!staticMode ? (
-                  <section className="space-y-2 rounded-md border p-3">
-                    <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                      Quick Actions
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
-                        <Button
-                          key={action.type}
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className={`cursor-pointer justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                          disabled={isCreatingContactUpdate}
-                          onClick={() => {
-                            setContactUpdateType(action.type);
-                            void handleCreateContactUpdate({
-                              updateType: action.type,
-                              body: action.defaultBody,
-                              keepSelectedType: true,
-                            });
-                          }}
-                        >
-                          {action.label}
-                        </Button>
-                      ))}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        className={`cursor-pointer justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                        disabled={isCreatingContactUpdate}
-                        onClick={() => {
-                          if (contactHistoryDialogRecord) {
-                            openQuestionnaireDialogForRecords([contactHistoryDialogRecord]);
-                          }
-                        }}
-                      >
-                        {QUESTIONNAIRE_UPDATE_ACTION.label}
-                      </Button>
-                    </div>
-                  </section>
+                {!staticMode && contactHistoryDialogRecord ? (
+                  <OnboardingStepper
+                    record={contactHistoryDialogRecord}
+                    approvalSteps={approvalSteps}
+                    isProcessing={isCreatingContactUpdate}
+                    onQuickAction={({ updateType, body }) => {
+                      setContactUpdateType(updateType);
+                      void handleCreateContactUpdate({
+                        updateType,
+                        body,
+                        keepSelectedType: true,
+                      });
+                    }}
+                    onQuestionnaireAction={(record) => {
+                      openQuestionnaireDialogForRecords([record]);
+                    }}
+                    onGenericStepAction={({ body, stepColumnId }) => {
+                      void (async () => {
+                        if (!sessionToken || !contactHistoryDialogRecord) return;
+                        const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                        await handleCreateContactUpdate({
+                          updateType: "general",
+                          body,
+                          keepSelectedType: true,
+                        });
+                        try {
+                          await fetch(
+                            `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+                            {
+                              method: "POST",
+                              headers: {
+                                "content-type": "application/json",
+                                "x-monday-session-token": sessionToken,
+                              },
+                              body: JSON.stringify({ stepColumnId, action: "done" }),
+                            },
+                          );
+                          await recordsQuery.refetch();
+                          const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
+                            (page) => page.records ?? [],
+                          );
+                          syncContactHistoryDialogFromRecords(refreshedRecords);
+                          toast.success("Onboarding step marked complete");
+                        } catch {
+                          toast.error("Failed to mark step complete");
+                        }
+                      })();
+                    }}
+                    actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                    buttonSizeClassName={quickActionButtonSizeClass}
+                  />
                 ) : null}
 
                 <Tabs defaultValue="updates" className="w-full">
@@ -5436,55 +5447,96 @@ export function MondayBoardView({
             initialSort={{ id: "createdAt", direction: "desc" }}
             getRowId={(item) => item.id}
             entityActions={entityActions}
-            bulkActions={({ selectedItems, clearSelection }) => (
-              <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                <p className="text-muted-foreground text-xs">
-                  {selectedItems.length} selected
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => (
+            bulkActions={({ selectedItems, clearSelection }) => {
+              const eligibleByAction = new Map<string, MondayRecord[]>();
+              for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
+                const stepConfig = STEP_ACTION_CONFIG.find((s) => s.updateType === action.type);
+                if (!stepConfig) {
+                  eligibleByAction.set(action.type, [...selectedItems]);
+                  continue;
+                }
+                eligibleByAction.set(
+                  action.type,
+                  selectedItems.filter((item) => {
+                    const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
+                    return currentStep === stepConfig.stepIndex;
+                  }),
+                );
+              }
+              const questionnaireStepIndex = STEP_ACTION_CONFIG.find(
+                (s) => s.actionVariant === "questionnaire",
+              )?.stepIndex ?? -1;
+              const questionnaireEligible = selectedItems.filter((item) => {
+                const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
+                return currentStep === questionnaireStepIndex;
+              });
+
+              return (
+                <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                  <p className="text-muted-foreground text-xs">
+                    {selectedItems.length} selected
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => {
+                      const eligible = eligibleByAction.get(action.type) ?? [];
+                      const hasEligible = eligible.length > 0;
+                      return (
+                        <Button
+                          key={action.type}
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                          disabled={!!bulkQuickActionType || !hasEligible}
+                          onClick={() => {
+                            bulkClearSelectionRef.current = clearSelection;
+                            setBulkQuickActionConfirmation({
+                              action,
+                              selectedItems: eligible,
+                            });
+                            if (eligible.length < selectedItems.length) {
+                              toast(
+                                `${selectedItems.length - eligible.length} contact${selectedItems.length - eligible.length === 1 ? "" : "s"} skipped (not at this step)`,
+                              );
+                            }
+                          }}
+                        >
+                          {bulkQuickActionType === action.type
+                            ? "Applying..."
+                            : `${action.label} (${eligible.length})`}
+                        </Button>
+                      );
+                    })}
                     <Button
-                      key={action.type}
                       type="button"
                       size="sm"
                       variant="secondary"
                       className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                      disabled={!!bulkQuickActionType}
+                      disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
                       onClick={() => {
-                        bulkClearSelectionRef.current = clearSelection;
-                        setBulkQuickActionConfirmation({
-                          action,
-                          selectedItems: [...selectedItems],
-                        });
+                        openQuestionnaireDialogForRecords([...questionnaireEligible]);
+                        if (questionnaireEligible.length < selectedItems.length) {
+                          toast(
+                            `${selectedItems.length - questionnaireEligible.length} contact${selectedItems.length - questionnaireEligible.length === 1 ? "" : "s"} skipped (not at questionnaire step)`,
+                          );
+                        }
                       }}
                     >
-                      {bulkQuickActionType === action.type ? "Applying..." : action.label}
+                      {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
                     </Button>
-                  ))}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                    disabled={!!bulkQuickActionType}
-                    onClick={() => {
-                      openQuestionnaireDialogForRecords([...selectedItems]);
-                    }}
-                  >
-                    {QUESTIONNAIRE_UPDATE_ACTION.label}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={clearSelection}
-                    disabled={!!bulkQuickActionType}
-                  >
-                    Clear
-                  </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={clearSelection}
+                      disabled={!!bulkQuickActionType}
+                    >
+                      Clear
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            }}
           />
         )}
 
