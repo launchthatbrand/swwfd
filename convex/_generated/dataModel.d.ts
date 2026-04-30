@@ -224,6 +224,146 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayGlobalSettings: {
+    document: {
+      emailMarketingEnabled: boolean;
+      key: string;
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayGlobalSettings">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "emailMarketingEnabled"
+      | "key"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_key: ["key", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayMonthlyMigrationEntries: {
+    document: {
+      createdAt: number;
+      jobId: Id<"mondayMonthlyMigrationJobs">;
+      sourceBoardId: string;
+      sourceEntityId: string;
+      sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+      sourceItemId: string;
+      targetEntityId?: string | null;
+      targetItemId: string;
+      _id: Id<"mondayMonthlyMigrationEntries">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "createdAt"
+      | "jobId"
+      | "sourceBoardId"
+      | "sourceEntityId"
+      | "sourceEntityType"
+      | "sourceItemId"
+      | "targetEntityId"
+      | "targetItemId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_jobId: ["jobId", "_creationTime"];
+      by_sourceBoardId_and_sourceEntityType_and_sourceEntityId: [
+        "sourceBoardId",
+        "sourceEntityType",
+        "sourceEntityId",
+        "_creationTime",
+      ];
+      by_sourceBoardId_and_sourceItemId: [
+        "sourceBoardId",
+        "sourceItemId",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayMonthlyMigrationJobs: {
+    document: {
+      createdParentUpdates: number;
+      createdSubitemUpdates: number;
+      createdSubitems: number;
+      createdTouchRecords?: number;
+      currentCursor?: string | null;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      includeParentUpdates: boolean;
+      includeSubitemUpdates: boolean;
+      includeSubitems: boolean;
+      lastError?: string | null;
+      mappedContacts: number;
+      monthKey?: string;
+      monthTag: string;
+      pageSize: number;
+      processedContacts: number;
+      skippedContacts: number;
+      sourceBoardId: string;
+      sourceBoardName?: string | null;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      targetBoardId: string;
+      updateProgressColumns?: boolean;
+      updatedAt: number;
+      updatedProgressColumns?: number;
+      warningsCount: number;
+      workflowId?: string;
+      _id: Id<"mondayMonthlyMigrationJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "createdParentUpdates"
+      | "createdSubitems"
+      | "createdSubitemUpdates"
+      | "createdTouchRecords"
+      | "currentCursor"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "includeParentUpdates"
+      | "includeSubitems"
+      | "includeSubitemUpdates"
+      | "lastError"
+      | "mappedContacts"
+      | "monthKey"
+      | "monthTag"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedContacts"
+      | "sourceBoardId"
+      | "sourceBoardName"
+      | "startedAt"
+      | "status"
+      | "targetBoardId"
+      | "updatedAt"
+      | "updatedProgressColumns"
+      | "updateProgressColumns"
+      | "warningsCount"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayTouchBackfillJobs: {
     document: {
       baselineDate: string;
@@ -338,6 +478,164 @@ export type DataModel = {
       by_creation_time: ["_creationTime"];
       by_startedAt: ["startedAt", "_creationTime"];
       by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayTouchRangeBackfillJobs: {
+    document: {
+      contactBoardId: string;
+      createdTouches: number;
+      currentCursor?: string | null;
+      dateFrom: string;
+      dateTo: string;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      inRangeContacts: number;
+      lastError?: string | null;
+      pageSize: number;
+      processedContacts: number;
+      skippedTouches: number;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      touchBoardId: string;
+      updatedAt: number;
+      updatedTouches: number;
+      workflowId?: string;
+      _id: Id<"mondayTouchRangeBackfillJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactBoardId"
+      | "createdTouches"
+      | "currentCursor"
+      | "dateFrom"
+      | "dateTo"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "inRangeContacts"
+      | "lastError"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedTouches"
+      | "startedAt"
+      | "status"
+      | "touchBoardId"
+      | "updatedAt"
+      | "updatedTouches"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayUserBoardSettings: {
+    document: {
+      accountId: string;
+      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+      createdAt: number;
+      displayMode?: "table" | "grid";
+      fontSize: "default" | "medium" | "large";
+      ownerMondayUserId: string;
+      pageSize?: number;
+      tableDensity?: "expanded" | "compact";
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayUserBoardSettings">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accountId"
+      | "colorTheme"
+      | "createdAt"
+      | "displayMode"
+      | "fontSize"
+      | "ownerMondayUserId"
+      | "pageSize"
+      | "tableDensity"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayUserFilterPresets: {
+    document: {
+      accountId: string;
+      conditions: Array<{
+        field:
+          | "owner"
+          | "district"
+          | "name"
+          | "email"
+          | "phone"
+          | "address"
+          | "tags"
+          | "createdAt"
+          | "hireDate"
+          | "detail";
+        id: string;
+        operator:
+          | "contains"
+          | "equals"
+          | "not_equals"
+          | "starts_with"
+          | "ends_with"
+          | "is_empty"
+          | "is_not_empty"
+          | "on_or_after"
+          | "on_or_before"
+          | "between";
+        target?: string;
+        value: string;
+        valueTo: string;
+      }>;
+      createdAt: number;
+      createdByMondayUserId: string;
+      matchMode: "all" | "any";
+      name: string;
+      ownerMondayUserId: string;
+      updatedAt: number;
+      updatedByMondayUserId: string;
+      _id: Id<"mondayUserFilterPresets">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accountId"
+      | "conditions"
+      | "createdAt"
+      | "createdByMondayUserId"
+      | "matchMode"
+      | "name"
+      | "ownerMondayUserId"
+      | "updatedAt"
+      | "updatedByMondayUserId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+      by_account_and_owner_and_name: [
+        "accountId",
+        "ownerMondayUserId",
+        "name",
+        "_creationTime",
+      ];
     };
     searchIndexes: {};
     vectorIndexes: {};

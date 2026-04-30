@@ -128,6 +128,81 @@ export declare const api: {
       }>
     >;
   };
+  mondayMonthlyMigration: {
+    cancelMigration: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayMonthlyMigrationJobs"> },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        createdTouchRecords?: number;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        mappedContacts: number;
+        monthKey?: string;
+        monthTag: string;
+        pageSize: number;
+        processedContacts: number;
+        skippedContacts: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+        updateProgressColumns?: boolean;
+        updatedAt: number;
+        updatedProgressColumns?: number;
+        warningsCount: number;
+        workflowId?: string;
+      }
+    >;
+    startMigration: FunctionReference<
+      "mutation",
+      "public",
+      {
+        dryRun?: boolean;
+        includeParentUpdates?: boolean;
+        includeSubitemUpdates?: boolean;
+        includeSubitems?: boolean;
+        monthKey?: string;
+        monthTag?: string;
+        pageSize?: number;
+        sourceBoardId: string;
+        targetBoardId?: string;
+        updateProgressColumns?: boolean;
+      },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
+    >;
+  };
+  mondaySettings: {
+    getFeatureFlags: FunctionReference<
+      "query",
+      "public",
+      {},
+      { emailMarketingEnabled: boolean }
+    >;
+    setFeatureFlags: FunctionReference<
+      "mutation",
+      "public",
+      { emailMarketingEnabled: boolean; updatedByMondayUserId: string },
+      { emailMarketingEnabled: boolean }
+    >;
+  };
   mondayTouchBackfill: {
     cancelBackfill: FunctionReference<
       "mutation",
@@ -209,6 +284,213 @@ export declare const api: {
       "public",
       { baselineDate?: string; pageSize?: number; sourceTag?: string },
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
+    >;
+  };
+  mondayTouchRangeBackfill: {
+    cancelRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayTouchRangeBackfillJobs"> },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        contactBoardId: string;
+        createdTouches: number;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        inRangeContacts: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        pageSize: number;
+        processedContacts: number;
+        skippedTouches: number;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+        updatedAt: number;
+        updatedTouches: number;
+        workflowId?: string;
+      }
+    >;
+    startRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { dateFrom: string; dateTo: string; dryRun?: boolean; pageSize?: number },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; workflowId: string }
+    >;
+  };
+  mondayUserBoardSettings: {
+    getForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        updatedAt: number;
+      }
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        viewerMondayUserId: string;
+      },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        updatedAt: number;
+      }
+    >;
+  };
+  mondayUserFilterPresets: {
+    listForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      Array<{
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }>
+    >;
+    removeForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      { accountId: string; ownerMondayUserId: string; presetId: string },
+      null
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        presetId?: string;
+        viewerMondayUserId: string;
+      },
+      {
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }
     >;
   };
   viewer: {
@@ -301,6 +583,264 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayMonthlyMigration: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getExistingEntriesForSourceItem: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemId: string },
+      {
+        parentUpdateEntityIds: Array<string>;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }
+    >;
+    getExistingEntriesForSourceItemsBatch: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemIds: Array<string> },
+      Array<{
+        parentUpdateEntityIds: Array<string>;
+        sourceItemId: string;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }>
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayMonthlyMigrationJobs"> },
+      null | {
+        _id: Id<"mondayMonthlyMigrationJobs">;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthKey?: string;
+        monthTag: string;
+        pageSize: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+        updateProgressColumns?: boolean;
+      }
+    >;
+    recordCreatedEntries: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        entries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        sourceBoardId: string;
+      },
+      null
+    >;
+    runMonthlyMigrationWorkflow: FunctionReference<
+      "mutation",
+      "internal",
+      any,
+      any
+    >;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdParentUpdatesDelta: number;
+        createdSubitemUpdatesDelta: number;
+        createdSubitemsDelta: number;
+        createdTouchRecordsDelta: number;
+        errorsDelta: number;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        mappedContactsDelta: number;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedContactsDelta: number;
+        sourceBoardName?: string | null;
+        updatedProgressColumnsDelta: number;
+        warningsDelta: number;
+      },
+      null
+    >;
+  };
+  mondayMonthlyMigrationNode: {
+    fetchSourcePageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        cursor?: string | null;
+        pageSize: number;
+        sourceBoardId: string;
+        targetBoardId: string;
+      },
+      {
+        items: Array<{
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        }>;
+        nextCursor: string | null;
+        sourceBoardName: string | null;
+        sourceSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        sourceSubitemBoardId: string | null;
+        targetSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        targetSubitemBoardId: string | null;
+      }
+    >;
+    migrateSourceItemAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        cachedSourceSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardId?: string | null;
+        dryRun: boolean;
+        existingEntries: {
+          parentUpdateEntityIds: Array<string>;
+          sourceSubitemToTargetSubitem: Array<{
+            sourceSubitemId: string;
+            targetSubitemId: string;
+          }>;
+          subitemEntityIds: Array<string>;
+          subitemUpdateEntityIds: Array<string>;
+        };
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthKey?: string | null;
+        monthTag: string;
+        sourceBoardId: string;
+        sourceBoardName: string | null;
+        sourceItem: {
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        };
+        sourceSubitemBoardId?: string | null;
+        targetBoardId: string;
+        updateProgressColumns: boolean;
+      },
+      {
+        createdEntries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        createdTouchRecords: number;
+        errors: number;
+        mappedContacts: number;
+        processedContacts: number;
+        skippedContacts: number;
+        updatedProgressColumns: number;
+        warnings: Array<string>;
+      }
     >;
   };
   mondayTouchBackfill: {
@@ -436,6 +976,74 @@ export declare const internal: {
         deduped: number;
         errors: number;
         skipped: number;
+      }
+    >;
+  };
+  mondayTouchRangeBackfill: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayTouchRangeBackfillJobs"> },
+      null | {
+        _id: Id<"mondayTouchRangeBackfillJobs">;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        pageSize: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdTouchesDelta: number;
+        errorsDelta: number;
+        inRangeContactsDelta: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedTouchesDelta: number;
+        updatedTouchesDelta: number;
+      },
+      null
+    >;
+  };
+  mondayTouchRangeBackfillNode: {
+    fetchAndUpsertPageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        boardId: string;
+        cursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun?: boolean;
+        pageSize: number;
+        touchBoardId: string;
+      },
+      {
+        createdTouches: number;
+        errors: number;
+        inRangeContacts: number;
+        nextCursor: string | null;
+        processedContacts: number;
+        skippedTouches: number;
+        updatedTouches: number;
       }
     >;
   };
