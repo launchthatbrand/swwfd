@@ -99,7 +99,6 @@ import {
   APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE,
   APPROVAL_STEPS,
   CONTACT_UPDATE_ACTION_BUTTONS,
-  CONTACT_UPDATE_TYPE_OPTIONS,
   DEFAULT_MONDAY_FEATURE_FLAGS,
   DEFAULT_USER_BOARD_GENERAL_SETTINGS,
   isEmbeddedMondaySessionToken,
@@ -113,6 +112,8 @@ import {
   MONDAY_OWNER_SCOPE_ADMIN_USER_IDS,
   QUESTIONNAIRE_UPDATE_ACTION,
   STEP_ACTION_CONFIG,
+  SUBITEM_TYPE_COLUMN_ID,
+  SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
   UPDATE_SUBITEM_NAME_BY_TYPE,
   USER_BOARD_ACTION_BUTTON_SIZE_CLASS,
   USER_BOARD_COLOR_THEME_OPTIONS,
@@ -132,11 +133,9 @@ import {
   applyMondayThemeClass,
   buildKanbanColumns,
   buildMockBusinessInfo,
-  contactUpdateTypeLabel,
   createAdvancedFilterCondition,
   createAdvancedFilterId,
   doesRecordMatchAdvancedFilters,
-  doesSubitemMatchUpdateType,
   extractBoardIdFromContextPayload,
   extractThemeFromContextPayload,
   formatDateTimeParts,
@@ -183,10 +182,12 @@ import {
   BoardTable,
   BusinessInfoHoverCard,
   ContactCard,
+  ContactUpdates,
   KanbanBoard,
   NameCellContent,
   OnboardingStepper,
   QuestionnaireFormDialog,
+  UserSettingsProvider,
 } from "./components";
 
 export function MondayBoardView({
@@ -260,6 +261,7 @@ export function MondayBoardView({
   const [contactUpdateType, setContactUpdateType] =
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
+  const [isSyncingContact, setIsSyncingContact] = useState(false);
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
   >(null);
@@ -2080,35 +2082,6 @@ export function MondayBoardView({
     return result.data;
   };
 
-  const normalizeForSubitemTypeMatch = (value: string) => {
-    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
-  };
-
-  const doesSubitemMatchUpdateType = (
-    subitemName: string,
-    type: Exclude<ContactUpdateType, "general">,
-  ) => {
-    const normalized = normalizeForSubitemTypeMatch(subitemName);
-    switch (type) {
-      case "welcome_email":
-        return normalized.includes("welcome");
-      case "followup":
-        return (
-          normalized.includes("follow-up") ||
-          normalized.includes("follow up") ||
-          normalized.includes("followup")
-        );
-      case "questionnaire":
-        return normalized.includes("question");
-      case "resume":
-        return normalized.includes("resume") && !normalized.includes("referral");
-      case "resume_referral":
-        return normalized.includes("resume referral");
-      default:
-        return false;
-    }
-  };
-
   const resolveMondayContextBoardId = async () => {
     const identityBoardId = identity?.boardId?.trim() ?? "";
     if (identityBoardId.length > 0) return identityBoardId;
@@ -2124,6 +2097,7 @@ export function MondayBoardView({
     itemId: string;
     body: string;
     updateType?: ContactUpdateType;
+    date?: string;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -2131,80 +2105,48 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
+    const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
+    const desiredSubitemName = updateType === "general"
+      ? "General Update"
+      : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
 
-    let targetItemId = itemId;
-    let source: "item" | "subitem" = "item";
-    let subitemName: string | null = null;
-    if (updateType !== "general") {
-      interface ExistingSubitemsData {
-        items?: {
-          subitems?: {
-            id?: string | number | null;
-            name?: string | null;
-          }[];
-        }[];
-      }
-      const existingSubitemsData = await callMondayContextApi<ExistingSubitemsData>(
-        `
-          query GetItemSubitems($itemIds: [ID!]) {
-            items(ids: $itemIds) {
-              subitems {
-                id
-                name
-              }
-            }
-          }
-        `,
-        { itemIds: [itemId] },
-      );
-      const matchedSubitem = (existingSubitemsData.items?.[0]?.subitems ?? []).find((subitem) => {
-        const subitemIdRaw = subitem.id;
-        const subitemId =
-          subitemIdRaw === null || subitemIdRaw === undefined
-            ? ""
-            : String(subitemIdRaw).trim();
-        const name = subitem.name?.trim() ?? "";
-        if (!subitemId || !name) return false;
-        return doesSubitemMatchUpdateType(name, updateType);
-      });
-
-      if (matchedSubitem?.id !== null && matchedSubitem?.id !== undefined) {
-        targetItemId = String(matchedSubitem.id).trim();
-        subitemName = matchedSubitem.name?.trim() ?? UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
-      } else {
-        interface CreateSubitemData {
-          create_subitem?: {
-            id?: string | number | null;
-          } | null;
-        }
-        const desiredSubitemName = UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
-        const createdSubitemData = await callMondayContextApi<CreateSubitemData>(
-          `
-            mutation CreateSubitem($parentItemId: ID!, $itemName: String!) {
-              create_subitem(parent_item_id: $parentItemId, item_name: $itemName) {
-                id
-              }
-            }
-          `,
-          {
-            parentItemId: itemId,
-            itemName: desiredSubitemName,
-          },
-        );
-        const createdSubitemIdRaw = createdSubitemData.create_subitem?.id;
-        const createdSubitemId =
-          createdSubitemIdRaw === null || createdSubitemIdRaw === undefined
-            ? ""
-            : String(createdSubitemIdRaw).trim();
-        if (!createdSubitemId) {
-          throw new Error("Failed to create subitem for typed update");
-        }
-        targetItemId = createdSubitemId;
-        subitemName = desiredSubitemName;
-      }
-      source = "subitem";
+    const columnValues: Record<string, unknown> = {
+      [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
+    };
+    if (args.date) {
+      columnValues["date0"] = { date: args.date };
     }
 
+    interface CreateSubitemData {
+      create_subitem?: { id?: string | number | null } | null;
+    }
+    const createdSubitemData = await callMondayContextApi<CreateSubitemData>(
+      `
+        mutation CreateSubitem($parentItemId: ID!, $itemName: String!, $columnValues: JSON!) {
+          create_subitem(
+            parent_item_id: $parentItemId
+            item_name: $itemName
+            column_values: $columnValues
+            create_labels_if_missing: true
+          ) { id }
+        }
+      `,
+      {
+        parentItemId: itemId,
+        itemName: desiredSubitemName,
+        columnValues: JSON.stringify(columnValues),
+      },
+    );
+    const createdSubitemIdRaw = createdSubitemData.create_subitem?.id;
+    const targetSubitemId =
+      createdSubitemIdRaw === null || createdSubitemIdRaw === undefined
+        ? ""
+        : String(createdSubitemIdRaw).trim();
+    if (!targetSubitemId) {
+      throw new Error("Failed to create subitem for update");
+    }
+
+    // Post the update body on the subitem
     interface CreateUpdateData {
       create_update?: {
         id?: string | number | null;
@@ -2214,16 +2156,10 @@ export function MondayBoardView({
     const createUpdateData = await callMondayContextApi<CreateUpdateData>(
       `
         mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-          create_update(item_id: $itemId, body: $body) {
-            id
-            body
-          }
+          create_update(item_id: $itemId, body: $body) { id body }
         }
       `,
-      {
-        itemId: targetItemId,
-        body,
-      },
+      { itemId: targetSubitemId, body },
     );
     const createdUpdateIdRaw = createUpdateData.create_update?.id;
     const createdUpdateId =
@@ -2259,9 +2195,7 @@ export function MondayBoardView({
                   item_id: $itemId
                   column_values: $columnValues
                   create_labels_if_missing: true
-                ) {
-                  id
-                }
+                ) { id }
               }
             `,
             {
@@ -2286,8 +2220,8 @@ export function MondayBoardView({
       id: createdUpdateId,
       body: createUpdateData.create_update?.body ?? body,
       updateType,
-      source,
-      subitemName,
+      source: "subitem" as const,
+      subitemName: desiredSubitemName,
       approvalStepMarked,
       warning,
     } satisfies NonNullable<MondayCreateRecordUpdateResponse["update"]>;
@@ -2298,6 +2232,7 @@ export function MondayBoardView({
       body?: string;
       updateType?: ContactUpdateType;
       keepSelectedType?: boolean;
+      date?: string;
     },
   ) => {
     if (staticMode) {
@@ -2324,6 +2259,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
+          date: options?.date,
         });
         data = { ok: true, update };
       } else {
@@ -2336,7 +2272,7 @@ export function MondayBoardView({
               "content-type": "application/json",
               "x-monday-session-token": sessionToken,
             },
-            body: JSON.stringify({ body, updateType }),
+            body: JSON.stringify({ body, updateType, date: options?.date }),
           },
         );
         data = (await response.json()) as MondayCreateRecordUpdateResponse;
@@ -3357,6 +3293,7 @@ export function MondayBoardView({
   ];
 
   return (
+    <UserSettingsProvider settings={boardGeneralSettings}>
     <div className="monday-like-page mx-auto space-y-3 pb-10">
       <div data-board-filter-bar className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
         <div className="flex min-w-0 items-center gap-1.5">
@@ -5238,6 +5175,64 @@ export function MondayBoardView({
                         }
                       })();
                     }}
+                    isAdmin={isMondaySettingsAdmin}
+                    isSyncing={isSyncingContact}
+                    onSyncUser={(record) => {
+                      void (async () => {
+                        if (!sessionToken) return;
+                        setIsSyncingContact(true);
+                        try {
+                          const targetId = resolveContactUpdateTargetRecordId(record);
+                          const response = await fetch(
+                            `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
+                            {
+                              method: "POST",
+                              headers: {
+                                "content-type": "application/json",
+                                "x-monday-session-token": sessionToken,
+                              },
+                              body: JSON.stringify({ ownerId: identity?.userId }),
+                            },
+                          );
+                          const data = (await response.json()) as {
+                            ok: boolean;
+                            error?: string;
+                            linkedItemCount?: number;
+                            createdParentUpdates?: number;
+                            createdSubitems?: number;
+                            createdSubitemUpdates?: number;
+                            updatedProgressColumns?: number;
+                            skippedSubitems?: number;
+                            warnings?: string[];
+                          };
+                          if (!response.ok || !data.ok) {
+                            throw new Error(data.error ?? "Sync failed");
+                          }
+                          const [, refreshedRecordsResult] = await Promise.all([
+                            contactUpdatesQuery.refetch(),
+                            recordsQuery.refetch(),
+                          ]);
+                          const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+                            (page) => page.records ?? [],
+                          );
+                          syncContactHistoryDialogFromRecords(refreshedRecords);
+                          const parts = [
+                            data.createdParentUpdates && `${data.createdParentUpdates} updates`,
+                            data.createdSubitems && `${data.createdSubitems} subitems`,
+                            data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
+                          ].filter(Boolean);
+                          toast.success(
+                            parts.length > 0
+                              ? `Synced: ${parts.join(", ")}`
+                              : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
+                          );
+                        } catch (err) {
+                          toast.error(err instanceof Error ? err.message : "Sync failed");
+                        } finally {
+                          setIsSyncingContact(false);
+                        }
+                      })();
+                    }}
                     actionButtonClassName={boardThemeStyles.actionButtonClassName}
                     buttonSizeClassName={quickActionButtonSizeClass}
                   />
@@ -5249,99 +5244,52 @@ export function MondayBoardView({
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="updates" className="mt-3 space-y-2">
-                    {!staticMode ? (
-                      <div className="space-y-2 rounded-md border p-3">
-                        <label className="text-xs font-medium tracking-wide uppercase">
-                          Add update
-                        </label>
-                        <div className="grid gap-2 md:grid-cols-[220px_1fr]">
-                          <div>
-                            <p className="text-muted-foreground mb-1 text-xs">Update type</p>
-                            <Select
-                              value={contactUpdateType}
-                              onValueChange={(value) => {
-                                setContactUpdateType(value as ContactUpdateType);
-                              }}
-                              disabled={isCreatingContactUpdate}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select update type" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {CONTACT_UPDATE_TYPE_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                        <Textarea
-                          value={contactUpdateDraft}
-                          onChange={(event) => setContactUpdateDraft(event.target.value)}
-                          placeholder={`Write a ${contactUpdateTypeLabel(contactUpdateType).toLowerCase()} for this contact...`}
-                          rows={4}
-                          disabled={isCreatingContactUpdate}
-                        />
-                        <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              void handleCreateContactUpdate();
-                            }}
-                            disabled={isCreatingContactUpdate || contactUpdateDraft.trim().length === 0}
-                          >
-                            {isCreatingContactUpdate ? "Posting..." : "Post update"}
-                          </Button>
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="max-h-[56vh] space-y-3 overflow-y-auto pr-1">
-                      {staticMode ? (
-                        <p className="text-muted-foreground text-sm">
-                          Update history is unavailable in static mode.
-                        </p>
-                      ) : contactUpdatesQuery.isLoading ? (
-                        <p className="text-muted-foreground text-sm">Loading updates...</p>
-                      ) : (contactUpdatesQuery.data?.updates?.length ?? 0) === 0 ? (
-                        <p className="text-muted-foreground text-sm">
-                          No updates found for this record.
-                        </p>
-                      ) : (
-                        (contactUpdatesQuery.data?.updates ?? []).map((update) => (
-                          <div key={update.id} className="rounded-md border p-3">
-                            <div className="text-muted-foreground mb-2 flex items-center justify-between text-xs">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span>{update.creatorName ?? "Unknown user"}</span>
-                                <Badge variant="outline" className="text-[10px]">
-                                  {contactUpdateTypeLabel(update.updateType)}
-                                </Badge>
-                                {update.source === "subitem" && update.subitemName ? (
-                                  <Badge variant="secondary" className="text-[10px]">
-                                    {update.subitemName}
-                                  </Badge>
-                                ) : null}
-                              </div>
-                              <span>{formatUpdatedAt(update.createdAt ?? update.updatedAt)}</span>
-                            </div>
-                            {update.body.trim().length === 0 ? (
-                              <p className="text-muted-foreground text-sm">No message body</p>
-                            ) : hasHtmlLikeMarkup(update.body) ? (
-                              <div
-                                className="prose prose-sm dark:prose-invert max-w-none"
-                                dangerouslySetInnerHTML={{ __html: update.body }}
-                              />
-                            ) : (
-                              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                {update.body}
-                              </div>
-                            )}
-                          </div>
-                        ))
-                      )}
-                    </div>
+                  <TabsContent value="updates" className="mt-3">
+                    <ContactUpdates
+                      subitems={contactUpdatesQuery.data?.subitems ?? []}
+                      isLoading={contactUpdatesQuery.isLoading}
+                      isEmpty={(contactUpdatesQuery.data?.subitems?.length ?? 0) === 0}
+                      isStaticMode={staticMode}
+                      draft={contactUpdateDraft}
+                      onDraftChange={setContactUpdateDraft}
+                      onSubmit={({ updateType, date }) => {
+                        setContactUpdateType(updateType);
+                        void handleCreateContactUpdate({ updateType, date });
+                      }}
+                      onDeleteSubitem={async (subitemId) => {
+                        if (!sessionToken) return;
+                        const res = await fetch("/api/monday/subitems", {
+                          method: "DELETE",
+                          headers: {
+                            "content-type": "application/json",
+                            "x-monday-session-token": sessionToken,
+                          },
+                          body: JSON.stringify({ subitemId }),
+                        });
+                        const json = (await res.json()) as { ok: boolean; error?: string };
+                        if (!json.ok) throw new Error(json.error ?? "Delete failed");
+                        toast.success("Update deleted");
+                        await contactUpdatesQuery.refetch();
+                      }}
+                      onUpdateSubitemDate={async (subitemId, date) => {
+                        if (!sessionToken) return;
+                        const res = await fetch("/api/monday/subitems", {
+                          method: "PATCH",
+                          headers: {
+                            "content-type": "application/json",
+                            "x-monday-session-token": sessionToken,
+                          },
+                          body: JSON.stringify({ subitemId, date }),
+                        });
+                        const json = (await res.json()) as { ok: boolean; error?: string };
+                        if (!json.ok) throw new Error(json.error ?? "Date update failed");
+                        toast.success("Date updated");
+                        await contactUpdatesQuery.refetch();
+                      }}
+                      isSubmitting={isCreatingContactUpdate}
+                      sessionToken={sessionToken}
+                      currentUserId={forcedOwnerId || identity?.userId || null}
+                    />
                   </TabsContent>
 
                   <TabsContent value="info" className="mt-3 space-y-3">
@@ -5524,6 +5472,56 @@ export function MondayBoardView({
                     >
                       {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
                     </Button>
+                    {isMondaySettingsAdmin && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        disabled={!!bulkQuickActionType || isSyncingContact}
+                        onClick={() => {
+                          void (async () => {
+                            if (!sessionToken) return;
+                            setIsSyncingContact(true);
+                            const items = [...selectedItems];
+                            let synced = 0;
+                            let errors = 0;
+                            for (const item of items) {
+                              const targetId = resolveContactUpdateTargetRecordId(item);
+                              if (!targetId.trim()) { errors++; continue; }
+                              try {
+                                toast(`Syncing ${synced + 1}/${items.length}...`);
+                                const response = await fetch(
+                                  `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
+                                  {
+                                    method: "POST",
+                                    headers: {
+                                      "content-type": "application/json",
+                                      "x-monday-session-token": sessionToken,
+                                    },
+                                    body: JSON.stringify({ ownerId: identity?.userId }),
+                                  },
+                                );
+                                const data = (await response.json()) as { ok: boolean; error?: string };
+                                if (!response.ok || !data.ok) throw new Error(data.error ?? "Sync failed");
+                                synced++;
+                              } catch {
+                                errors++;
+                              }
+                            }
+                            await recordsQuery.refetch();
+                            setIsSyncingContact(false);
+                            if (errors > 0) {
+                              toast.error(`Synced ${synced}/${items.length} (${errors} failed)`);
+                            } else {
+                              toast.success(`Synced ${synced} contact${synced === 1 ? "" : "s"}`);
+                            }
+                          })();
+                        }}
+                      >
+                        {isSyncingContact ? "Syncing..." : `Sync Users (${selectedItems.length})`}
+                      </Button>
+                    )}
                     <Button
                       type="button"
                       size="sm"
@@ -5896,6 +5894,7 @@ export function MondayBoardView({
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>
+    </UserSettingsProvider>
   );
 }
 

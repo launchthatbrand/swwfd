@@ -152,12 +152,41 @@ export interface MondayRecordUpdate {
   creatorName: string | null;
 }
 
+export interface MondaySubitemEntry {
+  id: string;
+  name: string;
+  typeLabel: string | null;
+  updateType:
+  | "general"
+  | "welcome_email"
+  | "followup"
+  | "questionnaire"
+  | "resume"
+  | "resume_referral";
+  methodOfCommunication: string | null;
+  createdAt: string | null;
+  creatorProfile: {
+    id: string;
+    name: string | null;
+    photoThumb: string | null;
+  } | null;
+  updates: {
+    id: string;
+    body: string;
+    createdAt: string | null;
+    updatedAt: string | null;
+    creatorId: string | null;
+    creatorName: string | null;
+  }[];
+}
+
 export interface MondayRecordUpdatesResponse {
   ok: boolean;
   error?: string;
   itemId?: string;
   itemName?: string | null;
   updates?: MondayRecordUpdate[];
+  subitems?: MondaySubitemEntry[];
 }
 
 export interface MondayCreateRecordUpdateResponse {

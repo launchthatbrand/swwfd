@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Lock, Loader2, ChevronDown, ChevronUp, Circle } from "lucide-react";
+import { Check, Lock, Loader2, ChevronDown, ChevronUp, Circle, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@launchthatapp/ui/button";
 import {
@@ -26,6 +26,9 @@ export interface OnboardingStepperProps {
   }) => void;
   onQuestionnaireAction: (record: MondayRecord) => void;
   onGenericStepAction: (opts: { body: string; stepColumnId: string }) => void;
+  isAdmin?: boolean;
+  isSyncing?: boolean;
+  onSyncUser?: (record: MondayRecord) => void;
   actionButtonClassName?: string;
   buttonSizeClassName?: string;
 }
@@ -37,6 +40,9 @@ export const OnboardingStepper = ({
   onQuickAction,
   onQuestionnaireAction,
   onGenericStepAction,
+  isAdmin = false,
+  isSyncing = false,
+  onSyncUser,
   actionButtonClassName = "",
   buttonSizeClassName = "",
 }: OnboardingStepperProps) => {
@@ -203,6 +209,28 @@ export const OnboardingStepper = ({
             </p>
           </div>
         </div>
+      )}
+
+      {/* Admin: Sync User */}
+      {isAdmin && onSyncUser && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full cursor-pointer gap-1.5"
+          disabled={isSyncing || isProcessing}
+          onClick={() => onSyncUser(record)}
+        >
+          {isSyncing ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Syncing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-3.5 w-3.5" /> Sync User
+            </>
+          )}
+        </Button>
       )}
 
       {/* Expanded timeline */}

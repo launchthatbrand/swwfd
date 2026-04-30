@@ -131,6 +131,17 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   resume_referral: "Resume Referral Update",
 };
 
+const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
+
+const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
+  general: "General",
+  welcome_email: "Welcome Email",
+  followup: "Followup",
+  questionnaire: "Questionnaire",
+  resume: "Resume",
+  resume_referral: "Resume Referral",
+};
+
 const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   Record<Exclude<MondayUpdateType, "general">, string>
 > = {
@@ -177,7 +188,7 @@ const getMondayTouchBoardEnv = () => {
   return { ok: true as const, apiKey: api.apiKey, boardId };
 };
 
-const callMondayGraphQL = async <TData>(
+export const callMondayGraphQL = async <TData>(
   query: string,
   variables: Record<string, unknown>,
 ) => {
@@ -2503,6 +2514,10 @@ export const listMondayRecordUpdates = async (args: {
   }
 
   const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
+  const typeColId = SUBITEM_TYPE_COLUMN_ID;
+  const methodColId = "method_of_communication__1";
+  const dateColId = "date0";
+  const personColId = "person";
   const query = `
     query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
       items(ids: $itemIds) {
@@ -2521,6 +2536,12 @@ export const listMondayRecordUpdates = async (args: {
         subitems {
           id
           name
+          created_at
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}"]) {
+            id
+            text
+            value
+          }
           updates(limit: $limit) {
             id
             body
@@ -2553,6 +2574,12 @@ export const listMondayRecordUpdates = async (args: {
       subitems?: Array<{
         id?: string | null;
         name?: string | null;
+        created_at?: string | null;
+        column_values?: Array<{
+          id?: string | null;
+          text?: string | null;
+          value?: string | null;
+        }>;
         updates?: Array<{
           id?: string | null;
           body?: string | null;
@@ -2620,24 +2647,135 @@ export const listMondayRecordUpdates = async (args: {
     });
   }
 
+  const deriveUpdateTypeFromColumnValue = (
+    columnText: string | null | undefined,
+  ): MondayUpdateType | null => {
+    const normalized = (columnText ?? "").trim().toLowerCase();
+    if (!normalized) return null;
+    for (const [type, label] of Object.entries(SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE)) {
+      if (normalized === label.toLowerCase()) return type as MondayUpdateType;
+    }
+    return null;
+  };
+
   const subitemUpdates: MondayRecordUpdate[] = [];
+  interface SubitemCreatorProfile {
+    id: string;
+    name: string | null;
+    photoThumb: string | null;
+  }
+  interface SubitemEntry {
+    id: string;
+    name: string;
+    typeLabel: string | null;
+    updateType: MondayUpdateType;
+    methodOfCommunication: string | null;
+    createdAt: string | null;
+    creatorProfile: SubitemCreatorProfile | null;
+    updates: {
+      id: string;
+      body: string;
+      createdAt: string | null;
+      updatedAt: string | null;
+      creatorId: string | null;
+      creatorName: string | null;
+    }[];
+  }
+
+  // First pass: collect person IDs from all subitems
+  const personIdsBySubitemId = new Map<string, string[]>();
+  for (const subitem of item?.subitems ?? []) {
+    const sid = subitem.id?.trim() ?? "";
+    if (!sid) continue;
+    const personCol = subitem.column_values?.find((c) => c.id === personColId);
+    const personIds: string[] = [];
+    if (personCol?.value) {
+      try {
+        const parsed = JSON.parse(personCol.value) as {
+          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+        };
+        for (const entry of parsed.personsAndTeams ?? []) {
+          if (entry.kind === "person" && entry.id != null) {
+            personIds.push(String(entry.id));
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    personIdsBySubitemId.set(sid, personIds);
+  }
+
+  // Resolve all unique person IDs in one batch
+  const allPersonIds = Array.from(
+    new Set(Array.from(personIdsBySubitemId.values()).flat()),
+  );
+  const userProfiles = allPersonIds.length > 0
+    ? await resolveMondayUsersByIds(allPersonIds)
+    : new Map<string, { id: string; name: string | null; email: string | null; photoThumb: string | null }>();
+
+  const subitems: SubitemEntry[] = [];
+
   for (const subitem of item?.subitems ?? []) {
     const subitemId = subitem.id?.trim() ?? "";
     const subitemName = subitem.name?.trim() ?? null;
+    const typeColText = subitem.column_values?.find((c) => c.id === typeColId)?.text ?? null;
+    const methodText = subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ?? null;
+    const dateColText = subitem.column_values?.find((c) => c.id === dateColId)?.text?.trim() ?? null;
+    const subitemCreatedAt = dateColText ?? subitem.created_at ?? null;
+    const updateType = deriveUpdateTypeFromColumnValue(typeColText)
+      ?? deriveUpdateTypeFromColumnValue(methodText)
+      ?? deriveUpdateTypeFromSubitemName(subitemName);
+
+    // Resolve creator profile from person column
+    const personIds = personIdsBySubitemId.get(subitemId) ?? [];
+    const firstPersonId = personIds[0];
+    const profile = firstPersonId ? userProfiles.get(firstPersonId) : undefined;
+    const creatorProfile: SubitemCreatorProfile | null = profile
+      ? { id: profile.id, name: profile.name, photoThumb: profile.photoThumb }
+      : null;
+
+    const subitemUpdateList: SubitemEntry["updates"] = [];
+
     for (const update of subitem.updates ?? []) {
       const updateId = update.id?.trim() ?? "";
       if (!updateId) continue;
+      const createdAt = update.created_at ?? null;
+      const updatedAt = update.updated_at ?? null;
+
       subitemUpdates.push({
         id: updateId,
         body: update.body ?? "",
-        updateType: deriveUpdateTypeFromSubitemName(subitemName),
+        updateType,
         source: "subitem",
         subitemId: subitemId.length > 0 ? subitemId : null,
         subitemName,
-        createdAt: update.created_at ?? null,
-        updatedAt: update.updated_at ?? null,
+        createdAt,
+        updatedAt,
         creatorId: update.creator?.id ?? null,
         creatorName: update.creator?.name ?? null,
+      });
+
+      subitemUpdateList.push({
+        id: updateId,
+        body: update.body ?? "",
+        createdAt,
+        updatedAt,
+        creatorId: update.creator?.id ?? null,
+        creatorName: update.creator?.name ?? null,
+      });
+    }
+
+    if (subitemId) {
+      subitems.push({
+        id: subitemId,
+        name: subitemName ?? `Subitem ${subitemId}`,
+        typeLabel: typeColText ?? methodText,
+        updateType,
+        methodOfCommunication: methodText,
+        createdAt: subitemCreatedAt,
+        creatorProfile,
+        updates: subitemUpdateList.sort((a, b) =>
+          toSortableTime(b.createdAt) - toSortableTime(a.createdAt),
+        ),
       });
     }
   }
@@ -2650,11 +2788,63 @@ export const listMondayRecordUpdates = async (args: {
     })
     .slice(0, limit);
 
+  subitems.sort((a, b) => toSortableTime(b.createdAt) - toSortableTime(a.createdAt));
+
   return {
     itemId: item?.id ?? itemId,
     itemName: item?.name ?? null,
     updates,
+    subitems,
   };
+};
+
+// ---------------------------------------------------------------------------
+// Delete a subitem
+// ---------------------------------------------------------------------------
+
+export const deleteMondaySubitem = async (args: { subitemId: string }) => {
+  const subitemId = args.subitemId.trim();
+  if (!subitemId) throw new Error("Missing subitem id");
+
+  interface DeleteData {
+    delete_item?: { id?: string | number | null } | null;
+  }
+  const data = await callMondayGraphQL<DeleteData>(
+    `mutation DeleteSubitem($itemId: ID!) { delete_item(item_id: $itemId) { id } }`,
+    { itemId: subitemId },
+  );
+  return { deletedId: String(data.delete_item?.id ?? subitemId) };
+};
+
+// ---------------------------------------------------------------------------
+// Update date0 column on a subitem
+// ---------------------------------------------------------------------------
+
+export const updateMondaySubitemDate = async (args: {
+  subitemId: string;
+  date: string;
+}) => {
+  const subitemId = args.subitemId.trim();
+  const date = args.date.trim();
+  if (!subitemId) throw new Error("Missing subitem id");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("Date must be in YYYY-MM-DD format");
+  }
+
+  interface UpdateData {
+    change_column_value?: { id?: string | number | null } | null;
+  }
+  const data = await callMondayGraphQL<UpdateData>(
+    `mutation UpdateSubitemDate($itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }`,
+    {
+      itemId: subitemId,
+      columnId: "date0",
+      value: JSON.stringify({ date }),
+    },
+  );
+  return { updatedId: String(data.change_column_value?.id ?? subitemId), date };
 };
 
 // ---------------------------------------------------------------------------
@@ -2857,6 +3047,7 @@ export const createMondayRecordUpdate = async (args: {
   itemId: string;
   body: string;
   updateType?: MondayUpdateType;
+  date?: string;
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -2936,147 +3127,66 @@ export const createMondayRecordUpdate = async (args: {
     }
   };
 
-  const normalizeForSubitemTypeMatch = (value: string) => {
-    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
-  };
+  const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
+  const subitemName = updateType === "general"
+    ? "General Update"
+    : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
 
-  const doesSubitemMatchType = (subitemName: string, type: Exclude<MondayUpdateType, "general">) => {
-    const normalized = normalizeForSubitemTypeMatch(subitemName);
-    switch (type) {
-      case "welcome_email":
-        return normalized.includes("welcome");
-      case "followup":
-        return (
-          normalized.includes("follow-up") ||
-          normalized.includes("follow up") ||
-          normalized.includes("followup")
-        );
-      case "questionnaire":
-        return normalized.includes("question");
-      case "resume":
-        return normalized.includes("resume") && !normalized.includes("referral");
-      case "resume_referral":
-        return normalized.includes("resume referral");
-      default:
-        return false;
-    }
-  };
-
-  const resolveSubitemForUpdateType = async (
-    parentItemId: string,
-    type: Exclude<MondayUpdateType, "general">,
-  ) => {
-    interface ExistingSubitemsData {
-      items?: Array<{
-        subitems?: Array<{
-          id?: string | null;
-          name?: string | null;
-        }>;
-      }>;
-    }
-
-    const existingSubitemsData = await callMondayGraphQL<ExistingSubitemsData>(
-      `
-        query GetItemSubitems($itemIds: [ID!]) {
-          items(ids: $itemIds) {
-            subitems {
-              id
-              name
-            }
-          }
-        }
-      `,
-      {
-        itemIds: [parentItemId],
-      },
-    );
-
-    const matchedSubitem = (existingSubitemsData.items?.[0]?.subitems ?? []).find((subitem) => {
-      const subitemId = subitem.id?.trim() ?? "";
-      const subitemName = subitem.name?.trim() ?? "";
-      if (!subitemId || !subitemName) return false;
-      return doesSubitemMatchType(subitemName, type);
-    });
-
-    if (matchedSubitem?.id?.trim()) {
-      return {
-        id: matchedSubitem.id.trim(),
-        name: matchedSubitem.name?.trim() ?? SUBITEM_NAME_BY_UPDATE_TYPE[type],
-      };
-    }
-
-    interface CreateSubitemData {
-      create_subitem?: {
-        id?: string | null;
-      } | null;
-    }
-
-    const subitemName = SUBITEM_NAME_BY_UPDATE_TYPE[type];
-    const createdSubitemData = await callMondayGraphQL<CreateSubitemData>(
-      `
-        mutation CreateSubitem($parentItemId: ID!, $itemName: String!) {
-          create_subitem(parent_item_id: $parentItemId, item_name: $itemName) {
-            id
-          }
-        }
-      `,
-      {
-        parentItemId,
-        itemName: subitemName,
-      },
-    );
-
-    const createdSubitemId = createdSubitemData.create_subitem?.id?.trim() ?? "";
-    if (!createdSubitemId) {
-      throw new Error("Failed to create subitem for typed update");
-    }
-    return { id: createdSubitemId, name: subitemName };
-  };
-
-  let targetItemId = itemId;
-  let targetSource: "item" | "subitem" = "item";
-  let targetSubitemName: string | null = null;
-  if (updateType !== "general") {
-    const resolvedSubitem = await resolveSubitemForUpdateType(itemId, updateType);
-    targetItemId = resolvedSubitem.id;
-    targetSource = "subitem";
-    targetSubitemName = resolvedSubitem.name;
+  // Always create a subitem to store the update
+  interface CreateSubitemData {
+    create_subitem?: { id?: string | null } | null;
   }
-
-  const mutation = `
-    mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-      create_update(item_id: $itemId, body: $body) {
-        id
-        body
+  const createdSubitemData = await callMondayGraphQL<CreateSubitemData>(
+    `
+      mutation CreateSubitem($parentItemId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_subitem(
+          parent_item_id: $parentItemId
+          item_name: $itemName
+          column_values: $columnValues
+          create_labels_if_missing: true
+        ) { id }
       }
-    }
-  `;
-
-  interface CreateMondayItemUpdateData {
-    create_update?: {
-      id?: string | null;
-      body?: string | null;
-    } | null;
+    `,
+    {
+      parentItemId: itemId,
+      itemName: subitemName,
+      columnValues: JSON.stringify({
+        [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
+        ...(args.date ? { date0: { date: args.date } } : {}),
+      }),
+    },
+  );
+  const targetSubitemId = createdSubitemData.create_subitem?.id?.trim() ?? "";
+  if (!targetSubitemId) {
+    throw new Error("Failed to create subitem for update");
   }
 
-  const data = await callMondayGraphQL<CreateMondayItemUpdateData>(mutation, {
-    itemId: targetItemId,
-    body,
-  });
-
+  // Post the body as an update on the subitem
+  interface CreateUpdateData {
+    create_update?: { id?: string | null; body?: string | null } | null;
+  }
+  const data = await callMondayGraphQL<CreateUpdateData>(
+    `
+      mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) { id body }
+      }
+    `,
+    { itemId: targetSubitemId, body },
+  );
   const updateId = data.create_update?.id?.trim() ?? "";
   if (!updateId) {
     throw new Error("Monday did not return a new update id");
   }
+
   const approvalStepResult = await markApprovalStepCompleteForUpdateType();
 
   return {
     id: updateId,
     body: data.create_update?.body ?? body,
     updateType,
-    source: targetSource,
-    targetItemId,
-    subitemName: targetSubitemName,
+    source: "subitem" as const,
+    targetItemId: targetSubitemId,
+    subitemName,
     approvalStepColumnId: approvalStepResult.stepColumnId,
     approvalStepMarked: approvalStepResult.stepMarked,
     warning: approvalStepResult.warning,

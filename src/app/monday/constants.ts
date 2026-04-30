@@ -102,6 +102,17 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   resume_referral: "Resume Referral Update",
 };
 
+export const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
+
+export const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<ContactUpdateType, string> = {
+  general: "General",
+  welcome_email: "Welcome Email",
+  followup: "Followup",
+  questionnaire: "Questionnaire",
+  resume: "Resume",
+  resume_referral: "Resume Referral",
+};
+
 export const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   Record<Exclude<ContactUpdateType, "general">, string>
 > = {
