@@ -10,7 +10,9 @@ const toJson = (body: unknown, status = 200) => {
 };
 
 const normalizeValue = (value: unknown) => {
-  return typeof value === "string" ? value.trim() : "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
 };
 
 const toRecord = (value: unknown) => {
