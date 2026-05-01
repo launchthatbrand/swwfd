@@ -48,6 +48,8 @@ export const POST = async (request: Request) => {
     return toJson({ ok: false, error: "Invalid JSON body" }, 400);
   }
 
+  console.log("[Webhook] Received payload:", JSON.stringify(body));
+
   const { challenge, boardId, itemId } = extractWebhookPayload(body);
   if (challenge) {
     return toJson({ challenge });
@@ -63,6 +65,7 @@ export const POST = async (request: Request) => {
   }
 
   if (!itemId) {
+    console.log("[Webhook] Missing itemId. Extracted boardId:", boardId, "from payload keys:", Object.keys(toRecord(body) ?? {}));
     return toJson(
       {
         ok: false,
