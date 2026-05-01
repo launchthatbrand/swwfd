@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Filter,
   LayoutGrid,
+  CircleHelp,
   List,
   Mail,
   RefreshCcw,
@@ -184,6 +185,9 @@ import {
   BusinessInfoHoverCard,
   ContactCard,
   ContactUpdates,
+  GuidedTourProvider,
+  isTourLockingDialog,
+  HelpDeskDialog,
   KanbanBoard,
   NameCellContent,
   OnboardingStepper,
@@ -299,6 +303,8 @@ export function MondayBoardView({
   const [resumePreview, setResumePreview] = useState<ResumePreviewState | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpDeskOpen, setHelpDeskOpen] = useState(false);
+  const [helpDeskLinkedContact, setHelpDeskLinkedContact] = useState<MondayRecord | null>(null);
   const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
@@ -2988,6 +2994,32 @@ export function MondayBoardView({
 
   const columns: ColumnDefinition<MondayRecord>[] = [
     {
+      id: "helpdesk",
+      header: "",
+      accessorKey: "id",
+      minWidth: 36,
+      cell: (item: MondayRecord) => (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="flex h-full w-full items-center justify-center p-1 text-muted-foreground transition-colors hover:text-primary"
+              onClick={(e) => {
+                e.stopPropagation();
+                setHelpDeskLinkedContact(item);
+                setHelpDeskOpen(true);
+              }}
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="text-xs">
+            Submit a support ticket for {item.name}
+          </TooltipContent>
+        </Tooltip>
+      ),
+    },
+    {
       id: "name",
       header: "Item",
       accessorKey: "name",
@@ -3362,12 +3394,13 @@ export function MondayBoardView({
   ];
 
   return (
+    <GuidedTourProvider>
     <UserSettingsProvider settings={boardGeneralSettings}>
     <div className="monday-like-page mx-auto space-y-3 pb-10">
       <div data-board-filter-bar className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Search */}
-          <div className="relative min-w-0 flex-1">
+          <div data-tour="search" className="relative min-w-0 flex-1">
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -3384,6 +3417,7 @@ export function MondayBoardView({
           <div className="bg-border/60 h-5 w-px shrink-0" />
 
           {/* Owner + district filters */}
+          <div data-tour="filters" className="flex items-center gap-1.5">
           <select
             value={ownerFilter || "__all_owner__"}
             onChange={(event) => {
@@ -3427,6 +3461,7 @@ export function MondayBoardView({
               </option>
             ))}
           </select>
+          </div>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
@@ -3839,7 +3874,7 @@ export function MondayBoardView({
                 <UserPlus className="mr-1.5 h-4 w-4" />
                 Add
               </Button>
-              <div className="flex overflow-hidden rounded-md border shrink-0">
+              <div data-tour="view-toggle" className="flex overflow-hidden rounded-md border shrink-0">
                 <button
                   type="button"
                   onClick={() => setUserScopedDisplayMode("table")}
@@ -3920,6 +3955,20 @@ export function MondayBoardView({
               {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
             </Button>
           ) : null}
+
+          <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 shrink-0 px-2"
+            title="Help Desk"
+            onClick={() => {
+              setHelpDeskLinkedContact(null);
+              setHelpDeskOpen(true);
+            }}
+          >
+            <CircleHelp className="h-4 w-4" />
+          </Button>
 
           <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
             <DialogTrigger asChild>
@@ -4589,6 +4638,7 @@ export function MondayBoardView({
               </Tabs>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </div>
       <div className="max-w-[1600px] container">
@@ -5135,10 +5185,15 @@ export function MondayBoardView({
         <Dialog
           open={!!contactHistoryDialogRecord}
           onOpenChange={(open) => {
-            if (!open) setContactHistoryDialogRecord(null);
+            if (!open && !isTourLockingDialog()) setContactHistoryDialogRecord(null);
           }}
         >
-          <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto p-0">
+          <DialogContent
+            data-tour="contact-dialog"
+            className="max-h-[90vh] max-w-6xl overflow-y-auto p-0"
+            onPointerDownOutside={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
+            onEscapeKeyDown={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
+          >
             <DialogHeader className="sticky top-0 z-10 bg-background p-5">
               <div className="flex items-center gap-2">
                 <Button
@@ -5178,7 +5233,7 @@ export function MondayBoardView({
                   const record = contactHistoryDialogRecord;
                   const addressDisplay = getAddressDisplayParts(record.address);
                   return (
-                    <div className="rounded-md border p-4">
+                    <div data-tour="contact-header" className="rounded-md border p-4">
                       <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
                         <div className="flex min-w-0 items-start gap-3">
                           <Avatar className="size-12">
@@ -5225,6 +5280,7 @@ export function MondayBoardView({
                 })()}
 
                 {!staticMode && contactHistoryDialogRecord ? (
+                  <div data-tour="onboarding-stepper">
                   <OnboardingStepper
                     record={contactHistoryDialogRecord}
                     approvalSteps={approvalSteps}
@@ -5338,10 +5394,11 @@ export function MondayBoardView({
                     actionButtonClassName={boardThemeStyles.actionButtonClassName}
                     buttonSizeClassName={quickActionButtonSizeClass}
                   />
+                  </div>
                 ) : null}
 
                 <Tabs value={contactDialogTab} onValueChange={setContactDialogTab} className="w-full">
-                  <TabsList>
+                  <TabsList data-tour="contact-tabs">
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
                   </TabsList>
@@ -5469,6 +5526,10 @@ export function MondayBoardView({
             isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
             onMoveRequest={setKanbanMoveConfirmation}
             onRecordClick={openContactHistoryDialog}
+            onHelpDesk={(r) => {
+              setHelpDeskLinkedContact(r);
+              setHelpDeskOpen(true);
+            }}
           />
         ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -5482,6 +5543,10 @@ export function MondayBoardView({
                   record={record}
                   approvalSteps={approvalSteps}
                   onClick={openContactHistoryDialog}
+                  onHelpDesk={(r) => {
+                    setHelpDeskLinkedContact(r);
+                    setHelpDeskOpen(true);
+                  }}
                 />
               ))}
           </div>
@@ -5993,11 +6058,23 @@ export function MondayBoardView({
           </DialogContent>
         </Dialog>
       </div>
+      <HelpDeskDialog
+        open={helpDeskOpen}
+        onOpenChange={(v) => {
+          setHelpDeskOpen(v);
+          if (!v) setHelpDeskLinkedContact(null);
+        }}
+        linkedContact={helpDeskLinkedContact}
+        sessionToken={sessionToken}
+        currentUserId={forcedOwnerId || identity?.userId || null}
+      />
+
       {!staticMode && recordsQuery.hasNextPage ? (
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>
     </UserSettingsProvider>
+    </GuidedTourProvider>
   );
 }
 

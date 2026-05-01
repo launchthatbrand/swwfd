@@ -30,6 +30,7 @@ export const env = createEnv({
     MONDAY_ROUTING_DISTRICT_ACTIVE_COLUMN_ID: z.string().optional(),
     MONDAY_EMAIL_TEMPLATES_BOARD_ID: z.string().optional(),
     MONDAY_CONTACT_TOUCHED_BOARD_ID: z.string().optional(),
+    MONDAY_HELPDESK_BOARD_ID: z.string().optional(),
     OUTLOOK_OAUTH_CLIENT_ID: z.string().min(1).optional(),
     OUTLOOK_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
     OUTLOOK_OAUTH_TENANT_ID: z.string().min(1).optional(),

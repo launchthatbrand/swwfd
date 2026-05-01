@@ -19,12 +19,14 @@ export const KanbanBoard = ({
   isLoading,
   onMoveRequest,
   onRecordClick,
+  onHelpDesk,
 }: {
   records: MondayRecord[];
   approvalSteps: ApprovalStepConfig[];
   isLoading: boolean;
   onMoveRequest: (confirmation: KanbanMoveConfirmation) => void;
   onRecordClick: (record: MondayRecord) => void;
+  onHelpDesk?: (record: MondayRecord) => void;
 }) => {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -153,6 +155,7 @@ export const KanbanBoard = ({
                       record={record}
                       approvalSteps={approvalSteps}
                       onClick={onRecordClick}
+                      onHelpDesk={onHelpDesk}
                     />
                   </DraggableItem>
                 ))
