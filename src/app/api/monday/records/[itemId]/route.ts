@@ -1,12 +1,42 @@
 import { NextResponse } from "next/server";
 
-import { updateMondayRecordFields } from "~/server/monday/client";
+import {
+  fetchMondayItemColumns,
+  updateMondayRecordFields,
+} from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
+};
+
+export const GET = async (
+  request: Request,
+  context: { params: Promise<{ itemId: string }> },
+) => {
+  try {
+    await requireVerifiedMondaySession(request);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unauthorized Monday session";
+    return toJson({ ok: false, error: message }, 401);
+  }
+
+  const { itemId } = await context.params;
+  if (!itemId?.trim()) {
+    return toJson({ ok: false, error: "Missing monday item id" }, 400);
+  }
+
+  try {
+    const result = await fetchMondayItemColumns({ itemId: itemId.trim() });
+    return toJson({ ok: true, ...result });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch item columns";
+    return toJson({ ok: false, error: message }, 500);
+  }
 };
 
 interface UpdateRecordBody {

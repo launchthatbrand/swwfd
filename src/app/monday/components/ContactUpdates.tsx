@@ -33,6 +33,8 @@ import {
 } from "@launchthatapp/ui/select";
 import { Textarea } from "@launchthatapp/ui/textarea";
 
+import { Skeleton } from "~/components/ui/skeleton";
+
 import type { MondaySubitemEntry } from "../types";
 import {
   CONTACT_UPDATE_TYPE_OPTIONS,
@@ -375,12 +377,19 @@ export const ContactUpdates = ({
   return (
     <>
       <div className="flex h-[60vh] flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-1 py-3">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 border-black/50 border-1 rounded-md">
           {isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <p className="text-muted-foreground text-sm">
-                Loading updates...
-              </p>
+            <div className="space-y-5 py-2">
+              {[0.8, 0.6, 0.9, 0.5, 0.7].map((w, i) => (
+                <div key={i} className={`flex gap-2.5 ${i % 2 === 0 ? "" : "flex-row-reverse"}`}>
+                  <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                  <div className="space-y-1.5" style={{ width: `${w * 100}%`, maxWidth: "80%" }}>
+                    <Skeleton className="h-3 w-24" />
+                    <Skeleton className="h-14 w-full rounded-2xl" />
+                    <Skeleton className="h-3 w-16" />
+                  </div>
+                </div>
+              ))}
             </div>
           ) : isEmpty ? (
             <div className="flex h-full flex-col items-center justify-center gap-2">

@@ -1,6 +1,7 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
+import { Skeleton } from "~/components/ui/skeleton";
 import {
   ChevronLeft,
   ChevronRight,
@@ -261,7 +262,8 @@ export function MondayBoardView({
   const [contactUpdateType, setContactUpdateType] =
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
-  const [isSyncingContact, setIsSyncingContact] = useState(false);
+  const [contactDialogTab, setContactDialogTab] = useState("updates");
+  const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
   >(null);
@@ -658,6 +660,57 @@ export function MondayBoardView({
       return data;
     },
     staleTime: 30_000,
+  });
+
+  interface ContactColumnsResponse {
+    ok: boolean;
+    error?: string;
+    itemId?: string;
+    itemName?: string | null;
+    columns?: Array<{
+      id: string;
+      title: string;
+      type: string;
+      text: string | null;
+      value: string | null;
+    }>;
+  }
+
+  const contactColumnsQuery = useQuery({
+    queryKey: [
+      "monday-record-columns",
+      sessionToken,
+      contactHistoryDialogRecord?.id,
+      contactHistoryDialogRecord?.contactId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !!contactHistoryDialogRecord &&
+      !staticMode &&
+      contactDialogTab === "info",
+    queryFn: async () => {
+      const contactId = contactHistoryDialogRecord?.contactId?.trim();
+      const targetRecordId =
+        contactId && contactId.length > 0
+          ? contactId
+          : (contactHistoryDialogRecord?.id ?? "");
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken
+            ? { "x-monday-session-token": sessionToken }
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as ContactColumnsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact details");
+      }
+      return data;
+    },
+    staleTime: 60_000,
   });
 
   const userFilterPresetsQuery = useQuery({
@@ -1974,7 +2027,23 @@ export function MondayBoardView({
     setContactHistoryDialogRecord(record);
     setContactUpdateDraft("");
     setContactUpdateType("general");
+    setContactDialogTab("updates");
   };
+
+  const contactDialogIndex = useMemo(() => {
+    if (!contactHistoryDialogRecord) return -1;
+    return filteredRecords.findIndex((r) => r.id === contactHistoryDialogRecord.id);
+  }, [contactHistoryDialogRecord, filteredRecords]);
+
+  const navigateContactDialog = useCallback(
+    (direction: -1 | 1) => {
+      const nextIndex = contactDialogIndex + direction;
+      if (nextIndex < 0 || nextIndex >= filteredRecords.length) return;
+      const next = filteredRecords[nextIndex];
+      if (next) openContactHistoryDialog(next);
+    },
+    [contactDialogIndex, filteredRecords],
+  );
 
   const resolveContactUpdateTargetRecordId = (record: MondayRecord) => {
     const contactId = record.contactId?.trim();
@@ -5069,12 +5138,40 @@ export function MondayBoardView({
             if (!open) setContactHistoryDialogRecord(null);
           }}
         >
-          <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
-              </DialogTitle>
+          <DialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto p-0">
+            <DialogHeader className="sticky top-0 z-10 bg-background p-5">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  disabled={contactDialogIndex <= 0}
+                  onClick={() => navigateContactDialog(-1)}
+                  title="Previous contact"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  disabled={contactDialogIndex < 0 || contactDialogIndex >= filteredRecords.length - 1}
+                  onClick={() => navigateContactDialog(1)}
+                  title="Next contact"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <DialogTitle className="min-w-0 truncate">
+                  {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+                </DialogTitle>
+                {contactDialogIndex >= 0 ? (
+                  <span className="text-muted-foreground shrink-0 text-xs">
+                    {contactDialogIndex + 1} / {filteredRecords.length}
+                  </span>
+                ) : null}
+              </div>
             </DialogHeader>
+            <div className="p-6">
             {contactHistoryDialogRecord ? (
               <div className="space-y-4">
                 {(() => {
@@ -5176,11 +5273,12 @@ export function MondayBoardView({
                       })();
                     }}
                     isAdmin={isMondaySettingsAdmin}
-                    isSyncing={isSyncingContact}
+                    isSyncing={syncingContactIds.has(contactHistoryDialogRecord?.id ?? "")}
                     onSyncUser={(record) => {
                       void (async () => {
                         if (!sessionToken) return;
-                        setIsSyncingContact(true);
+                        const syncKey = record.id;
+                        setSyncingContactIds((prev) => new Set(prev).add(syncKey));
                         try {
                           const targetId = resolveContactUpdateTargetRecordId(record);
                           const response = await fetch(
@@ -5229,7 +5327,11 @@ export function MondayBoardView({
                         } catch (err) {
                           toast.error(err instanceof Error ? err.message : "Sync failed");
                         } finally {
-                          setIsSyncingContact(false);
+                          setSyncingContactIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(syncKey);
+                            return next;
+                          });
                         }
                       })();
                     }}
@@ -5238,7 +5340,7 @@ export function MondayBoardView({
                   />
                 ) : null}
 
-                <Tabs defaultValue="updates" className="w-full">
+                <Tabs value={contactDialogTab} onValueChange={setContactDialogTab} className="w-full">
                   <TabsList>
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
@@ -5292,50 +5394,45 @@ export function MondayBoardView({
                     />
                   </TabsContent>
 
-                  <TabsContent value="info" className="mt-3 space-y-3">
-                    <div className="rounded-md border p-3">
-                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                        Contact card header
-                      </p>
-                      <div className="space-y-1 text-xs">
-                        <p className="wrap-break-word">
-                          <span className="font-bold">ID:</span>{" "}
-                          {contactHistoryDialogRecord.id}
-                        </p>
-                        <p className="wrap-break-word">
-                          <span className="font-bold">District:</span>{" "}
-                          {contactHistoryDialogRecord.statusText ?? "—"}
-                        </p>
-                        <p className="wrap-break-word">
-                          <span className="font-bold">Owner:</span>{" "}
-                          {contactHistoryDialogRecord.peopleText ?? "—"}
-                        </p>
-                        <p className="wrap-break-word">
-                          <span className="font-bold">Updated:</span>{" "}
-                          {formatUpdatedAt(contactHistoryDialogRecord.updatedAt)}
-                        </p>
-                        <p className="wrap-break-word">
-                          <span className="font-bold">Created:</span>{" "}
-                          {formatUpdatedAt(contactHistoryDialogRecord.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="rounded-md border p-3">
-                      <p className="mb-2 text-xs font-semibold tracking-wide uppercase">
-                        Additional contact information
-                      </p>
-                      <div className="space-y-1 overflow-y-auto pr-1 text-xs">
-                        {getContactTooltipDetails(contactHistoryDialogRecord).map((detail) => (
-                          <div
-                            key={`${detail.label}-${detail.value}`}
-                            className="grid grid-cols-[88px_1fr] gap-3"
-                          >
-                            <span className="truncate font-bold">{detail.label}</span>
-                            <span className="wrap-break-word">{detail.value}</span>
+                  <TabsContent value="info" className="mt-3">
+                    {contactColumnsQuery.isLoading ? (
+                      <div className="space-y-2 p-3">
+                        {Array.from({ length: 10 }).map((_, i) => (
+                          <div key={i} className="grid grid-cols-[140px_1fr] gap-3">
+                            <Skeleton className="h-4 w-full" />
+                            <Skeleton className="h-4 w-3/4" />
                           </div>
                         ))}
                       </div>
-                    </div>
+                    ) : contactColumnsQuery.error ? (
+                      <div className="rounded-md border p-3">
+                        <p className="text-destructive text-sm">
+                          {contactColumnsQuery.error instanceof Error
+                            ? contactColumnsQuery.error.message
+                            : "Failed to load contact details"}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+                        <table className="w-full text-sm">
+                          <tbody>
+                            {(contactColumnsQuery.data?.columns ?? []).map((col) => (
+                              <tr
+                                key={col.id}
+                                className="border-b last:border-b-0"
+                              >
+                                <td className="text-muted-foreground bg-muted/30 w-[180px] shrink-0 border-r px-3 py-2 text-xs font-medium">
+                                  {col.title}
+                                </td>
+                                <td className="break-words px-3 py-2 text-xs">
+                                  {col.text || <span className="text-muted-foreground">—</span>}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </TabsContent>
                 </Tabs>
 
@@ -5349,6 +5446,7 @@ export function MondayBoardView({
                 </div>
               </div>
             ) : null}
+            </div>
           </DialogContent>
         </Dialog>
 
@@ -5478,12 +5576,13 @@ export function MondayBoardView({
                         size="sm"
                         variant="outline"
                         className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                        disabled={!!bulkQuickActionType || isSyncingContact}
+                        disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
                         onClick={() => {
                           void (async () => {
                             if (!sessionToken) return;
-                            setIsSyncingContact(true);
                             const items = [...selectedItems];
+                            const bulkSyncKey = "__bulk_sync__";
+                            setSyncingContactIds((prev) => new Set(prev).add(bulkSyncKey));
                             let synced = 0;
                             let errors = 0;
                             for (const item of items) {
@@ -5510,7 +5609,11 @@ export function MondayBoardView({
                               }
                             }
                             await recordsQuery.refetch();
-                            setIsSyncingContact(false);
+                            setSyncingContactIds((prev) => {
+                              const next = new Set(prev);
+                              next.delete(bulkSyncKey);
+                              return next;
+                            });
                             if (errors > 0) {
                               toast.error(`Synced ${synced}/${items.length} (${errors} failed)`);
                             } else {
@@ -5519,7 +5622,7 @@ export function MondayBoardView({
                           })();
                         }}
                       >
-                        {isSyncingContact ? "Syncing..." : `Sync Users (${selectedItems.length})`}
+                        {syncingContactIds.has("__bulk_sync__") ? "Syncing..." : `Sync Users (${selectedItems.length})`}
                       </Button>
                     )}
                     <Button
