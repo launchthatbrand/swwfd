@@ -34,6 +34,7 @@ interface SourceUpdate {
 interface SourceSubitem {
   id: string;
   name: string;
+  createdAt: string | null;
   columnValues: SourceColumnValue[];
   updates: SourceUpdate[];
 }
@@ -107,6 +108,36 @@ const parsePeopleColumnValue = (value: string | null | undefined) => {
   return (parsed?.personsAndTeams ?? [])
     .filter((e) => e.kind === "person" && e.id != null)
     .map((e) => (typeof e.id === "number" ? e.id : Number(e.id)));
+};
+
+const parseCreationLogDateTime = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+): { date: string; time: string } | null => {
+  if (typeof value === "string" && value.length > 0) {
+    try {
+      const parsed = JSON.parse(value) as { created_at?: string };
+      if (typeof parsed.created_at === "string" && parsed.created_at.length > 0) {
+        const d = new Date(parsed.created_at);
+        if (!Number.isNaN(d.getTime())) {
+          return {
+            date: d.toISOString().slice(0, 10),
+            time: d.toISOString().slice(11, 19),
+          };
+        }
+      }
+    } catch { /* fall through */ }
+  }
+  if (typeof text === "string" && text.trim().length > 0) {
+    const d = new Date(text.trim());
+    if (!Number.isNaN(d.getTime())) {
+      return {
+        date: d.toISOString().slice(0, 10),
+        time: d.toISOString().slice(11, 19),
+      };
+    }
+  }
+  return null;
 };
 
 const parseSubitemBoardIdFromSubtasksColumn = (column: MondayColumn | null) => {
@@ -203,12 +234,13 @@ const mapColumnValueForTarget = (sourceColumn: SourceColumnValue, targetType: st
 
 const ONBOARDING_STEP_COLUMN_MAP: Array<{ patterns: string[]; columnId: string }> = [
   { patterns: ["welcome email"], columnId: "color_mm1db321" },
-  { patterns: ["phone screen"], columnId: "color_mm1dwr4k" },
-  { patterns: ["program lead", "pl contact"], columnId: "color_mm1dwtvd" },
-  { patterns: ["referred", "resume referral"], columnId: "color_mm1dnr11" },
-  { patterns: ["interview"], columnId: "color_mm1dgeqy" },
-  { patterns: ["hired"], columnId: "color_mm1d80yc" },
-  { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },
+  { patterns: ["follow-up", "followup", "follow up", "program lead", "pl contact"], columnId: "color_mm1dwtvd" },
+  { patterns: ["questionnaire", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
+  { patterns: ["resume referral", "referred"], columnId: "color_mm1dgeqy" },
+  { patterns: ["resume received", "resume"], columnId: "color_mm1dnr11" },
+  { patterns: ["interview"], columnId: "color_mm1d80yc" },
+  { patterns: ["hired"], columnId: "color_mm1djwjj" },
+  { patterns: ["retained", "30-60-90"], columnId: "color_mm1d4e3y" },
 ];
 
 const classifySubitemForProgressColumn = (name: string): string | null => {
@@ -351,6 +383,7 @@ const fetchLinkedItemWithDetails = async (itemId: string) => {
       subitems?: Array<{
         id?: string;
         name?: string;
+        created_at?: string;
         updates?: Array<{
           id?: string;
           body?: string;
@@ -372,7 +405,7 @@ const fetchLinkedItemWithDetails = async (itemId: string) => {
           creator { name }
         }
         subitems {
-          id name
+          id name created_at
           updates(limit: 200) {
             id body created_at
             creator { name }
@@ -396,6 +429,7 @@ const fetchLinkedItemWithDetails = async (itemId: string) => {
   const subitems: SourceSubitem[] = (item.subitems ?? []).map((si) => ({
     id: String(si.id ?? ""),
     name: (si.name ?? "").trim(),
+    createdAt: si.created_at ?? null,
     columnValues: (si.column_values ?? []).map((cv) => ({
       id: cv.id ?? "",
       type: cv.type ?? "",
@@ -452,6 +486,16 @@ const createUpdate = async (itemId: string, body: string) => {
   return data.create_update?.id?.trim() ?? null;
 };
 
+const updateSubitemDateColumn = async (boardId: string, subitemId: string, date: string, time: string) => {
+  interface Data { change_column_value?: { id?: string | null } }
+  await callMondayGraphQL<Data>(
+    `mutation ($boardId: ID!, $itemId: ID!, $columnId: String!, $value: JSON!) {
+      change_column_value(board_id: $boardId, item_id: $itemId, column_id: $columnId, value: $value) { id }
+    }`,
+    { boardId, itemId: subitemId, columnId: "date0", value: JSON.stringify({ date, time }) },
+  );
+};
+
 const updateProgressColumn = async (boardId: string, itemId: string, columnId: string) => {
   interface Data { change_simple_column_value?: { id?: string | null } }
   await callMondayGraphQL<Data>(
@@ -499,12 +543,51 @@ export const syncContactFromConnectedBoards = async (
     };
   }
 
-  // Existing subitem names on the target for dedup
-  const existingSubitemNames = new Set(
+  // Existing subitem names on the target for dedup, mapped to their IDs
+  // so we can update columns on already-synced subitems.
+  const existingSubitemNameToId = new Map(
     (contactItem.subitems ?? [])
-      .map((si) => (si.name ?? "").trim().toLowerCase())
-      .filter((n) => n.length > 0),
+      .filter((si) => (si.name ?? "").trim().length > 0 && si.id)
+      .map((si) => [(si.name ?? "").trim().toLowerCase(), String(si.id)] as const),
   );
+  const existingSubitemNames = new Set(existingSubitemNameToId.keys());
+
+  // Fetch existing updates on the target item to dedup parent and subitem
+  // updates. Synced updates contain "source_entity_id=XYZ" in the body.
+  const existingSyncedEntityIds = new Set<string>();
+  {
+    interface UpdatesData {
+      items?: Array<{
+        updates?: Array<{ body?: string }>;
+        subitems?: Array<{
+          updates?: Array<{ body?: string }>;
+        }>;
+      }>;
+    }
+    try {
+      const uData = await callMondayGraphQL<UpdatesData>(
+        `query ($ids: [ID!]!) {
+          items(ids: $ids) {
+            updates(limit: 500) { body }
+            subitems { updates(limit: 200) { body } }
+          }
+        }`,
+        { ids: [itemId] },
+      );
+      const item = uData.items?.[0];
+      const allBodies = [
+        ...(item?.updates ?? []).map((u) => u.body ?? ""),
+        ...(item?.subitems ?? []).flatMap((si) => (si.updates ?? []).map((u) => u.body ?? "")),
+      ];
+      for (const body of allBodies) {
+        const match = body.match(/source_entity_id=([^\s<]+)/);
+        if (match?.[1]) existingSyncedEntityIds.add(match[1]);
+      }
+    } catch {
+      warnings.push("Could not fetch existing updates for dedup; may create duplicates");
+    }
+    console.log("[Sync] Found", existingSyncedEntityIds.size, "already-synced entity IDs");
+  }
 
   // 3. Fetch each linked item with full details
   const sourceItems: SourceItem[] = [];
@@ -572,15 +655,18 @@ export const syncContactFromConnectedBoards = async (
       }
     }
 
-    // Replay parent updates
+    // Replay parent updates (skip already-synced)
     for (const update of source.updates) {
+      const entityId = update.id;
+      if (existingSyncedEntityIds.has(entityId)) continue;
+
       const body = buildSyncUpdateBody({
         sourceBoardName: source.boardName,
         sourceBoardId: source.boardId,
         sourceItemId: source.id,
         sourceItemName: source.name,
         sourceEntity: "parent_update",
-        sourceEntityId: update.id,
+        sourceEntityId: entityId,
         sourceUpdateBody: update.body,
         createdAt: update.createdAt,
         creatorName: update.creatorName,
@@ -588,8 +674,9 @@ export const syncContactFromConnectedBoards = async (
       try {
         if (!dryRun) await createUpdate(itemId, body);
         createdParentUpdates++;
+        existingSyncedEntityIds.add(entityId);
       } catch (err) {
-        warnings.push(`Failed to create parent update ${update.id}: ${err instanceof Error ? err.message : String(err)}`);
+        warnings.push(`Failed to create parent update ${entityId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
@@ -599,15 +686,66 @@ export const syncContactFromConnectedBoards = async (
       const cleanName = subitem.name.trim() || `Synced subitem ${subitem.id}`;
       const targetName = `${cleanName} [synced:${source.boardId}:${subitem.id}]`;
 
-      // Dedup: skip if target already has a subitem with this synced tag
+      // Always evaluate progress columns regardless of whether this subitem
+      // was already synced — re-syncs should fix any missing progress steps.
+      const progressColId = classifySubitemForProgressColumn(subitem.name);
+      if (progressColId) {
+        const statusCol = subitem.columnValues.find(
+          (c) => c.id === "status9" || normalizeText(c.type) === "color",
+        );
+        const statusText = normalizeText(statusCol?.text);
+        const isExplicitlyIncomplete = statusText === "not started" || statusText === "stuck";
+        console.log("[Sync] Subitem", subitem.name, "→ progressCol", progressColId, "status:", statusText || "(empty)", isExplicitlyIncomplete ? "SKIP" : "MARK");
+        if (!isExplicitlyIncomplete) {
+          progressColumnsToUpdate.add(progressColId);
+        }
+      } else {
+        console.log("[Sync] Subitem", subitem.name, "→ no matching progress column");
+      }
+
+      // Extract creation datetime for date0.
+      // Try creation_log column first, fall back to subitem.created_at.
+      const creationLogCol = subitem.columnValues.find(
+        (c) => c.type === "creation_log",
+      );
+      let creationLogDateTime = parseCreationLogDateTime(
+        creationLogCol?.value,
+        creationLogCol?.text,
+      );
+      if (!creationLogDateTime && subitem.createdAt) {
+        creationLogDateTime = parseCreationLogDateTime(undefined, subitem.createdAt);
+      }
+      console.log("[Sync] Subitem", subitem.name,
+        "creation_log col:", creationLogCol ? "found" : "NOT FOUND",
+        "subitem.createdAt:", subitem.createdAt,
+        "→ dateTime:", creationLogDateTime);
+
+      // Dedup: skip subitem creation if target already has it, but update
+      // date0 with full date+time from the source creation_log.
       if (existingSubitemNames.has(targetName.toLowerCase())) {
         skippedSubitems++;
+        console.log("[Sync] Skipped (dedup), creationLogDateTime:", creationLogDateTime, "existingId:", existingSubitemNameToId.get(targetName.toLowerCase()));
+        if (!dryRun && creationLogDateTime) {
+          const existingId = existingSubitemNameToId.get(targetName.toLowerCase());
+          if (existingId && targetSubitemBoardId) {
+            try {
+              console.log("[Sync] Updating date0 on subitem", existingId, "board", targetSubitemBoardId, "→", creationLogDateTime);
+              await updateSubitemDateColumn(targetSubitemBoardId, existingId, creationLogDateTime.date, creationLogDateTime.time);
+              console.log("[Sync] Updated date0 on existing subitem", existingId);
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.log("[Sync] FAILED to update date0 on subitem", existingId, errMsg);
+              warnings.push(`Failed to update date0 on subitem ${existingId}: ${errMsg}`);
+            }
+          }
+        }
         continue;
       }
 
       // Map column values
       const columnValues: Record<string, unknown> = {};
       for (const col of subitem.columnValues) {
+        if (col.type === "creation_log") continue;
         const mappedId = mapSourceToTargetColumnId({
           sourceColumn: col,
           sourceColumnTitleById: sourceSubitemColumnTitleById,
@@ -620,6 +758,10 @@ export const syncContactFromConnectedBoards = async (
         const mapped = mapColumnValueForTarget(col, targetCol.type);
         if (mapped.skip) continue;
         columnValues[mappedId] = mapped.value;
+      }
+
+      if (creationLogDateTime) {
+        columnValues["date0"] = { date: creationLogDateTime.date, time: creationLogDateTime.time };
       }
 
       try {
@@ -636,31 +778,23 @@ export const syncContactFromConnectedBoards = async (
         warnings.push(`Failed to create subitem ${subitem.id}: ${err instanceof Error ? err.message : String(err)}`);
         continue;
       }
-
-      // Progress column classification
-      const progressColId = classifySubitemForProgressColumn(subitem.name);
-      if (progressColId) {
-        const statusCol = subitem.columnValues.find(
-          (c) => c.id === "status9" || normalizeText(c.type) === "color",
-        );
-        if (normalizeText(statusCol?.text) === "done") {
-          progressColumnsToUpdate.add(progressColId);
-        }
-      }
     }
 
-    // Replay subitem updates
+    // Replay subitem updates (only for newly created subitems, skip already-synced)
     for (const subitem of source.subitems) {
       const targetSubitemId = sourceSubitemToTargetSubitem.get(subitem.id);
       if (!targetSubitemId) continue;
       for (const update of subitem.updates) {
+        const entityId = `${subitem.id}:${update.id}`;
+        if (existingSyncedEntityIds.has(entityId)) continue;
+
         const body = buildSyncUpdateBody({
           sourceBoardName: source.boardName,
           sourceBoardId: source.boardId,
           sourceItemId: source.id,
           sourceItemName: source.name,
           sourceEntity: "subitem_update",
-          sourceEntityId: `${subitem.id}:${update.id}`,
+          sourceEntityId: entityId,
           sourceUpdateBody: update.body,
           createdAt: update.createdAt,
           creatorName: update.creatorName,
@@ -668,6 +802,7 @@ export const syncContactFromConnectedBoards = async (
         try {
           if (!dryRun) await createUpdate(targetSubitemId, body);
           createdSubitemUpdates++;
+          existingSyncedEntityIds.add(entityId);
         } catch (err) {
           warnings.push(`Failed to create subitem update ${update.id}: ${err instanceof Error ? err.message : String(err)}`);
         }

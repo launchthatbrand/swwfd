@@ -2719,8 +2719,24 @@ export const listMondayRecordUpdates = async (args: {
     const subitemName = subitem.name?.trim() ?? null;
     const typeColText = subitem.column_values?.find((c) => c.id === typeColId)?.text ?? null;
     const methodText = subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ?? null;
-    const dateColText = subitem.column_values?.find((c) => c.id === dateColId)?.text?.trim() ?? null;
-    const subitemCreatedAt = dateColText ?? subitem.created_at ?? null;
+    const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
+    let subitemCreatedAt: string | null = null;
+    if (dateCol?.value) {
+      try {
+        const parsed = JSON.parse(dateCol.value) as { date?: string; time?: string };
+        if (parsed.date && parsed.time) {
+          subitemCreatedAt = `${parsed.date}T${parsed.time}Z`;
+        } else if (parsed.date) {
+          subitemCreatedAt = `${parsed.date}T00:00:00Z`;
+        }
+      } catch { /* fall through */ }
+    }
+    if (!subitemCreatedAt && dateCol?.text?.trim()) {
+      subitemCreatedAt = dateCol.text.trim();
+    }
+    if (!subitemCreatedAt) {
+      subitemCreatedAt = subitem.created_at ?? null;
+    }
     const updateType = deriveUpdateTypeFromColumnValue(typeColText)
       ?? deriveUpdateTypeFromColumnValue(methodText)
       ?? deriveUpdateTypeFromSubitemName(subitemName);
@@ -2795,6 +2811,86 @@ export const listMondayRecordUpdates = async (args: {
     itemName: item?.name ?? null,
     updates,
     subitems,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Fetch all column values for an item
+// ---------------------------------------------------------------------------
+
+export const fetchMondayItemColumns = async (args: { itemId: string }) => {
+  const itemId = args.itemId.trim();
+  if (!itemId) throw new Error("Missing item id");
+
+  interface ItemData {
+    items?: Array<{
+      id?: string | null;
+      name?: string | null;
+      board?: { id?: string | null } | null;
+      column_values?: Array<{
+        id?: string | null;
+        type?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<ItemData>(
+    `query GetItemColumns($itemIds: [ID!]) {
+      items(ids: $itemIds) {
+        id
+        name
+        board { id }
+        column_values {
+          id
+          type
+          text
+          value
+        }
+      }
+    }`,
+    { itemIds: [itemId] },
+  );
+
+  const item = data.items?.[0];
+  const boardId = item?.board?.id;
+
+  let columnTitles = new Map<string, string>();
+  if (boardId) {
+    interface BoardData {
+      boards?: Array<{
+        columns?: Array<{ id?: string | null; title?: string | null }>;
+      }>;
+    }
+    const boardData = await callMondayGraphQL<BoardData>(
+      `query GetBoardColumns($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id title }
+        }
+      }`,
+      { boardId },
+    );
+    columnTitles = new Map(
+      (boardData.boards?.[0]?.columns ?? [])
+        .filter((c) => c.id && c.title)
+        .map((c) => [c.id!, c.title!]),
+    );
+  }
+
+  const columns = (item?.column_values ?? [])
+    .filter((col) => col.id)
+    .map((col) => ({
+      id: col.id!,
+      title: columnTitles.get(col.id!) ?? col.id!,
+      type: col.type ?? "unknown",
+      text: col.text?.trim() || null,
+      value: col.value ?? null,
+    }));
+
+  return {
+    itemId: item?.id ?? itemId,
+    itemName: item?.name ?? null,
+    columns,
   };
 };
 
