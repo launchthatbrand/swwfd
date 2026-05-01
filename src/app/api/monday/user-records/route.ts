@@ -28,6 +28,13 @@ type MondayGraphQLResponse<TData> = {
   errors?: Array<{ message?: string }>;
 };
 
+type OwnerProfile = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  photoThumb: string | null;
+};
+
 type MergedRecord = {
   id: string;
   contactId?: string | null;
@@ -41,6 +48,7 @@ type MergedRecord = {
   statusText: string | null;
   peopleText: string | null;
   ownerIds: string[];
+  ownerProfiles: OwnerProfile[];
   email: string | null;
   phone: string | null;
   address: string | null;
@@ -49,6 +57,8 @@ type MergedRecord = {
   hireDate: string | null;
   retentionPeriod: string | null;
   tags: string | null;
+  batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
@@ -127,6 +137,41 @@ const callMondayGraphQL = async <TData>(
   return json.data;
 };
 
+const resolveOwnerProfiles = async (ownerIds: string[]): Promise<Map<string, OwnerProfile>> => {
+  const uniqueIds = Array.from(new Set(ownerIds.map((id) => id.trim()).filter((id) => id.length > 0)));
+  const result = new Map<string, OwnerProfile>();
+  if (uniqueIds.length === 0) return result;
+  interface UsersData {
+    users?: Array<{
+      id?: string | number | null;
+      name?: string | null;
+      email?: string | null;
+      photo_thumb?: string | null;
+    }>;
+  }
+  try {
+    const data = await callMondayGraphQL<UsersData>(
+      `query GetOwnerProfiles($ids: [ID!]) { users(ids: $ids) { id name email photo_thumb } }`,
+      { ids: uniqueIds },
+    );
+    for (const user of data.users ?? []) {
+      const id = user.id != null ? String(user.id).trim() : "";
+      if (!id) continue;
+      result.set(id, {
+        id,
+        name: user.name?.trim() || null,
+        email: user.email?.trim() || null,
+        photoThumb: user.photo_thumb?.trim() || null,
+      });
+    }
+  } catch (e) {
+    console.warn("[MondayUserRecordsRoute] resolveOwnerProfiles failed (non-fatal)", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+  return result;
+};
+
 const parsePeopleIds = (columnValue: string | null | undefined) => {
   if (!columnValue) return [] as string[];
   try {
@@ -158,6 +203,148 @@ const parseDateValue = (column: MondayColumnValue | undefined) => {
   const parsed = Date.parse(text.replace(" UTC", "Z"));
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed).toISOString();
+};
+
+const parseBatteryProgressValue = (
+  text: string | null | undefined,
+  rawValue: string | null | undefined,
+): number | null => {
+  const parseNumber = (value: string) => {
+    const match = value.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = Number(match[0]);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+  };
+
+  if (rawValue && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        battery_value?: number | string | null;
+        value?: number | string | null;
+        text?: string | null;
+      };
+      if (
+        typeof parsed.battery_value === "number" ||
+        typeof parsed.battery_value === "string"
+      ) {
+        return parseNumber(String(parsed.battery_value));
+      }
+      if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+        return parseNumber(String(parsed.value));
+      }
+      if (typeof parsed.text === "string") {
+        return parseNumber(parsed.text);
+      }
+    } catch {
+      // Fall back to text parsing below.
+    }
+  }
+
+  const fromText = text?.trim() ? parseNumber(text) : null;
+  if (fromText !== null) return fromText;
+  return null;
+};
+
+type ProgressColumnConfig = {
+  columnId: string;
+  selectedColumns: Array<{
+    columnId: string;
+    percentage: number;
+    doneColors: number[];
+  }>;
+};
+
+const computeProgressFromColumns = (
+  itemColumns: Array<{ id?: string | null; value?: string | null }>,
+  config: ProgressColumnConfig | null,
+): number | null => {
+  if (!config || config.selectedColumns.length === 0) return null;
+  let total = 0;
+  let anyColumnFound = false;
+  for (const { columnId, percentage, doneColors } of config.selectedColumns) {
+    const col = itemColumns.find((c) => c.id === columnId);
+    if (!col) continue;
+    anyColumnFound = true;
+    if (col.value) {
+      try {
+        const parsed = JSON.parse(col.value) as { index?: number | null };
+        if (typeof parsed.index === "number" && doneColors.includes(parsed.index)) {
+          total += percentage;
+        }
+      } catch {
+        // Column not done.
+      }
+    }
+  }
+  return anyColumnFound ? total : null;
+};
+
+const resolveContactBoardProgressConfig = async (
+  boardId: string,
+): Promise<ProgressColumnConfig | null> => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        type?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `
+      query ResolveBoardColumnsForProgress($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns {
+            id
+            type
+            settings_str
+          }
+        }
+      }
+    `,
+    { boardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const progressColumn = columns.find(
+    (c) => c?.id === "columns_battery_mm1dnmq3" || c?.type === "progress",
+  );
+  if (!progressColumn?.settings_str) return null;
+  try {
+    const settings = JSON.parse(progressColumn.settings_str) as {
+      related_columns?: {
+        columns?: Record<string, { isSelected?: boolean; percentage?: number }>;
+      };
+    };
+    const relatedCols = settings.related_columns?.columns ?? {};
+    const selectedColumns = Object.entries(relatedCols)
+      .filter(([, v]) => v.isSelected === true)
+      .map(([colId, v]) => {
+        const colMeta = columns.find((c) => c?.id === colId);
+        let doneColors: number[] = [1];
+        if (colMeta?.settings_str) {
+          try {
+            const colSettings = JSON.parse(colMeta.settings_str) as {
+              done_colors?: number[];
+            };
+            if (Array.isArray(colSettings.done_colors)) {
+              doneColors = colSettings.done_colors;
+            }
+          } catch {
+            // Use default doneColors.
+          }
+        }
+        return { columnId: colId, percentage: v.percentage ?? 0, doneColors };
+      });
+    if (selectedColumns.length === 0) return null;
+    return {
+      columnId: progressColumn.id ?? "columns_battery_mm1dnmq3",
+      selectedColumns,
+    };
+  } catch {
+    return null;
+  }
 };
 
 const extractPrimitiveStrings = (input: unknown): string[] => {
@@ -258,12 +445,12 @@ const fetchTouchPage = async (args: {
   cursor: string | null;
   limit: number;
   dateRule?:
-    | {
-        touchDateColumnId: string;
-        dateFrom: string;
-        dateTo: string;
-      }
-    | null;
+  | {
+    touchDateColumnId: string;
+    dateFrom: string;
+    dateTo: string;
+  }
+  | null;
 }) => {
   interface Data {
     boards?: Array<{
@@ -271,12 +458,22 @@ const fetchTouchPage = async (args: {
       items_page?: { cursor?: string | null; items?: MondayBoardItem[] };
     }>;
   }
+  const dateRule = args.dateRule ?? null;
   const canPushDateRule =
     !args.cursor &&
-    !!args.dateRule &&
-    /^[a-zA-Z0-9_]+$/.test(args.dateRule.touchDateColumnId) &&
-    isIsoDateOnly(args.dateRule.dateFrom) &&
-    isIsoDateOnly(args.dateRule.dateTo);
+    !!dateRule &&
+    /^[a-zA-Z0-9_]+$/.test(dateRule.touchDateColumnId) &&
+    isIsoDateOnly(dateRule.dateFrom) &&
+    isIsoDateOnly(dateRule.dateTo);
+  const queryParamsRule = canPushDateRule && dateRule
+    ? `query_params: {
+            rules: [{
+              column_id: "${dateRule.touchDateColumnId}"
+              compare_value: ["${dateRule.dateFrom}", "${dateRule.dateTo}"]
+              operator: between
+            }]
+          }`
+    : "";
   const query = `
     query ListTouchItems($boardId: ID!, $limit: Int!${args.cursor ? ", $cursor: String" : ""}) {
       boards(ids: [$boardId]) {
@@ -284,17 +481,7 @@ const fetchTouchPage = async (args: {
         items_page(
           limit: $limit
           ${args.cursor ? "cursor: $cursor" : ""}
-          ${
-            canPushDateRule
-              ? `query_params: {
-            rules: [{
-              column_id: "${args.dateRule.touchDateColumnId}"
-              compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
-              operator: between
-            }]
-          }`
-              : ""
-          }
+          ${queryParamsRule}
         ) {
           cursor
           items {
@@ -383,35 +570,47 @@ const fetchContactRecordsByIds = async (args: {
     chunks.push(ids.slice(index, index + MONDAY_ITEMS_BY_IDS_CHUNK_SIZE));
   }
 
-  const items: MondayBoardItem[] = [];
-  for (const chunk of chunks) {
-    interface Data {
-      items?: MondayBoardItem[];
-    }
-    const data = await callMondayGraphQL<Data>(
-      `
-        query ContactsByIds($itemIds: [ID!]) {
-          items(ids: $itemIds) {
-            id
-            name
-            url
-            updated_at
-            group {
-              title
-            }
-            column_values {
+  const [progressConfig, ...itemChunks] = await Promise.all([
+    resolveContactBoardProgressConfig(args.boardId),
+    ...chunks.map((chunk) => {
+      interface Data {
+        items?: MondayBoardItem[];
+      }
+      return callMondayGraphQL<Data>(
+        `
+          query ContactsByIds($itemIds: [ID!]) {
+            items(ids: $itemIds) {
               id
-              type
-              text
-              value
+              name
+              url
+              updated_at
+              group {
+                title
+              }
+              column_values {
+                id
+                type
+                text
+                value
+              }
             }
           }
-        }
-      `,
-      { itemIds: chunk },
-    );
-    items.push(...(data.items ?? []));
-  }
+        `,
+        { itemIds: chunk },
+      ).then((data) => data.items ?? []);
+    }),
+  ]);
+  const items: MondayBoardItem[] = (itemChunks as MondayBoardItem[][]).flat();
+
+  const batteryDebugEntries: {
+    contactItemId: string;
+    contactName: string;
+    batteryColumnId: string | null;
+    batteryColumnType: string | null;
+    batteryText: string | null;
+    batteryRawValue: string | null;
+    parsedBatteryProgress: number | null;
+  }[] = [];
 
   const toContactRecord = (item: MondayBoardItem): MergedRecord => {
     const columns = item.column_values ?? [];
@@ -428,6 +627,21 @@ const fetchContactRecordsByIds = async (args: {
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
     const tagsColumn = byId("dropdown_mkvw578t");
+    const batteryColumn =
+      byId("columns_battery_mm1dnmq3") ?? byType("progress") ?? byType("battery");
+    const computedProgress = computeProgressFromColumns(columns, progressConfig);
+    const parsedBatteryProgress =
+      computedProgress ??
+      parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
+    batteryDebugEntries.push({
+      contactItemId: item.id,
+      contactName: item.name ?? "",
+      batteryColumnId: batteryColumn?.id ?? null,
+      batteryColumnType: batteryColumn?.type ?? null,
+      batteryText: batteryColumn?.text ?? null,
+      batteryRawValue: batteryColumn?.value ?? null,
+      parsedBatteryProgress,
+    });
     const dateColumn = byId("date1__1");
     const creationLogColumn = byType("creation_log");
 
@@ -474,6 +688,7 @@ const fetchContactRecordsByIds = async (args: {
       statusText: statusColumn?.text ?? null,
       peopleText: peopleColumn?.text ?? null,
       ownerIds,
+      ownerProfiles: [],
       email: emailColumn?.text ?? null,
       phone: phoneColumn?.text ?? null,
       address,
@@ -482,6 +697,8 @@ const fetchContactRecordsByIds = async (args: {
       hireDate: hireDate,
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
+      batteryProgress: parsedBatteryProgress,
+      batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAt ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
       contactDetails: details,
@@ -492,6 +709,12 @@ const fetchContactRecordsByIds = async (args: {
   for (const item of items) {
     map.set(item.id, toContactRecord(item));
   }
+  console.info("[MondayUserRecordsRoute][BatteryDebug][ContactRecordsByIds]", {
+    boardId: args.boardId,
+    requestedContactIds: args.itemIds,
+    returnedContactCount: items.length,
+    entries: batteryDebugEntries,
+  });
   return map;
 };
 
@@ -553,10 +776,10 @@ export const GET = async (request: Request) => {
         dateRule:
           scanPages === 0 && canApplyDateRule && touchColumns.touchDateColumnId
             ? {
-                touchDateColumnId: touchColumns.touchDateColumnId,
-                dateFrom: dateFromText,
-                dateTo: dateToText,
-              }
+              touchDateColumnId: touchColumns.touchDateColumnId,
+              dateFrom: dateFromText,
+              dateTo: dateToText,
+            }
             : null,
       });
       boardName = boardName ?? page.boardName;
@@ -664,10 +887,20 @@ export const GET = async (request: Request) => {
       return b.id.localeCompare(a.id);
     });
 
+    // Resolve owner avatars in one batched query across all merged records.
+    const allOwnerIds = merged.flatMap((r) => r.ownerIds);
+    const ownerProfileMap = await resolveOwnerProfiles(allOwnerIds);
+    const mergedWithProfiles = merged.map((r) => ({
+      ...r,
+      ownerProfiles: r.ownerIds
+        .map((id) => ownerProfileMap.get(id))
+        .filter((p): p is OwnerProfile => p !== undefined),
+    }));
+
     console.info("[MondayUserRecordsRoute] GET completed", {
       durationMs: Date.now() - startedAt,
       requestedLimit: limit,
-      returnedRows: merged.length,
+      returnedRows: mergedWithProfiles.length,
       matchedTouches: matchedTouches.length,
       loadedContacts: contactMap.size,
       hasNextCursor: !!cursor,
@@ -681,7 +914,7 @@ export const GET = async (request: Request) => {
     return toJson({
       ok: true,
       boardName: boardName ?? "Monday Board",
-      records: merged,
+      records: mergedWithProfiles,
       nextCursor: cursor,
     });
   } catch (error) {

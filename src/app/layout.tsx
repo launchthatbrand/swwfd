@@ -12,9 +12,6 @@ import { Toaster } from "@launchthatapp/ui/toast";
 import { cn } from "@launchthatapp/ui";
 import { env } from "~/env";
 import { headers } from "next/headers";
-// import "@launchthatbrand/activepieces-ui/styles.css";
-
-
 
 export const metadata: Metadata = {
   metadataBase: new URL(env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
@@ -108,10 +105,6 @@ export default async function RootLayout(props: {
                     header={showHeader ? props.header : null}
                     footer={props.footer}
                     showSidebar={showSidebar}
-                    className={cn(
-                      "shadow-[-12px_0_10px_-3px_rgba(0,0,0,0.3)] max-h-screen dark:shadow-[0_4px_6px_-1px_rgba(255,255,255,0.15),0_2px_4px_-2px_rgba(255,255,255,0.1)] rounded-3xl!",
-                      showSidebar ? "ml-0!" : "m-2!",
-                    )}
                     sidebarOpenOnHover={true}
                     sidebarDefaultOpen={false}
                   >

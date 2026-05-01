@@ -43,6 +43,7 @@ export interface MondayRecord {
   retentionPeriod: string | null;
   tags: string | null;
   batteryProgress: number | null;
+  batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   contactDetails: Array<{
@@ -96,11 +97,54 @@ export interface MondayContactCandidate {
 export interface MondayRecordUpdate {
   id: string;
   body: string;
+  updateType: MondayUpdateType;
+  source: "item" | "subitem";
+  subitemId: string | null;
+  subitemName: string | null;
   createdAt: string | null;
   updatedAt: string | null;
   creatorId: string | null;
   creatorName: string | null;
 }
+
+export const MONDAY_UPDATE_TYPES = [
+  "general",
+  "welcome_email",
+  "followup",
+  "questionnaire",
+  "resume",
+  "resume_referral",
+] as const;
+
+export type MondayUpdateType = (typeof MONDAY_UPDATE_TYPES)[number];
+
+const MONDAY_UPDATE_TYPE_SET = new Set<string>(MONDAY_UPDATE_TYPES);
+
+const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
+  Exclude<MondayUpdateType, "general">,
+  string
+> = {
+  welcome_email: "Welcome Email Update",
+  followup: "Followup Update",
+  questionnaire: "Questionaire Update",
+  resume: "Resume Update",
+  resume_referral: "Resume Referral Update",
+};
+
+const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
+  Record<Exclude<MondayUpdateType, "general">, string>
+> = {
+  welcome_email: APPROVAL_STEP_COLUMN_IDS[0],
+  followup: APPROVAL_STEP_COLUMN_IDS[1],
+  questionnaire: APPROVAL_STEP_COLUMN_IDS[2],
+  resume: APPROVAL_STEP_COLUMN_IDS[3],
+  resume_referral: APPROVAL_STEP_COLUMN_IDS[4],
+};
+
+export const isMondayUpdateType = (value: string | null | undefined): value is MondayUpdateType => {
+  if (!value) return false;
+  return MONDAY_UPDATE_TYPE_SET.has(value.trim().toLowerCase());
+};
 
 interface MondayGraphQLResponse<TData> {
   data?: TData;
@@ -173,6 +217,15 @@ const callMondayGraphQL = async <TData>(
 
 const BOARD_COLUMN_CACHE_TTL_MS = 5 * 60 * 1000;
 const MONDAY_USER_CACHE_TTL_MS = 5 * 60 * 1000;
+type ProgressColumnConfig = {
+  columnId: string;
+  selectedColumns: Array<{
+    columnId: string;
+    percentage: number;
+    doneColors: number[];
+  }>;
+};
+
 const boardColumnCache = new Map<
   string,
   {
@@ -181,6 +234,7 @@ const boardColumnCache = new Map<
     peopleColumnId: string | null;
     dateColumnId: string | null;
     columnTitleById: Record<string, string>;
+    progressColumnConfig: ProgressColumnConfig | null;
   }
 >();
 const mondayUserCache = new Map<
@@ -292,6 +346,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
         id?: string | null;
         title?: string | null;
         type?: string | null;
+        settings_str?: string | null;
       }>;
     }>;
   }
@@ -303,6 +358,7 @@ const resolveBoardColumnIds = async (boardId: string) => {
           id
           title
           type
+          settings_str
         }
       }
     }
@@ -326,12 +382,57 @@ const resolveBoardColumnIds = async (boardId: string) => {
     columnTitleById[id] = title;
   }
 
+  // Parse the progress (battery) column config so we can compute it from
+  // constituent status columns, since the API always returns value: null.
+  let progressColumnConfig: ProgressColumnConfig | null = null;
+  const progressColumn = columns.find(
+    (c) => c?.id === "columns_battery_mm1dnmq3" || c?.type === "progress",
+  );
+  if (progressColumn?.settings_str) {
+    try {
+      const settings = JSON.parse(progressColumn.settings_str) as {
+        related_columns?: {
+          columns?: Record<string, { isSelected?: boolean; percentage?: number }>;
+        };
+      };
+      const relatedCols = settings.related_columns?.columns ?? {};
+      const selectedColumns = Object.entries(relatedCols)
+        .filter(([, v]) => v.isSelected === true)
+        .map(([colId, v]) => {
+          const colMeta = columns.find((c) => c?.id === colId);
+          let doneColors: number[] = [1];
+          if (colMeta?.settings_str) {
+            try {
+              const colSettings = JSON.parse(colMeta.settings_str) as {
+                done_colors?: number[];
+              };
+              if (Array.isArray(colSettings.done_colors)) {
+                doneColors = colSettings.done_colors;
+              }
+            } catch {
+              // Use default doneColors.
+            }
+          }
+          return { columnId: colId, percentage: v.percentage ?? 0, doneColors };
+        });
+      if (selectedColumns.length > 0) {
+        progressColumnConfig = {
+          columnId: progressColumn.id ?? "columns_battery_mm1dnmq3",
+          selectedColumns,
+        };
+      }
+    } catch {
+      // progressColumnConfig stays null; fall back to text/value parsing.
+    }
+  }
+
   const resolved = {
     expiresAt: now + BOARD_COLUMN_CACHE_TTL_MS,
     statusColumnId,
     peopleColumnId,
     dateColumnId,
     columnTitleById,
+    progressColumnConfig,
   };
   boardColumnCache.set(boardId, resolved);
   return resolved;
@@ -428,6 +529,31 @@ const parseFilesColumnValue = (
   }
 };
 
+const computeProgressFromColumns = (
+  itemColumns: Array<{ id?: string | null; value?: string | null }>,
+  config: ProgressColumnConfig | null,
+): number | null => {
+  if (!config || config.selectedColumns.length === 0) return null;
+  let total = 0;
+  let anyColumnFound = false;
+  for (const { columnId, percentage, doneColors } of config.selectedColumns) {
+    const col = itemColumns.find((c) => c.id === columnId);
+    if (!col) continue;
+    anyColumnFound = true;
+    if (col.value) {
+      try {
+        const parsed = JSON.parse(col.value) as { index?: number | null };
+        if (typeof parsed.index === "number" && doneColors.includes(parsed.index)) {
+          total += percentage;
+        }
+      } catch {
+        // Column not done.
+      }
+    }
+  }
+  return anyColumnFound ? total : null;
+};
+
 const parseBatteryProgressValue = (
   text: string | null | undefined,
   rawValue: string | null | undefined,
@@ -440,32 +566,33 @@ const parseBatteryProgressValue = (
     return Math.max(0, Math.min(100, Math.round(parsed)));
   };
 
+  if (rawValue && rawValue.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        battery_value?: number | string | null;
+        value?: number | string | null;
+        text?: string | null;
+      };
+      if (
+        typeof parsed.battery_value === "number" ||
+        typeof parsed.battery_value === "string"
+      ) {
+        return parseNumber(String(parsed.battery_value));
+      }
+      if (typeof parsed.value === "number" || typeof parsed.value === "string") {
+        return parseNumber(String(parsed.value));
+      }
+      if (typeof parsed.text === "string") {
+        return parseNumber(parsed.text);
+      }
+    } catch {
+      // Fall back to text parsing below.
+    }
+  }
+
   const fromText = text?.trim() ? parseNumber(text) : null;
   if (fromText !== null) return fromText;
-
-  if (!rawValue || rawValue.trim().length === 0) return null;
-  try {
-    const parsed = JSON.parse(rawValue) as {
-      battery_value?: number | string | null;
-      value?: number | string | null;
-      text?: string | null;
-    };
-    if (
-      typeof parsed.battery_value === "number" ||
-      typeof parsed.battery_value === "string"
-    ) {
-      return parseNumber(String(parsed.battery_value));
-    }
-    if (typeof parsed.value === "number" || typeof parsed.value === "string") {
-      return parseNumber(String(parsed.value));
-    }
-    if (typeof parsed.text === "string") {
-      return parseNumber(parsed.text);
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return null;
 };
 
 export const hasMondayConfig = () => {
@@ -605,6 +732,16 @@ export const listMondayBoardRecords = async (args?: {
     return null;
   };
 
+  const batteryDebugEntries: {
+    itemId: string;
+    itemName: string;
+    batteryColumnId: string | null;
+    batteryColumnType: string | null;
+    batteryText: string | null;
+    batteryRawValue: string | null;
+    parsedBatteryProgress: number | null;
+  }[] = [];
+
   const toRecord = (item: BoardItem): MondayRecord => {
     const columns = item.column_values ?? [];
     const statusColumn = columns.find((column) => column.type === "status");
@@ -627,8 +764,25 @@ export const listMondayBoardRecords = async (args?: {
     );
     const tagsColumn = columns.find((column) => column.id === "dropdown_mkvw578t");
     const batteryColumn = columns.find(
-      (column) => column.id === "columns_battery_mm1dnmq3",
+      (column) =>
+        column.id === "columns_battery_mm1dnmq3" || (column.type ?? "").toLowerCase() === "progress",
     );
+    const computedProgress = computeProgressFromColumns(
+      columns,
+      resolvedColumnIds?.progressColumnConfig ?? null,
+    );
+    const parsedBatteryProgress =
+      computedProgress ??
+      parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
+    batteryDebugEntries.push({
+      itemId: item.id,
+      itemName: item.name ?? "",
+      batteryColumnId: batteryColumn?.id ?? null,
+      batteryColumnType: batteryColumn?.type ?? null,
+      batteryText: batteryColumn?.text ?? null,
+      batteryRawValue: batteryColumn?.value ?? null,
+      parsedBatteryProgress,
+    });
     const resumeFilesColumn = columns.find(
       (column) => column.id === RESUME_FILES_COLUMN_ID,
     );
@@ -730,10 +884,14 @@ export const listMondayBoardRecords = async (args?: {
         const displayValue = toColumnDisplayValue(column.text, column.value);
         return displayValue.trim().length > 0;
       })
-      .map((column) => ({
-        label: column.id ?? "field",
-        value: toColumnDisplayValue(column.text, column.value),
-      }));
+      .map((column) => {
+        const columnId = column.id ?? "";
+        const columnTitle = resolvedColumnIds?.columnTitleById[columnId]?.trim() ?? "";
+        return {
+          label: columnTitle.length > 0 ? columnTitle : columnId || "field",
+          value: toColumnDisplayValue(column.text, column.value),
+        };
+      });
 
     const detailsByLabel = new Map<string, string>();
     for (const detail of [...primaryDetails, ...allColumnDetails]) {
@@ -778,10 +936,8 @@ export const listMondayBoardRecords = async (args?: {
           retentionPeriodColumn?.value,
         ) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
-      batteryProgress: parseBatteryProgressValue(
-        batteryColumn?.text,
-        batteryColumn?.value,
-      ),
+      batteryProgress: parsedBatteryProgress,
+      batteryRawValue: batteryColumn?.value ?? null,
       createdAt:
         createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? null,
@@ -861,6 +1017,11 @@ export const listMondayBoardRecords = async (args?: {
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
   const firstItems = data.boards?.[0]?.items_page?.items ?? [];
   const records = firstItems.map(toRecord);
+  console.info("[MondayClient][BatteryDebug][ContactBoardRecords]", {
+    boardId: mondayBoard.boardId,
+    fetchedItemCount: firstItems.length,
+    entries: batteryDebugEntries,
+  });
   const ownerIdList = records.flatMap((record) => record.ownerIds);
   const ownerById = await resolveMondayUsersByIds(ownerIdList);
   const recordsWithOwners = records.map((record) => ({
@@ -1204,6 +1365,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       retentionPeriod: null,
       tags: null,
       batteryProgress: null,
+      batteryRawValue: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
       contactDetails: detailEntries,
@@ -2299,6 +2461,20 @@ export const listMondayRecordUpdates = async (args: {
             name
           }
         }
+        subitems {
+          id
+          name
+          updates(limit: $limit) {
+            id
+            body
+            created_at
+            updated_at
+            creator {
+              id
+              name
+            }
+          }
+        }
       }
     }
   `;
@@ -2317,8 +2493,51 @@ export const listMondayRecordUpdates = async (args: {
           name?: string | null;
         } | null;
       }>;
+      subitems?: Array<{
+        id?: string | null;
+        name?: string | null;
+        updates?: Array<{
+          id?: string | null;
+          body?: string | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+          creator?: {
+            id?: string | null;
+            name?: string | null;
+          } | null;
+        }>;
+      }>;
     }>;
   }
+
+  const normalizeForSubitemTypeMatch = (value: string) => {
+    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
+  };
+
+  const deriveUpdateTypeFromSubitemName = (
+    subitemName: string | null | undefined,
+  ): MondayUpdateType => {
+    const normalized = normalizeForSubitemTypeMatch(subitemName ?? "");
+    if (normalized.includes("resume referral")) return "resume_referral";
+    if (normalized.includes("question")) return "questionnaire";
+    if (normalized.includes("welcome")) return "welcome_email";
+    if (
+      normalized.includes("follow-up") ||
+      normalized.includes("follow up") ||
+      normalized.includes("followup")
+    ) {
+      return "followup";
+    }
+    if (normalized.includes("resume")) return "resume";
+    return "general";
+  };
+
+  const toSortableTime = (value: string | null | undefined) => {
+    if (!value) return 0;
+    const parsed = Date.parse(value);
+    if (Number.isNaN(parsed)) return 0;
+    return parsed;
+  };
 
   const data = await callMondayGraphQL<MondayItemUpdatesData>(query, {
     itemIds: [itemId],
@@ -2326,19 +2545,484 @@ export const listMondayRecordUpdates = async (args: {
   });
 
   const item = data.items?.[0];
-  const updates: MondayRecordUpdate[] = (item?.updates ?? []).map((update) => ({
-    id: update.id ?? "",
-    body: update.body ?? "",
-    createdAt: update.created_at ?? null,
-    updatedAt: update.updated_at ?? null,
-    creatorId: update.creator?.id ?? null,
-    creatorName: update.creator?.name ?? null,
-  }));
+  const parentUpdates: MondayRecordUpdate[] = [];
+  for (const update of item?.updates ?? []) {
+    const updateId = update.id?.trim() ?? "";
+    if (!updateId) continue;
+    parentUpdates.push({
+      id: updateId,
+      body: update.body ?? "",
+      updateType: "general",
+      source: "item",
+      subitemId: null,
+      subitemName: null,
+      createdAt: update.created_at ?? null,
+      updatedAt: update.updated_at ?? null,
+      creatorId: update.creator?.id ?? null,
+      creatorName: update.creator?.name ?? null,
+    });
+  }
+
+  const subitemUpdates: MondayRecordUpdate[] = [];
+  for (const subitem of item?.subitems ?? []) {
+    const subitemId = subitem.id?.trim() ?? "";
+    const subitemName = subitem.name?.trim() ?? null;
+    for (const update of subitem.updates ?? []) {
+      const updateId = update.id?.trim() ?? "";
+      if (!updateId) continue;
+      subitemUpdates.push({
+        id: updateId,
+        body: update.body ?? "",
+        updateType: deriveUpdateTypeFromSubitemName(subitemName),
+        source: "subitem",
+        subitemId: subitemId.length > 0 ? subitemId : null,
+        subitemName,
+        createdAt: update.created_at ?? null,
+        updatedAt: update.updated_at ?? null,
+        creatorId: update.creator?.id ?? null,
+        creatorName: update.creator?.name ?? null,
+      });
+    }
+  }
+
+  const updates = [...parentUpdates, ...subitemUpdates]
+    .sort((a, b) => {
+      const aTime = Math.max(toSortableTime(a.createdAt), toSortableTime(a.updatedAt));
+      const bTime = Math.max(toSortableTime(b.createdAt), toSortableTime(b.updatedAt));
+      return bTime - aTime;
+    })
+    .slice(0, limit);
 
   return {
     itemId: item?.id ?? itemId,
     itemName: item?.name ?? null,
     updates,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Touch board column cache & helper
+// ---------------------------------------------------------------------------
+
+const touchBoardColumnCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    touchDateColumnId: string | null;
+    ownerIdColumnId: string;
+    ownerPeopleColumnId: string | null;
+    sourceColumnId: string | null;
+    relationColumnId: string;
+  }
+>();
+
+const TOUCH_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
+
+const resolveTouchBoardColumns = async (boardId: string) => {
+  const cached = touchBoardColumnCache.get(boardId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+
+  interface ColumnMeta {
+    id?: string | null;
+    title?: string | null;
+    type?: string | null;
+  }
+  interface ColumnsData {
+    boards?: Array<{ columns?: ColumnMeta[] }>;
+  }
+  const data = await callMondayGraphQL<ColumnsData>(
+    `
+      query ResolveTouchBoardColumns($boardId: ID!) {
+        boards(ids: [$boardId]) { columns { id title type } }
+      }
+    `,
+    { boardId },
+  );
+  const cols = data.boards?.[0]?.columns ?? [];
+  const byTitle = (needle: string) =>
+    cols.find((c) => (c.title ?? "").toLowerCase().includes(needle.toLowerCase()));
+  const byType = (type: string) =>
+    cols.find((c) => (c.type ?? "").toLowerCase() === type);
+
+  const resolved = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    touchDateColumnId:
+      byTitle("touch date")?.id ?? byTitle("touch_date")?.id ?? byType("date")?.id ?? null,
+    ownerIdColumnId: byTitle("owner_id")?.id ?? byTitle("owner id")?.id ?? "text_mm0wb7qt",
+    ownerPeopleColumnId:
+      byTitle("touched by")?.id ?? byTitle("owner")?.id ?? byType("people")?.id ?? null,
+    sourceColumnId: byTitle("source")?.id ?? null,
+    relationColumnId: TOUCH_RELATION_COLUMN_ID,
+  };
+  touchBoardColumnCache.set(boardId, resolved);
+  return resolved;
+};
+
+// ---------------------------------------------------------------------------
+// upsertMondayTouchRecord — one row per (contact, employee, month)
+// ---------------------------------------------------------------------------
+
+export const upsertMondayTouchRecord = async (args: {
+  contactItemId: string;
+  contactName: string;
+  ownerId: string;
+  /** "YYYY-MM" — defaults to current calendar month */
+  monthKey?: string;
+  source?: string;
+}): Promise<{ id: string | null; upserted: "created" | "updated" | "skipped" }> => {
+  const touchBoard = getMondayTouchBoardEnv();
+  if (!touchBoard.ok) {
+    throw new Error("Missing Monday touch board configuration (MONDAY_CONTACT_TOUCHED_BOARD_ID)");
+  }
+
+  const monthKey = args.monthKey ?? new Date().toISOString().slice(0, 7);
+  const touchKey = `tk:${args.contactItemId}:${args.ownerId}:${monthKey}`;
+  const touchKeySuffix = ` [${touchKey}]`;
+
+  const cols = await resolveTouchBoardColumns(touchBoard.boardId);
+
+  // Query touch board — filter server-side by the board_relation column so we
+  // only scan rows linked to this specific contact (typically 0-10 rows).
+  interface TouchItem {
+    id: string;
+    name?: string | null;
+  }
+  interface TouchQueryData {
+    boards?: Array<{
+      items_page?: { items?: TouchItem[] };
+    }>;
+  }
+
+  // compare_value must be inlined — Monday's GraphQL schema types it as
+  // `CompareValue` (not String), so passing it as a variable causes a type error.
+  const safeRelationId = cols.relationColumnId.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeContactId = contactItemId.replace(/[^0-9]/g, "");
+  const queryData = await callMondayGraphQL<TouchQueryData>(
+    `
+      query FindTouchRowsByContact($boardId: ID!, $limit: Int!) {
+        boards(ids: [$boardId]) {
+          items_page(
+            limit: $limit
+            query_params: {
+              rules: [{
+                column_id: "${safeRelationId}"
+                compare_value: ["${safeContactId}"]
+                operator: any_of
+              }]
+            }
+          ) {
+            items { id name }
+          }
+        }
+      }
+    `,
+    { boardId: touchBoard.boardId, limit: 50 },
+  );
+
+  const existingItems = queryData.boards?.[0]?.items_page?.items ?? [];
+  const existingRow = existingItems.find((item) =>
+    (item.name ?? "").includes(`[${touchKey}]`),
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (existingRow) {
+    // Row already exists — just bump the touch date.
+    if (cols.touchDateColumnId) {
+      interface UpdateDateData {
+        change_simple_column_value?: { id?: string | null } | null;
+      }
+      await callMondayGraphQL<UpdateDateData>(
+        `
+          mutation UpdateTouchDate($boardId: ID!, $itemId: ID!, $columnId: String!, $value: String!) {
+            change_simple_column_value(
+              board_id: $boardId
+              item_id: $itemId
+              column_id: $columnId
+              value: $value
+            ) { id }
+          }
+        `,
+        {
+          boardId: touchBoard.boardId,
+          itemId: existingRow.id,
+          columnId: cols.touchDateColumnId,
+          value: JSON.stringify({ date: today }),
+        },
+      );
+    }
+    return { id: existingRow.id, upserted: "updated" };
+  }
+
+  // No existing row — create a new one.
+  const itemName = `${args.contactName}${touchKeySuffix}`;
+  const columnValues: Record<string, unknown> = {};
+
+  if (cols.touchDateColumnId) {
+    columnValues[cols.touchDateColumnId] = { date: today };
+  }
+  if (cols.ownerPeopleColumnId && /^\d+$/.test(args.ownerId)) {
+    columnValues[cols.ownerPeopleColumnId] = {
+      personsAndTeams: [{ id: Number(args.ownerId), kind: "person" }],
+    };
+  }
+  columnValues[cols.ownerIdColumnId] = args.ownerId;
+  columnValues[cols.relationColumnId] = { item_ids: [Number(args.contactItemId)] };
+  if (cols.sourceColumnId && args.source) {
+    columnValues[cols.sourceColumnId] = args.source;
+  }
+
+  interface CreateData {
+    create_item?: { id?: string | null } | null;
+  }
+  const result = await callMondayGraphQL<CreateData>(
+    `
+      mutation CreateTouchRecord($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_item(
+          board_id: $boardId
+          item_name: $itemName
+          column_values: $columnValues
+          create_labels_if_missing: true
+        ) { id }
+      }
+    `,
+    {
+      boardId: touchBoard.boardId,
+      itemName,
+      columnValues: JSON.stringify(columnValues),
+    },
+  );
+
+  return { id: result.create_item?.id?.trim() ?? null, upserted: "created" };
+};
+
+export const createMondayRecordUpdate = async (args: {
+  itemId: string;
+  body: string;
+  updateType?: MondayUpdateType;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  if (!itemId) {
+    throw new Error("Missing monday item id");
+  }
+  const body = args.body.trim();
+  if (!body) {
+    throw new Error("Update body cannot be empty");
+  }
+  const requestedUpdateType = args.updateType ?? "general";
+  const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
+    ? requestedUpdateType
+    : "general";
+  const markApprovalStepCompleteForUpdateType = async () => {
+    if (updateType === "general") {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
+    const stepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
+    if (!stepColumnId) {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
+    try {
+      interface MarkStepData {
+        change_multiple_column_values?: { id?: string } | null;
+      }
+      await callMondayGraphQL<MarkStepData>(
+        `
+          mutation MarkApprovalStepDone(
+            $boardId: ID!
+            $itemId: ID!
+            $columnValues: JSON!
+          ) {
+            change_multiple_column_values(
+              board_id: $boardId
+              item_id: $itemId
+              column_values: $columnValues
+              create_labels_if_missing: true
+            ) {
+              id
+            }
+          }
+        `,
+        {
+          boardId: mondayBoard.boardId,
+          itemId,
+          columnValues: JSON.stringify({
+            [stepColumnId]: { label: "Done" },
+          }),
+        },
+      );
+      return {
+        stepColumnId,
+        stepMarked: true,
+        warning: null as string | null,
+      };
+    } catch (error) {
+      const warning =
+        error instanceof Error ? error.message : "Failed to mark onboarding step done";
+      return {
+        stepColumnId,
+        stepMarked: false,
+        warning,
+      };
+    }
+  };
+
+  const normalizeForSubitemTypeMatch = (value: string) => {
+    return value.trim().toLowerCase().replaceAll(/\s+/g, " ");
+  };
+
+  const doesSubitemMatchType = (subitemName: string, type: Exclude<MondayUpdateType, "general">) => {
+    const normalized = normalizeForSubitemTypeMatch(subitemName);
+    switch (type) {
+      case "welcome_email":
+        return normalized.includes("welcome");
+      case "followup":
+        return (
+          normalized.includes("follow-up") ||
+          normalized.includes("follow up") ||
+          normalized.includes("followup")
+        );
+      case "questionnaire":
+        return normalized.includes("question");
+      case "resume":
+        return normalized.includes("resume") && !normalized.includes("referral");
+      case "resume_referral":
+        return normalized.includes("resume referral");
+      default:
+        return false;
+    }
+  };
+
+  const resolveSubitemForUpdateType = async (
+    parentItemId: string,
+    type: Exclude<MondayUpdateType, "general">,
+  ) => {
+    interface ExistingSubitemsData {
+      items?: Array<{
+        subitems?: Array<{
+          id?: string | null;
+          name?: string | null;
+        }>;
+      }>;
+    }
+
+    const existingSubitemsData = await callMondayGraphQL<ExistingSubitemsData>(
+      `
+        query GetItemSubitems($itemIds: [ID!]) {
+          items(ids: $itemIds) {
+            subitems {
+              id
+              name
+            }
+          }
+        }
+      `,
+      {
+        itemIds: [parentItemId],
+      },
+    );
+
+    const matchedSubitem = (existingSubitemsData.items?.[0]?.subitems ?? []).find((subitem) => {
+      const subitemId = subitem.id?.trim() ?? "";
+      const subitemName = subitem.name?.trim() ?? "";
+      if (!subitemId || !subitemName) return false;
+      return doesSubitemMatchType(subitemName, type);
+    });
+
+    if (matchedSubitem?.id?.trim()) {
+      return {
+        id: matchedSubitem.id.trim(),
+        name: matchedSubitem.name?.trim() ?? SUBITEM_NAME_BY_UPDATE_TYPE[type],
+      };
+    }
+
+    interface CreateSubitemData {
+      create_subitem?: {
+        id?: string | null;
+      } | null;
+    }
+
+    const subitemName = SUBITEM_NAME_BY_UPDATE_TYPE[type];
+    const createdSubitemData = await callMondayGraphQL<CreateSubitemData>(
+      `
+        mutation CreateSubitem($parentItemId: ID!, $itemName: String!) {
+          create_subitem(parent_item_id: $parentItemId, item_name: $itemName) {
+            id
+          }
+        }
+      `,
+      {
+        parentItemId,
+        itemName: subitemName,
+      },
+    );
+
+    const createdSubitemId = createdSubitemData.create_subitem?.id?.trim() ?? "";
+    if (!createdSubitemId) {
+      throw new Error("Failed to create subitem for typed update");
+    }
+    return { id: createdSubitemId, name: subitemName };
+  };
+
+  let targetItemId = itemId;
+  let targetSource: "item" | "subitem" = "item";
+  let targetSubitemName: string | null = null;
+  if (updateType !== "general") {
+    const resolvedSubitem = await resolveSubitemForUpdateType(itemId, updateType);
+    targetItemId = resolvedSubitem.id;
+    targetSource = "subitem";
+    targetSubitemName = resolvedSubitem.name;
+  }
+
+  const mutation = `
+    mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
+      create_update(item_id: $itemId, body: $body) {
+        id
+        body
+      }
+    }
+  `;
+
+  interface CreateMondayItemUpdateData {
+    create_update?: {
+      id?: string | null;
+      body?: string | null;
+    } | null;
+  }
+
+  const data = await callMondayGraphQL<CreateMondayItemUpdateData>(mutation, {
+    itemId: targetItemId,
+    body,
+  });
+
+  const updateId = data.create_update?.id?.trim() ?? "";
+  if (!updateId) {
+    throw new Error("Monday did not return a new update id");
+  }
+  const approvalStepResult = await markApprovalStepCompleteForUpdateType();
+
+  return {
+    id: updateId,
+    body: data.create_update?.body ?? body,
+    updateType,
+    source: targetSource,
+    targetItemId,
+    subitemName: targetSubitemName,
+    approvalStepColumnId: approvalStepResult.stepColumnId,
+    approvalStepMarked: approvalStepResult.stepMarked,
+    warning: approvalStepResult.warning,
   };
 };
 

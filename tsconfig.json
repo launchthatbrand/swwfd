@@ -11,6 +11,15 @@
       ],
       "@launchthatapp/plugin-core-tenant/*": [
         "../../packages/plugins/core-tenant/src/*"
+      ],
+      "launchthat-plugin-support": [
+        "../../packages/plugins/support/src/index"
+      ],
+      "launchthat-plugin-support/*": [
+        "../../packages/plugins/support/src/*"
+      ],
+      "@acme/ui/*": [
+        "../../packages/core/ui/src/*"
       ]
     },
     "plugins": [{ "name": "next" }]

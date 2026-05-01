@@ -59,13 +59,13 @@ export const GET = async (request: Request) => {
   try {
     const { records, nextCursor, boardName, appliedFilters, approvalSteps } =
       await listMondayBoardRecords({
-      cursor,
-      limit,
-      dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
-      dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
-      owner: owner || undefined,
-      status: status || undefined,
-    });
+        cursor,
+        limit,
+        dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
+        dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
+        owner: owner || undefined,
+        status: status || undefined,
+      });
 
     const filtered = records.filter((record) => {
       if (search.length > 0) {
@@ -98,11 +98,11 @@ export const GET = async (request: Request) => {
         const ownerIdValues = (record as { ownerIds?: unknown }).ownerIds;
         const ownerIds = Array.isArray(ownerIdValues)
           ? ownerIdValues
-              .filter(
-                (entry): entry is string | number =>
-                  typeof entry === "string" || typeof entry === "number",
-              )
-              .map((entry) => String(entry).toLowerCase())
+            .filter(
+              (entry): entry is string | number =>
+                typeof entry === "string" || typeof entry === "number",
+            )
+            .map((entry) => String(entry).toLowerCase())
           : [];
         let hasOwnerMatch = false;
         if (ownerIds.includes(owner)) {

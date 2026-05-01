@@ -39,77 +39,8 @@ export declare const api: {
       }>
     >;
   };
-  appConnections: {
-    mutations: {
-      deleteConnection: FunctionReference<
-        "mutation",
-        "public",
-        { id: string },
-        any
-      >;
-      upsertConnection: FunctionReference<
-        "mutation",
-        "public",
-        {
-          displayName: string;
-          externalId: string;
-          pieceName: string;
-          projectId: string;
-          projectIds?: Array<string>;
-          secret_text?: string;
-          type: string;
-          value?: any;
-        },
-        any
-      >;
-    };
-    queries: {
-      getConnectionToken: FunctionReference<
-        "query",
-        "public",
-        { externalId: string; projectId: string },
-        any
-      >;
-      listConnections: FunctionReference<
-        "query",
-        "public",
-        {
-          cursor?: string;
-          limit?: number;
-          pieceName?: string;
-          projectId: string;
-        },
-        any
-      >;
-    };
-  };
   auth: {
     isAuthenticated: FunctionReference<"query", "public", {}, any>;
-    mutations: {
-      provisionCurrentUser: FunctionReference<"mutation", "public", {}, any>;
-      switchPlatform: FunctionReference<
-        "mutation",
-        "public",
-        { platformId: string },
-        any
-      >;
-      switchProject: FunctionReference<
-        "mutation",
-        "public",
-        { projectId: string },
-        any
-      >;
-    };
-    queries: {
-      getSessionContext: FunctionReference<"query", "public", {}, any>;
-      listProjectsForCurrentPlatform: FunctionReference<
-        "query",
-        "public",
-        {},
-        any
-      >;
-      listUserPlatforms: FunctionReference<"query", "public", {}, any>;
-    };
     signIn: FunctionReference<
       "action",
       "public",
@@ -130,128 +61,6 @@ export declare const api: {
       "public",
       { expectedEmail?: string },
       boolean
-    >;
-  };
-  flags: {
-    mutations: {
-      updateFlags: FunctionReference<
-        "mutation",
-        "public",
-        { patch: any; platformId: string },
-        any
-      >;
-    };
-    queries: {
-      getFlags: FunctionReference<
-        "query",
-        "public",
-        { platformId?: string },
-        any
-      >;
-    };
-  };
-  flowRuns: {
-    mutations: {
-      cancelRun: FunctionReference<
-        "mutation",
-        "public",
-        { runId: string },
-        any
-      >;
-      createRun: FunctionReference<
-        "mutation",
-        "public",
-        {
-          flowId: string;
-          flowVersionId: string;
-          projectId: string;
-          triggerOutput?: any;
-        },
-        any
-      >;
-      testFlow: FunctionReference<
-        "mutation",
-        "public",
-        { flowId?: string; flowVersionId: string; projectId?: string },
-        any
-      >;
-    };
-    queries: {
-      deriveOrderedSteps: FunctionReference<
-        "query",
-        "public",
-        { flowVersion: any },
-        any
-      >;
-      getOutput: FunctionReference<"query", "public", { id: string }, any>;
-      getRun: FunctionReference<"query", "public", { runId?: string }, any>;
-      getStepRuns: FunctionReference<"query", "public", { runId: string }, any>;
-      listRuns: FunctionReference<
-        "query",
-        "public",
-        { flowId?: any; limit?: number; projectId: string; status?: string },
-        any
-      >;
-    };
-  };
-  flows: {
-    mutations: {
-      changeFlowStatus: FunctionReference<
-        "mutation",
-        "public",
-        { flowId: string; status: string },
-        any
-      >;
-      createFlow: FunctionReference<
-        "mutation",
-        "public",
-        { displayName: string; folderId?: string; projectId: string },
-        any
-      >;
-      deleteFlow: FunctionReference<"mutation", "public", { id: string }, any>;
-      publishFlow: FunctionReference<
-        "mutation",
-        "public",
-        { flowId: string },
-        any
-      >;
-      updateFlow: FunctionReference<
-        "mutation",
-        "public",
-        { flowId: string; operation: string; request: any },
-        any
-      >;
-    };
-    queries: {
-      getFlow: FunctionReference<"query", "public", { id: string }, any>;
-      getFlowVersion: FunctionReference<"query", "public", { id: string }, any>;
-      listFlows: FunctionReference<
-        "query",
-        "public",
-        {
-          connectionExternalIds?: Array<string>;
-          cursor?: string;
-          folderId?: string;
-          limit?: number;
-          projectId?: string;
-          status?: Array<string>;
-        },
-        any
-      >;
-      listVersions: FunctionReference<
-        "query",
-        "public",
-        { flowId: string; limit?: number },
-        any
-      >;
-    };
-  };
-  init: {
-    default: FunctionReference<
-      "action",
-      "public",
-      { piecesConfig?: any },
-      null
     >;
   };
   jobApplications: {
@@ -317,6 +126,81 @@ export declare const api: {
         tags: Array<string>;
         title: string;
       }>
+    >;
+  };
+  mondayMonthlyMigration: {
+    cancelMigration: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayMonthlyMigrationJobs"> },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        createdTouchRecords?: number;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        mappedContacts: number;
+        monthKey?: string;
+        monthTag: string;
+        pageSize: number;
+        processedContacts: number;
+        skippedContacts: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+        updateProgressColumns?: boolean;
+        updatedAt: number;
+        updatedProgressColumns?: number;
+        warningsCount: number;
+        workflowId?: string;
+      }
+    >;
+    startMigration: FunctionReference<
+      "mutation",
+      "public",
+      {
+        dryRun?: boolean;
+        includeParentUpdates?: boolean;
+        includeSubitemUpdates?: boolean;
+        includeSubitems?: boolean;
+        monthKey?: string;
+        monthTag?: string;
+        pageSize?: number;
+        sourceBoardId: string;
+        targetBoardId?: string;
+        updateProgressColumns?: boolean;
+      },
+      { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
+    >;
+  };
+  mondaySettings: {
+    getFeatureFlags: FunctionReference<
+      "query",
+      "public",
+      {},
+      { emailMarketingEnabled: boolean }
+    >;
+    setFeatureFlags: FunctionReference<
+      "mutation",
+      "public",
+      { emailMarketingEnabled: boolean; updatedByMondayUserId: string },
+      { emailMarketingEnabled: boolean }
     >;
   };
   mondayTouchBackfill: {
@@ -402,256 +286,212 @@ export declare const api: {
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
     >;
   };
-  pieces: {
-    actions: {
-      executeActionRecipe: FunctionReference<
-        "action",
-        "public",
-        {
-          actionName: string;
-          pieceName: string;
-          projectId: string;
-          settings: { auth?: string; input: any };
-        },
-        any
-      >;
-      pieceOptions: FunctionReference<
-        "action",
-        "public",
-        {
-          actionOrTriggerName?: string;
-          flowId?: string;
-          flowVersionId?: string;
-          input?: any;
-          pieceName: string;
-          pieceVersion: string;
-          propertyName: string;
-          searchValue?: string;
-        },
-        any
-      >;
-      testTriggerRecipe: FunctionReference<
-        "action",
-        "public",
-        {
-          flowId: string;
-          flowVersionId: string;
-          pieceName: string;
-          saveSampleData?: boolean;
-          settings: { auth?: string; input: any };
-          triggerName: string;
-        },
-        any
-      >;
-    };
-    mutations: {
-      importPieces: FunctionReference<
-        "mutation",
-        "public",
-        {
-          pieces: Array<{
-            actions?: number;
-            categories?: Array<string>;
-            description?: string;
-            detail?: any;
-            displayName?: string;
-            logoUrl?: string;
-            name: string;
-            packageType?: string;
-            pieceType?: string;
-            suggestedActions?: Array<{ displayName?: string; name: string }>;
-            suggestedTriggers?: Array<{ displayName?: string; name: string }>;
-            triggers?: number;
-            version: string;
-          }>;
-        },
-        any
-      >;
-    };
-    queries: {
-      count: FunctionReference<"query", "public", {}, any>;
-      get: FunctionReference<
-        "query",
-        "public",
-        { locale?: string; name: string; version: string },
-        any
-      >;
-      getById: FunctionReference<"query", "public", { id: string }, any>;
-      getPiece: FunctionReference<
-        "query",
-        "public",
-        { locale?: string; name: string; version: string },
-        any
-      >;
-      list: FunctionReference<
-        "query",
-        "public",
-        { cursor?: string; limit?: number; search?: string },
-        any
-      >;
-      listByCategory: FunctionReference<
-        "query",
-        "public",
-        { category: string; limit?: number },
-        any
-      >;
-      listPieces: FunctionReference<
-        "query",
-        "public",
-        { cursor?: string; limit?: number; search?: string },
-        any
-      >;
-    };
+  mondayTouchRangeBackfill: {
+    cancelRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayTouchRangeBackfillJobs"> },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        contactBoardId: string;
+        createdTouches: number;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        inRangeContacts: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        pageSize: number;
+        processedContacts: number;
+        skippedTouches: number;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+        updatedAt: number;
+        updatedTouches: number;
+        workflowId?: string;
+      }
+    >;
+    startRangeBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { dateFrom: string; dateTo: string; dryRun?: boolean; pageSize?: number },
+      { jobId: Id<"mondayTouchRangeBackfillJobs">; workflowId: string }
+    >;
   };
-  platform: {
-    mutations: {
-      addUserToPlatform: FunctionReference<
-        "mutation",
-        "public",
-        { platformId: string; role: string; userId: string },
-        any
-      >;
-      backfillProjectMembers: FunctionReference<"mutation", "public", {}, any>;
-      createPlatform: FunctionReference<
-        "mutation",
-        "public",
-        { displayName?: string; id: string },
-        any
-      >;
-      createProject: FunctionReference<
-        "mutation",
-        "public",
-        { displayName: string; id: string; platformId: string },
-        any
-      >;
-      deletePlatform: FunctionReference<
-        "mutation",
-        "public",
-        { id: string },
-        any
-      >;
-      deleteProject: FunctionReference<
-        "mutation",
-        "public",
-        { id: string; platformId: string },
-        any
-      >;
-      removeUserFromPlatform: FunctionReference<
-        "mutation",
-        "public",
-        { platformId: string; userId: string },
-        any
-      >;
-      updatePlatform: FunctionReference<
-        "mutation",
-        "public",
-        {
-          id: string;
-          patch: {
-            displayName?: string;
-            filteredPieceNames?: Array<string>;
-            flags?: {
-              SHOW_BILLING?: boolean;
-              SHOW_COMMUNITY?: boolean;
-              apiKeysEnabled?: boolean;
-              customAppearanceEnabled?: boolean;
-              embeddingEnabled?: boolean;
-              environmentsEnabled?: boolean;
-              managePiecesEnabled?: boolean;
-              projectRolesEnabled?: boolean;
-            };
-            pinnedPieces?: Array<string>;
-          };
-        },
-        any
-      >;
-      updateProject: FunctionReference<
-        "mutation",
-        "public",
-        {
-          id: string;
-          patch: { displayName?: string; limits?: any };
-          platformId: string;
-        },
-        any
-      >;
-      updateUserRole: FunctionReference<
-        "mutation",
-        "public",
-        { platformId: string; role: string; userId: string },
-        any
-      >;
-    };
-    queries: {
-      getPlatform: FunctionReference<"query", "public", { id: string }, any>;
-      getProject: FunctionReference<"query", "public", { id: string }, any>;
-      listPlatforms: FunctionReference<"query", "public", any, any>;
-      listPlatformUsers: FunctionReference<
-        "query",
-        "public",
-        { platformId: string },
-        any
-      >;
-      listProjects: FunctionReference<
-        "query",
-        "public",
-        { platformId: string },
-        any
-      >;
-    };
+  mondayUserBoardSettings: {
+    getForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        updatedAt: number;
+      }
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        viewerMondayUserId: string;
+      },
+      {
+        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        createdAt: number;
+        displayMode?: "table" | "grid";
+        fontSize: "default" | "medium" | "large";
+        ownerMondayUserId: string;
+        pageSize?: number;
+        tableDensity?: "expanded" | "compact";
+        updatedAt: number;
+      }
+    >;
   };
-  sampleData: {
-    mutations: {
-      deleteSampleDataForFlowVersion: FunctionReference<
-        "mutation",
-        "public",
-        { flowVersionId: string },
-        any
-      >;
-      deleteSampleDataForStep: FunctionReference<
-        "mutation",
-        "public",
-        { flowVersionId: string; stepName: string },
-        any
-      >;
-      getSampleDataMutation: FunctionReference<
-        "mutation",
-        "public",
-        { flowVersionId: string; stepName: string; type: string },
-        any
-      >;
-      saveSampleData: FunctionReference<
-        "mutation",
-        "public",
-        {
-          flowVersionId: string;
-          payload: any;
-          projectId: string;
-          stepName: string;
-          type: string;
-        },
-        any
-      >;
-    };
-    queries: {
-      getAllSampleDataForFlowVersion: FunctionReference<
-        "query",
-        "public",
-        { flowVersionId: string },
-        any
-      >;
-      getSampleData: FunctionReference<
-        "query",
-        "public",
-        {
-          flowVersionId: string;
-          sampleDataFileId?: string;
-          stepName: string;
-          type: string;
-        },
-        any
-      >;
-    };
+  mondayUserFilterPresets: {
+    listForOwnerBoard: FunctionReference<
+      "query",
+      "public",
+      { accountId: string; ownerMondayUserId: string },
+      Array<{
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }>
+    >;
+    removeForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      { accountId: string; ownerMondayUserId: string; presetId: string },
+      null
+    >;
+    upsertForOwnerBoard: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        presetId?: string;
+        viewerMondayUserId: string;
+      },
+      {
+        conditions: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target?: string;
+          value: string;
+          valueTo: string;
+        }>;
+        createdAt: number;
+        id: string;
+        matchMode: "all" | "any";
+        name: string;
+        ownerMondayUserId: string;
+        updatedAt: number;
+      }
+    >;
   };
   viewer: {
     me: FunctionReference<
@@ -743,6 +583,264 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayMonthlyMigration: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getExistingEntriesForSourceItem: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemId: string },
+      {
+        parentUpdateEntityIds: Array<string>;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }
+    >;
+    getExistingEntriesForSourceItemsBatch: FunctionReference<
+      "query",
+      "internal",
+      { sourceBoardId: string; sourceItemIds: Array<string> },
+      Array<{
+        parentUpdateEntityIds: Array<string>;
+        sourceItemId: string;
+        sourceSubitemToTargetSubitem: Array<{
+          sourceSubitemId: string;
+          targetSubitemId: string;
+        }>;
+        subitemEntityIds: Array<string>;
+        subitemUpdateEntityIds: Array<string>;
+      }>
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayMonthlyMigrationJobs"> },
+      null | {
+        _id: Id<"mondayMonthlyMigrationJobs">;
+        currentCursor?: string | null;
+        dryRun: boolean;
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthKey?: string;
+        monthTag: string;
+        pageSize: number;
+        sourceBoardId: string;
+        sourceBoardName?: string | null;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId: string;
+        updateProgressColumns?: boolean;
+      }
+    >;
+    recordCreatedEntries: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        entries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        sourceBoardId: string;
+      },
+      null
+    >;
+    runMonthlyMigrationWorkflow: FunctionReference<
+      "mutation",
+      "internal",
+      any,
+      any
+    >;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdParentUpdatesDelta: number;
+        createdSubitemUpdatesDelta: number;
+        createdSubitemsDelta: number;
+        createdTouchRecordsDelta: number;
+        errorsDelta: number;
+        jobId: Id<"mondayMonthlyMigrationJobs">;
+        mappedContactsDelta: number;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedContactsDelta: number;
+        sourceBoardName?: string | null;
+        updatedProgressColumnsDelta: number;
+        warningsDelta: number;
+      },
+      null
+    >;
+  };
+  mondayMonthlyMigrationNode: {
+    fetchSourcePageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        cursor?: string | null;
+        pageSize: number;
+        sourceBoardId: string;
+        targetBoardId: string;
+      },
+      {
+        items: Array<{
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        }>;
+        nextCursor: string | null;
+        sourceBoardName: string | null;
+        sourceSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        sourceSubitemBoardId: string | null;
+        targetSubitemBoardColumns: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        targetSubitemBoardId: string | null;
+      }
+    >;
+    migrateSourceItemAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        cachedSourceSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardColumns?: Array<{
+          id?: string | null;
+          settings_str?: string | null;
+          title?: string | null;
+          type?: string | null;
+        }>;
+        cachedTargetSubitemBoardId?: string | null;
+        dryRun: boolean;
+        existingEntries: {
+          parentUpdateEntityIds: Array<string>;
+          sourceSubitemToTargetSubitem: Array<{
+            sourceSubitemId: string;
+            targetSubitemId: string;
+          }>;
+          subitemEntityIds: Array<string>;
+          subitemUpdateEntityIds: Array<string>;
+        };
+        includeParentUpdates: boolean;
+        includeSubitemUpdates: boolean;
+        includeSubitems: boolean;
+        monthKey?: string | null;
+        monthTag: string;
+        sourceBoardId: string;
+        sourceBoardName: string | null;
+        sourceItem: {
+          email: string | null;
+          id: string;
+          mainDatabaseId: string | null;
+          mirrorDatabaseId: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          relationMainId: string | null;
+          subitems: Array<{
+            columnValues: Array<{
+              id: string;
+              text: string | null;
+              type: string;
+              value: string | null;
+            }>;
+            id: string;
+            name: string;
+            updates: Array<{
+              body: string;
+              createdAt: string | null;
+              creatorName: string | null;
+              id: string;
+              updatedAt: string | null;
+            }>;
+          }>;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        };
+        sourceSubitemBoardId?: string | null;
+        targetBoardId: string;
+        updateProgressColumns: boolean;
+      },
+      {
+        createdEntries: Array<{
+          sourceEntityId: string;
+          sourceEntityType: "parent_update" | "subitem" | "subitem_update";
+          sourceItemId: string;
+          targetEntityId: string | null;
+          targetItemId: string;
+        }>;
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        createdTouchRecords: number;
+        errors: number;
+        mappedContacts: number;
+        processedContacts: number;
+        skippedContacts: number;
+        updatedProgressColumns: number;
+        warnings: Array<string>;
+      }
     >;
   };
   mondayTouchBackfill: {
@@ -878,6 +976,74 @@ export declare const internal: {
         deduped: number;
         errors: number;
         skipped: number;
+      }
+    >;
+  };
+  mondayTouchRangeBackfill: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayTouchRangeBackfillJobs"> },
+      null | {
+        _id: Id<"mondayTouchRangeBackfillJobs">;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        pageSize: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        touchBoardId: string;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdTouchesDelta: number;
+        errorsDelta: number;
+        inRangeContactsDelta: number;
+        jobId: Id<"mondayTouchRangeBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedTouchesDelta: number;
+        updatedTouchesDelta: number;
+      },
+      null
+    >;
+  };
+  mondayTouchRangeBackfillNode: {
+    fetchAndUpsertPageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        boardId: string;
+        cursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun?: boolean;
+        pageSize: number;
+        touchBoardId: string;
+      },
+      {
+        createdTouches: number;
+        errors: number;
+        inRangeContacts: number;
+        nextCursor: string | null;
+        processedContacts: number;
+        skippedTouches: number;
+        updatedTouches: number;
       }
     >;
   };
@@ -1129,7 +1295,7 @@ export declare const components: {
       cleanup: FunctionReference<
         "mutation",
         "internal",
-        { workflowId: string },
+        { force?: boolean; workflowId: string },
         boolean
       >;
       complete: FunctionReference<
@@ -1234,6 +1400,69 @@ export declare const components: {
           };
         }
       >;
+      list: FunctionReference<
+        "query",
+        "internal",
+        {
+          order: "asc" | "desc";
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            args: any;
+            context?: any;
+            name?: string;
+            runResult?:
+              | { kind: "success"; returnValue: any }
+              | { error: string; kind: "failed" }
+              | { kind: "canceled" };
+            workflowId: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
+      listByName: FunctionReference<
+        "query",
+        "internal",
+        {
+          name: string;
+          order: "asc" | "desc";
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        {
+          continueCursor: string;
+          isDone: boolean;
+          page: Array<{
+            args: any;
+            context?: any;
+            name?: string;
+            runResult?:
+              | { kind: "success"; returnValue: any }
+              | { error: string; kind: "failed" }
+              | { kind: "canceled" };
+            workflowId: string;
+          }>;
+          pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+          splitCursor?: string | null;
+        }
+      >;
       listSteps: FunctionReference<
         "query",
         "internal",
@@ -1273,713 +1502,12 @@ export declare const components: {
           splitCursor?: string | null;
         }
       >;
-    };
-  };
-  activepieces: {
-    appCapabilities: {
-      mutations: {
-        register: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            category: string;
-            config: any;
-            description: string;
-            displayName: string;
-            enabled?: boolean;
-            inputSchema: any;
-            name: string;
-            outputSchema?: any;
-            projectId: string;
-            type: "trigger" | "action";
-          },
-          any
-        >;
-        remove: FunctionReference<"mutation", "internal", { id: string }, any>;
-        update: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            category?: string;
-            config?: any;
-            description?: string;
-            displayName?: string;
-            enabled?: boolean;
-            id: string;
-            inputSchema?: any;
-            outputSchema?: any;
-          },
-          any
-        >;
-      };
-      queries: {
-        get: FunctionReference<
-          "query",
-          "internal",
-          { name: string; projectId: string },
-          any
-        >;
-        list: FunctionReference<
-          "query",
-          "internal",
-          { projectId: string; type?: "trigger" | "action" },
-          any
-        >;
-      };
-    };
-    appConnections: {
-      mutations: {
-        deleteConnection: FunctionReference<
-          "mutation",
-          "internal",
-          { id: string },
-          any
-        >;
-        upsertConnection: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            displayName: string;
-            encryptionKey: string;
-            externalId: string;
-            pieceName: string;
-            projectId: string;
-            projectIds?: Array<string>;
-            secret_text?: string;
-            type: string;
-            value?: any;
-          },
-          any
-        >;
-      };
-      queries: {
-        getConnectionToken: FunctionReference<
-          "query",
-          "internal",
-          { encryptionKey?: string; externalId: string; projectId: string },
-          any
-        >;
-        listConnections: FunctionReference<
-          "query",
-          "internal",
-          {
-            cursor?: string;
-            limit?: number;
-            pieceName?: string;
-            projectId: string;
-          },
-          any
-        >;
-      };
-    };
-    appEvents: {
-      mutations: {
-        emit: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            eventType: string;
-            metadata?: any;
-            payload: any;
-            projectId: string;
-            source?: string;
-          },
-          any
-        >;
-      };
-      queries: {
-        getById: FunctionReference<
-          "query",
-          "internal",
-          { eventId: string },
-          any
-        >;
-        list: FunctionReference<
-          "query",
-          "internal",
-          {
-            limit?: number;
-            projectId: string;
-            status?: "pending" | "processing" | "completed" | "failed";
-          },
-          any
-        >;
-      };
-    };
-    auth: {
-      mutations: {
-        provisionCurrentUser: FunctionReference<
-          "mutation",
-          "internal",
-          {},
-          any
-        >;
-        switchPlatform: FunctionReference<
-          "mutation",
-          "internal",
-          { platformId: string },
-          any
-        >;
-        switchProject: FunctionReference<
-          "mutation",
-          "internal",
-          { projectId: string },
-          any
-        >;
-      };
-      queries: {
-        getSessionContext: FunctionReference<"query", "internal", {}, any>;
-        listProjectsForCurrentPlatform: FunctionReference<
-          "query",
-          "internal",
-          {},
-          any
-        >;
-        listUserPlatforms: FunctionReference<"query", "internal", {}, any>;
-      };
-    };
-    flags: {
-      mutations: {
-        updateFlags: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            patch: {
-              SHOW_BILLING?: boolean;
-              SHOW_COMMUNITY?: boolean;
-              apiKeysEnabled?: boolean;
-              customAppearanceEnabled?: boolean;
-              embeddingEnabled?: boolean;
-              environmentsEnabled?: boolean;
-              managePiecesEnabled?: boolean;
-              projectRolesEnabled?: boolean;
-            };
-            platformId: string;
-          },
-          any
-        >;
-      };
-      queries: {
-        getFlags: FunctionReference<
-          "query",
-          "internal",
-          { platformId?: string },
-          any
-        >;
-      };
-    };
-    flowRuns: {
-      actions: {
-        testStepAction: FunctionReference<
-          "action",
-          "internal",
-          { encryptionKey?: string; flowVersionId: string; stepName: string },
-          any
-        >;
-      };
-      mutations: {
-        cancelRun: FunctionReference<
-          "mutation",
-          "internal",
-          { runId: string },
-          any
-        >;
-        createRun: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            encryptionKey?: string;
-            flowId: string;
-            flowVersionId: string;
-            projectId: string;
-            triggerOutput?: any;
-          },
-          any
-        >;
-        testFlow: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId?: string; flowVersionId: string; projectId?: string },
-          any
-        >;
-        testStep: FunctionReference<
-          "mutation",
-          "internal",
-          { attempt: number; runId: string; status: string; stepName: string },
-          any
-        >;
-      };
-      queries: {
-        getOutput: FunctionReference<"query", "internal", { id: string }, any>;
-        getRun: FunctionReference<"query", "internal", { runId?: string }, any>;
-        getStepRuns: FunctionReference<
-          "query",
-          "internal",
-          { runId: string },
-          any
-        >;
-        listRuns: FunctionReference<
-          "query",
-          "internal",
-          { flowId?: any; limit?: number; projectId: string; status?: string },
-          any
-        >;
-      };
-      workflows: {
-        startFlowExecution: FunctionReference<
-          "action",
-          "internal",
-          { runId: string },
-          any
-        >;
-      };
-    };
-    flows: {
-      mutations: {
-        createFlow: FunctionReference<
-          "mutation",
-          "internal",
-          { displayName: string; folderId?: string; projectId?: string },
-          any
-        >;
-        setWebhookUrl: FunctionReference<
-          "mutation",
-          "internal",
-          { flowVersionId: string; webhookUrl?: string },
-          any
-        >;
-        updateFlow: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string; operation: string; request: any },
-          any
-        >;
-      };
-      queries: {
-        getFlow: FunctionReference<"query", "internal", { id: string }, any>;
-        getFlowVersion: FunctionReference<
-          "query",
-          "internal",
-          { id: string },
-          any
-        >;
-        listFlows: FunctionReference<
-          "query",
-          "internal",
-          {
-            connectionExternalIds?: Array<string>;
-            cursor?: string;
-            folderId?: string;
-            limit?: number;
-            projectId?: string;
-            status?: Array<string>;
-          },
-          any
-        >;
-        listVersions: FunctionReference<
-          "query",
-          "internal",
-          { flowId: string; limit?: number },
-          any
-        >;
-      };
-    };
-    oauth: {
-      mutations: {
-        deleteOAuthAppCredential: FunctionReference<
-          "mutation",
-          "internal",
-          { id: string },
-          any
-        >;
-        upsertOAuthAppCredential: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            clientId?: string;
-            clientSecret?: string;
-            pieceName: string;
-            scope?: Array<string>;
-          },
-          any
-        >;
-      };
-      queries: {
-        listOAuthAppsCredentials: FunctionReference<
-          "query",
-          "internal",
-          { cursor?: string; limit?: number },
-          any
-        >;
-      };
-    };
-    pieces: {
-      actions: {
-        executeActionRecipe: FunctionReference<
-          "action",
-          "internal",
-          {
-            actionName: string;
-            pieceName: string;
-            projectId: string;
-            settings: { auth?: string; input: any };
-          },
-          any
-        >;
-        executePieceAction: FunctionReference<
-          "action",
-          "internal",
-          {
-            actionName: string;
-            inputs: any;
-            pieceName: string;
-            projectId: string;
-            version: string;
-          },
-          any
-        >;
-        pieceOptions: FunctionReference<
-          "action",
-          "internal",
-          {
-            actionOrTriggerName?: string;
-            encryptionKey?: string;
-            flowId?: string;
-            flowVersionId?: string;
-            input?: any;
-            pieceName: string;
-            pieceVersion: string;
-            propertyName: string;
-            searchValue?: string;
-          },
-          any
-        >;
-        testTriggerRecipe: FunctionReference<
-          "action",
-          "internal",
-          {
-            flowId: string;
-            flowVersionId: string;
-            pieceName: string;
-            saveSampleData?: boolean;
-            settings: { auth?: string; input: any };
-            triggerName: string;
-          },
-          any
-        >;
-      };
-      mutations: {
-        importPieces: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            pieces: Array<{
-              actions?: number;
-              categories?: Array<string>;
-              description?: string;
-              detail?: any;
-              displayName?: string;
-              logoUrl?: string;
-              name: string;
-              packageType?: string;
-              pieceType?: string;
-              suggestedActions?: Array<{ displayName?: string; name: string }>;
-              suggestedTriggers?: Array<{ displayName?: string; name: string }>;
-              triggers?: number;
-              version: string;
-            }>;
-          },
-          any
-        >;
-      };
-      queries: {
-        count: FunctionReference<"query", "internal", {}, any>;
-        get: FunctionReference<
-          "query",
-          "internal",
-          { name: string; version: string },
-          any
-        >;
-        getById: FunctionReference<"query", "internal", { id: string }, any>;
-        list: FunctionReference<
-          "query",
-          "internal",
-          { cursor?: string; limit?: number; search?: string },
-          any
-        >;
-        listByCategory: FunctionReference<
-          "query",
-          "internal",
-          { category: string; limit?: number },
-          any
-        >;
-      };
-    };
-    platform: {
-      mutations: {
-        addUserToPlatform: FunctionReference<
-          "mutation",
-          "internal",
-          { platformId: string; role: string; userId: string },
-          any
-        >;
-        backfillProjectMembers: FunctionReference<
-          "mutation",
-          "internal",
-          {},
-          any
-        >;
-        createPlatform: FunctionReference<
-          "mutation",
-          "internal",
-          { displayName?: string; id: string },
-          any
-        >;
-        createProject: FunctionReference<
-          "mutation",
-          "internal",
-          { displayName: string; id: string; platformId: string },
-          any
-        >;
-        deletePlatform: FunctionReference<
-          "mutation",
-          "internal",
-          { id: string },
-          any
-        >;
-        deleteProject: FunctionReference<
-          "mutation",
-          "internal",
-          { id: string; platformId: string },
-          any
-        >;
-        getUserProfile: FunctionReference<"mutation", "internal", {}, any>;
-        removeUserFromPlatform: FunctionReference<
-          "mutation",
-          "internal",
-          { platformId: string; userId: string },
-          any
-        >;
-        updatePlatform: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            id: string;
-            patch: {
-              displayName?: string;
-              filteredPieceNames?: Array<string>;
-              flags?: {
-                SHOW_BILLING?: boolean;
-                SHOW_COMMUNITY?: boolean;
-                apiKeysEnabled?: boolean;
-                customAppearanceEnabled?: boolean;
-                embeddingEnabled?: boolean;
-                environmentsEnabled?: boolean;
-                managePiecesEnabled?: boolean;
-                projectRolesEnabled?: boolean;
-              };
-              pinnedPieces?: Array<string>;
-            };
-          },
-          any
-        >;
-        updateProject: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            id: string;
-            patch: { displayName?: string; limits?: any };
-            platformId: string;
-          },
-          any
-        >;
-        updateUserProfile: FunctionReference<
-          "mutation",
-          "internal",
-          { currentPlatformId?: string; currentProjectId?: string },
-          any
-        >;
-        updateUserRole: FunctionReference<
-          "mutation",
-          "internal",
-          { platformId: string; role: string; userId: string },
-          any
-        >;
-      };
-      queries: {
-        getPlatform: FunctionReference<
-          "query",
-          "internal",
-          { id: string },
-          any
-        >;
-        getProject: FunctionReference<"query", "internal", { id: string }, any>;
-        getUserProfile: FunctionReference<"query", "internal", {}, any>;
-        listPlatforms: FunctionReference<"query", "internal", {}, any>;
-        listPlatformUsers: FunctionReference<
-          "query",
-          "internal",
-          { platformId: string },
-          any
-        >;
-        listProjects: FunctionReference<
-          "query",
-          "internal",
-          { platformId: string },
-          any
-        >;
-      };
-    };
-    sampleData: {
-      mutations: {
-        deleteSampleDataForFlowVersion: FunctionReference<
-          "mutation",
-          "internal",
-          { flowVersionId: string },
-          any
-        >;
-        deleteSampleDataForStep: FunctionReference<
-          "mutation",
-          "internal",
-          { flowVersionId: string; stepName: string },
-          any
-        >;
-        getSampleData: FunctionReference<
-          "mutation",
-          "internal",
-          { flowVersionId: string; stepName: string; type: string },
-          any
-        >;
-        saveSampleData: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            flowVersionId: string;
-            payload: any;
-            projectId: string;
-            stepName: string;
-            type: string;
-          },
-          any
-        >;
-      };
-      queries: {
-        getAllSampleDataForFlowVersion: FunctionReference<
-          "query",
-          "internal",
-          { flowVersionId: string },
-          any
-        >;
-        getSampleData: FunctionReference<
-          "query",
-          "internal",
-          {
-            flowVersionId: string;
-            sampleDataFileId?: string;
-            stepName: string;
-            type: string;
-          },
-          any
-        >;
-      };
-    };
-    triggerEvents: {
-      actions: {
-        testTriggerAction: FunctionReference<
-          "action",
-          "internal",
-          { flowId: string },
-          any
-        >;
-      };
-      mutations: {
-        saveTriggerMock: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string; mockData: any },
-          any
-        >;
-        testTrigger: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string; input: any },
-          any
-        >;
-      };
-      queries: {
-        listTriggerEvents: FunctionReference<
-          "query",
-          "internal",
-          { cursor?: string; flowId: string; limit?: number },
-          any
-        >;
-      };
-    };
-    triggers: {
-      store: {
-        clearAll: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string },
-          any
-        >;
-        get: FunctionReference<
-          "query",
-          "internal",
-          { flowId: string; key: string },
-          any
-        >;
-        put: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string; key: string; value: any },
-          any
-        >;
-        remove: FunctionReference<
-          "mutation",
-          "internal",
-          { flowId: string; key: string },
-          any
-        >;
-      };
-    };
-    userActions: {
-      mutations: {
-        markExecuted: FunctionReference<
-          "mutation",
-          "internal",
-          { actionId: string },
-          any
-        >;
-        queuePublic: FunctionReference<
-          "mutation",
-          "internal",
-          {
-            actionType: string;
-            expiresAt?: number;
-            flowRunId?: string;
-            payload: any;
-            sessionId: string | null;
-            source?: string;
-            userId: string | null;
-          },
-          any
-        >;
-      };
-      queries: {
-        getPending: FunctionReference<
-          "query",
-          "internal",
-          { sessionId?: string; userId?: string },
-          any
-        >;
-        getPendingBySession: FunctionReference<
-          "query",
-          "internal",
-          { sessionId: string },
-          any
-        >;
-      };
+      restart: FunctionReference<
+        "mutation",
+        "internal",
+        { from?: number | string; startAsync?: boolean; workflowId: string },
+        null
+      >;
     };
   };
   launchthat_core_tenant: {
@@ -2028,6 +1556,12 @@ export declare const components: {
         },
         { inviteId: string; token: string }
       >;
+      deleteOrganization: FunctionReference<
+        "mutation",
+        "internal",
+        { organizationId: string },
+        null
+      >;
       deleteOrganizationMedia: FunctionReference<
         "mutation",
         "internal",
@@ -2073,6 +1607,12 @@ export declare const components: {
         "mutation",
         "internal",
         { organizationId: string; userId: string },
+        null
+      >;
+      setOrganizationClerkOrganizationId: FunctionReference<
+        "mutation",
+        "internal",
+        { clerkOrganizationId: string; organizationId: string },
         null
       >;
       setOrganizationDomainStatus: FunctionReference<
@@ -2146,6 +1686,22 @@ export declare const components: {
         },
         null
       >;
+      upsertOrgAuthPolicySettings: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          accountLinkMode: "disabled" | "clerk_auto_only" | "full_merge";
+          allowedEmailDomains: Array<string>;
+          authFlowMode: "gate_before_signin" | "open_then_gate_content";
+          enabledEmailMagicLink: boolean;
+          enabledOauthProviders: Array<string>;
+          enabledPhoneOtp: boolean;
+          organizationId: string;
+          signupMode: "invite_only" | "self_serve_domain" | "self_serve_open";
+          updatedByUserId: string;
+        },
+        null
+      >;
       upsertOrgConsentSettings: FunctionReference<
         "mutation",
         "internal",
@@ -2160,6 +1716,12 @@ export declare const components: {
       >;
     };
     queries: {
+      getMemberByUserAndOrganization: FunctionReference<
+        "query",
+        "internal",
+        { organizationId: string; userId: string },
+        null | { isActive: boolean; role: string; userId: string }
+      >;
       getOrgAccessSettings: FunctionReference<
         "query",
         "internal",
@@ -2293,6 +1855,25 @@ export declare const components: {
           url: string | null;
         }
       >;
+      getOrgAuthPolicySettings: FunctionReference<
+        "query",
+        "internal",
+        { organizationId: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          accountLinkMode: "disabled" | "clerk_auto_only" | "full_merge";
+          allowedEmailDomains: Array<string>;
+          authFlowMode: "gate_before_signin" | "open_then_gate_content";
+          enabledEmailMagicLink: boolean;
+          enabledOauthProviders: Array<string>;
+          enabledPhoneOtp: boolean;
+          organizationId: string;
+          signupMode: "invite_only" | "self_serve_domain" | "self_serve_open";
+          updatedAt: number;
+          updatedByUserId: string;
+        }
+      >;
       getOrgConsentSettings: FunctionReference<
         "query",
         "internal",
@@ -2306,6 +1887,25 @@ export declare const components: {
           tradeIdeasEnabled: boolean;
           updatedAt: number;
           userId: string;
+        }
+      >;
+      getOrgInviteByToken: FunctionReference<
+        "query",
+        "internal",
+        { token: string },
+        null | {
+          _creationTime: number;
+          _id: string;
+          createdAt: number;
+          createdByUserId: string;
+          email: string;
+          expiresAt: number;
+          organizationId: string;
+          redeemedAt?: number;
+          redeemedByUserId?: string;
+          revokedAt?: number;
+          role: "owner" | "admin" | "staff" | "member";
+          token: string;
         }
       >;
       listDomainsForOrg: FunctionReference<
@@ -2329,7 +1929,7 @@ export declare const components: {
       listMembersByOrganizationId: FunctionReference<
         "query",
         "internal",
-        { organizationId: string },
+        { limit?: number; organizationId: string },
         Array<{ isActive: boolean; role: string; userId: string }>
       >;
       listOrganizationMedia: FunctionReference<
@@ -2431,6 +2031,22 @@ export declare const components: {
           token: string;
         }>
       >;
+      listRawMembershipsByOrganization: FunctionReference<
+        "query",
+        "internal",
+        { afterJoinedAt?: number; limit?: number; organizationId: string },
+        {
+          hasMore: boolean;
+          rows: Array<{
+            _id: string;
+            isActive: boolean;
+            joinedAt: number;
+            organizationId: string;
+            role: string;
+            userId: string;
+          }>;
+        }
+      >;
     };
   };
   launchthat_notifications: {
@@ -2480,6 +2096,27 @@ export declare const components: {
         "internal",
         { notificationId: string },
         boolean
+      >;
+      setOrgDefaults: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          emailDefaults?: Record<string, boolean>;
+          inAppDefaults?: Record<string, boolean>;
+          orgId: string;
+        },
+        null
+      >;
+      setUserEventPrefs: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          emailEnabled?: Record<string, boolean>;
+          inAppEnabled?: Record<string, boolean>;
+          orgId: string;
+          userId: string;
+        },
+        null
       >;
       trackNotificationEvent: FunctionReference<
         "mutation",
@@ -2548,6 +2185,15 @@ export declare const components: {
           }>;
         }
       >;
+      getOrgDefaults: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string },
+        {
+          emailDefaults: Record<string, boolean>;
+          inAppDefaults: Record<string, boolean>;
+        }
+      >;
       getUnreadCountByUserIdAcrossOrgs: FunctionReference<
         "query",
         "internal",
@@ -2559,6 +2205,21 @@ export declare const components: {
         "internal",
         { orgId: string; userId: string },
         number
+      >;
+      getUserEventPrefs: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string; userId: string },
+        {
+          emailEnabled: Record<string, boolean>;
+          inAppEnabled: Record<string, boolean>;
+        }
+      >;
+      listKnownEventKeysForOrg: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string; userId?: string },
+        Array<string>
       >;
       paginateByUserIdAcrossOrgs: FunctionReference<
         "query",
@@ -2651,16 +2312,51 @@ export declare const components: {
   };
   launchthat_email: {
     actions: {
+      fetchReceivedEmailContent: FunctionReference<
+        "action",
+        "internal",
+        { messageId: string; orgId: string },
+        null | { html?: string; text?: string }
+      >;
+      revalidateSavedByoKey: FunctionReference<
+        "action",
+        "internal",
+        { orgId: string; provider?: "resend" },
+        {
+          domains?: Array<{ id: string; name: string; status: string }>;
+          error?: string;
+          valid: boolean;
+        }
+      >;
       syncEmailDomain: FunctionReference<
         "action",
         "internal",
-        { orgId: string },
+        { apiKey?: string; orgId: string },
         {
           emailDomain: string | null;
           lastError?: string;
           records: Array<{ name: string; type: string; value: string }>;
           status: "unconfigured" | "pending" | "verified" | "error";
           updatedAt: number;
+        }
+      >;
+      syncEmailDomainWithSavedKey: FunctionReference<
+        "action",
+        "internal",
+        { domain: string; orgId: string },
+        {
+          emailDomain: string | null;
+          status: "unconfigured" | "pending" | "verified" | "error";
+        }
+      >;
+      validateByoApiKey: FunctionReference<
+        "action",
+        "internal",
+        { apiKey: string; provider?: "resend" },
+        {
+          domains?: Array<{ id: string; name: string; status: string }>;
+          error?: string;
+          valid: boolean;
         }
       >;
     };
@@ -2679,11 +2375,100 @@ export declare const components: {
         >;
       };
     };
+    lib: {
+      cancelEmail: FunctionReference<
+        "mutation",
+        "internal",
+        { emailId: string },
+        null
+      >;
+      cleanupAbandonedEmails: FunctionReference<
+        "mutation",
+        "internal",
+        { olderThan?: number },
+        null
+      >;
+      cleanupOldEmails: FunctionReference<
+        "mutation",
+        "internal",
+        { olderThan?: number },
+        null
+      >;
+      getAllContentByIds: FunctionReference<
+        "query",
+        "internal",
+        { contentIds: Array<string> },
+        Array<{ content: string; id: string }>
+      >;
+      getEmailsByIds: FunctionReference<
+        "query",
+        "internal",
+        { emailIds: Array<string> },
+        Array<any>
+      >;
+      getStatus: FunctionReference<
+        "query",
+        "internal",
+        { emailId: string },
+        {
+          bounced: boolean;
+          clicked: boolean;
+          complained: boolean;
+          deliveryDelayed: boolean;
+          errorMessage: string | null;
+          failed: boolean;
+          opened: boolean;
+          status:
+            | "waiting"
+            | "queued"
+            | "cancelled"
+            | "sent"
+            | "delivered"
+            | "delivery_delayed"
+            | "bounced"
+            | "failed";
+        } | null
+      >;
+      handleEmailEvent: FunctionReference<
+        "mutation",
+        "internal",
+        { event: any },
+        null
+      >;
+      sendEmail: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          bcc?: Array<string>;
+          cc?: Array<string>;
+          from: string;
+          headers?: Array<{ name: string; value: string }>;
+          html?: string;
+          options: {
+            apiKey: string;
+            initialBackoffMs: number;
+            onEmailEvent?: { fnHandle: string };
+            retryAttempts: number;
+            testMode: boolean;
+          };
+          replyTo?: Array<string>;
+          subject?: string;
+          template?: {
+            id: string;
+            variables?: Record<string, string | number>;
+          };
+          text?: string;
+          to: Array<string>;
+        },
+        string
+      >;
+    };
     mutations: {
       enqueueEmail: FunctionReference<
         "mutation",
         "internal",
         {
+          apiKey?: string;
           htmlBody: string;
           orgId: string;
           subject: string;
@@ -2696,8 +2481,14 @@ export declare const components: {
       enqueueTestEmail: FunctionReference<
         "mutation",
         "internal",
-        { orgId: string; to: string },
+        { apiKey?: string; orgId: string; to: string },
         string
+      >;
+      resetTemplateOverride: FunctionReference<
+        "mutation",
+        "internal",
+        { orgId: string; templateId: string },
+        null
       >;
       setEmailDomain: FunctionReference<
         "mutation",
@@ -2709,18 +2500,39 @@ export declare const components: {
         "mutation",
         "internal",
         {
+          byoApiKey?: string;
+          byoProvider?: "resend";
           designKey?: "clean" | "bold" | "minimal";
           enabled: boolean;
           fromLocalPart: string;
           fromMode: "portal" | "custom";
           fromName: string;
           orgId: string;
+          orgMode?: "portal" | "byo";
           replyToEmail?: string;
         },
         null
       >;
+      upsertTemplateOverride: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          copyOverrides?: Record<string, string>;
+          designOverrideKey?: "inherit" | "clean" | "bold" | "minimal";
+          orgId: string;
+          subjectOverride?: string;
+          templateKey: string;
+        },
+        string
+      >;
     };
     queries: {
+      findOrgByInboundAddress: FunctionReference<
+        "query",
+        "internal",
+        { domain: string; localPart: string },
+        null | { orgId: string }
+      >;
       getEmailDomain: FunctionReference<
         "query",
         "internal",
@@ -2738,13 +2550,29 @@ export declare const components: {
         "internal",
         { orgId: string },
         null | {
+          byoApiKeyMasked?: string;
+          byoApiKeySet: boolean;
+          byoProvider?: "resend";
           designKey?: "clean" | "bold" | "minimal";
           enabled: boolean;
           fromLocalPart: string;
           fromMode: "portal" | "custom";
           fromName: string;
+          orgMode: "portal" | "byo";
           replyToEmail: string | null;
         }
+      >;
+      getOutboxById: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string; outboxId: string },
+        null | any
+      >;
+      getTemplateOverrideById: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string; templateId: string },
+        null | any
       >;
       listOutbox: FunctionReference<
         "query",
@@ -2761,6 +2589,12 @@ export declare const components: {
           };
         },
         { continueCursor: string | null; isDone: boolean; page: Array<any> }
+      >;
+      listTemplateOverrides: FunctionReference<
+        "query",
+        "internal",
+        { orgId: string },
+        Array<any>
       >;
     };
   };
@@ -2915,6 +2749,12 @@ export declare const components: {
             userId?: string;
           }
         >;
+        getContactIdByEmail: FunctionReference<
+          "query",
+          "internal",
+          { email: string; organizationId?: string },
+          string | null
+        >;
         getContactIdForUser: FunctionReference<
           "query",
           "internal",
@@ -2957,6 +2797,44 @@ export declare const components: {
             updatedAt?: number;
             userId?: string;
           }>
+        >;
+        listContactsPaginated: FunctionReference<
+          "query",
+          "internal",
+          {
+            organizationId?: string;
+            paginationOpts: {
+              cursor: string | null;
+              endCursor?: string | null;
+              id?: number;
+              maximumBytesRead?: number;
+              maximumRowsRead?: number;
+              numItems: number;
+            };
+            status?: string;
+          },
+          {
+            continueCursor: string;
+            isDone: boolean;
+            page: Array<{
+              _creationTime: number;
+              _id: string;
+              authorId?: string;
+              category?: string;
+              content?: string;
+              createdAt: number;
+              excerpt?: string;
+              featuredImageUrl?: string;
+              organizationId?: string;
+              postTypeSlug: string;
+              slug: string;
+              status: string;
+              tags?: Array<string>;
+              title: string;
+              updatedAt?: number;
+              userId?: string;
+            }>;
+          }
         >;
       };
     };
@@ -3096,9 +2974,30 @@ export declare const components: {
             slug?: string;
           }>
         >;
+        listTaggedContactsByMarketingTag: FunctionReference<
+          "query",
+          "internal",
+          {
+            cursor?: string | null;
+            limit?: number;
+            marketingTagId: string;
+            organizationId?: string;
+          },
+          {
+            continueCursor: string | null;
+            isDone: boolean;
+            page: Array<{ contactId: string; userId: string }>;
+          }
+        >;
       };
     };
     queries: {
+      getContactCoverageCounts: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number },
+        { contactsWithUserId: number; isTruncated: boolean }
+      >;
       getCrmDashboardMetrics: FunctionReference<
         "query",
         "internal",
@@ -3109,6 +3008,36 @@ export declare const components: {
           tags: { isTruncated: boolean; total: number };
         }
       >;
+    };
+    workflows: {
+      mutations: {
+        cancelWorkflow: FunctionReference<
+          "mutation",
+          "internal",
+          { cleanup?: boolean; forceCleanup?: boolean; workflowId: string },
+          { canceled: boolean; cleanedUp: boolean }
+        >;
+        startWorkflow: FunctionReference<
+          "mutation",
+          "internal",
+          {
+            maxParallelism?: number;
+            startAsync?: boolean;
+            workflowArgs: any;
+            workflowHandle: string;
+            workflowName: string;
+          },
+          { workflowId: string }
+        >;
+      };
+      queries: {
+        getWorkflowStatus: FunctionReference<
+          "query",
+          "internal",
+          { workflowId: string },
+          any
+        >;
+      };
     };
   };
   launchthat_ecommerce: {
@@ -5516,14 +5445,20 @@ export declare const components: {
         "mutation",
         "internal",
         {
+          allowDismiss?: boolean;
+          bypassRoles?: Array<string>;
           ctaLabel?: string;
           ctaRoute?: string;
           description?: string;
           enabled: boolean;
+          modalMediaUrl?: string;
           organizationId: string;
+          roleBypassEnabled?: boolean;
+          showWhenNoRequiredSteps?: boolean;
           steps: Array<{
             description?: string;
             id: string;
+            mediaUrl?: string;
             meta?: {
               discordGuildId?: string;
               platform?: string;
@@ -5533,13 +5468,7 @@ export declare const components: {
             required?: boolean;
             route?: string;
             title: string;
-            type?:
-              | "broker_connect"
-              | "first_trade_review"
-              | "discord_join"
-              | "social_follow"
-              | "social_post"
-              | "walkthrough_complete";
+            type?: string;
           }>;
           title?: string;
         },
@@ -5552,15 +5481,21 @@ export declare const components: {
         "internal",
         { organizationId: string },
         null | {
+          allowDismiss: boolean;
+          bypassRoles: Array<string>;
           createdAt: number;
           ctaLabel?: string;
           ctaRoute?: string;
           description?: string;
           enabled: boolean;
+          modalMediaUrl?: string;
           organizationId: string;
+          roleBypassEnabled: boolean;
+          showWhenNoRequiredSteps: boolean;
           steps: Array<{
             description?: string;
             id: string;
+            mediaUrl?: string;
             meta?: {
               discordGuildId?: string;
               platform?: string;
@@ -5570,13 +5505,7 @@ export declare const components: {
             required?: boolean;
             route?: string;
             title: string;
-            type?:
-              | "broker_connect"
-              | "first_trade_review"
-              | "discord_join"
-              | "social_follow"
-              | "social_post"
-              | "walkthrough_complete";
+            type?: string;
           }>;
           title?: string;
           updatedAt: number;
@@ -5585,18 +5514,25 @@ export declare const components: {
       getOnboardingStatus: FunctionReference<
         "query",
         "internal",
-        { organizationId: string; userId: string },
+        { organizationId: string; role?: string; userId: string },
         {
+          allowDismiss: boolean;
+          bypassRoles: Array<string>;
+          canDismiss: boolean;
           ctaLabel?: string;
           ctaRoute?: string;
           description?: string;
           dismissedAt?: number;
           enabled: boolean;
+          modalMediaUrl?: string;
+          roleBypassEnabled: boolean;
           shouldBlock: boolean;
+          showWhenNoRequiredSteps: boolean;
           steps: Array<{
             completed: boolean;
             description?: string;
             id: string;
+            mediaUrl?: string;
             meta?: {
               discordGuildId?: string;
               platform?: string;
@@ -5605,13 +5541,7 @@ export declare const components: {
             };
             route?: string;
             title: string;
-            type?:
-              | "broker_connect"
-              | "first_trade_review"
-              | "discord_join"
-              | "social_follow"
-              | "social_post"
-              | "walkthrough_complete";
+            type?: string;
           }>;
           title?: string;
         }
@@ -5671,6 +5601,18 @@ export declare const components: {
         "internal",
         { name?: string; slug?: string },
         { ok: boolean; slug: string }
+      >;
+      incrementOrgUsageCounter: FunctionReference<
+        "mutation",
+        "internal",
+        {
+          kind: string;
+          maxCount: number;
+          organizationId: string;
+          scope: string | null;
+          windowStartMs: number;
+        },
+        { allowed: boolean; maxCount: number; nextCount: number }
       >;
       setDefaultPlan: FunctionReference<
         "mutation",
@@ -5864,6 +5806,12 @@ export declare const components: {
           label: string;
           updatedAt: number;
         }>
+      >;
+      listUserIdsByRoleKey: FunctionReference<
+        "query",
+        "internal",
+        { limit?: number; roleKey: string },
+        Array<string>
       >;
       listUserPlanAssignmentsByPlanSlug: FunctionReference<
         "query",
