@@ -244,6 +244,7 @@ export const BoardTable = ({
                 return (
                   <tr
                     key={id}
+                    data-record-id={id}
                     data-state={selected ? "selected" : undefined}
                     className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
                   >

@@ -3289,3 +3289,163 @@ export const createMondayRecordUpdate = async (args: {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Helpdesk
+// ---------------------------------------------------------------------------
+
+const HELPDESK_COL = {
+  priority: "color_mm2yp484",
+  category: "color_mm2ygxja",
+  description: "long_text_mm2y9acp",
+  linkedContact: "text_mm2y39n9",
+  person: "person",
+  status: "status",
+  date: "date4",
+} as const;
+
+const HELPDESK_CATEGORY_LABELS: Record<string, string> = {
+  general: "General",
+  contact_issue: "Contact Issue",
+  technical: "Technical",
+  data_sync: "Data / Sync",
+  other: "Other",
+};
+
+export interface HelpdeskTicket {
+  id: string;
+  name: string;
+  status: string | null;
+  priority: string | null;
+  category: string | null;
+  description: string | null;
+  linkedContact: string | null;
+  date: string | null;
+  createdAt: string | null;
+}
+
+export const createHelpdeskTicket = async (args: {
+  subject: string;
+  description: string;
+  priority: string;
+  category: string;
+  linkedContactId?: string;
+  linkedContactName?: string;
+  submitterId?: string;
+}) => {
+  const boardId = env.MONDAY_HELPDESK_BOARD_ID?.trim();
+  if (!boardId) throw new Error("MONDAY_HELPDESK_BOARD_ID is not configured");
+
+  const priorityLabel = args.priority.charAt(0).toUpperCase() + args.priority.slice(1);
+  const categoryLabel = HELPDESK_CATEGORY_LABELS[args.category] ?? "General";
+  const today = new Date().toISOString().slice(0, 10);
+
+  const columnValues: Record<string, unknown> = {
+    [HELPDESK_COL.description]: { text: args.description },
+    [HELPDESK_COL.priority]: { label: priorityLabel },
+    [HELPDESK_COL.category]: { label: categoryLabel },
+    [HELPDESK_COL.status]: { label: "Working on it" },
+    [HELPDESK_COL.date]: { date: today },
+  };
+
+  if (args.linkedContactId) {
+    columnValues[HELPDESK_COL.linkedContact] = args.linkedContactName
+      ? `${args.linkedContactName} (${args.linkedContactId})`
+      : args.linkedContactId;
+  }
+
+  if (args.submitterId) {
+    columnValues[HELPDESK_COL.person] = {
+      personsAndTeams: [{ id: Number(args.submitterId), kind: "person" }],
+    };
+  }
+
+  interface Data {
+    create_item?: { id?: string | null };
+  }
+  const data = await callMondayGraphQL<Data>(
+    `mutation CreateHelpdeskTicket($boardId: ID!, $itemName: String!, $columnValues: JSON!) {
+      create_item(board_id: $boardId, item_name: $itemName, column_values: $columnValues, create_labels_if_missing: true) { id }
+    }`,
+    {
+      boardId,
+      itemName: args.subject,
+      columnValues: JSON.stringify(columnValues),
+    },
+  );
+
+  return { ok: true, itemId: data.create_item?.id ?? null };
+};
+
+export const listHelpdeskTickets = async (args?: {
+  submitterId?: string;
+}) => {
+  const boardId = env.MONDAY_HELPDESK_BOARD_ID?.trim();
+  if (!boardId) throw new Error("MONDAY_HELPDESK_BOARD_ID is not configured");
+
+  const colIds = [
+    HELPDESK_COL.status,
+    HELPDESK_COL.priority,
+    HELPDESK_COL.category,
+    HELPDESK_COL.description,
+    HELPDESK_COL.linkedContact,
+    HELPDESK_COL.date,
+    HELPDESK_COL.person,
+  ];
+
+  interface Data {
+    boards?: Array<{
+      items_page?: {
+        items?: Array<{
+          id?: string;
+          name?: string;
+          created_at?: string;
+          column_values?: Array<{ id?: string; text?: string | null }>;
+        }>;
+      };
+    }>;
+  }
+
+  const data = await callMondayGraphQL<Data>(
+    `query ($boardId: ID!, $colIds: [String!]) {
+      boards(ids: [$boardId]) {
+        items_page(limit: 200) {
+          items {
+            id name created_at
+            column_values(ids: $colIds) { id text }
+          }
+        }
+      }
+    }`,
+    { boardId, colIds },
+  );
+
+  const items = data.boards?.[0]?.items_page?.items ?? [];
+
+  const tickets: HelpdeskTicket[] = items.map((item) => {
+    const colText = (colId: string) =>
+      item.column_values?.find((c) => c.id === colId)?.text?.trim() || null;
+
+    return {
+      id: String(item.id ?? ""),
+      name: item.name ?? "",
+      status: colText(HELPDESK_COL.status),
+      priority: colText(HELPDESK_COL.priority),
+      category: colText(HELPDESK_COL.category),
+      description: colText(HELPDESK_COL.description),
+      linkedContact: colText(HELPDESK_COL.linkedContact),
+      date: colText(HELPDESK_COL.date),
+      createdAt: item.created_at ?? null,
+    };
+  });
+
+  if (args?.submitterId) {
+    const personColId = HELPDESK_COL.person;
+    return tickets.filter((t) => {
+      const raw = items.find((i) => String(i.id) === t.id);
+      const personText = raw?.column_values?.find((c) => c.id === personColId)?.text ?? "";
+      return personText.includes(args.submitterId!);
+    });
+  }
+
+  return tickets;
+};

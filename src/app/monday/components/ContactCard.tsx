@@ -1,5 +1,6 @@
 "use client";
 
+import { CircleHelp } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import type { ApprovalStepConfig, MondayRecord } from "../types";
 import { getAddressDisplayParts, getDistrictChipClassName, getNameInitials } from "../helpers";
@@ -9,16 +10,19 @@ export const ContactCard = ({
   record,
   approvalSteps,
   onClick,
+  onHelpDesk,
 }: {
   record: MondayRecord;
   approvalSteps: ApprovalStepConfig[];
   onClick: (record: MondayRecord) => void;
+  onHelpDesk?: (record: MondayRecord) => void;
 }) => {
   const addressDisplay = getAddressDisplayParts(record.address);
   const owner = record.ownerProfiles[0];
   return (
     <button
       type="button"
+      data-record-id={record.id}
       onClick={() => onClick(record)}
       className="hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md"
     >
@@ -37,13 +41,35 @@ export const ContactCard = ({
             <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
           ) : null}
         </div>
-        {record.statusText ? (
-          <span
-            className={`inline-flex shrink-0 items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
-          >
-            {record.statusText}
-          </span>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1">
+          {onHelpDesk && (
+            <span
+              role="button"
+              tabIndex={0}
+              title="Submit support ticket"
+              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-primary group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                onHelpDesk(record);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.stopPropagation();
+                  onHelpDesk(record);
+                }
+              }}
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          )}
+          {record.statusText ? (
+            <span
+              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
+            >
+              {record.statusText}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <ApprovalProgressIndicator

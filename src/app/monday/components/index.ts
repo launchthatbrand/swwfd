@@ -8,4 +8,6 @@ export { KanbanBoard } from "./KanbanBoard";
 export { NameCellContent } from "./NameCellContent";
 export { OnboardingStepper } from "./OnboardingStepper";
 export { QuestionnaireFormDialog } from "./QuestionnaireFormDialog";
+export { GuidedTourProvider, useGuidedTour, isTourLockingDialog } from "./GuidedTourProvider";
+export { HelpDeskDialog } from "./HelpDeskDialog";
 export { UserSettingsProvider, useUserSettings } from "./UserSettingsProvider";
