@@ -8,6 +8,8 @@
     "dev": "next dev --turbo --port 3600 --hostname 0.0.0.0",
     "format": "prettier --check .",
     "lint": "eslint",
+    "smoke": "pnpm smoke:consumer",
+    "smoke:consumer": "bash scripts/smoke/private-package-consumer-smoke.sh",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   },
@@ -18,7 +20,7 @@
     "@convex-dev/workflow": "^0.3.3",
     "@dnd-kit/core": "^6.3.1",
     "@launchthatapp/dnd": "^0.1.1",
-    "@launchthatapp/ui": "^0.1.1",
+    "@launchthatapp/ui": "0.1.2",
     "@mdx-js/mdx": "^3.1.1",
     "@radix-ui/react-icons": "^1.3.2",
     "@radix-ui/react-slot": "^1.2.4",
