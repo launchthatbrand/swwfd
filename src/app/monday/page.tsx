@@ -531,7 +531,7 @@ export function MondayBoardView({
     enabled:
       !!sessionToken &&
       !staticMode &&
-      (!!sendEmailRecord || (settingsOpen && isMondaySettingsAdmin)),
+      (!!sendEmailRecord || settingsOpen),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("boardId", "18401299370");
@@ -616,7 +616,6 @@ export function MondayBoardView({
       !!sessionToken &&
       !!identity?.userId &&
       settingsOpen &&
-      isMondaySettingsAdmin &&
       !staticMode,
     queryFn: async () => {
       const response = await fetch("/api/monday/routing/status", {
@@ -980,14 +979,13 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
-    if (!isMondaySettingsAdmin) return;
     if (!emailTemplatesQuery.error) return;
     const message =
       emailTemplatesQuery.error instanceof Error
         ? emailTemplatesQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [emailTemplatesQuery.error, isMondaySettingsAdmin, settingsOpen, staticMode]);
+  }, [emailTemplatesQuery.error, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -3989,28 +3987,24 @@ export function MondayBoardView({
                     >
                       Email Settings
                     </TabsTrigger>
-                    {isMondaySettingsAdmin ? (
-                      <>
-                        <TabsTrigger
-                          value="email-templates"
-                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          Email Templates
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="user-zip-map"
-                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          User {"<->"} Zipcode map
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="feature-flags"
-                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          Feature Flags
-                        </TabsTrigger>
-                      </>
-                    ) : null}
+                    <TabsTrigger
+                      value="email-templates"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      Email Templates
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="user-zip-map"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      User {"<->"} Zipcode map
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="feature-flags"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      Feature Flags
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -4238,8 +4232,7 @@ export function MondayBoardView({
                       </div>
                     </TabsContent>
 
-                    {isMondaySettingsAdmin ? (
-                      <TabsContent value="email-templates" className="mt-0">
+                    <TabsContent value="email-templates" className="mt-0">
                         <div className="grid gap-4 md:grid-cols-[260px_1fr]">
                           <div className="space-y-2">
                             <p className="text-sm font-medium">
@@ -4337,9 +4330,7 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
-                    ) : null}
-                    {isMondaySettingsAdmin ? (
-                      <TabsContent value="user-zip-map" className="mt-0">
+                    <TabsContent value="user-zip-map" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
                             <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
@@ -4508,7 +4499,6 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
-                    ) : null}
                     <TabsContent value="email-settings" className="mt-0">
                       <div className="space-y-4">
                         <div className="space-y-2">
@@ -4587,8 +4577,7 @@ export function MondayBoardView({
                         </div>
                       </div>
                     </TabsContent>
-                    {isMondaySettingsAdmin ? (
-                      <TabsContent value="feature-flags" className="mt-0">
+                    <TabsContent value="feature-flags" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
                             <p className="text-sm font-medium">Feature Flags</p>
@@ -4624,7 +4613,6 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
-                    ) : null}
                   </div>
                 </div>
               </Tabs>
