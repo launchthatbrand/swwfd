@@ -418,11 +418,7 @@ export function MondayBoardView({
     !hasForcedOwnerScope &&
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
-  const useUserRecordsEndpoint =
-    isTouchScopedView &&
-    isMondayEmbeddedContext &&
-    !canOverrideUserScopeOwner &&
-    debouncedSearch.trim().length < 2;
+  const useUserRecordsEndpoint = false;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";
@@ -783,10 +779,11 @@ export function MondayBoardView({
     }
     if (outlookParam === "connected") {
       toast.success("Outlook account connected");
+      void outlookStatusQuery.refetch();
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, [hasForcedOwnerScope]);
+  }, [hasForcedOwnerScope, outlookStatusQuery.refetch]);
 
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
@@ -1341,11 +1338,7 @@ export function MondayBoardView({
       if (!response.ok || !data.ok || !data.authorizeUrl) {
         throw new Error(data.error ?? "Failed to initialize Outlook OAuth");
       }
-      const popup = window.open(
-        data.authorizeUrl,
-        "outlook-oauth",
-        "popup=yes,width=680,height=760,noopener",
-      );
+      const popup = window.open(data.authorizeUrl, "_blank");
       if (!popup) {
         window.location.assign(data.authorizeUrl);
       }

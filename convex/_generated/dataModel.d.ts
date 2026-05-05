@@ -640,6 +640,54 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  outlookConnections: {
+    document: {
+      accessTokenExpiresAt: number;
+      clientId: string;
+      createdAt: number;
+      displayName: string | null;
+      email: string | null;
+      encryptedAccessToken: string | null;
+      encryptedRefreshToken: string;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      scopes: Array<string>;
+      tenantId: string;
+      updatedAt: number;
+      _id: Id<"outlookConnections">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accessTokenExpiresAt"
+      | "clientId"
+      | "createdAt"
+      | "displayName"
+      | "email"
+      | "encryptedAccessToken"
+      | "encryptedRefreshToken"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "scopes"
+      | "tenantId"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_monday_identity: [
+        "mondayAccountId",
+        "mondayUserId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+      by_monday_user: ["mondayAccountId", "mondayUserId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   users: {
     document: {
       email?: string;

@@ -1,10 +1,13 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { api } from "@convex-config/_generated/api";
+import type { Doc, Id } from "@convex-config/_generated/dataModel";
+import { getConvexHttpClient } from "~/server/convexHttp";
 import { decryptToken } from "./crypto";
+const isOutlookDebugLoggingEnabled = process.env.NODE_ENV !== "production";
 
 export interface OutlookConnection {
+  id: Id<"outlookConnections">;
   mondayAccountId: string;
   mondayUserId: string;
   mondayAppClientId?: string;
@@ -20,56 +23,68 @@ export interface OutlookConnection {
   updatedAt: number;
 }
 
-const STORE_PATH = join(process.cwd(), ".cache", "swwfd-outlook-connections.json");
-let writeQueue: Promise<void> = Promise.resolve();
-
 const connectionKey = (args: {
   mondayAccountId: string;
   mondayUserId: string;
   mondayAppClientId?: string;
 }) => `${args.mondayAccountId}:${args.mondayUserId}:${args.mondayAppClientId ?? "*"}`;
 
-const readStore = async (): Promise<Record<string, OutlookConnection>> => {
-  try {
-    const content = await readFile(STORE_PATH, "utf8");
-    const parsed = JSON.parse(content) as Record<string, OutlookConnection>;
-    return parsed ?? {};
-  } catch {
-    return {};
-  }
+type ConvexOutlookConnection = Doc<"outlookConnections">;
+
+const toOutlookConnection = (record: ConvexOutlookConnection): OutlookConnection => {
+  return {
+    id: record._id,
+    mondayAccountId: record.mondayAccountId,
+    mondayUserId: record.mondayUserId,
+    mondayAppClientId: record.mondayAppClientId ?? undefined,
+    email: record.email ?? undefined,
+    displayName: record.displayName ?? undefined,
+    tenantId: record.tenantId,
+    clientId: record.clientId,
+    encryptedAccessToken: record.encryptedAccessToken ?? undefined,
+    encryptedRefreshToken: record.encryptedRefreshToken,
+    accessTokenExpiresAt: record.accessTokenExpiresAt,
+    scopes: record.scopes,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
 };
 
-const writeStore = async (store: Record<string, OutlookConnection>) => {
-  await mkdir(dirname(STORE_PATH), { recursive: true });
-  await writeFile(STORE_PATH, JSON.stringify(store, null, 2), "utf8");
-};
-
-const mutateStore = async (
-  mutate: (store: Record<string, OutlookConnection>) => void,
-) => {
-  writeQueue = writeQueue.then(async () => {
-    const store = await readStore();
-    mutate(store);
-    await writeStore(store);
-  });
-  await writeQueue;
-};
+const getConvexConnectionStore = () => getConvexHttpClient();
 
 export const getOutlookConnection = async (args: {
   mondayAccountId: string;
   mondayUserId: string;
   mondayAppClientId?: string;
 }) => {
-  const store = await readStore();
-  const exact = store[connectionKey(args)];
-  if (exact) return exact;
-  const fallback = store[
-    connectionKey({
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] get connection", {
       mondayAccountId: args.mondayAccountId,
       mondayUserId: args.mondayUserId,
-    })
-  ];
-  return fallback ?? null;
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      connectionKey: connectionKey(args),
+    });
+  }
+  const convex = getConvexConnectionStore();
+  const connection: ConvexOutlookConnection | null = await convex.query(
+    api.outlookConnections.getByMondayIdentity,
+    {
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId,
+    },
+  );
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] get connection result", {
+      found: !!connection,
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      email: connection?.email ?? null,
+      updatedAt: connection?.updatedAt ?? null,
+    });
+  }
+  return connection ? toOutlookConnection(connection) : null;
 };
 
 export const upsertOutlookConnection = async (args: {
@@ -85,27 +100,38 @@ export const upsertOutlookConnection = async (args: {
   accessTokenExpiresAt: number;
   scopes: string[];
 }) => {
-  const now = Date.now();
-  const key = connectionKey(args);
-  await mutateStore((store) => {
-    const existing = store[key];
-    store[key] = {
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] upsert connection", {
       mondayAccountId: args.mondayAccountId,
       mondayUserId: args.mondayUserId,
-      mondayAppClientId: args.mondayAppClientId,
-      email: args.email,
-      displayName: args.displayName,
-      tenantId: args.tenantId,
-      clientId: args.clientId,
-      encryptedAccessToken: args.encryptedAccessToken,
-      encryptedRefreshToken: args.encryptedRefreshToken,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      email: args.email ?? null,
+      hasAccessToken: !!args.encryptedAccessToken,
+      hasRefreshToken: !!args.encryptedRefreshToken,
+      scopesCount: args.scopes.length,
       accessTokenExpiresAt: args.accessTokenExpiresAt,
-      scopes: args.scopes,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    };
+    });
+  }
+  const convex = getConvexConnectionStore();
+  await convex.mutation(api.outlookConnections.upsertByMondayIdentity, {
+    mondayAccountId: args.mondayAccountId,
+    mondayUserId: args.mondayUserId,
+    mondayAppClientId: args.mondayAppClientId,
+    email: args.email,
+    displayName: args.displayName,
+    tenantId: args.tenantId,
+    clientId: args.clientId,
+    encryptedAccessToken: args.encryptedAccessToken,
+    encryptedRefreshToken: args.encryptedRefreshToken,
+    accessTokenExpiresAt: args.accessTokenExpiresAt,
+    scopes: args.scopes,
   });
-  return key;
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] upsert complete", {
+      connectionKey: connectionKey(args),
+    });
+  }
+  return connectionKey(args);
 };
 
 export const removeOutlookConnection = async (args: {
@@ -113,15 +139,19 @@ export const removeOutlookConnection = async (args: {
   mondayUserId: string;
   mondayAppClientId?: string;
 }) => {
-  await mutateStore((store) => {
-    const exactKey = connectionKey(args);
-    delete store[exactKey];
-    if (!args.mondayAppClientId) return;
-    const fallbackKey = connectionKey({
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] remove connection", {
       mondayAccountId: args.mondayAccountId,
       mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      connectionKey: connectionKey(args),
     });
-    delete store[fallbackKey];
+  }
+  const convex = getConvexConnectionStore();
+  await convex.mutation(api.outlookConnections.removeByMondayIdentity, {
+    mondayAccountId: args.mondayAccountId,
+    mondayUserId: args.mondayUserId,
+    mondayAppClientId: args.mondayAppClientId,
   });
 };
 
