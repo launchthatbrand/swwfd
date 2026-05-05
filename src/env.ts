@@ -37,6 +37,7 @@ export const env = createEnv({
     OUTLOOK_OAUTH_STATE_SECRET: z.string().min(1).optional(),
     OUTLOOK_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
     OUTLOOK_OAUTH_REDIRECT_URI: z.url().optional(),
+    OUTLOOK_REPLY_TO_EMAIL: z.string().email().optional(),
   },
 
   client: {

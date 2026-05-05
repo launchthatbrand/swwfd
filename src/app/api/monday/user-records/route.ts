@@ -20,6 +20,7 @@ type MondayBoardItem = {
   url?: string | null;
   updated_at?: string | null;
   group?: { title?: string | null } | null;
+  linked_items?: Array<{ id?: string | number | null }> | null;
   column_values?: MondayColumnValue[];
 };
 
@@ -73,6 +74,16 @@ type TouchRecord = {
   touchedAt: string | null;
   touchedBy: string | null;
   touchSource: string | null;
+  debugRelationCandidates?: Array<{
+    columnId: string;
+    text: string | null;
+    value: string | null;
+  }>;
+  debugContactItemColumn?: {
+    columnId: string | null;
+    text: string | null;
+    value: string | null;
+  } | null;
 };
 
 const parseLimit = (value: string | null) => {
@@ -427,6 +438,20 @@ const resolveTouchColumns = async (touchBoardId: string) => {
     );
   const findByType = (type: string) =>
     columns.find((column) => (column.type ?? "").toLowerCase() === type);
+  const relationColumnIds = Array.from(
+    new Set(
+      [
+        findByType("board_relation")?.id,
+        findByType("connect_boards")?.id,
+        findByTitle("related contact")?.id,
+        findByTitle("contact relation")?.id,
+        findByTitle("contact")?.id,
+        "board_relation_mm0wbvrb",
+      ]
+        .map((value) => value?.trim())
+        .filter((value): value is string => !!value && value.length > 0),
+    ),
+  );
   return {
     touchDateColumnId:
       findByTitle("touch date")?.id ??
@@ -442,7 +467,7 @@ const resolveTouchColumns = async (touchBoardId: string) => {
       findByTitle("owner")?.id ??
       findByType("people")?.id ??
       null,
-    relationColumnId: "board_relation_mm0wbvrb",
+    relationColumnIds,
     contactItemIdColumnId:
       findByTitle("contact item")?.id ??
       findByTitle("contact id")?.id ??
@@ -456,6 +481,8 @@ const fetchTouchPage = async (args: {
   touchBoardId: string;
   cursor: string | null;
   limit: number;
+  linkedBoardId?: string | null;
+  relationColumnId?: string | null;
   dateRule?:
     | {
         touchDateColumnId: string;
@@ -476,8 +503,17 @@ const fetchTouchPage = async (args: {
     /^[a-zA-Z0-9_]+$/.test(args.dateRule.touchDateColumnId) &&
     isIsoDateOnly(args.dateRule.dateFrom) &&
     isIsoDateOnly(args.dateRule.dateTo);
+  const canFetchLinkedItems =
+    !!args.linkedBoardId &&
+    !!args.relationColumnId &&
+    /^[a-zA-Z0-9_]+$/.test(args.relationColumnId);
   const query = `
-    query ListTouchItems($boardId: ID!, $limit: Int!${args.cursor ? ", $cursor: String" : ""}) {
+    query ListTouchItems(
+      $boardId: ID!
+      $limit: Int!
+      ${args.cursor ? ", $cursor: String" : ""}
+      ${canFetchLinkedItems ? ", $linkedBoardId: ID!, $relationColumnId: String!" : ""}
+    ) {
       boards(ids: [$boardId]) {
         name
         items_page(
@@ -501,6 +537,16 @@ const fetchTouchPage = async (args: {
             name
             url
             updated_at
+            ${
+              canFetchLinkedItems
+                ? `linked_items(
+                    linked_board_id: $linkedBoardId
+                    link_to_item_column_id: $relationColumnId
+                  ) {
+                    id
+                  }`
+                : ""
+            }
             column_values {
               id
               type
@@ -516,6 +562,12 @@ const fetchTouchPage = async (args: {
     boardId: args.touchBoardId,
     limit: args.limit,
     ...(args.cursor ? { cursor: args.cursor } : {}),
+    ...(canFetchLinkedItems
+      ? {
+          linkedBoardId: args.linkedBoardId,
+          relationColumnId: args.relationColumnId,
+        }
+      : {}),
   });
   return {
     boardName: data.boards?.[0]?.name ?? null,
@@ -530,20 +582,71 @@ const extractContactIdFromTouch = (
 ) => {
   const values = item.column_values ?? [];
   const byId = (id: string | null) => values.find((column) => column.id === id);
-  const relationValue = byId(columnIds.relationColumnId)?.value;
-  if (relationValue) {
+  const parseLikelyItemId = (value: unknown): string | null => {
+    if (value == null) return null;
+    const normalized =
+      typeof value === "number"
+        ? String(value)
+        : typeof value === "string"
+          ? value.trim()
+          : "";
+    if (!normalized) return null;
+    if (/^\d{9,}$/.test(normalized)) return normalized;
+    const embeddedMatch = normalized.match(/\b\d{9,}\b/);
+    return embeddedMatch?.[0] ?? null;
+  };
+  const linkedItemId = (item.linked_items ?? [])
+    .map((linkedItem) => parseLikelyItemId(linkedItem.id))
+    .find((value): value is string => !!value);
+  if (linkedItemId) return linkedItemId;
+  const tryExtractLinkedId = (rawValue: string | null | undefined): string | null => {
+    if (!rawValue || rawValue.trim().length === 0) return null;
     try {
-      const parsed = JSON.parse(relationValue) as {
-        linkedPulseIds?: Array<{ linkedPulseId?: number | string }>;
-      };
-      const linkedId = parsed.linkedPulseIds?.[0]?.linkedPulseId;
-      if (linkedId != null) return String(linkedId);
+      const parsed = JSON.parse(rawValue) as unknown;
+      const queue: unknown[] = [parsed];
+      while (queue.length > 0) {
+        const current = queue.shift();
+        if (!current || typeof current !== "object") continue;
+        if (Array.isArray(current)) {
+          queue.push(...current);
+          continue;
+        }
+        const record = current as Record<string, unknown>;
+        const directId =
+          record.linkedPulseId ??
+          record.linkedItemId ??
+          record.pulseId ??
+          record.itemId;
+        const directItemId = parseLikelyItemId(directId);
+        if (directItemId) return directItemId;
+        const linkedPulseIds = record.linkedPulseIds;
+        if (Array.isArray(linkedPulseIds)) {
+          for (const entry of linkedPulseIds) {
+            if (!entry || typeof entry !== "object") continue;
+            const linked = (entry as { linkedPulseId?: number | string }).linkedPulseId;
+            const linkedItemId = parseLikelyItemId(linked);
+            if (linkedItemId) return linkedItemId;
+          }
+        }
+        queue.push(...Object.values(record));
+      }
     } catch {
-      // ignore
+      // ignore parse issues and continue to other candidates
     }
+    return null;
+  };
+
+  for (const relationColumnId of columnIds.relationColumnIds) {
+    const linkedId = tryExtractLinkedId(byId(relationColumnId)?.value);
+    if (linkedId) return linkedId;
   }
-  const fallbackContactId = byId(columnIds.contactItemIdColumnId)?.text?.trim();
-  return fallbackContactId && fallbackContactId.length > 0 ? fallbackContactId : null;
+
+  const fallbackColumn = byId(columnIds.contactItemIdColumnId);
+  const fallbackFromText = parseLikelyItemId(fallbackColumn?.text);
+  if (fallbackFromText) return fallbackFromText;
+  const fallbackFromValue = tryExtractLinkedId(fallbackColumn?.value);
+  if (fallbackFromValue) return fallbackFromValue;
+  return null;
 };
 
 const touchMatchesFilters = (args: {
@@ -856,6 +959,8 @@ export const GET = async (request: Request) => {
         touchBoardId: config.touchBoardId,
         cursor,
         limit: 100,
+        linkedBoardId: config.contactBoardId,
+        relationColumnId: touchColumns.relationColumnIds[0] ?? null,
         dateRule:
           scanPages === 0 && canApplyDateRule && touchColumns.touchDateColumnId
             ? {
@@ -877,12 +982,24 @@ export const GET = async (request: Request) => {
         const touchedBy = peopleIds[0] ?? ownerIdText;
         const touchedAt = parseDateValue(byId(touchColumns.touchDateColumnId));
         const touchSource = byId(touchColumns.sourceColumnId)?.text?.trim() ?? null;
+        const debugRelationCandidates = touchColumns.relationColumnIds.map((columnId) => ({
+          columnId,
+          text: byId(columnId)?.text ?? null,
+          value: byId(columnId)?.value ?? null,
+        }));
+        const debugContactItemColumn = {
+          columnId: touchColumns.contactItemIdColumnId,
+          text: byId(touchColumns.contactItemIdColumnId)?.text ?? null,
+          value: byId(touchColumns.contactItemIdColumnId)?.value ?? null,
+        };
         const touch: TouchRecord = {
           touchItemId: item.id,
           contactId: extractContactIdFromTouch(item, touchColumns),
           touchedAt,
           touchedBy,
           touchSource,
+          debugRelationCandidates,
+          debugContactItemColumn,
         };
         if (!touchMatchesFilters({ touch, ownerFilter, dateFrom, dateTo })) {
           continue;
@@ -920,6 +1037,29 @@ export const GET = async (request: Request) => {
       itemIds: contactIds,
       progressColumnConfig,
     });
+    if (matchedTouches.length > 0 && (contactIds.length === 0 || contactMap.size === 0)) {
+      const sampleTouches = selectedTouches.slice(0, 5).map((touch) => ({
+        touchItemId: touch.touchItemId,
+        contactId: touch.contactId,
+        touchedBy: touch.touchedBy,
+        touchedAt: touch.touchedAt,
+        source: touch.touchSource,
+        relationCandidates: touch.debugRelationCandidates ?? [],
+        contactItemColumn: touch.debugContactItemColumn ?? null,
+      }));
+      console.warn("[MondayUserRecordsRoute] touch hydration mismatch", {
+        touchBoardId: config.touchBoardId,
+        contactBoardId: config.contactBoardId,
+        relationColumnIds: touchColumns.relationColumnIds,
+        contactItemIdColumnId: touchColumns.contactItemIdColumnId,
+        matchedTouches: matchedTouches.length,
+        selectedTouches: selectedTouches.length,
+        uniqueContactIds: contactIds.length,
+        loadedContacts: contactMap.size,
+        sampleTouches,
+        sampleTouchesJson: JSON.stringify(sampleTouches),
+      });
+    }
 
     const merged: MergedRecord[] = [];
     for (const touch of selectedTouches) {
