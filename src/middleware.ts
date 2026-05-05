@@ -11,6 +11,10 @@ const isProtectedAdminRoute = createRouteMatcher(["/admin(.*)"]);
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {
+    if (request.nextUrl.pathname === "/api/monday/email/outlook/callback") {
+      return NextResponse.next();
+    }
+
     const isAuthed = await convexAuth.isAuthenticated();
 
     if (isAuthPage(request) && isAuthed) {
@@ -40,6 +44,6 @@ export default convexAuthNextjsMiddleware(
 );
 
 export const config = {
-  matcher: ["/((?!.*\\..*|_next).*)", "/", "/(api|trpc)(.*)"],
+  matcher: ["/((?!.*\\..*|_next|api/monday/email/outlook/callback).*)", "/"],
 };
 

@@ -1619,6 +1619,20 @@ const renderDocBlocks = (
 ): { text: string; html: string } => {
   const textParts: string[] = [];
   const htmlParts: string[] = [];
+  const proxyBaseOrigin = (() => {
+    const configuredAppUrl = env.NEXT_PUBLIC_APP_URL?.trim();
+    if (!configuredAppUrl) return null;
+    try {
+      const parsed = new URL(configuredAppUrl);
+      const host = parsed.hostname.toLowerCase();
+      if (host === "localhost" || host === "127.0.0.1") {
+        return null;
+      }
+      return parsed.origin;
+    } catch {
+      return null;
+    }
+  })();
 
   for (const block of blocks) {
     const raw = block.content ?? "";
@@ -1638,18 +1652,26 @@ const renderDocBlocks = (
         : null;
 
     const parsedAssetIds = extractAssetIdsDeep(parsed);
+    const directAssetUrls = parsedAssetIds
+      .map((assetId) => assetUrlById[assetId])
+      .filter((assetUrl): assetUrl is string => typeof assetUrl === "string")
+      .map((assetUrl) => assetUrl.trim())
+      .filter((assetUrl) => assetUrl.length > 0);
     const proxyUrls = parsedAssetIds.map(
-      (assetId) => `/api/monday/email-templates/assets/${encodeURIComponent(assetId)}`,
+      (assetId) =>
+        `${proxyBaseOrigin ?? ""}/api/monday/email-templates/assets/${encodeURIComponent(assetId)}`,
     );
-    const imageUrls =
-      proxyUrls.length > 0
-        ? proxyUrls
-        : extractLikelyImageUrls(parsed).map((imageUrl) => {
-            const replacement = parsedAssetIds
-              .map((assetId) => assetUrlById[assetId])
-              .find((value) => typeof value === "string" && value.length > 0);
-            return replacement ?? imageUrl;
-          });
+    const extractedImageUrls = extractLikelyImageUrls(parsed);
+    const imageUrls = Array.from(
+      new Set(
+        (directAssetUrls.length > 0
+          ? directAssetUrls
+          : proxyUrls.length > 0
+            ? proxyUrls
+            : extractedImageUrls
+        ).map((imageUrl) => imageUrl.trim()),
+      ),
+    ).filter((imageUrl) => imageUrl.length > 0);
 
     if (blockType.includes("image") && imageUrls.length > 0) {
       const alignmentValue =

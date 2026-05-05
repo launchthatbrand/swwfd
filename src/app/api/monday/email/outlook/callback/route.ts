@@ -5,6 +5,7 @@ import { getOutlookOAuthConfig } from "~/server/outlook/config";
 import { upsertOutlookConnection } from "~/server/outlook/store";
 
 export const runtime = "nodejs";
+const isOutlookDebugLoggingEnabled = process.env.NODE_ENV !== "production";
 
 interface TokenResponse {
   access_token?: string;
@@ -46,7 +47,11 @@ const toPopupResponse = (args: {
   const html = `<!doctype html>
 <html>
   <body style="font-family: system-ui, sans-serif; padding: 24px;">
-    <p>${args.status === "connected" ? "Outlook connected. Closing…" : "OAuth failed. Closing…"}</p>
+    <p id="status-text">${args.status === "connected" ? "Outlook connected." : "OAuth failed."}</p>
+    <div id="return-help" style="display:none; margin-top: 12px;">
+      <p style="margin: 0 0 8px 0;">Return to your monday.com tab to continue.</p>
+      <a id="open-app-link" href="#" style="font-size: 12px;">Open app directly</a>
+    </div>
     <script>
       (function () {
         var payload = ${payload};
@@ -59,7 +64,10 @@ const toPopupResponse = (args: {
             return;
           }
         } catch (e) {}
-        window.location.replace(fallback);
+        var returnHelp = document.getElementById("return-help");
+        if (returnHelp) returnHelp.style.display = "block";
+        var openAppLink = document.getElementById("open-app-link");
+        if (openAppLink) openAppLink.setAttribute("href", fallback);
       })();
     </script>
   </body>
@@ -70,10 +78,10 @@ const toPopupResponse = (args: {
   });
 };
 
-const toHashRecoveryResponse = (requestUrl: URL) => {
+const toHashRecoveryResponse = (baseOrigin: string) => {
   const fallbackMessage =
     "Missing OAuth callback code/state. Ensure Azure redirect URI is configured under Web platform and points to /api/monday/email/outlook/callback.";
-  const fallbackLocation = new URL("/monday", requestUrl.origin);
+  const fallbackLocation = new URL("/monday", baseOrigin);
   fallbackLocation.searchParams.set("outlook", "error");
   fallbackLocation.searchParams.set("outlookMessage", fallbackMessage);
 
@@ -87,12 +95,19 @@ const toHashRecoveryResponse = (requestUrl: URL) => {
           var current = new URL(window.location.href);
           var hash = current.hash ? current.hash.slice(1) : "";
           var hashParams = new URLSearchParams(hash);
-          var code = hashParams.get("code");
+          var code = hashParams.get("code") || current.searchParams.get("code");
           var state = hashParams.get("state") || current.searchParams.get("state");
-          if (code && state) {
+          var oauthError = hashParams.get("error") || current.searchParams.get("error");
+          var oauthErrorDescription =
+            hashParams.get("error_description") || current.searchParams.get("error_description");
+          if ((code && state) || oauthError) {
             current.hash = "";
-            current.searchParams.set("code", code);
-            current.searchParams.set("state", state);
+            if (code) current.searchParams.set("code", code);
+            if (state) current.searchParams.set("state", state);
+            if (oauthError) current.searchParams.set("error", oauthError);
+            if (oauthErrorDescription) {
+              current.searchParams.set("error_description", oauthErrorDescription);
+            }
             if (hashParams.get("session_state")) {
               current.searchParams.set("session_state", hashParams.get("session_state"));
             }
@@ -119,6 +134,23 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
   const stateToken = params.get("state");
   const oauthError = params.get("error");
   const oauthErrorDescription = params.get("error_description");
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][callback][debug] request metadata", {
+      method: request.method,
+      url: requestUrl.toString(),
+      baseOrigin,
+      host: request.headers.get("host"),
+      xForwardedHost: request.headers.get("x-forwarded-host"),
+      xForwardedProto: request.headers.get("x-forwarded-proto"),
+      referer: request.headers.get("referer"),
+      originHeader: request.headers.get("origin"),
+      userAgent: request.headers.get("user-agent"),
+      secFetchDest: request.headers.get("sec-fetch-dest"),
+      secFetchMode: request.headers.get("sec-fetch-mode"),
+      secFetchSite: request.headers.get("sec-fetch-site"),
+      queryString: requestUrl.search,
+    });
+  }
   console.info("[OutlookOAuth][callback] received", {
     method: request.method,
     path: requestUrl.pathname,
@@ -136,6 +168,13 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
       message: oauthErrorDescription ?? oauthError,
     });
     const fallbackUrl = getFinalRedirectUrl(baseOrigin, params);
+    if (isOutlookDebugLoggingEnabled) {
+      console.info("[OutlookOAuth][callback][debug] oauth provider returned error", {
+        oauthError,
+        oauthErrorDescription,
+        fallbackUrl,
+      });
+    }
     return toPopupResponse({
       appOrigin: baseOrigin,
       status: "error",
@@ -152,8 +191,17 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
     });
     // Some Azure app setups return code in URL hash (#code=...),
     // which is not sent to the server. Recover it client-side if present.
-    if (request.method === "GET" && stateToken) {
-      return toHashRecoveryResponse(requestUrl);
+    if (request.method === "GET") {
+      if (isOutlookDebugLoggingEnabled) {
+        console.info("[OutlookOAuth][callback][debug] serving hash recovery page", {
+          fullUrl: requestUrl.toString(),
+          baseOrigin,
+          hasCode: !!code,
+          hasState: !!stateToken,
+          oauthError: oauthError ?? null,
+        });
+      }
+      return toHashRecoveryResponse(baseOrigin);
     }
     const redirectParams = new URLSearchParams({
       status: "error",
@@ -161,6 +209,12 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
         "Missing OAuth callback code/state. Ensure Azure redirect URI is configured under Web platform and points to /api/monday/email/outlook/callback.",
     });
     const fallbackUrl = getFinalRedirectUrl(baseOrigin, redirectParams);
+    if (isOutlookDebugLoggingEnabled) {
+      console.warn("[OutlookOAuth][callback][debug] unable to recover missing code/state", {
+        method: request.method,
+        fallbackUrl,
+      });
+    }
     return toPopupResponse({
       appOrigin: baseOrigin,
       status: "error",
@@ -251,11 +305,26 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
       accessTokenExpiresAt,
       scopes,
     });
+    if (isOutlookDebugLoggingEnabled) {
+      console.info("[OutlookOAuth][callback][debug] outlook connection stored", {
+        mondayAccountId: state.mondayAccountId,
+        mondayUserId: state.mondayUserId,
+        mondayAppClientId: state.mondayAppClientId ?? null,
+        email: email ?? null,
+        scopesCount: scopes.length,
+      });
+    }
 
     const params = new URLSearchParams({
       status: "connected",
     });
     const fallbackUrl = getFinalRedirectUrl(appOrigin, params);
+    if (isOutlookDebugLoggingEnabled) {
+      console.info("[OutlookOAuth][callback][debug] success response prepared", {
+        appOrigin,
+        fallbackUrl,
+      });
+    }
     return toPopupResponse({
       appOrigin,
       status: "connected",
@@ -281,4 +350,31 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
 
 export const GET = async (request: Request) => {
   return await handleCallback(request);
+};
+
+export const POST = async (request: Request) => {
+  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+  let bodyParams: URLSearchParams | undefined;
+  if (contentType.includes("application/x-www-form-urlencoded")) {
+    const rawBody = await request.text();
+    bodyParams = new URLSearchParams(rawBody);
+  } else {
+    try {
+      const formData = await request.formData();
+      bodyParams = new URLSearchParams();
+      for (const [key, value] of formData.entries()) {
+        if (typeof value === "string") {
+          bodyParams.append(key, value);
+        }
+      }
+    } catch (error) {
+      if (isOutlookDebugLoggingEnabled) {
+        console.warn("[OutlookOAuth][callback][debug] failed to parse POST body", {
+          message: error instanceof Error ? error.message : "unknown error",
+          contentType,
+        });
+      }
+    }
+  }
+  return await handleCallback(request, bodyParams);
 };

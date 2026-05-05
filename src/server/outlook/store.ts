@@ -4,6 +4,7 @@ import { api } from "@convex-config/_generated/api";
 import type { Doc, Id } from "@convex-config/_generated/dataModel";
 import { getConvexHttpClient } from "~/server/convexHttp";
 import { decryptToken } from "./crypto";
+const isOutlookDebugLoggingEnabled = process.env.NODE_ENV !== "production";
 
 export interface OutlookConnection {
   id: Id<"outlookConnections">;
@@ -56,15 +57,33 @@ export const getOutlookConnection = async (args: {
   mondayUserId: string;
   mondayAppClientId?: string;
 }) => {
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] get connection", {
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      connectionKey: connectionKey(args),
+    });
+  }
   const convex = getConvexConnectionStore();
   const connection: ConvexOutlookConnection | null = await convex.query(
     api.outlookConnections.getByMondayIdentity,
     {
-    mondayAccountId: args.mondayAccountId,
-    mondayUserId: args.mondayUserId,
-    mondayAppClientId: args.mondayAppClientId,
-  },
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId,
+    },
   );
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] get connection result", {
+      found: !!connection,
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      email: connection?.email ?? null,
+      updatedAt: connection?.updatedAt ?? null,
+    });
+  }
   return connection ? toOutlookConnection(connection) : null;
 };
 
@@ -81,6 +100,18 @@ export const upsertOutlookConnection = async (args: {
   accessTokenExpiresAt: number;
   scopes: string[];
 }) => {
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] upsert connection", {
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      email: args.email ?? null,
+      hasAccessToken: !!args.encryptedAccessToken,
+      hasRefreshToken: !!args.encryptedRefreshToken,
+      scopesCount: args.scopes.length,
+      accessTokenExpiresAt: args.accessTokenExpiresAt,
+    });
+  }
   const convex = getConvexConnectionStore();
   await convex.mutation(api.outlookConnections.upsertByMondayIdentity, {
     mondayAccountId: args.mondayAccountId,
@@ -95,6 +126,11 @@ export const upsertOutlookConnection = async (args: {
     accessTokenExpiresAt: args.accessTokenExpiresAt,
     scopes: args.scopes,
   });
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] upsert complete", {
+      connectionKey: connectionKey(args),
+    });
+  }
   return connectionKey(args);
 };
 
@@ -103,6 +139,14 @@ export const removeOutlookConnection = async (args: {
   mondayUserId: string;
   mondayAppClientId?: string;
 }) => {
+  if (isOutlookDebugLoggingEnabled) {
+    console.info("[OutlookOAuth][store][debug] remove connection", {
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      connectionKey: connectionKey(args),
+    });
+  }
   const convex = getConvexConnectionStore();
   await convex.mutation(api.outlookConnections.removeByMondayIdentity, {
     mondayAccountId: args.mondayAccountId,
