@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
 import { decryptToken, encryptToken } from "~/server/outlook/crypto";
@@ -86,6 +87,9 @@ export const POST = async (request: Request) => {
     const to = normalizeEmail(body.to ?? "");
     const subject = (body.subject ?? "").trim();
     const html = (body.html ?? "").trim();
+    const configuredReplyTo = env.OUTLOOK_REPLY_TO_EMAIL
+      ? normalizeEmail(env.OUTLOOK_REPLY_TO_EMAIL)
+      : null;
     if (!to || !subject || !html) {
       return toJson(
         { ok: false, error: "Missing required fields: to, subject, html" },
@@ -145,6 +149,17 @@ export const POST = async (request: Request) => {
               },
             },
           ],
+          ...(configuredReplyTo
+            ? {
+                replyTo: [
+                  {
+                    emailAddress: {
+                      address: configuredReplyTo,
+                    },
+                  },
+                ],
+              }
+            : {}),
         },
         saveToSentItems: true,
       }),

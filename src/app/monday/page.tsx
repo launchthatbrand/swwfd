@@ -418,7 +418,10 @@ export function MondayBoardView({
     !hasForcedOwnerScope &&
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
-  const useUserRecordsEndpoint = false;
+  const useUserRecordsEndpoint =
+    isTouchScopedView &&
+    !canOverrideUserScopeOwner &&
+    debouncedSearch.trim().length < 2;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";
@@ -591,7 +594,6 @@ export function MondayBoardView({
       !!sessionToken &&
       !!identity?.userId &&
       settingsOpen &&
-      isMondaySettingsAdmin &&
       !staticMode,
     queryFn: async () => {
       const response = await fetch("/api/monday/email/outlook/status", {
@@ -1030,14 +1032,13 @@ export function MondayBoardView({
   useEffect(() => {
     if (staticMode) return;
     if (!settingsOpen) return;
-    if (!isMondaySettingsAdmin) return;
     if (!outlookStatusQuery.error) return;
     const message =
       outlookStatusQuery.error instanceof Error
         ? outlookStatusQuery.error.message
         : "Unknown loading error";
     toast.error(message);
-  }, [isMondaySettingsAdmin, outlookStatusQuery.error, settingsOpen, staticMode]);
+  }, [outlookStatusQuery.error, settingsOpen, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -3982,6 +3983,12 @@ export function MondayBoardView({
                     >
                       General Settings
                     </TabsTrigger>
+                    <TabsTrigger
+                      value="email-settings"
+                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                    >
+                      Email Settings
+                    </TabsTrigger>
                     {isMondaySettingsAdmin ? (
                       <>
                         <TabsTrigger
@@ -3989,12 +3996,6 @@ export function MondayBoardView({
                           className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                         >
                           Email Templates
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="email-settings"
-                          className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          Email Settings
                         </TabsTrigger>
                         <TabsTrigger
                           value="user-zip-map"
@@ -4508,86 +4509,84 @@ export function MondayBoardView({
                         </div>
                       </TabsContent>
                     ) : null}
-                    {isMondaySettingsAdmin ? (
-                      <TabsContent value="email-settings" className="mt-0">
-                        <div className="space-y-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">Email Settings</p>
-                            <p className="text-muted-foreground text-sm">
-                              Configure outbound email account settings for sending
-                              monday-designed templates.
-                            </p>
-                          </div>
-                          <div className="space-y-3 rounded-md border p-4">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant={
-                                  outlookStatusQuery.data?.connected
-                                    ? "default"
-                                    : "secondary"
-                                }
-                              >
-                                {outlookStatusQuery.data?.connected
-                                  ? "Outlook connected"
-                                  : "Outlook not connected"}
-                              </Badge>
+                    <TabsContent value="email-settings" className="mt-0">
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Email Settings</p>
+                          <p className="text-muted-foreground text-sm">
+                            Configure outbound email account settings for sending
+                            monday-designed templates.
+                          </p>
+                        </div>
+                        <div className="space-y-3 rounded-md border p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant={
+                                outlookStatusQuery.data?.connected
+                                  ? "default"
+                                  : "secondary"
+                              }
+                            >
+                              {outlookStatusQuery.data?.connected
+                                ? "Outlook connected"
+                                : "Outlook not connected"}
+                            </Badge>
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                void handleConnectOutlook();
+                              }}
+                              disabled={isConnectingOutlook}
+                            >
+                              {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                            </Button>
+                            {outlookStatusQuery.data?.connected ? (
                               <Button
                                 size="sm"
+                                variant="outline"
                                 onClick={() => {
-                                  void handleConnectOutlook();
+                                  void handleDisconnectOutlook();
                                 }}
-                                disabled={isConnectingOutlook}
+                                disabled={isDisconnectingOutlook}
                               >
-                                {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                {isDisconnectingOutlook
+                                  ? "Disconnecting..."
+                                  : "Disconnect"}
                               </Button>
-                              {outlookStatusQuery.data?.connected ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => {
-                                    void handleDisconnectOutlook();
-                                  }}
-                                  disabled={isDisconnectingOutlook}
-                                >
-                                  {isDisconnectingOutlook
-                                    ? "Disconnecting..."
-                                    : "Disconnect"}
-                                </Button>
-                              ) : null}
-                            </div>
-                            <div className="text-muted-foreground text-sm">
-                              {outlookStatusQuery.data?.connection?.email ? (
-                                <p>
-                                  Connected mailbox:{" "}
-                                  {outlookStatusQuery.data.connection.email}
-                                </p>
-                              ) : (
-                                <p>
-                                  Use OAuth to connect Outlook, then use this account
-                                  for sending and engagement tracking.
-                                </p>
-                              )}
-                              {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                <p className="mt-1">
-                                  Last updated:{" "}
-                                  {new Date(
-                                    outlookStatusQuery.data.connection.updatedAt,
-                                  ).toLocaleString()}
-                                </p>
-                              ) : null}
-                            </div>
-                            <div className="rounded-md border bg-muted/30 p-3">
-                              <p className="text-xs font-semibold tracking-wide uppercase">
-                                Callback URL
+                            ) : null}
+                          </div>
+                          <div className="text-muted-foreground text-sm">
+                            {outlookStatusQuery.data?.connection?.email ? (
+                              <p>
+                                Connected mailbox:{" "}
+                                {outlookStatusQuery.data.connection.email}
                               </p>
-                              <p className="mt-1 break-all font-mono text-xs">
-                                {callbackUrl}
+                            ) : (
+                              <p>
+                                Use OAuth to connect Outlook, then use this account
+                                for sending and engagement tracking.
                               </p>
-                            </div>
+                            )}
+                            {outlookStatusQuery.data?.connection?.updatedAt ? (
+                              <p className="mt-1">
+                                Last updated:{" "}
+                                {new Date(
+                                  outlookStatusQuery.data.connection.updatedAt,
+                                ).toLocaleString()}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="rounded-md border bg-muted/30 p-3">
+                            <p className="text-xs font-semibold tracking-wide uppercase">
+                              Callback URL
+                            </p>
+                            <p className="mt-1 break-all font-mono text-xs">
+                              {callbackUrl}
+                            </p>
                           </div>
                         </div>
-                      </TabsContent>
-                    ) : null}
+                      </div>
+                    </TabsContent>
                     {isMondaySettingsAdmin ? (
                       <TabsContent value="feature-flags" className="mt-0">
                         <div className="space-y-4">
