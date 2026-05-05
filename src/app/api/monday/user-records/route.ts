@@ -651,14 +651,9 @@ const extractContactIdFromTouch = (
 
 const touchMatchesFilters = (args: {
   touch: TouchRecord;
-  ownerFilter: string;
   dateFrom: Date | null;
   dateTo: Date | null;
 }) => {
-  if (args.ownerFilter.length > 0) {
-    const ownerNormalized = args.touch.touchedBy?.toLowerCase() ?? "";
-    if (ownerNormalized !== args.ownerFilter) return false;
-  }
   if (args.dateFrom || args.dateTo) {
     const touchDate = args.touch.touchedAt ? new Date(args.touch.touchedAt) : null;
     if (!touchDate || Number.isNaN(touchDate.getTime())) return false;
@@ -1001,7 +996,7 @@ export const GET = async (request: Request) => {
           debugRelationCandidates,
           debugContactItemColumn,
         };
-        if (!touchMatchesFilters({ touch, ownerFilter, dateFrom, dateTo })) {
+        if (!touchMatchesFilters({ touch, dateFrom, dateTo })) {
           continue;
         }
         matchedTouches.push(touch);
@@ -1065,6 +1060,12 @@ export const GET = async (request: Request) => {
     for (const touch of selectedTouches) {
       const contact = touch.contactId ? contactMap.get(touch.contactId) : undefined;
       if (!contact) continue;
+      if (
+        ownerFilter.length > 0 &&
+        !contact.ownerIds.some((ownerId) => ownerId.trim().toLowerCase() === ownerFilter)
+      ) {
+        continue;
+      }
       const detailPrefix: Array<{ label: string; value: string }> = [];
       if (touch.touchedAt) detailPrefix.push({ label: "touched_at", value: touch.touchedAt });
       if (touch.touchedBy) detailPrefix.push({ label: "touched_by", value: touch.touchedBy });
