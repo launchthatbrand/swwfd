@@ -108,6 +108,7 @@ import {
   isUserBoardDisplayMode,
   isUserBoardFontSize,
   isUserBoardPageSize,
+  isUserBoardRecordSource,
   isUserBoardTableDensity,
   KANBAN_STEP_CONFIG,
   MONDAY_DEV_BYPASS_TOKEN,
@@ -123,6 +124,7 @@ import {
   USER_BOARD_FONT_SIZE_OPTIONS,
   USER_BOARD_FONT_SIZE_SCALE,
   USER_BOARD_PAGE_SIZE_OPTIONS,
+  USER_BOARD_RECORD_SOURCE_OPTIONS,
   USER_BOARD_TABLE_DENSITY_OPTIONS,
 } from "./constants";
 import type { ContactUpdateType, QuickContactActionButton } from "./constants";
@@ -421,6 +423,7 @@ export function MondayBoardView({
   const useUserRecordsEndpoint =
     isTouchScopedView &&
     !canOverrideUserScopeOwner &&
+    boardGeneralSettings.recordSource === "touched_in_month" &&
     debouncedSearch.trim().length < 2;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
@@ -448,7 +451,8 @@ export function MondayBoardView({
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
     boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
     boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
-    boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode;
+    boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode ||
+    boardGeneralSettings.recordSource !== boardGeneralSettingsDraft.recordSource;
   const canCreateUpdatesAsLoggedInMondayUser =
     isMondayEmbeddedContext &&
     !!identity?.userId &&
@@ -1480,9 +1484,10 @@ export function MondayBoardView({
     if (
       !isUserBoardColorTheme(boardGeneralSettingsDraft.colorTheme) ||
       !isUserBoardFontSize(boardGeneralSettingsDraft.fontSize) ||
-      !isUserBoardTableDensity(boardGeneralSettingsDraft.tableDensity)
+      !isUserBoardTableDensity(boardGeneralSettingsDraft.tableDensity) ||
+      !isUserBoardRecordSource(boardGeneralSettingsDraft.recordSource)
     ) {
-      toast.error("Choose a valid font size, color theme, and table density");
+      toast.error("Choose valid board settings before saving");
       return;
     }
 
@@ -1502,6 +1507,7 @@ export function MondayBoardView({
           tableDensity: boardGeneralSettingsDraft.tableDensity,
           pageSize: boardGeneralSettingsDraft.pageSize,
           displayMode: boardGeneralSettingsDraft.displayMode,
+          recordSource: boardGeneralSettingsDraft.recordSource,
         }),
       });
       const data = (await response.json()) as MondayUserBoardSettingsResponse;
@@ -4207,6 +4213,39 @@ export function MondayBoardView({
                               >
                                 {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
                                 {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Monthly Records */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Monthly Records</p>
+                            <p className="text-muted-foreground text-xs">
+                              {USER_BOARD_RECORD_SOURCE_OPTIONS.find(
+                                (o) => o.value === boardGeneralSettingsDraft.recordSource,
+                              )?.description ??
+                                "Choose how monthly records are selected."}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            {USER_BOARD_RECORD_SOURCE_OPTIONS.map((option) => (
+                              <button
+                                key={option.value}
+                                type="button"
+                                onClick={() => {
+                                  setBoardGeneralSettingsDraft((prev) => ({
+                                    ...prev,
+                                    recordSource: option.value,
+                                  }));
+                                }}
+                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.recordSource === option.value
+                                  ? "bg-primary text-primary-foreground"
+                                  : "bg-background text-muted-foreground hover:bg-muted"
+                                  }`}
+                              >
+                                {option.label}
                               </button>
                             ))}
                           </div>

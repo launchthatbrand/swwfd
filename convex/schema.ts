@@ -199,6 +199,9 @@ export default defineSchema({
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),
     pageSize: v.optional(v.number()),
     displayMode: v.optional(v.union(v.literal("table"), v.literal("grid"))),
+    recordSource: v.optional(
+      v.union(v.literal("created_in_month"), v.literal("touched_in_month")),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),

@@ -6,6 +6,7 @@ import type {
   UserBoardFontSize,
   UserBoardGeneralSettings,
   UserBoardPageSize,
+  UserBoardRecordSource,
   UserBoardTableDensity,
 } from "./types";
 
@@ -192,6 +193,29 @@ export const isUserBoardPageSize = (value: unknown): value is UserBoardPageSize 
 export const isUserBoardDisplayMode = (value: unknown): value is UserBoardDisplayMode =>
   value === "table" || value === "grid" || value === "kanban";
 
+export const USER_BOARD_RECORD_SOURCE_OPTIONS: {
+  value: UserBoardRecordSource;
+  label: string;
+  description: string;
+}[] = [
+    {
+      value: "created_in_month",
+      label: "Entered This Month",
+      description: "Only contacts created in the selected month.",
+    },
+    {
+      value: "touched_in_month",
+      label: "Touched This Month",
+      description:
+        "Any owned contact with at least one touchpoint in the selected month.",
+    },
+  ];
+
+export const isUserBoardRecordSource = (
+  value: unknown,
+): value is UserBoardRecordSource =>
+  value === "created_in_month" || value === "touched_in_month";
+
 export const USER_BOARD_TABLE_DENSITY_OPTIONS: {
   value: UserBoardTableDensity;
   label: string;
@@ -332,6 +356,7 @@ export const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   tableDensity: "expanded",
   pageSize: 0,
   displayMode: "table",
+  recordSource: "created_in_month",
 };
 
 export const isUserBoardColorTheme = (value: unknown): value is UserBoardColorTheme => {

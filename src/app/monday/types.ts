@@ -365,6 +365,7 @@ export type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "ro
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
 export type UserBoardDisplayMode = "table" | "grid" | "kanban";
+export type UserBoardRecordSource = "created_in_month" | "touched_in_month";
 /** 0 = infinite scroll */
 export type UserBoardPageSize = 20 | 40 | 100 | 0;
 
@@ -375,6 +376,7 @@ export interface UserBoardGeneralSettings {
   tableDensity: UserBoardTableDensity;
   pageSize: UserBoardPageSize;
   displayMode: UserBoardDisplayMode;
+  recordSource: UserBoardRecordSource;
   createdAt?: number;
   updatedAt?: number;
 }

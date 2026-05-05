@@ -546,6 +546,7 @@ export type DataModel = {
       fontSize: "default" | "medium" | "large";
       ownerMondayUserId: string;
       pageSize?: number;
+      recordSource?: "created_in_month" | "touched_in_month";
       tableDensity?: "expanded" | "compact";
       updatedAt: number;
       updatedByMondayUserId: string;
@@ -562,6 +563,7 @@ export type DataModel = {
       | "fontSize"
       | "ownerMondayUserId"
       | "pageSize"
+      | "recordSource"
       | "tableDensity"
       | "updatedAt"
       | "updatedByMondayUserId";

@@ -11,6 +11,7 @@ type BoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
 type BoardFontSize = "default" | "medium" | "large";
 type BoardTableDensity = "expanded" | "compact";
 type BoardDisplayMode = "table" | "grid";
+type BoardRecordSource = "created_in_month" | "touched_in_month";
 const VALID_PAGE_SIZES = [20, 40, 100, 0] as const;
 
 interface UpsertBoardSettingsBody {
@@ -20,12 +21,17 @@ interface UpsertBoardSettingsBody {
   tableDensity?: BoardTableDensity;
   pageSize?: number;
   displayMode?: BoardDisplayMode;
+  recordSource?: BoardRecordSource;
 }
 
 const COLOR_THEMES: BoardColorTheme[] = ["neutral", "sky", "emerald", "violet", "rose"];
 const FONT_SIZES: BoardFontSize[] = ["default", "medium", "large"];
 const TABLE_DENSITIES: BoardTableDensity[] = ["expanded", "compact"];
 const DISPLAY_MODES: BoardDisplayMode[] = ["table", "grid"];
+const RECORD_SOURCES: BoardRecordSource[] = [
+  "created_in_month",
+  "touched_in_month",
+];
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
@@ -50,6 +56,10 @@ const isBoardTableDensity = (value: unknown): value is BoardTableDensity => {
 
 const isBoardDisplayMode = (value: unknown): value is BoardDisplayMode => {
   return typeof value === "string" && DISPLAY_MODES.includes(value as BoardDisplayMode);
+};
+
+const isBoardRecordSource = (value: unknown): value is BoardRecordSource => {
+  return typeof value === "string" && RECORD_SOURCES.includes(value as BoardRecordSource);
 };
 
 const isValidPageSize = (value: unknown): value is number => {
@@ -114,6 +124,9 @@ export const POST = async (request: Request) => {
         tableDensity: isBoardTableDensity(body.tableDensity) ? body.tableDensity : undefined,
         pageSize: isValidPageSize(body.pageSize) ? body.pageSize : undefined,
         displayMode: isBoardDisplayMode(body.displayMode) ? body.displayMode : undefined,
+        recordSource: isBoardRecordSource(body.recordSource)
+          ? body.recordSource
+          : undefined,
       },
     );
     return toJson({ ok: true, settings });

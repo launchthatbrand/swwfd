@@ -339,6 +339,7 @@ export declare const api: {
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
         pageSize?: number;
+        recordSource?: "created_in_month" | "touched_in_month";
         tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }
@@ -353,6 +354,7 @@ export declare const api: {
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
         pageSize?: number;
+        recordSource?: "created_in_month" | "touched_in_month";
         tableDensity?: "expanded" | "compact";
         viewerMondayUserId: string;
       },
@@ -363,6 +365,7 @@ export declare const api: {
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
         pageSize?: number;
+        recordSource?: "created_in_month" | "touched_in_month";
         tableDensity?: "expanded" | "compact";
         updatedAt: number;
       }

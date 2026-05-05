@@ -16,6 +16,10 @@ const fontSizeValidator = v.union(
 );
 const tableDensityValidator = v.union(v.literal("expanded"), v.literal("compact"));
 const displayModeValidator = v.union(v.literal("table"), v.literal("grid"));
+const recordSourceValidator = v.union(
+  v.literal("created_in_month"),
+  v.literal("touched_in_month"),
+);
 
 const settingsValidator = v.object({
   ownerMondayUserId: v.string(),
@@ -24,6 +28,7 @@ const settingsValidator = v.object({
   tableDensity: v.optional(tableDensityValidator),
   pageSize: v.optional(v.number()),
   displayMode: v.optional(displayModeValidator),
+  recordSource: v.optional(recordSourceValidator),
   createdAt: v.number(),
   updatedAt: v.number(),
 });
@@ -50,6 +55,7 @@ export const getForOwnerBoard = query({
       tableDensity: undefined,
       pageSize: undefined,
       displayMode: undefined,
+      recordSource: undefined,
       createdAt: 0,
       updatedAt: 0,
     };
@@ -70,6 +76,7 @@ export const getForOwnerBoard = query({
       tableDensity: undefined,
       pageSize: undefined,
       displayMode: undefined,
+      recordSource: undefined,
       createdAt: 0,
       updatedAt: 0,
     };
@@ -82,6 +89,7 @@ export const getForOwnerBoard = query({
     tableDensity: existing.tableDensity,
     pageSize: existing.pageSize,
     displayMode: existing.displayMode,
+    recordSource: existing.recordSource,
     createdAt: existing.createdAt,
     updatedAt: existing.updatedAt,
   };
@@ -98,6 +106,7 @@ export const upsertForOwnerBoard = mutation({
     tableDensity: v.optional(tableDensityValidator),
     pageSize: v.optional(v.number()),
     displayMode: v.optional(displayModeValidator),
+    recordSource: v.optional(recordSourceValidator),
   },
   returns: settingsValidator,
   handler: async (ctx, args) => {
@@ -123,6 +132,7 @@ export const upsertForOwnerBoard = mutation({
         tableDensity: args.tableDensity,
         pageSize: args.pageSize,
         displayMode: args.displayMode,
+        recordSource: args.recordSource,
         updatedAt: now,
         updatedByMondayUserId: viewerMondayUserId,
       });
@@ -133,6 +143,7 @@ export const upsertForOwnerBoard = mutation({
         tableDensity: args.tableDensity,
         pageSize: args.pageSize,
         displayMode: args.displayMode,
+        recordSource: args.recordSource,
         createdAt: existing.createdAt,
         updatedAt: now,
       };
@@ -146,6 +157,7 @@ export const upsertForOwnerBoard = mutation({
       tableDensity: args.tableDensity,
       pageSize: args.pageSize,
       displayMode: args.displayMode,
+      recordSource: args.recordSource,
       createdAt: now,
       updatedAt: now,
       updatedByMondayUserId: viewerMondayUserId,
@@ -157,6 +169,7 @@ export const upsertForOwnerBoard = mutation({
       tableDensity: args.tableDensity,
       pageSize: args.pageSize,
       displayMode: args.displayMode,
+      recordSource: args.recordSource,
       createdAt: now,
       updatedAt: now,
     };

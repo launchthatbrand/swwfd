@@ -18,6 +18,7 @@ import {
   isUserBoardDisplayMode,
   isUserBoardFontSize,
   isUserBoardPageSize,
+  isUserBoardRecordSource,
   isUserBoardTableDensity,
 } from "./constants";
 
@@ -779,6 +780,9 @@ export const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralS
     displayMode: isUserBoardDisplayMode(candidate.displayMode)
       ? candidate.displayMode
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.displayMode,
+    recordSource: isUserBoardRecordSource(candidate.recordSource)
+      ? candidate.recordSource
+      : DEFAULT_USER_BOARD_GENERAL_SETTINGS.recordSource,
     createdAt: typeof candidate.createdAt === "number" ? candidate.createdAt : undefined,
     updatedAt: typeof candidate.updatedAt === "number" ? candidate.updatedAt : undefined,
   };
