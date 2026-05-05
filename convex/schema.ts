@@ -264,4 +264,26 @@ export default defineSchema({
       "sourceEntityId",
     ]),
 
+  outlookConnections: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    email: v.union(v.string(), v.null()),
+    displayName: v.union(v.string(), v.null()),
+    tenantId: v.string(),
+    clientId: v.string(),
+    encryptedAccessToken: v.union(v.string(), v.null()),
+    encryptedRefreshToken: v.string(),
+    accessTokenExpiresAt: v.number(),
+    scopes: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_monday_identity", [
+      "mondayAccountId",
+      "mondayUserId",
+      "mondayAppClientId",
+    ])
+    .index("by_monday_user", ["mondayAccountId", "mondayUserId"]),
+
 });

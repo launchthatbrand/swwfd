@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
 import { decryptToken, encryptToken } from "~/server/outlook/crypto";
 import {
@@ -104,7 +105,7 @@ export const POST = async (request: Request) => {
       );
     }
 
-    const requestOrigin = new URL(request.url).origin;
+    const requestOrigin = getRequestOrigin(request);
     const refreshed = await getValidAccessToken({
       refreshToken: decryptToken(connection.encryptedRefreshToken),
       requestOrigin,

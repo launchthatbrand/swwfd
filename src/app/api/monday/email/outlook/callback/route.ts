@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { encryptToken } from "~/server/outlook/crypto";
 import { verifyOutlookOAuthState } from "~/server/outlook/state";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
@@ -113,7 +113,7 @@ const toHashRecoveryResponse = (requestUrl: URL) => {
 
 const handleCallback = async (request: Request, bodyParams?: URLSearchParams) => {
   const requestUrl = new URL(request.url);
-  const baseOrigin = requestUrl.origin;
+  const baseOrigin = getRequestOrigin(request);
   const params = bodyParams ?? requestUrl.searchParams;
   const code = params.get("code");
   const stateToken = params.get("state");

@@ -493,6 +493,90 @@ export declare const api: {
       }
     >;
   };
+  outlookConnections: {
+    getByMondayIdentity: FunctionReference<
+      "query",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      {
+        _creationTime: number;
+        _id: Id<"outlookConnections">;
+        accessTokenExpiresAt: number;
+        clientId: string;
+        createdAt: number;
+        displayName: string | null;
+        email: string | null;
+        encryptedAccessToken: string | null;
+        encryptedRefreshToken: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        scopes: Array<string>;
+        tenantId: string;
+        updatedAt: number;
+      } | null
+    >;
+    listForAdmin: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookConnections">;
+        accessTokenExpiresAt: number;
+        clientId: string;
+        createdAt: number;
+        displayName: string | null;
+        email: string | null;
+        encryptedAccessToken: string | null;
+        encryptedRefreshToken: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        scopes: Array<string>;
+        tenantId: string;
+        updatedAt: number;
+      }>
+    >;
+    removeByMondayIdentity: FunctionReference<
+      "mutation",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      { removedCount: number }
+    >;
+    removeConnectionAsAdmin: FunctionReference<
+      "mutation",
+      "public",
+      { connectionId: Id<"outlookConnections"> },
+      { removed: boolean }
+    >;
+    upsertByMondayIdentity: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessTokenExpiresAt: number;
+        clientId: string;
+        displayName?: string;
+        email?: string;
+        encryptedAccessToken?: string;
+        encryptedRefreshToken: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        scopes: Array<string>;
+        tenantId: string;
+      },
+      { connectionId: Id<"outlookConnections"> }
+    >;
+  };
   viewer: {
     me: FunctionReference<
       "query",

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
 import { signOutlookOAuthState } from "~/server/outlook/state";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
@@ -9,7 +10,7 @@ export const runtime = "nodejs";
 export const GET = async (request: Request) => {
   try {
     const identity = await requireVerifiedMondaySession(request);
-    const origin = new URL(request.url).origin;
+    const origin = getRequestOrigin(request);
     const oauth = getOutlookOAuthConfig(origin);
     const state = await signOutlookOAuthState({
       mondayAccountId: identity.accountId,
