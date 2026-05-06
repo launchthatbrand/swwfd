@@ -3998,7 +3998,7 @@ export function MondayBoardView({
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Email Templates
-                    </TabsTrigger>
+                        </TabsTrigger>
                         <TabsTrigger
                           value="user-zip-map"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
@@ -4010,7 +4010,7 @@ export function MondayBoardView({
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Feature Flags
-                    </TabsTrigger>
+                        </TabsTrigger>
                       </TabsList>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5">
