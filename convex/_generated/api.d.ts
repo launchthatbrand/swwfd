@@ -128,6 +128,47 @@ export declare const api: {
       }>
     >;
   };
+  mondayHireEventBackfill: {
+    cancelBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayHireEventBackfillJobs"> },
+      { jobId: Id<"mondayHireEventBackfillJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        contactBoardId: string;
+        createdEvents: number;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        inRangeContacts: number;
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        lastError?: string | null;
+        monthKey: string;
+        pageSize: number;
+        processedContacts: number;
+        skippedEvents: number;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        subitemBoardId?: string | null;
+        updatedAt: number;
+        workflowId?: string;
+      }
+    >;
+    startBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { dryRun?: boolean; monthKey: string; pageSize?: number },
+      { jobId: Id<"mondayHireEventBackfillJobs">; workflowId: string }
+    >;
+  };
   mondayMonthlyMigration: {
     cancelMigration: FunctionReference<
       "mutation",
@@ -670,6 +711,74 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayHireEventBackfill: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayHireEventBackfillJobs"> },
+      null | {
+        _id: Id<"mondayHireEventBackfillJobs">;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        monthKey: string;
+        pageSize: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        subitemBoardId?: string | null;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdEventsDelta: number;
+        errorsDelta: number;
+        inRangeContactsDelta: number;
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedEventsDelta: number;
+        subitemBoardId?: string | null;
+      },
+      null
+    >;
+  };
+  mondayHireEventBackfillNode: {
+    fetchAndUpsertHireEventPageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        boardId: string;
+        cursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun?: boolean;
+        pageSize: number;
+      },
+      {
+        createdEvents: number;
+        errors: number;
+        inRangeContacts: number;
+        nextCursor: string | null;
+        processedContacts: number;
+        skippedEvents: number;
+        subitemBoardId: string | null;
+      }
     >;
   };
   mondayMonthlyMigration: {

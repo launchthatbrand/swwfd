@@ -132,6 +132,11 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
 };
 
 const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
+const SUBITEM_DATE_COLUMN_ID = "date0";
+const SUBITEM_PERSON_COLUMN_ID = "person";
+const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
+export const MONDAY_HIRE_EVENT_TYPE_LABEL = "Hire Event";
+const MONDAY_HIRE_EVENT_TOKEN_PREFIX = "hk";
 
 const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   general: "General",
@@ -141,6 +146,20 @@ const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   resume: "Resume",
   resume_referral: "Resume Referral",
 };
+
+export interface MondayHireEventSegments {
+  isCandidatesGroup: boolean;
+  isReentry: boolean;
+  isVeteran: boolean;
+}
+
+export interface MondayHireEventMetadata {
+  contactItemId: string;
+  ownerId: string;
+  hireDate: string;
+  source: string;
+  segments: MondayHireEventSegments;
+}
 
 const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   Record<Exclude<MondayUpdateType, "general">, string>
@@ -155,6 +174,53 @@ const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
 export const isMondayUpdateType = (value: string | null | undefined): value is MondayUpdateType => {
   if (!value) return false;
   return MONDAY_UPDATE_TYPE_SET.has(value.trim().toLowerCase());
+};
+
+const normalizeHireEventMetadataValue = (value: string) => {
+  return value.trim().replace(/[;\]\r\n]/g, "");
+};
+
+export const buildMondayHireEventToken = (args: MondayHireEventMetadata) => {
+  const contactItemId = normalizeHireEventMetadataValue(args.contactItemId);
+  const ownerId = normalizeHireEventMetadataValue(args.ownerId);
+  const hireDate = normalizeHireEventMetadataValue(args.hireDate);
+  const source = normalizeHireEventMetadataValue(args.source || "unknown");
+  const cg = args.segments.isCandidatesGroup ? "1" : "0";
+  const re = args.segments.isReentry ? "1" : "0";
+  const vet = args.segments.isVeteran ? "1" : "0";
+  return `[${MONDAY_HIRE_EVENT_TOKEN_PREFIX}:contact=${contactItemId};owner=${ownerId};date=${hireDate};cg=${cg};re=${re};vet=${vet};src=${source}]`;
+};
+
+export const parseMondayHireEventToken = (
+  value: string | null | undefined,
+): MondayHireEventMetadata | null => {
+  if (!value) return null;
+  const match = value.match(/\[hk:([^\]]+)\]/i);
+  if (!match?.[1]) return null;
+  const params = new Map<string, string>();
+  for (const part of match[1].split(";")) {
+    const [keyRaw, valueRaw] = part.split("=");
+    const key = keyRaw?.trim().toLowerCase();
+    const entryValue = valueRaw?.trim() ?? "";
+    if (!key) continue;
+    params.set(key, entryValue);
+  }
+  const contactItemId = params.get("contact")?.trim() ?? "";
+  const ownerId = params.get("owner")?.trim() ?? "";
+  const hireDate = params.get("date")?.trim() ?? "";
+  if (!contactItemId || !ownerId || !hireDate) return null;
+  const source = params.get("src")?.trim() ?? "unknown";
+  return {
+    contactItemId,
+    ownerId,
+    hireDate,
+    source,
+    segments: {
+      isCandidatesGroup: params.get("cg") === "1",
+      isReentry: params.get("re") === "1",
+      isVeteran: params.get("vet") === "1",
+    },
+  };
 };
 
 interface MondayGraphQLResponse<TData> {
@@ -2537,7 +2603,7 @@ export const listMondayRecordUpdates = async (args: {
 
   const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
   const typeColId = SUBITEM_TYPE_COLUMN_ID;
-  const methodColId = "method_of_communication__1";
+  const methodColId = SUBITEM_METHOD_COLUMN_ID;
   const dateColId = "date0";
   const personColId = "person";
   const query = `
@@ -2963,6 +3029,187 @@ export const updateMondaySubitemDate = async (args: {
     },
   );
   return { updatedId: String(data.change_column_value?.id ?? subitemId), date };
+};
+
+export const upsertMondayHireEventSubitem = async (args: {
+  contactItemId: string;
+  contactName?: string | null;
+  ownerId: string;
+  hireDate: string;
+  source?: string;
+  segments: MondayHireEventSegments;
+}): Promise<{ id: string | null; upserted: "created" | "skipped" }> => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+  const contactItemId = args.contactItemId.trim();
+  if (!contactItemId) throw new Error("Missing contactItemId");
+  const ownerId = args.ownerId.trim();
+  if (!ownerId) throw new Error("Missing ownerId");
+  const hireDate = normalizeDateOnlyValue(args.hireDate);
+  if (!hireDate) {
+    throw new Error("hireDate must be in YYYY-MM-DD format");
+  }
+
+  const token = buildMondayHireEventToken({
+    contactItemId,
+    ownerId,
+    hireDate,
+    source: args.source?.trim() || "record_patch",
+    segments: args.segments,
+  });
+  const subitemName = `Hire Event - ${hireDate} ${token}`;
+  const fallbackContactName = args.contactName?.trim() || contactItemId;
+  const subitemLabel = `${fallbackContactName} · Hire Event`;
+
+  interface SubitemColumnValue {
+    id?: string | null;
+    text?: string | null;
+    value?: string | null;
+  }
+  interface ExistingSubitem {
+    id?: string | null;
+    name?: string | null;
+    column_values?: SubitemColumnValue[];
+  }
+  interface ExistingData {
+    items?: Array<{
+      id?: string | null;
+      subitems?: ExistingSubitem[];
+    }>;
+  }
+  const existingData = await callMondayGraphQL<ExistingData>(
+    `
+      query GetHireEventSubitems($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          subitems {
+            id
+            name
+            column_values(ids: ["${SUBITEM_TYPE_COLUMN_ID}", "${SUBITEM_DATE_COLUMN_ID}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    `,
+    { itemIds: [contactItemId] },
+  );
+
+  const parsePeopleIds = (value: string | null | undefined) => {
+    if (!value) return [] as string[];
+    try {
+      const parsed = JSON.parse(value) as {
+        personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+      };
+      return (parsed.personsAndTeams ?? [])
+        .filter((entry) => entry.kind === "person" && entry.id != null)
+        .map((entry) => String(entry.id).trim())
+        .filter((entry) => entry.length > 0);
+    } catch {
+      return [] as string[];
+    }
+  };
+  const parseDateOnly = (value: string | null | undefined, text: string | null | undefined) => {
+    if (value) {
+      try {
+        const parsed = JSON.parse(value) as { date?: string; time?: string };
+        if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) return parsed.date;
+      } catch {
+        // ignore parse errors
+      }
+    }
+    const trimmedText = text?.trim() ?? "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedText)) return trimmedText;
+    return null;
+  };
+
+  const existingSubitems = existingData.items?.[0]?.subitems ?? [];
+  const existing = existingSubitems.find((subitem) => {
+    const parsedFromName = parseMondayHireEventToken(subitem.name);
+    if (
+      parsedFromName &&
+      parsedFromName.contactItemId === contactItemId &&
+      parsedFromName.ownerId === ownerId &&
+      parsedFromName.hireDate === hireDate
+    ) {
+      return true;
+    }
+    const columns = subitem.column_values ?? [];
+    const byId = (id: string) => columns.find((column) => column.id === id);
+    const typeText = byId(SUBITEM_TYPE_COLUMN_ID)?.text?.trim().toLowerCase() ?? "";
+    const dateOnly = parseDateOnly(
+      byId(SUBITEM_DATE_COLUMN_ID)?.value,
+      byId(SUBITEM_DATE_COLUMN_ID)?.text,
+    );
+    const ownerIds = parsePeopleIds(byId(SUBITEM_PERSON_COLUMN_ID)?.value);
+    return (
+      typeText === MONDAY_HIRE_EVENT_TYPE_LABEL.toLowerCase() &&
+      dateOnly === hireDate &&
+      ownerIds.includes(ownerId)
+    );
+  });
+  if (existing?.id?.trim()) {
+    return { id: existing.id.trim(), upserted: "skipped" };
+  }
+
+  const columnValues: Record<string, unknown> = {
+    [SUBITEM_TYPE_COLUMN_ID]: { label: MONDAY_HIRE_EVENT_TYPE_LABEL },
+    [SUBITEM_DATE_COLUMN_ID]: { date: hireDate },
+  };
+  if (/^\d+$/.test(ownerId)) {
+    columnValues[SUBITEM_PERSON_COLUMN_ID] = {
+      personsAndTeams: [{ id: Number(ownerId), kind: "person" }],
+    };
+  }
+
+  interface CreateSubitemData {
+    create_subitem?: { id?: string | null } | null;
+  }
+  const createdSubitemData = await callMondayGraphQL<CreateSubitemData>(
+    `
+      mutation CreateHireEventSubitem($parentItemId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_subitem(
+          parent_item_id: $parentItemId
+          item_name: $itemName
+          column_values: $columnValues
+          create_labels_if_missing: true
+        ) { id }
+      }
+    `,
+    {
+      parentItemId: contactItemId,
+      itemName: subitemName,
+      columnValues: JSON.stringify(columnValues),
+    },
+  );
+  const subitemId = createdSubitemData.create_subitem?.id?.trim() ?? null;
+  if (!subitemId) {
+    throw new Error("Failed to create hire event subitem");
+  }
+
+  interface CreateUpdateData {
+    create_update?: { id?: string | null } | null;
+  }
+  await callMondayGraphQL<CreateUpdateData>(
+    `
+      mutation CreateHireEventSubitemUpdate($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) { id }
+      }
+    `,
+    {
+      itemId: subitemId,
+      body: [
+        `<p><strong>Hire event captured</strong> (${hireDate})</p>`,
+        `<p>Source: ${args.source?.trim() || "record_patch"}</p>`,
+        `<p>Contact: ${subitemLabel}</p>`,
+      ].join(""),
+    },
+  );
+  return { id: subitemId, upserted: "created" };
 };
 
 // ---------------------------------------------------------------------------
