@@ -21,16 +21,27 @@ import {
 } from "~/components/ui/chart";
 
 import {
+  DEFAULT_USER_BOARD_GENERAL_SETTINGS,
   MONDAY_DEV_BYPASS_TOKEN,
+  USER_BOARD_COLOR_THEME_STYLES,
   isEmbeddedMondaySessionToken,
 } from "../constants";
-import { readTokenFromLocation, readTokenFromSdkResponse } from "../helpers";
+import {
+  applyMondayThemeClass,
+  extractThemeFromContextPayload,
+  hasUnsubscribe,
+  parseUserBoardGeneralSettings,
+  readTokenFromLocation,
+  readTokenFromSdkResponse,
+} from "../helpers";
 import type {
   MondayIdentity,
   MondayMetricsOwnerBreakdown,
   MondayMetricsResponse,
   MondayMetricsSummary,
   MondayMetricsSummaryTotals,
+  MondayUserBoardSettingsResponse,
+  UserBoardGeneralSettings,
 } from "../types";
 
 interface MondayMetricsViewProps {
@@ -70,21 +81,21 @@ const totalsCards: Array<{ key: keyof MondayMetricsSummaryTotals; label: string 
 const contactsChartConfig = {
   allContacts: {
     label: "All Contacts",
-    color: "hsl(var(--chart-1))",
+    color: "var(--chart-1)",
   },
 } satisfies ChartConfig;
 
 const hiredChartConfig = {
   hiredTotal: {
     label: "Hired",
-    color: "hsl(var(--chart-2))",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig;
 
 const ownerChartConfig = {
   allContacts: {
     label: "Contacts",
-    color: "hsl(var(--chart-3))",
+    color: "var(--chart-3)",
   },
 } satisfies ChartConfig;
 
@@ -171,9 +182,66 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
+  const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
+    ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
+  });
   const [selectedFiscalYear, setSelectedFiscalYear] = useState(getCurrentFiscalYear());
   const effectiveOwnerId = forcedOwnerId?.trim() ?? "";
   const fiscalYearOptions = useMemo(() => buildFiscalYearOptions(), []);
+  const settingsScopeOwnerId = useMemo(() => {
+    if (effectiveOwnerId.length > 0) return effectiveOwnerId;
+    return identity?.userId?.trim() ?? "";
+  }, [effectiveOwnerId, identity?.userId]);
+  const boardThemeStyles = useMemo(
+    () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
+    [boardGeneralSettings.colorTheme],
+  );
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const hadLightClass = root.classList.contains("light");
+    const hadDarkClass = root.classList.contains("dark");
+    let didCleanup = false;
+    let unsubscribe: (() => void) | undefined;
+
+    const handleContextPayload = (payload: unknown) => {
+      const theme = extractThemeFromContextPayload(payload);
+      if (!theme) return;
+      applyMondayThemeClass(theme);
+    };
+
+    void (monday
+      .get("context")
+      .then((value: unknown) => {
+        if (didCleanup) return;
+        handleContextPayload(value);
+      })
+      .catch(() => {
+        // ignore context initialization failures in standalone mode
+      }) as Promise<unknown>);
+
+    if (typeof monday.listen === "function") {
+      const listenerResult = monday.listen("context", (value: unknown) => {
+        if (didCleanup) return;
+        handleContextPayload(value);
+      }) as unknown;
+      if (typeof listenerResult === "function") {
+        const unsubscribeFunction = listenerResult as () => void;
+        unsubscribe = () => unsubscribeFunction();
+      } else if (hasUnsubscribe(listenerResult)) {
+        const unsubscribeFromListener = listenerResult.unsubscribe;
+        unsubscribe = () => unsubscribeFromListener();
+      }
+    }
+
+    return () => {
+      didCleanup = true;
+      unsubscribe?.();
+      root.classList.remove("light", "dark");
+      if (hadLightClass) root.classList.add("light");
+      if (hadDarkClass) root.classList.add("dark");
+    };
+  }, [monday]);
 
   useEffect(() => {
     const initEmbeddedSession = async () => {
@@ -275,6 +343,25 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     },
     staleTime: 30_000,
   });
+  const userBoardSettingsQuery = useQuery({
+    queryKey: ["monday-user-board-settings", sessionToken, settingsScopeOwnerId],
+    enabled: !!sessionToken && settingsScopeOwnerId.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ownerId", settingsScopeOwnerId);
+      const response = await fetch(`/api/monday/settings/user-board?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayUserBoardSettingsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load board settings");
+      }
+      return parseUserBoardGeneralSettings(data.settings);
+    },
+    staleTime: 30_000,
+  });
 
   useEffect(() => {
     if (!metricsQuery.error) return;
@@ -284,6 +371,22 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         : "Failed to load Monday metrics";
     toast.error(message);
   }, [metricsQuery.error]);
+  useEffect(() => {
+    if (!userBoardSettingsQuery.error) return;
+    const message =
+      userBoardSettingsQuery.error instanceof Error
+        ? userBoardSettingsQuery.error.message
+        : "Failed to load board settings";
+    toast.error(message);
+  }, [userBoardSettingsQuery.error]);
+  useEffect(() => {
+    setBoardGeneralSettings({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
+  }, [settingsScopeOwnerId]);
+  useEffect(() => {
+    if (!settingsScopeOwnerId) return;
+    if (!userBoardSettingsQuery.data) return;
+    setBoardGeneralSettings(userBoardSettingsQuery.data);
+  }, [settingsScopeOwnerId, userBoardSettingsQuery.data]);
 
   const summary = metricsQuery.data;
   const isInitialMetricsLoading =
@@ -294,25 +397,31 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
       : "Unable to load metrics";
 
   return (
-    <main className="container mx-auto max-w-7xl space-y-4 py-6">
-      <Card>
-        <CardHeader className="gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-1">
-            <CardTitle className="text-2xl font-semibold">
+    <main className="monday-like-page mx-auto max-w-7xl space-y-4 pb-10 pt-6">
+      <div
+        data-board-filter-bar
+        className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <div className="min-w-0 pr-2">
+            <h1 className="truncate text-base font-semibold">
               {effectiveOwnerId ? "Employee Metrics" : "Global Metrics"}
-            </CardTitle>
-            <p className="text-muted-foreground text-sm">
+            </h1>
+            <p className="text-muted-foreground text-xs">
               Computed directly from owner, tags, status, and date columns.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          <div className="flex items-center gap-1.5">
+            <label className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
               Fiscal Year
             </label>
             <select
               value={selectedFiscalYear}
               onChange={(event) => setSelectedFiscalYear(event.target.value)}
-              className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+              className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
             >
               {fiscalYearOptions.map((option) => (
                 <option key={option} value={option}>
@@ -320,35 +429,50 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
                 </option>
               ))}
             </select>
-            {effectiveOwnerId ? (
-              <Badge variant="secondary">Owner {effectiveOwnerId}</Badge>
-            ) : null}
-            {!effectiveOwnerId ? (
-              <Link href="/monday">
-                <Button variant="outline" size="sm">
-                  Open Records Board
-                </Button>
-              </Link>
-            ) : (
-              <Link href="/monday/metrics">
-                <Button variant="outline" size="sm">
-                  View Combined Metrics
-                </Button>
-              </Link>
-            )}
           </div>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3 text-xs">
-          <Badge variant={isMondayEmbeddedContext ? "default" : "outline"}>
+
+          {effectiveOwnerId ? (
+            <Badge variant="secondary" className="h-8 shrink-0 rounded-sm px-2.5 text-xs">
+              Owner {effectiveOwnerId}
+            </Badge>
+          ) : null}
+
+          {!effectiveOwnerId ? (
+            <Link href="/monday" className="shrink-0">
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs">
+                Open Records Board
+              </Button>
+            </Link>
+          ) : (
+            <Link href="/monday/metrics" className="shrink-0">
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs">
+                View Combined Metrics
+              </Button>
+            </Link>
+          )}
+
+          <div className="bg-border/60 h-5 w-px shrink-0" />
+
+          <Badge
+            variant={isMondayEmbeddedContext ? "default" : "outline"}
+            className="h-8 shrink-0 rounded-sm px-2.5 text-xs"
+          >
             {isMondayEmbeddedContext ? "Embedded Monday Session" : "Standalone Session"}
           </Badge>
           {identity?.userId ? (
-            <Badge variant="outline">Viewer {identity.userId}</Badge>
+            <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs">
+              Viewer {identity.userId}
+            </Badge>
           ) : null}
-          {summary?.boardName ? <Badge variant="outline">{summary.boardName}</Badge> : null}
+          {summary?.boardName ? (
+            <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs">
+              {summary.boardName}
+            </Badge>
+          ) : null}
           <Button
             size="sm"
             variant="ghost"
+            className="h-8 shrink-0 px-2.5 text-xs"
             onClick={() => {
               void metricsQuery.refetch();
             }}
@@ -356,8 +480,8 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
           >
             {metricsQuery.isFetching ? "Refreshing..." : "Refresh"}
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {authLoading || isInitialMetricsLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
