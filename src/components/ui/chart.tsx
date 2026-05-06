@@ -85,7 +85,7 @@ export const ChartTooltipContent = ({
           const key = String(entry.dataKey ?? entry.name ?? "");
           const cfg = config[key];
           const rowLabel = cfg?.label ?? entry.name ?? key;
-          const rowColor = entry.color ?? cfg?.color ?? "hsl(var(--muted-foreground))";
+          const rowColor = entry.color ?? cfg?.color ?? "var(--muted-foreground)";
           const rawValue = entry.value;
           const value = valueFormatter ? valueFormatter(rawValue) : String(rawValue ?? "0");
           return (
@@ -127,7 +127,7 @@ export const ChartLegendContent = ({ payload }: ChartLegendContentProps) => {
         const key = String(entry.dataKey ?? entry.value ?? "");
         const cfg = config[key];
         const label = cfg?.label ?? entry.value ?? key;
-        const color = entry.color ?? cfg?.color ?? "hsl(var(--muted-foreground))";
+        const color = entry.color ?? cfg?.color ?? "var(--muted-foreground)";
         return (
           <div key={key} className="text-muted-foreground flex items-center gap-2">
             <span
