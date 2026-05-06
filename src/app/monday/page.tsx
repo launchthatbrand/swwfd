@@ -484,8 +484,8 @@ export function MondayBoardView({
       if (statusFilter.trim()) params.set("status", statusFilter.trim());
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
       if (!isFullDbSearch) {
-        params.set("dateFrom", monthBounds.from);
-        params.set("dateTo", monthBounds.to);
+      params.set("dateFrom", monthBounds.from);
+      params.set("dateTo", monthBounds.to);
       }
 
       const response = await fetch(`${recordsEndpoint}?${params.toString()}`, {
@@ -2999,8 +2999,8 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
+          <button
+            type="button"
               className="flex h-full w-full items-center justify-center p-1 text-muted-foreground transition-colors hover:text-primary"
               onClick={(e) => {
                 e.stopPropagation();
@@ -3010,11 +3010,11 @@ export function MondayBoardView({
             >
               <CircleHelp className="h-3.5 w-3.5" />
             </button>
-          </TooltipTrigger>
+                </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">
             Submit a support ticket for {item.name}
-          </TooltipContent>
-        </Tooltip>
+                </TooltipContent>
+              </Tooltip>
       ),
     },
     {
@@ -3059,12 +3059,12 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => {
         const isCompactOwner = tableDensity === "compact";
         return (
-          <button
-            type="button"
-            onClick={() => openOwnerDialog(item)}
+        <button
+          type="button"
+          onClick={() => openOwnerDialog(item)}
             className={`hover:bg-accent/40 flex w-full cursor-pointer items-center rounded-md text-center ${isCompactOwner ? "justify-start gap-1.5 px-2 py-1" : "justify-center p-2"}`}
-          >
-            {item.ownerProfiles.length > 0 ? (
+        >
+          {item.ownerProfiles.length > 0 ? (
               isCompactOwner ? (
                 <div className="flex items-center gap-1.5">
                   <div className="flex items-center -space-x-1.5">
@@ -3089,33 +3089,33 @@ export function MondayBoardView({
                   </span>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center justify-center -space-x-2">
-                    {item.ownerProfiles.slice(0, 3).map((owner) => (
-                      <Avatar
-                        key={owner.id}
-                        className="size-8 border-2 border-background shadow-sm"
-                      >
-                        {owner.photoThumb ? (
-                          <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
-                        ) : null}
-                        <AvatarFallback className="text-xs font-semibold">
-                          {getNameInitials(owner.name ?? owner.id)}
-                        </AvatarFallback>
-                      </Avatar>
-                    ))}
-                  </div>
-                  <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
-                    {item.ownerProfiles
-                      .map((owner) => owner.name?.trim() ?? owner.id)
-                      .join(", ")}
-                  </span>
-                </div>
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center justify-center -space-x-2">
+                {item.ownerProfiles.slice(0, 3).map((owner) => (
+                  <Avatar
+                    key={owner.id}
+                    className="size-8 border-2 border-background shadow-sm"
+                  >
+                    {owner.photoThumb ? (
+                      <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                    ) : null}
+                    <AvatarFallback className="text-xs font-semibold">
+                      {getNameInitials(owner.name ?? owner.id)}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+              </div>
+              <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
+                {item.ownerProfiles
+                  .map((owner) => owner.name?.trim() ?? owner.id)
+                  .join(", ")}
+              </span>
+            </div>
               )
-            ) : (
-              <span className="text-xs">{item.peopleText ?? "—"}</span>
-            )}
-          </button>
+          ) : (
+            <span className="text-xs">{item.peopleText ?? "—"}</span>
+          )}
+        </button>
         );
       },
     },
@@ -3131,10 +3131,10 @@ export function MondayBoardView({
         const isCompact = tableDensity === "compact";
 
         if (isCompact) {
-          return (
-            <button
-              type="button"
-              onClick={() => openRetentionDialog(item)}
+        return (
+          <button
+            type="button"
+            onClick={() => openRetentionDialog(item)}
               title={[
                 referredValues.length > 0 ? `Referred: ${referredValues.join(", ")}` : null,
                 item.hiredWithContractor?.trim() ? `Hired: ${item.hiredWithContractor.trim()}` : null,
@@ -3221,8 +3221,8 @@ export function MondayBoardView({
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Hire Date:</span>
               <span className="truncate text-xs">
-                {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
-              </span>
+              {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+            </span>
             </div>
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Period:</span>
@@ -3299,19 +3299,19 @@ export function MondayBoardView({
             ) : (
               <span className="text-muted-foreground text-xs">—</span>
             )}
-            <input
+              <input
               id={fileInputId}
-              type="file"
+                type="file"
               className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void handleUploadResume(item, file);
-                event.currentTarget.value = "";
-              }}
-              disabled={isUploading || staticMode}
-            />
-            {isUploading ? (
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void handleUploadResume(item, file);
+                  event.currentTarget.value = "";
+                }}
+                disabled={isUploading || staticMode}
+              />
+              {isUploading ? (
               <span className="text-muted-foreground shrink-0 text-[10px]">Uploading…</span>
             ) : (
               <label
@@ -3375,17 +3375,17 @@ export function MondayBoardView({
     },
     ...(featureFlags.emailMarketingEnabled
       ? ([
-        {
-          id: "send-email",
-          label: "Send Email",
-          icon: <Mail className="h-4 w-4" />,
-          variant: "secondary",
+    {
+      id: "send-email",
+      label: "Send Email",
+      icon: <Mail className="h-4 w-4" />,
+      variant: "secondary",
           onClick: (record: MondayRecord) => {
-            openSendEmailDialog(record);
-          },
+        openSendEmailDialog(record);
+      },
           isDisabled: (record: MondayRecord) =>
             !record.email || !sessionToken || staticMode,
-        },
+    },
       ] satisfies EntityAction<MondayRecord>[])
       : []),
 
@@ -3399,67 +3399,67 @@ export function MondayBoardView({
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Search */}
           <div data-tour="search" className="relative min-w-0 flex-1">
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
               placeholder="Search (2+ chars)…"
               className="bg-background h-8 w-full text-xs shadow-sm"
-            />
-            {search.trim().length > 0 && search.trim().length < 2 ? (
+              />
+              {search.trim().length > 0 && search.trim().length < 2 ? (
               <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
                 2+ chars needed
-              </p>
-            ) : null}
-          </div>
+                </p>
+              ) : null}
+            </div>
 
           <div className="bg-border/60 h-5 w-px shrink-0" />
 
           {/* Owner + district filters */}
           <div data-tour="filters" className="flex items-center gap-1.5">
-          <select
-            value={ownerFilter || "__all_owner__"}
-            onChange={(event) => {
-              if (!isOwnerFilterEditable) return;
-              const value = event.target.value;
-              setOwnerFilter(value === "__all_owner__" ? "" : value);
-            }}
+                <select
+                  value={ownerFilter || "__all_owner__"}
+                  onChange={(event) => {
+                    if (!isOwnerFilterEditable) return;
+                    const value = event.target.value;
+                    setOwnerFilter(value === "__all_owner__" ? "" : value);
+                  }}
             className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
             style={{ maxWidth: "160px" }}
-            disabled={!isOwnerFilterEditable}
-          >
-            {isOwnerFilterEditable ? (
-              <option value="__all_owner__">Owner: all</option>
-            ) : (
+                  disabled={!isOwnerFilterEditable}
+                >
+                  {isOwnerFilterEditable ? (
+                    <option value="__all_owner__">Owner: all</option>
+                  ) : (
               <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
                 {lockedOwnerLabel}
               </option>
-            )}
-            {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-              <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-            ) : null}
-            {ownerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter || "__all_status__"}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusFilter(value === "__all_status__" ? "" : value);
-            }}
+                  )}
+                  {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+                    <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+                  ) : null}
+                  {ownerOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter || "__all_status__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusFilter(value === "__all_status__" ? "" : value);
+                  }}
             className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
             style={{ maxWidth: "150px" }}
-          >
-            <option value="__all_status__">District: all</option>
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          </div>
+                >
+                  <option value="__all_status__">District: all</option>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
@@ -3524,9 +3524,9 @@ export function MondayBoardView({
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
+                <Button
+                  size="sm"
+                  variant="outline"
                         className="h-8 border-2 px-3 text-xs shadow-sm"
                         onClick={handleAddAdvancedFilterCondition}
                       >
@@ -3830,7 +3830,7 @@ export function MondayBoardView({
             size="sm"
             variant="ghost"
             className="h-8 shrink-0 px-2"
-            onClick={() => {
+                  onClick={() => {
               setActiveMonth(
                 (prev) =>
                   new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
@@ -3838,7 +3838,7 @@ export function MondayBoardView({
             }}
           >
             <ChevronLeft className="h-4 w-4" />
-          </Button>
+                </Button>
           <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
             {monthBounds.label}
           </Badge>
@@ -3856,22 +3856,22 @@ export function MondayBoardView({
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {viewMode === "userScoped" ? (
+                {viewMode === "userScoped" ? (
             <>
               <div className="bg-border/60 h-5 w-px shrink-0" />
-              <Button
-                size="sm"
-                variant="default"
+                  <Button
+                    size="sm"
+                    variant="default"
                 className="h-8 shrink-0 px-2.5"
-                onClick={() => {
-                  resetAddContactDialog();
-                  setAddContactOpen(true);
-                }}
-                disabled={authLoading || !identity?.userId}
-              >
-                <UserPlus className="mr-1.5 h-4 w-4" />
+                    onClick={() => {
+                      resetAddContactDialog();
+                      setAddContactOpen(true);
+                    }}
+                    disabled={authLoading || !identity?.userId}
+                  >
+                    <UserPlus className="mr-1.5 h-4 w-4" />
                 Add
-              </Button>
+                  </Button>
               <div data-tour="view-toggle" className="flex overflow-hidden rounded-md border shrink-0">
                 <button
                   type="button"
@@ -3940,19 +3940,19 @@ export function MondayBoardView({
             <RefreshCcw className="h-4 w-4" />
           </Button>
 
-          {!staticMode && recordsQuery.hasNextPage ? (
-            <Button
-              size="sm"
-              variant="secondary"
+                {!staticMode && recordsQuery.hasNextPage ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
               className="h-8 shrink-0 px-2.5 text-xs"
-              onClick={() => {
-                void recordsQuery.fetchNextPage();
-              }}
-              disabled={recordsQuery.isFetchingNextPage}
-            >
+                    onClick={() => {
+                      void recordsQuery.fetchNextPage();
+                    }}
+                    disabled={recordsQuery.isFetchingNextPage}
+                  >
               {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-            </Button>
-          ) : null}
+                  </Button>
+                ) : null}
 
           <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
           <Button
@@ -3966,52 +3966,52 @@ export function MondayBoardView({
             }}
           >
             <CircleHelp className="h-4 w-4" />
-          </Button>
+                </Button>
 
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <DialogTrigger asChild>
+                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                  <DialogTrigger asChild>
               <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
                 <Settings className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
+                    </Button>
+                  </DialogTrigger>
             <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
               <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
-                <DialogTitle>Monday Settings</DialogTitle>
-              </DialogHeader>
+                      <DialogTitle>Monday Settings</DialogTitle>
+                    </DialogHeader>
               <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
                 <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
                   <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
-                    <TabsTrigger
+                        <TabsTrigger
                       value="general-settings"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
+                        >
                       General Settings
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="email-settings"
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="email-settings"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      Email Settings
-                    </TabsTrigger>
+                        >
+                          Email Settings
+                        </TabsTrigger>
                     <TabsTrigger
                       value="email-templates"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Email Templates
                     </TabsTrigger>
-                    <TabsTrigger
-                      value="user-zip-map"
+                        <TabsTrigger
+                          value="user-zip-map"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      User {"<->"} Zipcode map
-                    </TabsTrigger>
+                        >
+                          User {"<->"} Zipcode map
+                        </TabsTrigger>
                     <TabsTrigger
                       value="feature-flags"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Feature Flags
                     </TabsTrigger>
-                  </TabsList>
+                      </TabsList>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                   <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
@@ -4271,105 +4271,105 @@ export function MondayBoardView({
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="email-templates" className="mt-0">
-                        <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">
-                              Templates ({emailTemplates.length})
-                            </p>
-                            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                              {emailTemplates.map((template) => {
-                                const isActive = template.id === selectedTemplate?.id;
-                                return (
-                                  <button
-                                    key={template.id}
-                                    type="button"
-                                    className={[
-                                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                      isActive
-                                        ? "border-primary bg-primary/10"
-                                        : "hover:bg-muted/60",
-                                    ].join(" ")}
-                                    onClick={() => {
-                                      setSelectedTemplateId(template.id);
-                                    }}
-                                  >
-                                    <p className="line-clamp-1 font-medium">{template.name}</p>
-                                    <p className="text-muted-foreground mt-1 text-xs">
-                                      Updated {formatUpdatedAt(template.updatedAt)}
-                                    </p>
-                                  </button>
-                                );
-                              })}
-                              {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                <p className="text-muted-foreground text-sm">
-                                  No templates found on board 18401299370.
-                                </p>
-                              ) : null}
-                              {emailTemplatesQuery.isLoading ? (
-                                <p className="text-muted-foreground text-sm">
-                                  Loading templates...
-                                </p>
-                              ) : null}
+                        <TabsContent value="email-templates" className="mt-0">
+                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">
+                                Templates ({emailTemplates.length})
+                              </p>
+                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                {emailTemplates.map((template) => {
+                                  const isActive = template.id === selectedTemplate?.id;
+                                  return (
+                                    <button
+                                      key={template.id}
+                                      type="button"
+                                      className={[
+                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                        isActive
+                                          ? "border-primary bg-primary/10"
+                                          : "hover:bg-muted/60",
+                                      ].join(" ")}
+                                      onClick={() => {
+                                        setSelectedTemplateId(template.id);
+                                      }}
+                                    >
+                                      <p className="line-clamp-1 font-medium">{template.name}</p>
+                                      <p className="text-muted-foreground mt-1 text-xs">
+                                        Updated {formatUpdatedAt(template.updatedAt)}
+                                      </p>
+                                    </button>
+                                  );
+                                })}
+                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    No templates found on board 18401299370.
+                                  </p>
+                                ) : null}
+                                {emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    Loading templates...
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
-                          <div className="bg-background min-h-[420px] rounded-md border p-4">
-                            {selectedTemplate ? (
-                              <div className="space-y-4">
-                                <div className="border-b pb-3">
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Subject
-                                  </p>
-                                  <p className="mt-1 text-base font-medium">
-                                    {selectedTemplate.name}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Email Preview (Lead View)
-                                  </p>
-                                  <div className="bg-card mt-2 rounded-md border p-4">
-                                    {selectedTemplate.content.trim().length === 0 ? (
-                                      <p className="text-muted-foreground text-sm">
-                                        No content found in column doc_mm0wq4r.
-                                      </p>
-                                    ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                      <div
-                                        className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                        style={{ whiteSpace: "pre-wrap" }}
-                                        dangerouslySetInnerHTML={{
-                                          __html: selectedTemplate.renderedHtml,
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                        {selectedTemplate.content}
-                                      </div>
-                                    )}
-                                    {selectedTemplate.docLink ? (
-                                      <p className="mt-3 text-xs">
-                                        <a
-                                          href={selectedTemplate.docLink}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-primary underline underline-offset-2"
-                                        >
-                                          Open source Monday Workdoc
-                                        </a>
-                                      </p>
-                                    ) : null}
+                            <div className="bg-background min-h-[420px] rounded-md border p-4">
+                              {selectedTemplate ? (
+                                <div className="space-y-4">
+                                  <div className="border-b pb-3">
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Subject
+                                    </p>
+                                    <p className="mt-1 text-base font-medium">
+                                      {selectedTemplate.name}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Email Preview (Lead View)
+                                    </p>
+                                    <div className="bg-card mt-2 rounded-md border p-4">
+                                      {selectedTemplate.content.trim().length === 0 ? (
+                                        <p className="text-muted-foreground text-sm">
+                                          No content found in column doc_mm0wq4r.
+                                        </p>
+                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                        <div
+                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                          style={{ whiteSpace: "pre-wrap" }}
+                                          dangerouslySetInnerHTML={{
+                                            __html: selectedTemplate.renderedHtml,
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                          {selectedTemplate.content}
+                                        </div>
+                                      )}
+                                      {selectedTemplate.docLink ? (
+                                        <p className="mt-3 text-xs">
+                                          <a
+                                            href={selectedTemplate.docLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-primary underline underline-offset-2"
+                                          >
+                                            Open source Monday Workdoc
+                                          </a>
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <p className="text-muted-foreground text-sm">
-                                Select an email template to preview.
-                              </p>
-                            )}
+                              ) : (
+                                <p className="text-muted-foreground text-sm">
+                                  Select an email template to preview.
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </TabsContent>
-                    <TabsContent value="user-zip-map" className="mt-0">
+                        </TabsContent>
+                        <TabsContent value="user-zip-map" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
                             <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
@@ -4536,86 +4536,86 @@ export function MondayBoardView({
                               </Button>
                             </div>
                           </div>
-                        </div>
-                      </TabsContent>
-                    <TabsContent value="email-settings" className="mt-0">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">Email Settings</p>
-                          <p className="text-muted-foreground text-sm">
-                            Configure outbound email account settings for sending
-                            monday-designed templates.
-                          </p>
-                        </div>
-                        <div className="space-y-3 rounded-md border p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant={
-                                outlookStatusQuery.data?.connected
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
-                              {outlookStatusQuery.data?.connected
-                                ? "Outlook connected"
-                                : "Outlook not connected"}
-                            </Badge>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                void handleConnectOutlook();
-                              }}
-                              disabled={isConnectingOutlook}
-                            >
-                              {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                            </Button>
-                            {outlookStatusQuery.data?.connected ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  void handleDisconnectOutlook();
-                                }}
-                                disabled={isDisconnectingOutlook}
-                              >
-                                {isDisconnectingOutlook
-                                  ? "Disconnecting..."
-                                  : "Disconnect"}
-                              </Button>
-                            ) : null}
                           </div>
-                          <div className="text-muted-foreground text-sm">
-                            {outlookStatusQuery.data?.connection?.email ? (
-                              <p>
-                                Connected mailbox:{" "}
-                                {outlookStatusQuery.data.connection.email}
+                        </TabsContent>
+                        <TabsContent value="email-settings" className="mt-0">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Email Settings</p>
+                              <p className="text-muted-foreground text-sm">
+                                Configure outbound email account settings for sending
+                                monday-designed templates.
                               </p>
-                            ) : (
-                              <p>
-                                Use OAuth to connect Outlook, then use this account
-                                for sending and engagement tracking.
-                              </p>
-                            )}
-                            {outlookStatusQuery.data?.connection?.updatedAt ? (
-                              <p className="mt-1">
-                                Last updated:{" "}
-                                {new Date(
-                                  outlookStatusQuery.data.connection.updatedAt,
-                                ).toLocaleString()}
-                              </p>
-                            ) : null}
+                            </div>
+                            <div className="space-y-3 rounded-md border p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant={
+                                    outlookStatusQuery.data?.connected
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {outlookStatusQuery.data?.connected
+                                    ? "Outlook connected"
+                                    : "Outlook not connected"}
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    void handleConnectOutlook();
+                                  }}
+                                  disabled={isConnectingOutlook}
+                                >
+                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                </Button>
+                                {outlookStatusQuery.data?.connected ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      void handleDisconnectOutlook();
+                                    }}
+                                    disabled={isDisconnectingOutlook}
+                                  >
+                                    {isDisconnectingOutlook
+                                      ? "Disconnecting..."
+                                      : "Disconnect"}
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="text-muted-foreground text-sm">
+                                {outlookStatusQuery.data?.connection?.email ? (
+                                  <p>
+                                    Connected mailbox:{" "}
+                                    {outlookStatusQuery.data.connection.email}
+                                  </p>
+                                ) : (
+                                  <p>
+                                    Use OAuth to connect Outlook, then use this account
+                                    for sending and engagement tracking.
+                                  </p>
+                                )}
+                                {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                  <p className="mt-1">
+                                    Last updated:{" "}
+                                    {new Date(
+                                      outlookStatusQuery.data.connection.updatedAt,
+                                    ).toLocaleString()}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="rounded-md border bg-muted/30 p-3">
+                                <p className="text-xs font-semibold tracking-wide uppercase">
+                                  Callback URL
+                                </p>
+                                <p className="mt-1 break-all font-mono text-xs">
+                                  {callbackUrl}
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                          <div className="rounded-md border bg-muted/30 p-3">
-                            <p className="text-xs font-semibold tracking-wide uppercase">
-                              Callback URL
-                            </p>
-                            <p className="mt-1 break-all font-mono text-xs">
-                              {callbackUrl}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </TabsContent>
+                        </TabsContent>
                     <TabsContent value="feature-flags" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
@@ -4653,119 +4653,119 @@ export function MondayBoardView({
                         </div>
                       </TabsContent>
                   </div>
-                </div>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
+                      </div>
+                    </Tabs>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
       <div className="max-w-[1600px] container">
 
-        <Dialog
-          open={addContactOpen}
-          onOpenChange={(open) => {
-            setAddContactOpen(open);
-            if (!open) {
-              resetAddContactDialog();
-            }
-          }}
-        >
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Add New Contact</DialogTitle>
-            </DialogHeader>
-            {addContactStep === 1 ? (
-              <AddNewContactForm
-                values={addContactValues}
-                ownerOptions={addContactOwnerOptions}
-                isSubmitting={isCheckingDuplicates || isCreatingContact}
-                onChange={(key, value) => {
-                  setAddContactValues((prev) => ({ ...prev, [key]: value }));
-                }}
-                onSubmit={() => {
-                  void handleCheckDuplicatesAndContinue();
-                }}
-              />
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    Before we create, we found these records with the same email.
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    Do you want to use one of these existing records?
-                  </p>
-                </div>
-                <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                  {existingContactsByEmail.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between gap-3 rounded-md border p-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{record.name || record.id}</p>
-                        <p className="text-muted-foreground truncate text-xs">
-                          {record.email ?? "No email"} · {record.owner ?? "No owner"}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {record.url ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              window.open(record.url ?? "", "_blank", "noopener,noreferrer")
-                            }
-                          >
-                            Open
-                          </Button>
-                        ) : null}
+      <Dialog
+        open={addContactOpen}
+        onOpenChange={(open) => {
+          setAddContactOpen(open);
+          if (!open) {
+            resetAddContactDialog();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Contact</DialogTitle>
+          </DialogHeader>
+          {addContactStep === 1 ? (
+            <AddNewContactForm
+              values={addContactValues}
+              ownerOptions={addContactOwnerOptions}
+              isSubmitting={isCheckingDuplicates || isCreatingContact}
+              onChange={(key, value) => {
+                setAddContactValues((prev) => ({ ...prev, [key]: value }));
+              }}
+              onSubmit={() => {
+                void handleCheckDuplicatesAndContinue();
+              }}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">
+                  Before we create, we found these records with the same email.
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  Do you want to use one of these existing records?
+                </p>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
+                {existingContactsByEmail.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{record.name || record.id}</p>
+                      <p className="text-muted-foreground truncate text-xs">
+                        {record.email ?? "No email"} · {record.owner ?? "No owner"}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {record.url ? (
                         <Button
                           size="sm"
-                          onClick={() => {
-                            toast.success("Using existing contact");
-                            setAddContactOpen(false);
-                            resetAddContactDialog();
-                          }}
+                          variant="outline"
+                          onClick={() =>
+                            window.open(record.url ?? "", "_blank", "noopener,noreferrer")
+                          }
                         >
-                          Use Existing
+                          Open
                         </Button>
-                      </div>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          toast.success("Using existing contact");
+                          setAddContactOpen(false);
+                          resetAddContactDialog();
+                        }}
+                      >
+                        Use Existing
+                      </Button>
                     </div>
-                  ))}
-                </div>
-                <div className="flex justify-between gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setAddContactStep(1)}
-                    disabled={isCreatingContact}
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      void handleCreateContact();
-                    }}
-                    disabled={isCreatingContact}
-                  >
-                    {isCreatingContact ? "Creating..." : "Create New Anyway"}
-                  </Button>
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              <div className="flex justify-between gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAddContactStep(1)}
+                  disabled={isCreatingContact}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleCreateContact();
+                  }}
+                  disabled={isCreatingContact}
+                >
+                  {isCreatingContact ? "Creating..." : "Create New Anyway"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!retentionDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setRetentionDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!retentionDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setRetentionDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -4775,11 +4775,11 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Retention</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              {/* <div className="space-y-2 rounded-md border p-3">
+          <DialogHeader>
+            <DialogTitle>Update Retention</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* <div className="space-y-2 rounded-md border p-3">
               <div>
                 <p className="text-sm font-medium">Business Connections Overview</p>
                 <p className="text-muted-foreground text-xs">
@@ -4826,162 +4826,162 @@ export function MondayBoardView({
                 </div>
               </div>
             </div> */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Referred To Contractor(s)</label>
-                <MultiSelect
-                  key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
-                  options={Array.from(
-                    new Set([
-                      ...retentionOptions.referredToContractors,
-                      ...retentionDraft.referredToContractors,
-                    ]),
-                  )
-                    .filter((value) => value.trim().length > 0)
-                    .map((value) => ({ label: value, value }))}
-                  defaultValue={retentionDraft.referredToContractors}
-                  onValueChange={(values) => {
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      referredToContractors: values,
-                    }));
-                  }}
-                  placeholder="Select contractor(s)"
-                  disablePortal
-                  popoverSide="bottom"
-                  popoverAvoidCollisions={false}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Hired With Contractor</label>
-                <select
-                  value={retentionDraft.hiredWithContractor || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      hiredWithContractor: value === "__none__" ? "" : value,
-                    }));
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Referred To Contractor(s)</label>
+              <MultiSelect
+                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                options={Array.from(
+                  new Set([
+                    ...retentionOptions.referredToContractors,
+                    ...retentionDraft.referredToContractors,
+                  ]),
+                )
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={retentionDraft.referredToContractors}
+                onValueChange={(values) => {
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    referredToContractors: values,
+                  }));
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hired With Contractor</label>
+              <select
+                value={retentionDraft.hiredWithContractor || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    hiredWithContractor: value === "__none__" ? "" : value,
+                  }));
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(
+                  new Set([
+                    ...retentionOptions.hiredWithContractor,
+                    retentionDraft.hiredWithContractor,
+                  ]),
+                )
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hire Date</label>
+              <div className="flex items-center gap-2">
+                <Popover
+                  open={retentionHireDatePopoverOpen}
+                  onOpenChange={setRetentionHireDatePopoverOpen}
                 >
-                  <option value="__none__">Select value</option>
-                  {Array.from(
-                    new Set([
-                      ...retentionOptions.hiredWithContractor,
-                      retentionDraft.hiredWithContractor,
-                    ]),
-                  )
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Hire Date</label>
-                <div className="flex items-center gap-2">
-                  <Popover
-                    open={retentionHireDatePopoverOpen}
-                    onOpenChange={setRetentionHireDatePopoverOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 flex-1 justify-start font-normal"
-                      >
-                        {retentionDraft.hireDate || "Select date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                      <Calendar
-                        mode="single"
-                        selected={
-                          retentionDraft.hireDate
-                            ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                            : undefined
-                        }
-                        onSelect={(date) => {
-                          if (!date) return;
-                          setRetentionDraft((prev) => ({
-                            ...prev,
-                            hireDate: toDateOnlyLocal(date),
-                          }));
-                          setRetentionHireDatePopoverOpen(false);
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                    }}
-                    disabled={!retentionDraft.hireDate}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Retention Period</label>
-                <select
-                  value={retentionDraft.retentionPeriod || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      retentionPeriod: value === "__none__" ? "" : value,
-                    }));
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="__none__">Select value</option>
-                  {Array.from(
-                    new Set([
-                      ...retentionOptions.retentionPeriod,
-                      retentionDraft.retentionPeriod,
-                    ]),
-                  )
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2">
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 flex-1 justify-start font-normal"
+                    >
+                      {retentionDraft.hireDate || "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                    <Calendar
+                      mode="single"
+                      selected={
+                        retentionDraft.hireDate
+                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                          : undefined
+                      }
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setRetentionDraft((prev) => ({
+                          ...prev,
+                          hireDate: toDateOnlyLocal(date),
+                        }));
+                        setRetentionHireDatePopoverOpen(false);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
                 <Button
-                  variant="outline"
-                  onClick={() => setRetentionDialogRecord(null)}
-                  disabled={isSavingRetention}
-                >
-                  Cancel
-                </Button>
-                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
-                    void handleSaveRetention();
+                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
                   }}
-                  disabled={isSavingRetention}
+                  disabled={!retentionDraft.hireDate}
                 >
-                  {isSavingRetention ? "Saving..." : "Save"}
+                  Clear
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Retention Period</label>
+              <select
+                value={retentionDraft.retentionPeriod || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    retentionPeriod: value === "__none__" ? "" : value,
+                  }));
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(
+                  new Set([
+                    ...retentionOptions.retentionPeriod,
+                    retentionDraft.retentionPeriod,
+                  ]),
+                )
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setRetentionDialogRecord(null)}
+                disabled={isSavingRetention}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveRetention();
+                }}
+                disabled={isSavingRetention}
+              >
+                {isSavingRetention ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!statusDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setStatusDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!statusDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setStatusDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -4991,57 +4991,57 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Status</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Status</label>
-                <select
-                  value={statusDraft || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusDraft(value === "__none__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="__none__">Select value</option>
-                  {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setStatusDialogRecord(null)}
-                  disabled={isSavingStatus}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveStatus();
-                  }}
-                  disabled={isSavingStatus}
-                >
-                  {isSavingStatus ? "Saving..." : "Save"}
-                </Button>
-              </div>
+          <DialogHeader>
+            <DialogTitle>Update Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <select
+                value={statusDraft || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStatusDraft(value === "__none__" ? "" : value);
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStatusDialogRecord(null)}
+                disabled={isSavingStatus}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveStatus();
+                }}
+                disabled={isSavingStatus}
+              >
+                {isSavingStatus ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!ownerDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setOwnerDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!ownerDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setOwnerDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -5051,104 +5051,104 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Owner</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Owner</label>
-                <Select
-                  value={ownerDraft || "__none__"}
-                  onValueChange={(value) => {
-                    setOwnerDraft(value === "__none__" ? "" : value);
-                  }}
-                >
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue placeholder="Select owner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select value</SelectItem>
-                    {Array.from(
-                      new Map(
-                        [
-                          ...ownerOptions.map((option) => [option.value, option] as const),
-                          ownerDraft.trim().length > 0
-                            ? [
-                              ownerDraft,
-                              {
-                                value: ownerDraft,
-                                label: `User ${ownerDraft}`,
-                                name: null,
-                                photoThumb: null,
-                              },
-                            ]
-                            : null,
-                        ].filter(
-                          (
-                            entry,
-                          ): entry is readonly [
-                            string,
+          <DialogHeader>
+            <DialogTitle>Update Owner</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Owner</label>
+              <Select
+                value={ownerDraft || "__none__"}
+                onValueChange={(value) => {
+                  setOwnerDraft(value === "__none__" ? "" : value);
+                }}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select value</SelectItem>
+                  {Array.from(
+                    new Map(
+                      [
+                        ...ownerOptions.map((option) => [option.value, option] as const),
+                        ownerDraft.trim().length > 0
+                          ? [
+                            ownerDraft,
                             {
-                              value: string;
-                              label: string;
-                              name: string | null;
-                              photoThumb: string | null;
+                              value: ownerDraft,
+                              label: `User ${ownerDraft}`,
+                              name: null,
+                              photoThumb: null,
                             },
-                          ] => !!entry,
-                        ),
+                          ]
+                          : null,
+                      ].filter(
+                        (
+                          entry,
+                        ): entry is readonly [
+                          string,
+                          {
+                            value: string;
+                            label: string;
+                            name: string | null;
+                            photoThumb: string | null;
+                          },
+                        ] => !!entry,
                       ),
-                    )
-                      .map(([, option]) => option)
-                      .map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="size-5">
-                              {option.photoThumb ? (
-                                <AvatarImage
-                                  src={option.photoThumb}
-                                  alt={option.name ?? option.value}
-                                />
-                              ) : null}
-                              <AvatarFallback className="text-[10px] font-semibold">
-                                {getNameInitials(option.name ?? option.value)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm">
-                              {option.name ?? option.label}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setOwnerDialogRecord(null)}
-                  disabled={isSavingOwner}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveOwner();
-                  }}
-                  disabled={isSavingOwner}
-                >
-                  {isSavingOwner ? "Saving..." : "Save"}
-                </Button>
-              </div>
+                    ),
+                  )
+                    .map(([, option]) => option)
+                    .map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-5">
+                            {option.photoThumb ? (
+                              <AvatarImage
+                                src={option.photoThumb}
+                                alt={option.name ?? option.value}
+                              />
+                            ) : null}
+                            <AvatarFallback className="text-[10px] font-semibold">
+                              {getNameInitials(option.name ?? option.value)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">
+                            {option.name ?? option.label}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setOwnerDialogRecord(null)}
+                disabled={isSavingOwner}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveOwner();
+                }}
+                disabled={isSavingOwner}
+              >
+                {isSavingOwner ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!tagsDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setTagsDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!tagsDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setTagsDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg overflow-visible"
             onInteractOutside={(event) => {
@@ -5158,52 +5158,52 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Tags</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Tags</label>
-                <MultiSelect
-                  key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
-                  options={sortFiscalYearTagsDesc(
-                    Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
-                      (value) => value.trim().length > 0,
-                    ),
-                  )
-                    .map((value) => ({ label: value, value }))}
-                  defaultValue={tagsDraft}
-                  onValueChange={(values) => setTagsDraft(values)}
-                  placeholder="Select tags"
-                  disablePortal
-                  popoverSide="bottom"
-                  popoverAvoidCollisions={false}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setTagsDialogRecord(null)}
-                  disabled={isSavingTags}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveTags();
-                  }}
-                  disabled={isSavingTags}
-                >
-                  {isSavingTags ? "Saving..." : "Save"}
-                </Button>
-              </div>
+          <DialogHeader>
+            <DialogTitle>Update Tags</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tags</label>
+              <MultiSelect
+                key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
+                options={sortFiscalYearTagsDesc(
+                  Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
+                    (value) => value.trim().length > 0,
+                  ),
+                )
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={tagsDraft}
+                onValueChange={(values) => setTagsDraft(values)}
+                placeholder="Select tags"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setTagsDialogRecord(null)}
+                disabled={isSavingTags}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveTags();
+                }}
+                disabled={isSavingTags}
+              >
+                {isSavingTags ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!contactHistoryDialogRecord}
-          onOpenChange={(open) => {
+      <Dialog
+        open={!!contactHistoryDialogRecord}
+        onOpenChange={(open) => {
             if (!open && !isTourLockingDialog()) setContactHistoryDialogRecord(null);
           }}
         >
@@ -5236,67 +5236,67 @@ export function MondayBoardView({
                   <ChevronRight className="h-4 w-4" />
                 </Button>
                 <DialogTitle className="min-w-0 truncate">
-                  {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
-                </DialogTitle>
+              {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+            </DialogTitle>
                 {contactDialogIndex >= 0 ? (
                   <span className="text-muted-foreground shrink-0 text-xs">
                     {contactDialogIndex + 1} / {filteredRecords.length}
                   </span>
                 ) : null}
               </div>
-            </DialogHeader>
+          </DialogHeader>
             <div className="p-6">
-            {contactHistoryDialogRecord ? (
-              <div className="space-y-4">
-                {(() => {
-                  const record = contactHistoryDialogRecord;
-                  const addressDisplay = getAddressDisplayParts(record.address);
-                  return (
+          {contactHistoryDialogRecord ? (
+            <div className="space-y-4">
+              {(() => {
+                const record = contactHistoryDialogRecord;
+                const addressDisplay = getAddressDisplayParts(record.address);
+                return (
                     <div data-tour="contact-header" className="rounded-md border p-4">
-                      <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <Avatar className="size-12">
-                            <AvatarFallback className="text-sm font-semibold">
-                              {getNameInitials(record.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="truncate text-base font-semibold">{record.name}</p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {record.email ?? "—"}
-                            </p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {record.phone ?? "—"}
-                            </p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {addressDisplay.full ? (
-                                <>
-                                  {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                                  {addressDisplay.cityStateZip ? (
-                                    <span className="text-[15px] font-semibold text-foreground">
-                                      {addressDisplay.cityStateZip}
-                                    </span>
-                                  ) : (
-                                    addressDisplay.full
-                                  )}
-                                </>
-                              ) : (
-                                "—"
-                              )}
-                            </p>
-                          </div>
+                    <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <Avatar className="size-12">
+                          <AvatarFallback className="text-sm font-semibold">
+                            {getNameInitials(record.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold">{record.name}</p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {record.email ?? "—"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {record.phone ?? "—"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {addressDisplay.full ? (
+                              <>
+                                {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
+                                {addressDisplay.cityStateZip ? (
+                                  <span className="text-[15px] font-semibold text-foreground">
+                                    {addressDisplay.cityStateZip}
+                                  </span>
+                                ) : (
+                                  addressDisplay.full
+                                )}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </p>
                         </div>
+                      </div>
                         <div className="w-full max-w-sm">
                           <ApprovalProgressIndicator
                             progressValue={record.batteryProgress}
                             steps={approvalSteps}
                             rawProgressValue={record.batteryRawValue}
                           />
-                        </div>
                       </div>
                     </div>
-                  );
-                })()}
+                  </div>
+                );
+              })()}
 
                 {!staticMode && contactHistoryDialogRecord ? (
                   <div data-tour="onboarding-stepper">
@@ -5413,7 +5413,7 @@ export function MondayBoardView({
                     actionButtonClassName={boardThemeStyles.actionButtonClassName}
                     buttonSizeClassName={quickActionButtonSizeClass}
                   />
-                  </div>
+                            </div>
                 ) : null}
 
                 <Tabs value={contactDialogTab} onValueChange={setContactDialogTab} className="w-full">
@@ -5477,17 +5477,17 @@ export function MondayBoardView({
                           <div key={i} className="grid grid-cols-[140px_1fr] gap-3">
                             <Skeleton className="h-4 w-full" />
                             <Skeleton className="h-4 w-3/4" />
-                          </div>
+                    </div>
                         ))}
-                      </div>
+                  </div>
                     ) : contactColumnsQuery.error ? (
-                      <div className="rounded-md border p-3">
+                  <div className="rounded-md border p-3">
                         <p className="text-destructive text-sm">
                           {contactColumnsQuery.error instanceof Error
                             ? contactColumnsQuery.error.message
                             : "Failed to load contact details"}
                         </p>
-                      </div>
+                        </div>
                     ) : (
                       <div className="max-h-[60vh] overflow-y-auto rounded-md border">
                         <table className="w-full text-sm">
@@ -5507,24 +5507,24 @@ export function MondayBoardView({
                             ))}
                           </tbody>
                         </table>
-                      </div>
+                    </div>
                     )}
                   </TabsContent>
                 </Tabs>
 
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => setContactHistoryDialogRecord(null)}
-                  >
-                    Close
-                  </Button>
-                </div>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setContactHistoryDialogRecord(null)}
+                >
+                  Close
+                </Button>
               </div>
-            ) : null}
             </div>
-          </DialogContent>
-        </Dialog>
+          ) : null}
+            </div>
+        </DialogContent>
+      </Dialog>
 
         <QuestionnaireFormDialog
           open={questionnaireDialogRecords.length > 0}
@@ -5572,11 +5572,11 @@ export function MondayBoardView({
         ) : (
           <BoardTable
             data={filteredRecords}
-            columns={columns}
-            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-            initialSort={{ id: "createdAt", direction: "desc" }}
-            getRowId={(item) => item.id}
-            entityActions={entityActions}
+        columns={columns}
+        isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+        initialSort={{ id: "createdAt", direction: "desc" }}
+        getRowId={(item) => item.id}
+        entityActions={entityActions}
             bulkActions={({ selectedItems, clearSelection }) => {
               const eligibleByAction = new Map<string, MondayRecord[]>();
               for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
@@ -5810,75 +5810,60 @@ export function MondayBoardView({
           </DialogContent>
         </Dialog>
 
-        <Dialog
-          open={!!resumePreview}
-          onOpenChange={(open) => {
-            if (!open) setResumePreview(null);
-          }}
-        >
-          <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>
-                Resume · {resumePreview?.recordName ?? "Contact"}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Resume preview dialog with open in new tab fallback.
-              </DialogDescription>
-            </DialogHeader>
-            {resumePreview ? (
-              <div className="space-y-3">
-                {(() => {
-                  const lowerName = resumePreview.fileName.toLowerCase();
-                  const isPdf = lowerName.endsWith(".pdf");
-                  const isImage =
-                    lowerName.endsWith(".png") ||
-                    lowerName.endsWith(".jpg") ||
-                    lowerName.endsWith(".jpeg") ||
-                    lowerName.endsWith(".gif") ||
-                    lowerName.endsWith(".webp") ||
-                    lowerName.endsWith(".svg");
-                  return (
-                    <>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                        <a
-                          href={resumePreview.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary text-xs underline"
+      <Dialog
+        open={!!resumePreview}
+        onOpenChange={(open) => {
+          if (!open) setResumePreview(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Resume · {resumePreview?.recordName ?? "Contact"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Resume preview dialog with open in new tab fallback.
+            </DialogDescription>
+          </DialogHeader>
+          {resumePreview ? (
+            <div className="space-y-3">
+              {(() => {
+                const lowerName = resumePreview.fileName.toLowerCase();
+                const isPdf = lowerName.endsWith(".pdf");
+                const isImage =
+                  lowerName.endsWith(".png") ||
+                  lowerName.endsWith(".jpg") ||
+                  lowerName.endsWith(".jpeg") ||
+                  lowerName.endsWith(".gif") ||
+                  lowerName.endsWith(".webp") ||
+                  lowerName.endsWith(".svg");
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
+                      <a
+                        href={resumePreview.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary text-xs underline"
+                      >
+                        Open in new tab
+                      </a>
+                    </div>
+                    <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
+                      {isPdf ? (
+                        <iframe
+                          src={resumePreview.href}
+                          title={`Resume preview: ${resumePreview.fileName}`}
+                          className="h-full w-full"
+                        />
+                      ) : isImage ? (
+                        <object
+                          data={resumePreview.href}
+                          className="h-full w-full"
                         >
-                          Open in new tab
-                        </a>
-                      </div>
-                      <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                        {isPdf ? (
-                          <iframe
-                            src={resumePreview.href}
-                            title={`Resume preview: ${resumePreview.fileName}`}
-                            className="h-full w-full"
-                          />
-                        ) : isImage ? (
-                          <object
-                            data={resumePreview.href}
-                            className="h-full w-full"
-                          >
-                            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                              <p className="text-sm font-medium">Image preview unavailable</p>
-                              <a
-                                href={resumePreview.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary text-xs underline"
-                              >
-                                Open resume in new tab
-                              </a>
-                            </div>
-                          </object>
-                        ) : (
                           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                            <p className="text-sm font-medium">
-                              This file type cannot be previewed inline.
-                            </p>
+                            <p className="text-sm font-medium">Image preview unavailable</p>
                             <a
                               href={resumePreview.href}
                               target="_blank"
@@ -5888,194 +5873,209 @@ export function MondayBoardView({
                               Open resume in new tab
                             </a>
                           </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={!!sendEmailRecord}
-          onOpenChange={(open) => {
-            if (!open) closeSendEmailDialog();
-          }}
-        >
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
-            <DialogHeader>
-              <DialogTitle>Send Email</DialogTitle>
-            </DialogHeader>
-            {sendEmailRecord ? (
-              <div className="space-y-4">
-                <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
-                  Recipient:{" "}
-                  <span className="font-medium text-slate-900">
-                    {sendEmailRecord.name}
-                    {" · "}
-                    {sendEmailRecord.email ?? "No email"}
-                  </span>
-                </div>
-                {sendEmailStep === 1 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">
-                      Step 1: Choose an email template
-                    </p>
-                    <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {emailTemplates.map((template) => {
-                          const isActive = template.id === sendEmailTemplateId;
-                          const resolvedTemplateName = interpolateTemplateVariables(
-                            template.name,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const resolvedRenderedHtml = interpolateTemplateVariables(
-                            template.renderedHtml,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const resolvedContent = interpolateTemplateVariables(
-                            template.content,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
-                          const hasPlainContent = resolvedContent.trim().length > 0;
-                          return (
-                            <button
-                              key={template.id}
-                              type="button"
-                              className={[
-                                "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
-                                isActive
-                                  ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-                                  : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
-                              ].join(" ")}
-                              onClick={() => {
-                                setSendEmailTemplateId(template.id);
-                              }}
-                            >
-                              <p className="line-clamp-1 font-medium text-slate-900">
-                                {resolvedTemplateName}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                Updated {formatUpdatedAt(template.updatedAt)}
-                              </p>
-                              <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
-                                {hasRenderedHtml ? (
-                                  <div
-                                    className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
-                                    style={{ whiteSpace: "pre-wrap" }}
-                                    dangerouslySetInnerHTML={{
-                                      __html: resolvedRenderedHtml,
-                                    }}
-                                  />
-                                ) : hasPlainContent ? (
-                                  <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
-                                    {resolvedContent}
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-slate-500">No preview content.</p>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                        <p className="text-muted-foreground text-sm">
-                          No templates found.
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={closeSendEmailDialog}>
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() => setSendEmailStep(2)}
-                        disabled={!sendEmailTemplate}
-                      >
-                        Next
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {sendEmailStep === 2 && sendEmailTemplate ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Step 2: Preview template</p>
-                    <div className="rounded-md border p-4">
-                      <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                      <p className="mt-1 text-base font-medium">
-                        {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
-                      </p>
-                      <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                        Email Preview (Lead View)
-                      </p>
-                      <div className="bg-card mt-2 rounded-md border p-4">
-                        {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
-                          <p className="text-muted-foreground text-sm">
-                            No content found in template.
+                        </object>
+                      ) : (
+                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                          <p className="text-sm font-medium">
+                            This file type cannot be previewed inline.
                           </p>
-                        ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
-                          <div
-                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                            style={{ whiteSpace: "pre-wrap" }}
-                            dangerouslySetInnerHTML={{
-                              __html: sendEmailResolvedTemplate?.html ?? "",
-                            }}
-                          />
-                        ) : (
-                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                            {sendEmailResolvedTemplate?.text ?? ""}
-                          </div>
-                        )}
-                      </div>
+                          <a
+                            href={resumePreview.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary text-xs underline"
+                          >
+                            Open resume in new tab
+                          </a>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-between gap-2">
-                      <Button variant="outline" onClick={() => setSendEmailStep(1)}>
-                        Back
-                      </Button>
-                      <Button onClick={() => setSendEmailStep(3)}>Next</Button>
-                    </div>
-                  </div>
-                ) : null}
+                  </>
+                );
+              })()}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
-                {sendEmailStep === 3 && sendEmailTemplate ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Step 3: Confirm send</p>
-                    <div className="rounded-md border p-4 text-sm">
-                      Are you sure you want to send this email?
+      <Dialog
+        open={!!sendEmailRecord}
+        onOpenChange={(open) => {
+          if (!open) closeSendEmailDialog();
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
+          <DialogHeader>
+            <DialogTitle>Send Email</DialogTitle>
+          </DialogHeader>
+          {sendEmailRecord ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                Recipient:{" "}
+                <span className="font-medium text-slate-900">
+                  {sendEmailRecord.name}
+                  {" · "}
+                  {sendEmailRecord.email ?? "No email"}
+                </span>
+              </div>
+              {sendEmailStep === 1 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    Step 1: Choose an email template
+                  </p>
+                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {emailTemplates.map((template) => {
+                        const isActive = template.id === sendEmailTemplateId;
+                        const resolvedTemplateName = interpolateTemplateVariables(
+                          template.name,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const resolvedRenderedHtml = interpolateTemplateVariables(
+                          template.renderedHtml,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const resolvedContent = interpolateTemplateVariables(
+                          template.content,
+                          {
+                            ownerName: sendEmailOwnerVars.ownerName,
+                            ownerEmail: sendEmailOwnerVars.ownerEmail,
+                          },
+                        );
+                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                        const hasPlainContent = resolvedContent.trim().length > 0;
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className={[
+                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                              isActive
+                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                            ].join(" ")}
+                            onClick={() => {
+                              setSendEmailTemplateId(template.id);
+                            }}
+                          >
+                            <p className="line-clamp-1 font-medium text-slate-900">
+                              {resolvedTemplateName}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Updated {formatUpdatedAt(template.updatedAt)}
+                            </p>
+                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                              {hasRenderedHtml ? (
+                                <div
+                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                  style={{ whiteSpace: "pre-wrap" }}
+                                  dangerouslySetInnerHTML={{
+                                    __html: resolvedRenderedHtml,
+                                  }}
+                                />
+                              ) : hasPlainContent ? (
+                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                  {resolvedContent}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500">No preview content.</p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div className="flex justify-between gap-2">
-                      <Button variant="outline" onClick={() => setSendEmailStep(2)}>
-                        Back
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          void handleConfirmSendEmail();
-                        }}
-                        disabled={isSendingEmail || !sendEmailRecord.email}
-                      >
-                        {isSendingEmail ? "Sending..." : "Send Email"}
-                      </Button>
+                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">
+                        No templates found.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={closeSendEmailDialog}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => setSendEmailStep(2)}
+                      disabled={!sendEmailTemplate}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {sendEmailStep === 2 && sendEmailTemplate ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 2: Preview template</p>
+                  <div className="rounded-md border p-4">
+                    <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                    <p className="mt-1 text-base font-medium">
+                      {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                    </p>
+                    <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                      Email Preview (Lead View)
+                    </p>
+                    <div className="bg-card mt-2 rounded-md border p-4">
+                      {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                        <p className="text-muted-foreground text-sm">
+                          No content found in template.
+                        </p>
+                      ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                        <div
+                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                          style={{ whiteSpace: "pre-wrap" }}
+                          dangerouslySetInnerHTML={{
+                            __html: sendEmailResolvedTemplate?.html ?? "",
+                          }}
+                        />
+                      ) : (
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                          {sendEmailResolvedTemplate?.text ?? ""}
+                        </div>
+                      )}
                     </div>
                   </div>
-                ) : null}
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                      Back
+                    </Button>
+                    <Button onClick={() => setSendEmailStep(3)}>Next</Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {sendEmailStep === 3 && sendEmailTemplate ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 3: Confirm send</p>
+                  <div className="rounded-md border p-4 text-sm">
+                    Are you sure you want to send this email?
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                      Back
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmSendEmail();
+                      }}
+                      disabled={isSendingEmail || !sendEmailRecord.email}
+                    >
+                      {isSendingEmail ? "Sending..." : "Send Email"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       </div>
       <HelpDeskDialog
         open={helpDeskOpen}

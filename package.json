@@ -46,6 +46,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.74.0",
+    "recharts": "^3.8.1",
     "remark-gfm": "^4.0.1",
     "sass": "^1.99.0",
     "sass-embedded": "^1.99.0",
