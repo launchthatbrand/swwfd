@@ -127,7 +127,7 @@ const getCurrentFiscalYearEnd = () => {
 const formatFiscalYear = (endYear: number) => `FY${String(endYear).slice(-2)}`;
 
 const getFiscalYearRange = (endYear: number) => ({
-  start: `${String(endYear - 1)}-07-01`,
+  start: `${String(endYear - 1)}-07-15`,
   end: `${String(endYear)}-06-30`,
 });
 
