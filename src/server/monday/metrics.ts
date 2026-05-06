@@ -1,4 +1,8 @@
-import { callMondayGraphQL } from "./client";
+import {
+  MONDAY_HIRE_EVENT_TYPE_LABEL,
+  callMondayGraphQL,
+  parseMondayHireEventToken,
+} from "./client";
 
 import type {
   MondayMetricsMonthlyPoint,
@@ -42,9 +46,7 @@ const normalizeMonthKey = (value: string | null | undefined) => {
   if (!value) return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return trimmed.slice(0, 7);
-  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed.slice(0, 7);
   const parsed = Date.parse(trimmed);
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed).toISOString().slice(0, 7);
@@ -54,51 +56,53 @@ const includesTag = (tags: string[], needle: string) => {
   return tags.some((entry) => entry.includes(needle));
 };
 
-interface MetricsRecord {
+interface ContactMetricsRecord {
   ownerIds: string[];
   ownerLabel: string | null;
-  statusText: string | null;
   tags: string | null;
   createdAt: string | null;
-  hireDate: string | null;
 }
 
-const detectSegments = (record: MetricsRecord) => {
+interface HireEventMetricsRecord {
+  ownerIds: string[];
+  ownerId: string | null;
+  ownerLabel: string | null;
+  eventDate: string | null;
+  isCandidatesGroup: boolean;
+  isReentry: boolean;
+  isVeteran: boolean;
+}
+
+const detectContactSegments = (record: ContactMetricsRecord) => {
   const tags = splitTags(record.tags);
-  const isVeteran = includesTag(tags, "veteran");
-  const isReentry = includesTag(tags, "reentry");
-  const isCandidatesGroup =
-    includesTag(tags, "candidate") &&
-    (includesTag(tags, "group") || includesTag(tags, "train"));
-  const statusText = record.statusText?.trim().toLowerCase() ?? "";
-  const hasHiredStatus = statusText.includes("hired");
-  const hasHireDate = !!normalizeMonthKey(record.hireDate);
-  const hasHiredTag = includesTag(tags, "hired");
-  const isHired = hasHiredStatus || hasHireDate || hasHiredTag;
   return {
-    isVeteran,
-    isReentry,
-    isCandidatesGroup,
-    isHired,
+    isVeteran: includesTag(tags, "veteran"),
+    isReentry: includesTag(tags, "reentry"),
+    isCandidatesGroup:
+      includesTag(tags, "candidate") &&
+      (includesTag(tags, "group") || includesTag(tags, "train")),
     createdMonthKey: normalizeMonthKey(record.createdAt),
-    hiredMonthKey: normalizeMonthKey(record.hireDate) ?? normalizeMonthKey(record.createdAt),
   };
 };
 
-const applyToTotals = (
+const applyContactTotals = (
   totals: MondayMetricsSummaryTotals,
-  segments: ReturnType<typeof detectSegments>,
+  segments: ReturnType<typeof detectContactSegments>,
 ) => {
   totals.allContacts += 1;
   if (segments.isCandidatesGroup) totals.candidatesGroup += 1;
   if (segments.isReentry) totals.reentry += 1;
   if (segments.isVeteran) totals.veterans += 1;
-  if (segments.isHired) {
-    totals.hiredTotal += 1;
-    if (segments.isCandidatesGroup) totals.hiredCandidatesGroup += 1;
-    if (segments.isReentry) totals.hiredReentry += 1;
-    if (segments.isVeteran) totals.hiredVeterans += 1;
-  }
+};
+
+const applyHireEventTotals = (
+  totals: MondayMetricsSummaryTotals,
+  event: HireEventMetricsRecord,
+) => {
+  totals.hiredTotal += 1;
+  if (event.isCandidatesGroup) totals.hiredCandidatesGroup += 1;
+  if (event.isReentry) totals.hiredReentry += 1;
+  if (event.isVeteran) totals.hiredVeterans += 1;
 };
 
 const parseFiscalYearEnd = (fiscalYear: string | null | undefined): number | null => {
@@ -120,16 +124,12 @@ const getCurrentFiscalYearEnd = () => {
   return month >= 6 ? year + 1 : year;
 };
 
-const formatFiscalYear = (endYear: number) => {
-  const suffix = String(endYear).slice(-2);
-  return `FY${suffix}`;
-};
+const formatFiscalYear = (endYear: number) => `FY${String(endYear).slice(-2)}`;
 
-const getFiscalYearRange = (endYear: number) => {
-  const start = `${String(endYear - 1)}-07-01`;
-  const end = `${String(endYear)}-06-30`;
-  return { start, end };
-};
+const getFiscalYearRange = (endYear: number) => ({
+  start: `${String(endYear - 1)}-07-01`,
+  end: `${String(endYear)}-06-30`,
+});
 
 const buildFiscalYearMonths = (endYear: number): MondayMetricsMonthlyPoint[] => {
   const points: MondayMetricsMonthlyPoint[] = [];
@@ -142,10 +142,6 @@ const buildFiscalYearMonths = (endYear: number): MondayMetricsMonthlyPoint[] => 
     });
   }
   return points;
-};
-
-const toOwnerLabel = (record: MetricsRecord, ownerId: string) => {
-  return record.ownerLabel?.trim() || ownerId;
 };
 
 const parsePeopleIds = (columnValue: string | null | undefined) => {
@@ -188,9 +184,7 @@ const toColumnDisplayValue = (
   rawValue: string | null | undefined,
 ) => {
   const normalizedText = text?.trim();
-  if (normalizedText && normalizedText.length > 0) {
-    return normalizedText;
-  }
+  if (normalizedText && normalizedText.length > 0) return normalizedText;
   if (!rawValue || rawValue.trim().length === 0) return "";
   try {
     const parsed = JSON.parse(rawValue) as unknown;
@@ -216,7 +210,7 @@ const parseDateValue = (
       if (parsed.date && parsed.time) return `${parsed.date}T${parsed.time}Z`;
       if (parsed.date) return `${parsed.date}T00:00:00Z`;
     } catch {
-      // ignore
+      // ignore parse errors
     }
   }
   const normalizedText = text?.trim();
@@ -235,25 +229,23 @@ const getMetricsBoardConfig = () => {
   return { boardId };
 };
 
-const sanitizeColumnId = (value: string) => {
-  return value.replace(/[^a-zA-Z0-9_]/g, "");
-};
+const sanitizeColumnId = (value: string) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
 const resolveMetricsColumnIds = async (boardId: string) => {
   interface Data {
     boards?: Array<{
-      columns?: Array<{ id?: string | null; title?: string | null; type?: string | null }>;
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
     }>;
   }
   const data = await callMondayGraphQL<Data>(
     `
       query ResolveMetricsColumns($boardId: ID!) {
         boards(ids: [$boardId]) {
-          columns {
-            id
-            title
-            type
-          }
+          columns { id title type }
         }
       }
     `,
@@ -274,21 +266,89 @@ const resolveMetricsColumnIds = async (boardId: string) => {
       byTitle("registration")?.id ??
       byType("date")?.id ??
       "date1__1",
-    hireDateColumnId:
-      byId("date_mkty234p")?.id ??
-      byTitle("hire date")?.id ??
-      null,
-    statusColumnId: byType("status")?.id ?? null,
-    tagsColumnId:
-      byId("dropdown_mkvw578t")?.id ??
-      byTitle("tag")?.id ??
-      null,
+    tagsColumnId: byId("dropdown_mkvw578t")?.id ?? byTitle("tag")?.id ?? null,
     peopleColumnId: byType("people")?.id ?? null,
     creationLogColumnId: byType("creation_log")?.id ?? null,
   };
 };
 
-const fetchMetricsPage = async (args: {
+const resolveSubitemBoardAndColumns = async (boardId: string) => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `
+      query ResolveSubitemBoard($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id title type settings_str }
+        }
+      }
+    `,
+    { boardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const subtasksColumn = columns.find((column) => (column.type ?? "").toLowerCase() === "subtasks");
+  let subitemBoardId: string | null = null;
+  if (subtasksColumn?.settings_str) {
+    try {
+      const parsed = JSON.parse(subtasksColumn.settings_str) as {
+        boardIds?: Array<number | string>;
+      };
+      const raw = parsed.boardIds?.[0];
+      if (raw != null) {
+        const normalized = String(raw).trim();
+        if (normalized.length > 0) subitemBoardId = normalized;
+      }
+    } catch {
+      subitemBoardId = null;
+    }
+  }
+  return { subitemBoardId };
+};
+
+const resolveHireEventColumnIds = async (subitemBoardId: string) => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `
+      query ResolveHireEventColumns($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id title type }
+        }
+      }
+    `,
+    { boardId: subitemBoardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const byType = (type: string) =>
+    columns.find((column) => (column.type ?? "").toLowerCase() === type);
+  const byId = (id: string) => columns.find((column) => (column.id ?? "") === id);
+  const byTitle = (needle: string) =>
+    columns.find((column) =>
+      (column.title ?? "").toLowerCase().includes(needle.toLowerCase()),
+    );
+  return {
+    typeColumnId: byId("color_mm2x49t2")?.id ?? byTitle("type")?.id ?? byType("status")?.id ?? null,
+    dateColumnId: byId("date0")?.id ?? byTitle("date")?.id ?? byType("date")?.id ?? "date0",
+    peopleColumnId: byId("person")?.id ?? byTitle("person")?.id ?? byType("people")?.id ?? null,
+  };
+};
+
+const fetchContactMetricsPage = async (args: {
   boardId: string;
   cursor: string | null;
   limit: number;
@@ -303,11 +363,9 @@ const fetchMetricsPage = async (args: {
 }) => {
   interface BoardItem {
     id: string;
-    name?: string | null;
     updated_at?: string | null;
     column_values?: Array<{
       id?: string | null;
-      type?: string | null;
       text?: string | null;
       value?: string | null;
     }>;
@@ -350,13 +408,7 @@ const fetchMetricsPage = async (args: {
         items_page(
           limit: $limit
           ${includeCursor ? "cursor: $cursor" : ""}
-          ${
-            includeCursor
-              ? ""
-              : `query_params: {
-                  rules: [${rulesForFirstPage.join("\n")}]
-                }`
-          }
+          ${includeCursor ? "" : `query_params: { rules: [${rulesForFirstPage.join("\n")}] }`}
         ) {
           cursor
           items {
@@ -364,7 +416,6 @@ const fetchMetricsPage = async (args: {
             updated_at
             column_values(ids: [${safeColumnIds}]) {
               id
-              type
               text
               value
             }
@@ -380,6 +431,90 @@ const fetchMetricsPage = async (args: {
   });
   return {
     boardName: data.boards?.[0]?.name ?? null,
+    nextCursor: data.boards?.[0]?.items_page?.cursor ?? null,
+    items: data.boards?.[0]?.items_page?.items ?? [],
+  };
+};
+
+const fetchHireEventsPage = async (args: {
+  boardId: string;
+  cursor: string | null;
+  limit: number;
+  columnIds: string[];
+  dateColumnId: string;
+  dateFrom: string;
+  dateTo: string;
+  ownerRule?: {
+    peopleColumnId: string;
+    ownerId: string;
+  } | null;
+}) => {
+  interface Subitem {
+    id: string;
+    name?: string | null;
+    column_values?: Array<{
+      id?: string | null;
+      text?: string | null;
+      value?: string | null;
+    }>;
+  }
+  interface Data {
+    boards?: Array<{
+      items_page?: { cursor?: string | null; items?: Subitem[] };
+    }>;
+  }
+  const safeColumnIds = args.columnIds.map((value) => `"${sanitizeColumnId(value)}"`).join(", ");
+  const safeDateColumnId = sanitizeColumnId(args.dateColumnId);
+  const safePeopleColumnId = args.ownerRule?.peopleColumnId
+    ? sanitizeColumnId(args.ownerRule.peopleColumnId)
+    : "";
+  const safeOwnerId = args.ownerRule?.ownerId
+    ? args.ownerRule.ownerId.replace(/[^0-9]/g, "")
+    : "";
+  const safeOwnerPeopleToken = safeOwnerId ? `person-${safeOwnerId}` : "";
+  const includeCursor = !!args.cursor;
+  const rulesForFirstPage: string[] = [
+    `{
+      column_id: "${safeDateColumnId}"
+      compare_value: ["${args.dateFrom}", "${args.dateTo}"]
+      operator: between
+    }`,
+  ];
+  if (!includeCursor && safePeopleColumnId && safeOwnerId) {
+    rulesForFirstPage.push(`{
+      column_id: "${safePeopleColumnId}"
+      compare_value: ["${safeOwnerPeopleToken}"]
+      operator: any_of
+    }`);
+  }
+  const query = `
+    query ListHireEventItems($boardId: ID!, $limit: Int!${includeCursor ? ", $cursor: String" : ""}) {
+      boards(ids: [$boardId]) {
+        items_page(
+          limit: $limit
+          ${includeCursor ? "cursor: $cursor" : ""}
+          ${includeCursor ? "" : `query_params: { rules: [${rulesForFirstPage.join("\n")}] }`}
+        ) {
+          cursor
+          items {
+            id
+            name
+            column_values(ids: [${safeColumnIds}]) {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await callMondayGraphQL<Data>(query, {
+    boardId: args.boardId,
+    limit: args.limit,
+    ...(args.cursor ? { cursor: args.cursor } : {}),
+  });
+  return {
     nextCursor: data.boards?.[0]?.items_page?.cursor ?? null,
     items: data.boards?.[0]?.items_page?.items ?? [],
   };
@@ -406,8 +541,6 @@ export const buildMondayMetricsSummary = async (args?: {
     new Set(
       [
         columnMeta.dateColumnId,
-        columnMeta.hireDateColumnId,
-        columnMeta.statusColumnId,
         columnMeta.tagsColumnId,
         columnMeta.peopleColumnId,
         columnMeta.creationLogColumnId,
@@ -415,7 +548,7 @@ export const buildMondayMetricsSummary = async (args?: {
     ),
   );
 
-  const allRecords: MetricsRecord[] = [];
+  const allContactRecords: ContactMetricsRecord[] = [];
   let cursor: string | null = null;
   let boardName: string | null = null;
   let scannedPages = 0;
@@ -425,9 +558,9 @@ export const buildMondayMetricsSummary = async (args?: {
   let attemptedOwnerRuleFallback = false;
 
   while (scannedPages < MAX_SCAN_PAGES) {
-    let page: Awaited<ReturnType<typeof fetchMetricsPage>>;
+    let page: Awaited<ReturnType<typeof fetchContactMetricsPage>>;
     try {
-      page = await fetchMetricsPage({
+      page = await fetchContactMetricsPage({
         boardId,
         cursor,
         limit: 500,
@@ -441,10 +574,10 @@ export const buildMondayMetricsSummary = async (args?: {
             : null,
       });
     } catch (error) {
-      if (allRecords.length === 0) throw error;
-      console.warn("[MondayMetrics] continuing with partial result after page error", {
+      if (allContactRecords.length === 0) throw error;
+      console.warn("[MondayMetrics] continuing with partial contact result after page error", {
         scannedPages,
-        collectedRecords: allRecords.length,
+        collectedRecords: allContactRecords.length,
         error: error instanceof Error ? error.message : String(error),
       });
       break;
@@ -456,13 +589,11 @@ export const buildMondayMetricsSummary = async (args?: {
       page.items.length === 0 &&
       !attemptedOwnerRuleFallback
     ) {
-      // Owner filtering at Monday level is sometimes inconsistent in this board setup.
-      // Fall back to a full date-scoped scan when it returns an empty first page.
       attemptedOwnerRuleFallback = true;
       useServerSideOwnerRule = false;
       scannedPages = 0;
       cursor = null;
-      allRecords.length = 0;
+      allContactRecords.length = 0;
       boardName = null;
       continue;
     }
@@ -472,9 +603,7 @@ export const buildMondayMetricsSummary = async (args?: {
       const byId = (id: string | null) => columns.find((column) => column.id === id);
       const peopleColumn = byId(columnMeta.peopleColumnId);
       const tagsColumn = byId(columnMeta.tagsColumnId);
-      const statusColumn = byId(columnMeta.statusColumnId);
       const createdColumn = byId(columnMeta.dateColumnId);
-      const hireDateColumn = byId(columnMeta.hireDateColumnId);
       const creationLogColumn = byId(columnMeta.creationLogColumnId);
       const ownerIds = parsePeopleIds(peopleColumn?.value);
       const createdAt =
@@ -482,44 +611,146 @@ export const buildMondayMetricsSummary = async (args?: {
         parseDateValue(creationLogColumn?.value, creationLogColumn?.text) ??
         item.updated_at ??
         null;
-      const record: MetricsRecord = {
+      allContactRecords.push({
         ownerIds,
         ownerLabel: peopleColumn?.text?.trim() ?? null,
-        statusText: statusColumn?.text?.trim() ?? null,
         tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
         createdAt,
-        hireDate: parseDateValue(hireDateColumn?.value, hireDateColumn?.text),
-      };
-      allRecords.push(record);
+      });
     }
     cursor = page.nextCursor ?? null;
     if (!cursor) break;
     if (Date.now() - startedAt > MAX_SCAN_DURATION_MS) {
-      console.warn("[MondayMetrics] record scan timed out", {
+      console.warn("[MondayMetrics] contact scan timed out", {
         scannedPages,
-        collectedRecords: allRecords.length,
+        collectedRecords: allContactRecords.length,
         hasMore: !!cursor,
       });
       break;
     }
   }
 
-  const records = ownerIdFilter
-    ? allRecords.filter((record) =>
+  const contactRecords = ownerIdFilter
+    ? allContactRecords.filter((record) =>
         record.ownerIds.some(
           (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
         ),
       )
-    : allRecords;
+    : allContactRecords;
+
+  const { subitemBoardId } = await resolveSubitemBoardAndColumns(boardId);
+  const allHireEvents: HireEventMetricsRecord[] = [];
+  if (subitemBoardId) {
+    const hireColumnMeta = await resolveHireEventColumnIds(subitemBoardId);
+    const hireEventColumnIds = Array.from(
+      new Set(
+        [hireColumnMeta.typeColumnId, hireColumnMeta.dateColumnId, hireColumnMeta.peopleColumnId].filter(
+          (value): value is string => !!value && value.trim().length > 0,
+        ),
+      ),
+    );
+    let hireCursor: string | null = null;
+    let hireScannedPages = 0;
+    const canTryHireOwnerRule =
+      ownerIdFilter.length > 0 && !!hireColumnMeta.peopleColumnId?.trim();
+    let useHireOwnerRule = canTryHireOwnerRule;
+    let attemptedHireOwnerRuleFallback = false;
+    while (hireScannedPages < MAX_SCAN_PAGES) {
+      let page: Awaited<ReturnType<typeof fetchHireEventsPage>>;
+      try {
+        page = await fetchHireEventsPage({
+          boardId: subitemBoardId,
+          cursor: hireCursor,
+          limit: 500,
+          columnIds: hireEventColumnIds,
+          dateColumnId: hireColumnMeta.dateColumnId,
+          dateFrom: range.start,
+          dateTo: range.end,
+          ownerRule:
+            useHireOwnerRule && hireColumnMeta.peopleColumnId
+              ? { peopleColumnId: hireColumnMeta.peopleColumnId, ownerId: ownerIdFilter }
+              : null,
+        });
+      } catch (error) {
+        if (allHireEvents.length === 0) throw error;
+        console.warn("[MondayMetrics] continuing with partial hire-event result after page error", {
+          scannedPages: hireScannedPages,
+          collectedRecords: allHireEvents.length,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        break;
+      }
+      hireScannedPages += 1;
+      if (
+        hireScannedPages === 1 &&
+        useHireOwnerRule &&
+        page.items.length === 0 &&
+        !attemptedHireOwnerRuleFallback
+      ) {
+        attemptedHireOwnerRuleFallback = true;
+        useHireOwnerRule = false;
+        hireScannedPages = 0;
+        hireCursor = null;
+        allHireEvents.length = 0;
+        continue;
+      }
+      for (const item of page.items) {
+        const metadata = parseMondayHireEventToken(item.name);
+        const columns = item.column_values ?? [];
+        const byId = (id: string | null) => columns.find((column) => column.id === id);
+        const typeColumn = byId(hireColumnMeta.typeColumnId);
+        const peopleColumn = byId(hireColumnMeta.peopleColumnId);
+        const dateColumn = byId(hireColumnMeta.dateColumnId);
+        const typeText = typeColumn?.text?.trim().toLowerCase() ?? "";
+        const isHireEventFromType = typeText === MONDAY_HIRE_EVENT_TYPE_LABEL.toLowerCase();
+        if (!isHireEventFromType && !metadata) continue;
+        const eventDate =
+          parseDateValue(dateColumn?.value, dateColumn?.text) ??
+          (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
+        const ownerIds = parsePeopleIds(peopleColumn?.value);
+        const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
+        if (!eventDate || !ownerId) continue;
+        allHireEvents.push({
+          ownerIds,
+          ownerId,
+          ownerLabel: peopleColumn?.text?.trim() || ownerId,
+          eventDate,
+          isCandidatesGroup: metadata?.segments.isCandidatesGroup ?? false,
+          isReentry: metadata?.segments.isReentry ?? false,
+          isVeteran: metadata?.segments.isVeteran ?? false,
+        });
+      }
+      hireCursor = page.nextCursor ?? null;
+      if (!hireCursor) break;
+      if (Date.now() - startedAt > MAX_SCAN_DURATION_MS) {
+        console.warn("[MondayMetrics] hire-event scan timed out", {
+          scannedPages: hireScannedPages,
+          collectedRecords: allHireEvents.length,
+          hasMore: !!hireCursor,
+        });
+        break;
+      }
+    }
+  }
+
+  const hireEvents = ownerIdFilter
+    ? allHireEvents.filter(
+        (event) =>
+          event.ownerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
+          event.ownerIds.some(
+            (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
+          ),
+      )
+    : allHireEvents;
 
   const totals = createZeroTotals();
   const monthlyPoints = buildFiscalYearMonths(fiscalYearEnd);
   const monthMap = new Map(monthlyPoints.map((point) => [point.monthKey, point]));
   const ownerMap = new Map<string, MondayMetricsOwnerBreakdown>();
 
-  for (const record of records) {
-    const segments = detectSegments(record);
-    applyToTotals(totals, segments);
+  for (const record of contactRecords) {
+    const segments = detectContactSegments(record);
+    applyContactTotals(totals, segments);
 
     const createdMonth = segments.createdMonthKey ? monthMap.get(segments.createdMonthKey) : null;
     if (createdMonth) {
@@ -529,27 +760,44 @@ export const buildMondayMetricsSummary = async (args?: {
       if (segments.isVeteran) createdMonth.veterans += 1;
     }
 
-    const hiredMonth = segments.hiredMonthKey ? monthMap.get(segments.hiredMonthKey) : null;
-    if (segments.isHired && hiredMonth) {
-      hiredMonth.hiredTotal += 1;
-      if (segments.isCandidatesGroup) hiredMonth.hiredCandidatesGroup += 1;
-      if (segments.isReentry) hiredMonth.hiredReentry += 1;
-      if (segments.isVeteran) hiredMonth.hiredVeterans += 1;
-    }
-
     const primaryOwnerId = record.ownerIds[0]?.trim() ?? "";
     if (!primaryOwnerId) continue;
     const ownerRow = ownerMap.get(primaryOwnerId) ?? {
       ownerId: primaryOwnerId,
-      ownerLabel: toOwnerLabel(record, primaryOwnerId),
+      ownerLabel: record.ownerLabel?.trim() || primaryOwnerId,
       ...createZeroTotals(),
     };
-    applyToTotals(ownerRow, segments);
+    applyContactTotals(ownerRow, segments);
     ownerMap.set(primaryOwnerId, ownerRow);
   }
 
+  for (const event of hireEvents) {
+    applyHireEventTotals(totals, event);
+    const eventMonthKey = normalizeMonthKey(event.eventDate);
+    const eventMonth = eventMonthKey ? monthMap.get(eventMonthKey) : null;
+    if (eventMonth) {
+      eventMonth.hiredTotal += 1;
+      if (event.isCandidatesGroup) eventMonth.hiredCandidatesGroup += 1;
+      if (event.isReentry) eventMonth.hiredReentry += 1;
+      if (event.isVeteran) eventMonth.hiredVeterans += 1;
+    }
+
+    const ownerKey = event.ownerId?.trim() ?? "";
+    if (!ownerKey) continue;
+    const ownerRow = ownerMap.get(ownerKey) ?? {
+      ownerId: ownerKey,
+      ownerLabel: event.ownerLabel?.trim() || ownerKey,
+      ...createZeroTotals(),
+    };
+    applyHireEventTotals(ownerRow, event);
+    ownerMap.set(ownerKey, ownerRow);
+  }
+
   const ownerBreakdown = Array.from(ownerMap.values()).sort(
-    (a, b) => b.allContacts - a.allContacts || a.ownerLabel.localeCompare(b.ownerLabel),
+    (a, b) =>
+      b.allContacts - a.allContacts ||
+      b.hiredTotal - a.hiredTotal ||
+      a.ownerLabel.localeCompare(b.ownerLabel),
   );
 
   const summary: MondayMetricsSummary = {

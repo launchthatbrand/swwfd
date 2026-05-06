@@ -248,6 +248,61 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayHireEventBackfillJobs: {
+    document: {
+      contactBoardId: string;
+      createdEvents: number;
+      currentCursor?: string | null;
+      dateFrom: string;
+      dateTo: string;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      inRangeContacts: number;
+      lastError?: string | null;
+      monthKey: string;
+      pageSize: number;
+      processedContacts: number;
+      skippedEvents: number;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      subitemBoardId?: string | null;
+      updatedAt: number;
+      workflowId?: string;
+      _id: Id<"mondayHireEventBackfillJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactBoardId"
+      | "createdEvents"
+      | "currentCursor"
+      | "dateFrom"
+      | "dateTo"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "inRangeContacts"
+      | "lastError"
+      | "monthKey"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedEvents"
+      | "startedAt"
+      | "status"
+      | "subitemBoardId"
+      | "updatedAt"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayMonthlyMigrationEntries: {
     document: {
       createdAt: number;
