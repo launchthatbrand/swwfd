@@ -308,6 +308,43 @@ export interface MondayRoutingAssignResponse {
   result?: MondayRoutingAssignResult;
 }
 
+export interface MondayMetricsSummaryTotals {
+  allContacts: number;
+  candidatesGroup: number;
+  reentry: number;
+  veterans: number;
+  hiredTotal: number;
+  hiredCandidatesGroup: number;
+  hiredReentry: number;
+  hiredVeterans: number;
+}
+
+export interface MondayMetricsMonthlyPoint extends MondayMetricsSummaryTotals {
+  monthKey: string;
+  monthLabel: string;
+}
+
+export interface MondayMetricsOwnerBreakdown extends MondayMetricsSummaryTotals {
+  ownerId: string;
+  ownerLabel: string;
+}
+
+export interface MondayMetricsSummary {
+  fiscalYear: string;
+  ownerId: string | null;
+  boardName: string | null;
+  totals: MondayMetricsSummaryTotals;
+  monthly: MondayMetricsMonthlyPoint[];
+  ownerBreakdown: MondayMetricsOwnerBreakdown[];
+  generatedAt: string;
+}
+
+export interface MondayMetricsResponse {
+  ok: boolean;
+  error?: string;
+  summary?: MondayMetricsSummary;
+}
+
 export interface AddNewContactValues {
   firstName: string;
   lastName: string;
