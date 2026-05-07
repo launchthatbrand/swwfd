@@ -7,7 +7,7 @@ import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
 
-const MONDAY_SETTINGS_ADMIN_USER_ID = "53441186";
+const MASTER_ADMIN_USER_ID = "53441186";
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
@@ -43,11 +43,19 @@ export const POST = async (request: Request) => {
 
   try {
     const identity = await requireVerifiedMondaySession(request);
-    if (identity.userId !== MONDAY_SETTINGS_ADMIN_USER_ID) {
+    const convex = getConvexHttpClient();
+    const platformSettings = await convex.query(
+      apiGenerated.mondaySettings.getPlatformSettings,
+      {},
+    );
+    const isAdmin =
+      identity.userId === MASTER_ADMIN_USER_ID ||
+      platformSettings.adminUserIds.includes(identity.userId);
+
+    if (!isAdmin) {
       return toJson({ ok: false, error: "Admin access required" }, 403);
     }
 
-    const convex = getConvexHttpClient();
     const featureFlags = await convex.mutation(apiGenerated.mondaySettings.setFeatureFlags, {
       emailMarketingEnabled: body.emailMarketingEnabled,
       updatedByMondayUserId: identity.userId,

@@ -71,6 +71,8 @@ import type {
   MondayFeatureFlags,
   MondayFeatureFlagsResponse,
   MondayIdentity,
+  MondayPlatformSettings,
+  MondayPlatformSettingsResponse,
   MondayRecord,
   MondayRecordEditOptionsResponse,
   MondayRecordUpdate,
@@ -113,7 +115,6 @@ import {
   isUserBoardTableDensity,
   KANBAN_STEP_CONFIG,
   MONDAY_DEV_BYPASS_TOKEN,
-  MONDAY_OWNER_SCOPE_ADMIN_USER_IDS,
   QUESTIONNAIRE_UPDATE_ACTION,
   STEP_ACTION_CONFIG,
   SUBITEM_TYPE_COLUMN_ID,
@@ -198,6 +199,15 @@ import {
   QuestionnaireFormDialog,
   UserSettingsProvider,
 } from "./components";
+
+const MASTER_ADMIN_USER_ID = "53441186";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
+  masterAdminUserId: MASTER_ADMIN_USER_ID,
+  adminUserIds: [MASTER_ADMIN_USER_ID],
+  employeeUserIds: [],
+  replyToEmails: [],
+};
 
 export function MondayBoardView({
   viewMode = "all",
@@ -320,6 +330,13 @@ export function MondayBoardView({
   const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
     DEFAULT_MONDAY_FEATURE_FLAGS,
   );
+  const [platformSettings, setPlatformSettings] = useState<MondayPlatformSettings>({
+    ...DEFAULT_PLATFORM_SETTINGS,
+  });
+  const [platformSettingsDraft, setPlatformSettingsDraft] = useState<MondayPlatformSettings>({
+    ...DEFAULT_PLATFORM_SETTINGS,
+  });
+  const [isSavingPlatformSettings, setIsSavingPlatformSettings] = useState(false);
   const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
@@ -420,7 +437,55 @@ export function MondayBoardView({
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
-  const isMondaySettingsAdmin = !!identity?.userId && MONDAY_OWNER_SCOPE_ADMIN_USER_IDS.includes(identity.userId);
+  const normalizedIdentityUserId = identity?.userId?.trim() ?? "";
+  const masterAdminUserId = platformSettings.masterAdminUserId || MASTER_ADMIN_USER_ID;
+  const configuredAdminUserIds = useMemo(
+    () =>
+      uniqueSorted(platformSettings.adminUserIds.map((userId) => userId.trim())),
+    [platformSettings.adminUserIds],
+  );
+  const isMasterAdmin =
+    normalizedIdentityUserId.length > 0 && normalizedIdentityUserId === masterAdminUserId;
+  const isMondaySettingsAdmin =
+    normalizedIdentityUserId.length > 0 &&
+    (isMasterAdmin || configuredAdminUserIds.includes(normalizedIdentityUserId));
+  const normalizeUserIdList = useCallback((values: string[]) => {
+    return uniqueSorted(
+      values.map((value) => value.trim()).filter((value) => value.length > 0),
+    );
+  }, []);
+  const normalizeReplyToEmailList = useCallback((values: string[]) => {
+    return uniqueSorted(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0),
+    );
+  }, []);
+  const platformSettingsNormalized = useMemo(
+    () => ({
+      ...platformSettings,
+      adminUserIds: normalizeUserIdList(platformSettings.adminUserIds),
+      employeeUserIds: normalizeUserIdList(platformSettings.employeeUserIds),
+      replyToEmails: normalizeReplyToEmailList(platformSettings.replyToEmails),
+    }),
+    [normalizeReplyToEmailList, normalizeUserIdList, platformSettings],
+  );
+  const platformSettingsDraftNormalized = useMemo(
+    () => ({
+      ...platformSettingsDraft,
+      adminUserIds: normalizeUserIdList(platformSettingsDraft.adminUserIds),
+      employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
+      replyToEmails: normalizeReplyToEmailList(platformSettingsDraft.replyToEmails),
+    }),
+    [normalizeReplyToEmailList, normalizeUserIdList, platformSettingsDraft],
+  );
+  const hasUnsavedPlatformSettings =
+    platformSettingsNormalized.adminUserIds.join(",") !==
+      platformSettingsDraftNormalized.adminUserIds.join(",") ||
+    platformSettingsNormalized.employeeUserIds.join(",") !==
+      platformSettingsDraftNormalized.employeeUserIds.join(",") ||
+    platformSettingsNormalized.replyToEmails.join(",") !==
+      platformSettingsDraftNormalized.replyToEmails.join(",");
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
     !hasForcedOwnerScope &&
@@ -523,11 +588,12 @@ export function MondayBoardView({
   });
 
   const shouldAutoLoadMore =
-    !staticMode &&
-    !useUserRecordsEndpoint &&
-    debouncedSearch.trim().length === 0 &&
-    statusFilter.trim().length === 0 &&
-    ownerFilter.trim().length === 0;
+    !staticMode && boardGeneralSettings.pageSize === 0;
+  const handleLoadMoreRecords = () => {
+    if (recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  };
 
   const featureFlagsQuery = useQuery({
     queryKey: ["monday-feature-flags", sessionToken],
@@ -543,6 +609,24 @@ export function MondayBoardView({
         throw new Error(data.error ?? "Failed to load feature flags");
       }
       return data.featureFlags;
+    },
+    staleTime: 30_000,
+  });
+
+  const platformSettingsQuery = useQuery({
+    queryKey: ["monday-platform-settings", sessionToken],
+    enabled: !!sessionToken && !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/platform", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayPlatformSettingsResponse;
+      if (!response.ok || !data.ok || !data.platformSettings) {
+        throw new Error(data.error ?? "Failed to load platform settings");
+      }
+      return data.platformSettings;
     },
     staleTime: 30_000,
   });
@@ -978,6 +1062,12 @@ export function MondayBoardView({
   }, [featureFlagsQuery.data]);
 
   useEffect(() => {
+    if (!platformSettingsQuery.data) return;
+    setPlatformSettings(platformSettingsQuery.data);
+    setPlatformSettingsDraft(platformSettingsQuery.data);
+  }, [platformSettingsQuery.data]);
+
+  useEffect(() => {
     if (staticMode) return;
     if (!featureFlagsQuery.error) return;
     const message =
@@ -986,6 +1076,16 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [featureFlagsQuery.error, staticMode]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!platformSettingsQuery.error) return;
+    const message =
+      platformSettingsQuery.error instanceof Error
+        ? platformSettingsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [platformSettingsQuery.error, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1400,6 +1500,78 @@ export function MondayBoardView({
     }
   };
 
+  const parseDelimitedList = (value: string) => {
+    return uniqueSorted(
+      value
+        .split(/[\s,;\n]+/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    );
+  };
+
+  const handleSavePlatformSettings = async (successMessage: string) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMasterAdmin) {
+      toast.error("Only the master admin can change platform settings");
+      return;
+    }
+
+    const normalizedReplyToEmails = normalizeReplyToEmailList(
+      platformSettingsDraft.replyToEmails,
+    );
+    const invalidReplyToEmails = normalizedReplyToEmails.filter(
+      (email) => !EMAIL_PATTERN.test(email),
+    );
+    if (invalidReplyToEmails.length > 0) {
+      toast.error(`Invalid reply-to emails: ${invalidReplyToEmails.join(", ")}`);
+      return;
+    }
+
+    const nextPayload: MondayPlatformSettings = {
+      masterAdminUserId: masterAdminUserId,
+      adminUserIds: normalizeUserIdList([
+        ...platformSettingsDraft.adminUserIds,
+        masterAdminUserId,
+      ]),
+      employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
+      replyToEmails: normalizedReplyToEmails,
+    };
+
+    setIsSavingPlatformSettings(true);
+    try {
+      const response = await fetch("/api/monday/settings/platform", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          adminUserIds: nextPayload.adminUserIds,
+          employeeUserIds: nextPayload.employeeUserIds,
+          replyToEmails: nextPayload.replyToEmails,
+        }),
+      });
+      const data = (await response.json()) as MondayPlatformSettingsResponse;
+      if (!response.ok || !data.ok || !data.platformSettings) {
+        throw new Error(data.error ?? "Failed to save platform settings");
+      }
+      setPlatformSettings(data.platformSettings);
+      setPlatformSettingsDraft(data.platformSettings);
+      await platformSettingsQuery.refetch();
+      toast.success(successMessage);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save platform settings";
+      toast.error(message);
+    } finally {
+      setIsSavingPlatformSettings(false);
+    }
+  };
+
   const handleSetEmailMarketingEnabled = async (enabled: boolean) => {
     if (!sessionToken) {
       toast.error("Missing Monday session token");
@@ -1636,6 +1808,7 @@ export function MondayBoardView({
           to: recipient,
           subject: sendEmailResolvedTemplate.subject,
           html: sendEmailResolvedTemplate.html,
+          contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
@@ -3148,7 +3321,7 @@ export function MondayBoardView({
       id: "helpdesk",
       header: "",
       accessorKey: "id",
-      minWidth: 36,
+      minWidth: "36",
       cell: (item: MondayRecord) => (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -4097,13 +4270,13 @@ export function MondayBoardView({
             <RefreshCcw className="h-4 w-4" />
           </Button>
 
-                {!staticMode && recordsQuery.hasNextPage ? (
+                {!staticMode && recordsQuery.hasNextPage && !shouldAutoLoadMore ? (
                   <Button
                     size="sm"
                     variant="secondary"
               className="h-8 shrink-0 px-2.5 text-xs"
                     onClick={() => {
-                      void recordsQuery.fetchNextPage();
+                      handleLoadMoreRecords();
                     }}
                     disabled={recordsQuery.isFetchingNextPage}
                   >
@@ -4168,6 +4341,14 @@ export function MondayBoardView({
                     >
                       Feature Flags
                         </TabsTrigger>
+                    {isMasterAdmin ? (
+                      <TabsTrigger
+                        value="platform-settings"
+                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      >
+                        Platform Settings
+                      </TabsTrigger>
+                    ) : null}
                       </TabsList>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -4841,6 +5022,63 @@ export function MondayBoardView({
                                   {callbackUrl}
                                 </p>
                               </div>
+                              {isMasterAdmin ? (
+                                <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium">Global Reply-To Addresses</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      One email per line (or comma-separated). Every outbound message
+                                      includes the sender&apos;s mailbox plus these addresses in
+                                      Reply-To.
+                                    </p>
+                                  </div>
+                                  <Textarea
+                                    value={platformSettingsDraft.replyToEmails.join("\n")}
+                                    onChange={(event) => {
+                                      const nextReplyToEmails = parseDelimitedList(
+                                        event.target.value,
+                                      ).map((entry) => entry.toLowerCase());
+                                      setPlatformSettingsDraft((prev) => ({
+                                        ...prev,
+                                        replyToEmails: nextReplyToEmails,
+                                      }));
+                                    }}
+                                    rows={4}
+                                    placeholder="info@floridaroadjobs.com"
+                                    className="font-mono text-xs"
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={
+                                        isSavingPlatformSettings ||
+                                        platformSettings.replyToEmails.join(",") ===
+                                          platformSettingsDraft.replyToEmails.join(",")
+                                      }
+                                      onClick={() => {
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          replyToEmails: [...platformSettings.replyToEmails],
+                                        }));
+                                      }}
+                                    >
+                                      Reset
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      disabled={isSavingPlatformSettings}
+                                      onClick={() => {
+                                        void handleSavePlatformSettings(
+                                          "Reply-to settings updated",
+                                        );
+                                      }}
+                                    >
+                                      {isSavingPlatformSettings ? "Saving..." : "Save reply-to"}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         </TabsContent>
@@ -4880,6 +5118,81 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
+                    {isMasterAdmin ? (
+                      <TabsContent value="platform-settings" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Platform Settings</p>
+                            <p className="text-muted-foreground text-sm">
+                              Manage role assignments for settings access.
+                            </p>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2 rounded-md border p-4">
+                              <p className="text-sm font-medium">Admin User IDs</p>
+                              <p className="text-muted-foreground text-xs">
+                                One user ID per line. Admins can modify feature flags and admin
+                                tools.
+                              </p>
+                              <Textarea
+                                value={platformSettingsDraft.adminUserIds.join("\n")}
+                                onChange={(event) => {
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    adminUserIds: parseDelimitedList(event.target.value),
+                                  }));
+                                }}
+                                rows={8}
+                                className="font-mono text-xs"
+                                placeholder={"53441186\n38959704"}
+                              />
+                            </div>
+                            <div className="space-y-2 rounded-md border p-4">
+                              <p className="text-sm font-medium">Employee User IDs</p>
+                              <p className="text-muted-foreground text-xs">
+                                Optional reference list for employee role assignments.
+                              </p>
+                              <Textarea
+                                value={platformSettingsDraft.employeeUserIds.join("\n")}
+                                onChange={(event) => {
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    employeeUserIds: parseDelimitedList(event.target.value),
+                                  }));
+                                }}
+                                rows={8}
+                                className="font-mono text-xs"
+                                placeholder={"49566535\n38959704"}
+                              />
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-amber-300 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-100">
+                            Master admin ({masterAdminUserId}) is always included in admin IDs.
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                setPlatformSettingsDraft(platformSettings);
+                              }}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                void handleSavePlatformSettings("Platform settings updated");
+                              }}
+                            >
+                              {isSavingPlatformSettings ? "Saving..." : "Save platform settings"}
+                            </Button>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
                   </div>
                       </div>
                     </Tabs>
@@ -5817,6 +6130,10 @@ export function MondayBoardView({
         initialSort={{ id: "createdAt", direction: "desc" }}
         getRowId={(item) => item.id}
         entityActions={entityActions}
+            enableInfiniteScroll={shouldAutoLoadMore}
+            hasNextPage={!!recordsQuery.hasNextPage}
+            isFetchingNextPage={recordsQuery.isFetchingNextPage}
+            onLoadMore={handleLoadMoreRecords}
             bulkActions={({ selectedItems, clearSelection }) => {
               const eligibleByAction = new Map<string, MondayRecord[]>();
               for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
@@ -6330,7 +6647,7 @@ export function MondayBoardView({
         currentUserId={forcedOwnerId || identity?.userId || null}
       />
 
-      {!staticMode && recordsQuery.hasNextPage ? (
+      {!staticMode && recordsQuery.hasNextPage && shouldAutoLoadMore ? (
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>

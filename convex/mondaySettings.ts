@@ -3,6 +3,28 @@ import { mutation, query } from "./_generated/server";
 
 const GLOBAL_SETTINGS_KEY = "global";
 const DEFAULT_EMAIL_MARKETING_ENABLED = true;
+const MASTER_ADMIN_USER_ID = "53441186";
+const DEFAULT_ADMIN_USER_IDS = ["38959704", MASTER_ADMIN_USER_ID];
+
+const normalizeUserIds = (values: string[]) => {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+};
+
+const normalizeEmails = (values: string[]) => {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0),
+    ),
+  );
+};
 
 export const getFeatureFlags = query({
   args: {},
@@ -18,6 +40,29 @@ export const getFeatureFlags = query({
     return {
       emailMarketingEnabled:
         settings?.emailMarketingEnabled ?? DEFAULT_EMAIL_MARKETING_ENABLED,
+    };
+  },
+});
+
+export const getPlatformSettings = query({
+  args: {},
+  returns: v.object({
+    masterAdminUserId: v.string(),
+    adminUserIds: v.array(v.string()),
+    employeeUserIds: v.array(v.string()),
+    replyToEmails: v.array(v.string()),
+  }),
+  handler: async (ctx) => {
+    const settings = await ctx.db
+      .query("mondayGlobalSettings")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_SETTINGS_KEY))
+      .unique();
+
+    return {
+      masterAdminUserId: MASTER_ADMIN_USER_ID,
+      adminUserIds: normalizeUserIds(settings?.adminUserIds ?? DEFAULT_ADMIN_USER_IDS),
+      employeeUserIds: normalizeUserIds(settings?.employeeUserIds ?? []),
+      replyToEmails: normalizeEmails(settings?.replyToEmails ?? []),
     };
   },
 });
@@ -54,6 +99,62 @@ export const setFeatureFlags = mutation({
 
     return {
       emailMarketingEnabled: args.emailMarketingEnabled,
+    };
+  },
+});
+
+export const setPlatformSettings = mutation({
+  args: {
+    adminUserIds: v.array(v.string()),
+    employeeUserIds: v.array(v.string()),
+    replyToEmails: v.array(v.string()),
+    updatedByMondayUserId: v.string(),
+  },
+  returns: v.object({
+    masterAdminUserId: v.string(),
+    adminUserIds: v.array(v.string()),
+    employeeUserIds: v.array(v.string()),
+    replyToEmails: v.array(v.string()),
+  }),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("mondayGlobalSettings")
+      .withIndex("by_key", (q) => q.eq("key", GLOBAL_SETTINGS_KEY))
+      .unique();
+
+    const adminUserIds = normalizeUserIds([
+      ...args.adminUserIds,
+      MASTER_ADMIN_USER_ID,
+    ]);
+    const employeeUserIds = normalizeUserIds(args.employeeUserIds);
+    const replyToEmails = normalizeEmails(args.replyToEmails);
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        adminUserIds,
+        employeeUserIds,
+        replyToEmails,
+        updatedAt: now,
+        updatedByMondayUserId: args.updatedByMondayUserId,
+      });
+    } else {
+      await ctx.db.insert("mondayGlobalSettings", {
+        key: GLOBAL_SETTINGS_KEY,
+        emailMarketingEnabled: DEFAULT_EMAIL_MARKETING_ENABLED,
+        adminUserIds,
+        employeeUserIds,
+        replyToEmails,
+        updatedAt: now,
+        updatedByMondayUserId: args.updatedByMondayUserId,
+      });
+    }
+
+    return {
+      masterAdminUserId: MASTER_ADMIN_USER_ID,
+      adminUserIds,
+      employeeUserIds,
+      replyToEmails,
     };
   },
 });

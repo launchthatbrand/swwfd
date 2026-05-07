@@ -1,13 +1,16 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
+import { api as apiGenerated } from "@convex-config/_generated/api";
 import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
-import { getOutlookOAuthConfig } from "~/server/outlook/config";
-import { decryptToken, encryptToken } from "~/server/outlook/crypto";
-import {
-  getOutlookConnection,
-  upsertOutlookConnection,
-} from "~/server/outlook/store";
+import { getConvexHttpClient } from "~/server/convexHttp";
+import { findMondayContactsByEmail } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
+import {
+  findRecentlySentMessage,
+  refreshOutlookAccessToken,
+} from "~/server/outlook/graph";
+import { getOutlookConnection } from "~/server/outlook/store";
 
 export const runtime = "nodejs";
 
@@ -15,15 +18,7 @@ interface SendEmailBody {
   to: string;
   subject: string;
   html: string;
-}
-
-interface OutlookTokenResponse {
-  access_token?: string;
-  refresh_token?: string;
-  expires_in?: number;
-  scope?: string;
-  error?: string;
-  error_description?: string;
+  contactItemId?: string;
 }
 
 const toJson = (body: unknown, status = 200) => {
@@ -31,47 +26,19 @@ const toJson = (body: unknown, status = 200) => {
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
-
-const getValidAccessToken = async (args: {
-  refreshToken: string;
-  requestOrigin: string;
-}) => {
-  const oauth = getOutlookOAuthConfig(args.requestOrigin);
-  const tokenBody = new URLSearchParams();
-  tokenBody.set("client_id", oauth.clientId);
-  tokenBody.set("scope", oauth.scopes.join(" "));
-  tokenBody.set("refresh_token", args.refreshToken);
-  tokenBody.set("grant_type", "refresh_token");
-  tokenBody.set("client_secret", oauth.clientSecret);
-
-  const tokenResponse = await fetch(oauth.tokenUrl, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: tokenBody.toString(),
-    cache: "no-store",
-  });
-  const tokenData = (await tokenResponse.json()) as OutlookTokenResponse;
-  if (!tokenResponse.ok || !tokenData.access_token || !tokenData.refresh_token) {
-    const message =
-      tokenData.error_description ??
-      tokenData.error ??
-      "Failed to refresh Outlook access token";
-    throw new Error(message);
+const splitEmailList = (value: string | null | undefined) => {
+  if (!value) {
+    return [];
   }
-  const expiresInSeconds = Number.isFinite(tokenData.expires_in)
-    ? Number(tokenData.expires_in)
-    : 3600;
 
-  return {
-    oauth,
-    accessToken: tokenData.access_token,
-    refreshToken: tokenData.refresh_token,
-    accessTokenExpiresAt: Date.now() + expiresInSeconds * 1000,
-    scopes: (tokenData.scope ?? oauth.scopes.join(" "))
-      .split(" ")
-      .map((scope) => scope.trim())
-      .filter((scope) => scope.length > 0),
-  };
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/)
+        .map((entry) => normalizeEmail(entry))
+        .filter((entry) => entry.length > 0),
+    ),
+  );
 };
 
 export const POST = async (request: Request) => {
@@ -87,9 +54,6 @@ export const POST = async (request: Request) => {
     const to = normalizeEmail(body.to ?? "");
     const subject = (body.subject ?? "").trim();
     const html = (body.html ?? "").trim();
-    const configuredReplyTo = env.OUTLOOK_REPLY_TO_EMAIL
-      ? normalizeEmail(env.OUTLOOK_REPLY_TO_EMAIL)
-      : null;
     if (!to || !subject || !html) {
       return toJson(
         { ok: false, error: "Missing required fields: to, subject, html" },
@@ -109,26 +73,39 @@ export const POST = async (request: Request) => {
       );
     }
 
+    const convex = getConvexHttpClient();
+    let configuredReplyToEmails = splitEmailList(env.OUTLOOK_REPLY_TO_EMAIL);
+    try {
+      const platformSettings = await convex.query(
+        apiGenerated.mondaySettings.getPlatformSettings,
+        {},
+      );
+      if (platformSettings.replyToEmails.length > 0) {
+        configuredReplyToEmails = platformSettings.replyToEmails;
+      }
+    } catch (platformSettingsError) {
+      console.warn(
+        "[monday-email-send] Failed to read platform settings; using env fallback",
+        platformSettingsError,
+      );
+    }
+    const replyToAddresses = Array.from(
+      new Set(
+        [
+          connection.email ? normalizeEmail(connection.email) : null,
+          ...configuredReplyToEmails,
+        ].filter((entry): entry is string => !!entry && entry.length > 0),
+      ),
+    );
+
     const requestOrigin = getRequestOrigin(request);
-    const refreshed = await getValidAccessToken({
-      refreshToken: decryptToken(connection.encryptedRefreshToken),
+    const refreshed = await refreshOutlookAccessToken({
+      connection,
       requestOrigin,
     });
 
-    await upsertOutlookConnection({
-      mondayAccountId: identity.accountId,
-      mondayUserId: identity.userId,
-      mondayAppClientId: identity.appClientId,
-      email: connection.email,
-      displayName: connection.displayName,
-      tenantId: refreshed.oauth.tenantId,
-      clientId: refreshed.oauth.clientId,
-      encryptedAccessToken: encryptToken(refreshed.accessToken),
-      encryptedRefreshToken: encryptToken(refreshed.refreshToken),
-      accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
-      scopes: refreshed.scopes,
-    });
-
+    const sentAt = Date.now();
+    const correlationToken = randomUUID();
     const sendResponse = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
       method: "POST",
       headers: {
@@ -149,15 +126,11 @@ export const POST = async (request: Request) => {
               },
             },
           ],
-          ...(configuredReplyTo
+          ...(replyToAddresses.length > 0
             ? {
-                replyTo: [
-                  {
-                    emailAddress: {
-                      address: configuredReplyTo,
-                    },
-                  },
-                ],
+                replyTo: replyToAddresses.map((address) => ({
+                  emailAddress: { address },
+                })),
               }
             : {}),
         },
@@ -171,6 +144,76 @@ export const POST = async (request: Request) => {
       throw new Error(
         `Microsoft Graph sendMail failed (${sendResponse.status}): ${errorText}`,
       );
+    }
+
+    const requestedContactItemId = body.contactItemId?.trim() ?? "";
+    let resolvedContactItemId = requestedContactItemId;
+    if (!resolvedContactItemId) {
+      try {
+        const candidates = await findMondayContactsByEmail(to, 2);
+        if (candidates.length === 1) {
+          resolvedContactItemId = candidates[0]?.id?.trim() ?? "";
+        }
+      } catch (resolveContactError) {
+        console.warn("[monday-email-send] contact auto-resolution failed", {
+          to,
+          error:
+            resolveContactError instanceof Error
+              ? resolveContactError.message
+              : String(resolveContactError),
+        });
+      }
+    }
+
+    let sentMessage: {
+      id: string;
+      internetMessageId: string | null;
+      conversationId: string | null;
+    } | null = null;
+    try {
+      sentMessage = await findRecentlySentMessage({
+        accessToken: refreshed.accessToken,
+        recipientEmail: to,
+        subject,
+        sentAfterMs: sentAt - 2 * 60 * 1000,
+      });
+    } catch (sentLookupError) {
+      console.warn("[monday-email-send] sent-message lookup failed", {
+        to,
+        subject,
+        error:
+          sentLookupError instanceof Error
+            ? sentLookupError.message
+            : String(sentLookupError),
+      });
+    }
+
+    try {
+      await convex.mutation(apiGenerated.outlookInbound.upsertOutboundMessage, {
+        mondayAccountId: identity.accountId,
+        mondayUserId: identity.userId,
+        mondayAppClientId: identity.appClientId,
+        connectionEmail: connection.email ?? undefined,
+        contactItemId: resolvedContactItemId || undefined,
+        recipientEmail: to,
+        subject,
+        sentAt,
+        graphMessageId: sentMessage?.id ?? undefined,
+        internetMessageId: sentMessage?.internetMessageId ?? undefined,
+        conversationId: sentMessage?.conversationId ?? undefined,
+        correlationToken,
+        status: sentMessage ? "identified" : "pending_lookup",
+      });
+    } catch (storeMappingError) {
+      console.warn("[monday-email-send] failed to persist outbound mapping", {
+        to,
+        subject,
+        contactItemId: resolvedContactItemId || null,
+        error:
+          storeMappingError instanceof Error
+            ? storeMappingError.message
+            : String(storeMappingError),
+      });
     }
 
     return toJson({ ok: true });

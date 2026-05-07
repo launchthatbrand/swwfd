@@ -7,6 +7,7 @@ const DEFAULT_SCOPES = [
   "profile",
   "offline_access",
   "User.Read",
+  "Mail.Read",
   "Mail.Send",
 ] as const;
 

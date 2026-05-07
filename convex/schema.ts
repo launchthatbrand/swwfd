@@ -192,6 +192,9 @@ export default defineSchema({
   mondayGlobalSettings: defineTable({
     key: v.string(),
     emailMarketingEnabled: v.boolean(),
+    adminUserIds: v.optional(v.array(v.string())),
+    employeeUserIds: v.optional(v.array(v.string())),
+    replyToEmails: v.optional(v.array(v.string())),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
   }).index("by_key", ["key"]),
@@ -324,5 +327,110 @@ export default defineSchema({
       "mondayAppClientId",
     ])
     .index("by_monday_user", ["mondayAccountId", "mondayUserId"]),
+
+  outlookOutboundMessages: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    connectionEmail: v.union(v.string(), v.null()),
+    contactItemId: v.union(v.string(), v.null()),
+    recipientEmail: v.string(),
+    subject: v.string(),
+    sentAt: v.number(),
+    graphMessageId: v.union(v.string(), v.null()),
+    internetMessageId: v.union(v.string(), v.null()),
+    conversationId: v.union(v.string(), v.null()),
+    correlationToken: v.union(v.string(), v.null()),
+    status: v.union(v.literal("pending_lookup"), v.literal("identified")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_internetMessageId", ["internetMessageId"])
+    .index("by_conversationId", ["conversationId"])
+    .index("by_contactItemId", ["contactItemId"])
+    .index("by_correlationToken", ["correlationToken"])
+    .index("by_identity_and_sentAt", [
+      "mondayAccountId",
+      "mondayUserId",
+      "sentAt",
+    ]),
+
+  outlookInboundMessages: defineTable({
+    dedupeKey: v.string(),
+    internetMessageId: v.union(v.string(), v.null()),
+    graphMessageId: v.string(),
+    conversationId: v.union(v.string(), v.null()),
+    inReplyTo: v.union(v.string(), v.null()),
+    fromEmail: v.string(),
+    subject: v.string(),
+    receivedAt: v.number(),
+    rawBodyPreview: v.union(v.string(), v.null()),
+    parsedBody: v.union(v.string(), v.null()),
+    correlationMethod: v.union(
+      v.literal("inReplyTo"),
+      v.literal("conversationId"),
+      v.literal("senderEmail"),
+      v.literal("none"),
+      v.null(),
+    ),
+    correlationConfidence: v.union(
+      v.literal("high"),
+      v.literal("medium"),
+      v.literal("low"),
+      v.null(),
+    ),
+    outboundMessageId: v.optional(v.id("outlookOutboundMessages")),
+    contactItemId: v.union(v.string(), v.null()),
+    matchedContactEmail: v.union(v.string(), v.null()),
+    status: v.union(
+      v.literal("received"),
+      v.literal("parsed"),
+      v.literal("mirrored"),
+      v.literal("failed"),
+      v.literal("ignored"),
+    ),
+    mirrorMondayUpdateId: v.union(v.string(), v.null()),
+    mirrorMondaySubitemId: v.union(v.string(), v.null()),
+    mirrorTouchId: v.union(v.string(), v.null()),
+    errorMessage: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_internetMessageId", ["internetMessageId"])
+    .index("by_conversationId", ["conversationId"])
+    .index("by_contactItemId", ["contactItemId"])
+    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+
+  outlookGraphSubscriptions: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    connectionEmail: v.union(v.string(), v.null()),
+    subscriptionId: v.string(),
+    clientState: v.string(),
+    resource: v.string(),
+    changeType: v.string(),
+    notificationUrl: v.string(),
+    expirationDateTime: v.string(),
+    expirationTimestamp: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("expired"),
+      v.literal("deleted"),
+      v.literal("error"),
+    ),
+    lastRenewedAt: v.union(v.number(), v.null()),
+    lastError: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_status_and_expirationTimestamp", ["status", "expirationTimestamp"])
+    .index("by_monday_identity", [
+      "mondayAccountId",
+      "mondayUserId",
+      "mondayAppClientId",
+    ]),
 
 });

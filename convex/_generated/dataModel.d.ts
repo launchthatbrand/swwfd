@@ -226,8 +226,11 @@ export type DataModel = {
   };
   mondayGlobalSettings: {
     document: {
+      adminUserIds?: Array<string>;
       emailMarketingEnabled: boolean;
+      employeeUserIds?: Array<string>;
       key: string;
+      replyToEmails?: Array<string>;
       updatedAt: number;
       updatedByMondayUserId: string;
       _id: Id<"mondayGlobalSettings">;
@@ -236,8 +239,11 @@ export type DataModel = {
     fieldPaths:
       | "_creationTime"
       | "_id"
+      | "adminUserIds"
       | "emailMarketingEnabled"
+      | "employeeUserIds"
       | "key"
+      | "replyToEmails"
       | "updatedAt"
       | "updatedByMondayUserId";
     indexes: {
@@ -745,6 +751,189 @@ export type DataModel = {
         "_creationTime",
       ];
       by_monday_user: ["mondayAccountId", "mondayUserId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookGraphSubscriptions: {
+    document: {
+      changeType: string;
+      clientState: string;
+      connectionEmail: string | null;
+      createdAt: number;
+      expirationDateTime: string;
+      expirationTimestamp: number;
+      lastError: string | null;
+      lastRenewedAt: number | null;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      notificationUrl: string;
+      resource: string;
+      status: "active" | "expired" | "deleted" | "error";
+      subscriptionId: string;
+      updatedAt: number;
+      _id: Id<"outlookGraphSubscriptions">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "changeType"
+      | "clientState"
+      | "connectionEmail"
+      | "createdAt"
+      | "expirationDateTime"
+      | "expirationTimestamp"
+      | "lastError"
+      | "lastRenewedAt"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "notificationUrl"
+      | "resource"
+      | "status"
+      | "subscriptionId"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_monday_identity: [
+        "mondayAccountId",
+        "mondayUserId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+      by_status_and_expirationTimestamp: [
+        "status",
+        "expirationTimestamp",
+        "_creationTime",
+      ];
+      by_subscriptionId: ["subscriptionId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookInboundMessages: {
+    document: {
+      contactItemId: string | null;
+      conversationId: string | null;
+      correlationConfidence: "high" | "medium" | "low" | null;
+      correlationMethod:
+        | "inReplyTo"
+        | "conversationId"
+        | "senderEmail"
+        | "none"
+        | null;
+      createdAt: number;
+      dedupeKey: string;
+      errorMessage: string | null;
+      fromEmail: string;
+      graphMessageId: string;
+      inReplyTo: string | null;
+      internetMessageId: string | null;
+      matchedContactEmail: string | null;
+      mirrorMondaySubitemId: string | null;
+      mirrorMondayUpdateId: string | null;
+      mirrorTouchId: string | null;
+      outboundMessageId?: Id<"outlookOutboundMessages">;
+      parsedBody: string | null;
+      rawBodyPreview: string | null;
+      receivedAt: number;
+      status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      subject: string;
+      updatedAt: number;
+      _id: Id<"outlookInboundMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactItemId"
+      | "conversationId"
+      | "correlationConfidence"
+      | "correlationMethod"
+      | "createdAt"
+      | "dedupeKey"
+      | "errorMessage"
+      | "fromEmail"
+      | "graphMessageId"
+      | "inReplyTo"
+      | "internetMessageId"
+      | "matchedContactEmail"
+      | "mirrorMondaySubitemId"
+      | "mirrorMondayUpdateId"
+      | "mirrorTouchId"
+      | "outboundMessageId"
+      | "parsedBody"
+      | "rawBodyPreview"
+      | "receivedAt"
+      | "status"
+      | "subject"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_contactItemId: ["contactItemId", "_creationTime"];
+      by_conversationId: ["conversationId", "_creationTime"];
+      by_dedupeKey: ["dedupeKey", "_creationTime"];
+      by_internetMessageId: ["internetMessageId", "_creationTime"];
+      by_status_and_updatedAt: ["status", "updatedAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookOutboundMessages: {
+    document: {
+      connectionEmail: string | null;
+      contactItemId: string | null;
+      conversationId: string | null;
+      correlationToken: string | null;
+      createdAt: number;
+      graphMessageId: string | null;
+      internetMessageId: string | null;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      recipientEmail: string;
+      sentAt: number;
+      status: "pending_lookup" | "identified";
+      subject: string;
+      updatedAt: number;
+      _id: Id<"outlookOutboundMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "connectionEmail"
+      | "contactItemId"
+      | "conversationId"
+      | "correlationToken"
+      | "createdAt"
+      | "graphMessageId"
+      | "internetMessageId"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "recipientEmail"
+      | "sentAt"
+      | "status"
+      | "subject"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_contactItemId: ["contactItemId", "_creationTime"];
+      by_conversationId: ["conversationId", "_creationTime"];
+      by_correlationToken: ["correlationToken", "_creationTime"];
+      by_identity_and_sentAt: [
+        "mondayAccountId",
+        "mondayUserId",
+        "sentAt",
+        "_creationTime",
+      ];
+      by_internetMessageId: ["internetMessageId", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};

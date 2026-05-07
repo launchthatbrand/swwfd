@@ -3445,6 +3445,8 @@ export const createMondayRecordUpdate = async (args: {
   body: string;
   updateType?: MondayUpdateType;
   date?: string;
+  methodOfCommunication?: string;
+  subitemNameOverride?: string;
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -3525,9 +3527,20 @@ export const createMondayRecordUpdate = async (args: {
   };
 
   const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-  const subitemName = updateType === "general"
-    ? "General Update"
-    : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
+  const subitemNameOverride = args.subitemNameOverride?.trim();
+  const subitemName = subitemNameOverride && subitemNameOverride.length > 0
+    ? subitemNameOverride
+    : updateType === "general"
+      ? "General Update"
+      : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
+  const methodOfCommunication = args.methodOfCommunication?.trim();
+  const columnValues: Record<string, unknown> = {
+    [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
+    ...(args.date ? { [SUBITEM_DATE_COLUMN_ID]: { date: args.date } } : {}),
+    ...(methodOfCommunication
+      ? { [SUBITEM_METHOD_COLUMN_ID]: { label: methodOfCommunication } }
+      : {}),
+  };
 
   // Always create a subitem to store the update
   interface CreateSubitemData {
@@ -3547,10 +3560,7 @@ export const createMondayRecordUpdate = async (args: {
     {
       parentItemId: itemId,
       itemName: subitemName,
-      columnValues: JSON.stringify({
-        [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
-        ...(args.date ? { date0: { date: args.date } } : {}),
-      }),
+      columnValues: JSON.stringify(columnValues),
     },
   );
   const targetSubitemId = createdSubitemData.create_subitem?.id?.trim() ?? "";
