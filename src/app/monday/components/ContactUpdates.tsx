@@ -376,8 +376,11 @@ export const ContactUpdates = ({
 
   return (
     <>
-      <div className="flex h-[60vh] flex-col">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-3 border-black/50 border-1 rounded-md">
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto rounded-md border border-black/50 px-2 py-3"
+        >
           {isLoading ? (
             <div className="space-y-5 py-2">
               {[0.8, 0.6, 0.9, 0.5, 0.7].map((w, i) => (
@@ -421,7 +424,7 @@ export const ContactUpdates = ({
           )}
         </div>
 
-        <div className="border-t pt-3">
+        <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
           <div className="flex items-end gap-2">
             <div className="relative min-w-0 flex-1">
               <Textarea

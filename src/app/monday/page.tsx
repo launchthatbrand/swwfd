@@ -147,7 +147,6 @@ import {
   extractThemeFromContextPayload,
   formatDateTimeParts,
   formatUpdatedAt,
-  getAddressDisplayParts,
   getContactTooltipDetails,
   getDistrictChipClassName,
   getMonthBounds,
@@ -185,7 +184,6 @@ import {
 
 import {
   AddNewContactForm,
-  ApprovalProgressIndicator,
   BoardTable,
   BusinessInfoHoverCard,
   ContactCard,
@@ -1733,11 +1731,29 @@ export function MondayBoardView({
         updateType: Exclude<ContactUpdateType, "general">;
         body: string;
       } | null;
+      autoAdvanceToPreview?: boolean;
+      preferredTemplateType?: Exclude<ContactUpdateType, "general"> | null;
     },
   ) => {
+    const resolvePreferredTemplateId = () => {
+      const templates = emailTemplates;
+      if (templates.length === 0) return null;
+      const preferredType =
+        options?.preferredTemplateType ??
+        options?.progressUpdate?.updateType ??
+        null;
+      if (preferredType === "welcome_email") {
+        const matchedWelcomeTemplate = templates.find((template) =>
+          template.name.toLowerCase().includes("welcome"),
+        );
+        if (matchedWelcomeTemplate) return matchedWelcomeTemplate.id;
+      }
+      return templates[0]?.id ?? null;
+    };
+
     setSendEmailRecord(record);
-    setSendEmailStep(1);
-    setSendEmailTemplateId(emailTemplates[0]?.id ?? null);
+    setSendEmailStep(options?.autoAdvanceToPreview ? 2 : 1);
+    setSendEmailTemplateId(resolvePreferredTemplateId());
     setSendEmailProgressUpdate(options?.progressUpdate ?? null);
   };
   const closeSendEmailDialog = () => {
@@ -1756,6 +1772,27 @@ export function MondayBoardView({
     const ownerEmail = primaryOwner?.email?.trim() ?? "";
     return { ownerName, ownerEmail };
   }, [sendEmailRecord]);
+  useEffect(() => {
+    if (!sendEmailRecord) return;
+    if (sendEmailStep !== 2) return;
+    if (sendEmailTemplateId) return;
+    if (emailTemplates.length === 0) return;
+
+    const preferredType = sendEmailProgressUpdate?.updateType ?? null;
+    const matchedTemplateId =
+      preferredType === "welcome_email"
+        ? emailTemplates.find((template) =>
+            template.name.toLowerCase().includes("welcome"),
+          )?.id
+        : null;
+    setSendEmailTemplateId(matchedTemplateId ?? emailTemplates[0]?.id ?? null);
+  }, [
+    emailTemplates,
+    sendEmailProgressUpdate?.updateType,
+    sendEmailRecord,
+    sendEmailStep,
+    sendEmailTemplateId,
+  ]);
   const sendEmailResolvedTemplate = useMemo(() => {
     if (!sendEmailTemplate) return null;
     const subject = interpolateTemplateVariables(sendEmailTemplate.name, {
@@ -2369,6 +2406,75 @@ export function MondayBoardView({
       };
     });
   };
+
+  const handleSyncContactRecord = useCallback(
+    async (record: MondayRecord) => {
+      if (!sessionToken) return;
+      const syncKey = record.id;
+      setSyncingContactIds((prev) => new Set(prev).add(syncKey));
+      try {
+        const targetId = resolveContactUpdateTargetRecordId(record);
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({ ownerId: identity?.userId }),
+          },
+        );
+        const data = (await response.json()) as {
+          ok: boolean;
+          error?: string;
+          linkedItemCount?: number;
+          createdParentUpdates?: number;
+          createdSubitems?: number;
+          createdSubitemUpdates?: number;
+          updatedProgressColumns?: number;
+          skippedSubitems?: number;
+          warnings?: string[];
+        };
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "Sync failed");
+        }
+        const [, refreshedRecordsResult] = await Promise.all([
+          contactUpdatesQuery.refetch(),
+          recordsQuery.refetch(),
+        ]);
+        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+          (page) => page.records ?? [],
+        );
+        syncContactHistoryDialogFromRecords(refreshedRecords);
+        const parts = [
+          data.createdParentUpdates && `${data.createdParentUpdates} updates`,
+          data.createdSubitems && `${data.createdSubitems} subitems`,
+          data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
+        ].filter(Boolean);
+        toast.success(
+          parts.length > 0
+            ? `Synced: ${parts.join(", ")}`
+            : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Sync failed");
+      } finally {
+        setSyncingContactIds((prev) => {
+          const next = new Set(prev);
+          next.delete(syncKey);
+          return next;
+        });
+      }
+    },
+    [
+      contactUpdatesQuery,
+      identity?.userId,
+      recordsQuery,
+      sessionToken,
+      syncContactHistoryDialogFromRecords,
+    ],
+  );
 
   const openQuestionnaireDialogForRecords = useCallback(
     (items: MondayRecord[]) => {
@@ -5751,11 +5857,11 @@ export function MondayBoardView({
         >
           <DialogContent
             data-tour="contact-dialog"
-            className="max-h-[90vh] max-w-6xl overflow-y-auto p-0"
+            className="flex h-[90vh] max-h-[90vh] max-w-6xl flex-col overflow-hidden p-0"
             onPointerDownOutside={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
             onEscapeKeyDown={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
           >
-            <DialogHeader className="sticky top-0 z-10 bg-background p-5">
+            <DialogHeader className="z-10 border-b bg-background p-4">
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -5777,7 +5883,7 @@ export function MondayBoardView({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <DialogTitle className="min-w-0 truncate">
+                <DialogTitle className="min-w-0 flex-1 truncate">
               {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
             </DialogTitle>
                 {contactDialogIndex >= 0 ? (
@@ -5785,198 +5891,128 @@ export function MondayBoardView({
                     {contactDialogIndex + 1} / {filteredRecords.length}
                   </span>
                 ) : null}
-              </div>
-          </DialogHeader>
-            <div className="p-6">
-          {contactHistoryDialogRecord ? (
-            <div className="space-y-4">
-              {(() => {
-                const record = contactHistoryDialogRecord;
-                const addressDisplay = getAddressDisplayParts(record.address);
-                return (
-                    <div data-tour="contact-header" className="rounded-md border p-4">
-                    <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <Avatar className="size-12">
-                          <AvatarFallback className="text-sm font-semibold">
-                            {getNameInitials(record.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="truncate text-base font-semibold">{record.name}</p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.email ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {record.phone ?? "—"}
-                          </p>
-                          <p className="text-muted-foreground truncate text-sm">
-                            {addressDisplay.full ? (
-                              <>
-                                {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                                {addressDisplay.cityStateZip ? (
-                                  <span className="text-[15px] font-semibold text-foreground">
-                                    {addressDisplay.cityStateZip}
-                                  </span>
-                                ) : (
-                                  addressDisplay.full
-                                )}
-                              </>
-                            ) : (
-                              "—"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                        <div className="w-full max-w-sm">
-                          <ApprovalProgressIndicator
-                            progressValue={record.batteryProgress}
-                            steps={approvalSteps}
-                            rawProgressValue={record.batteryRawValue}
-                          />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-                {!staticMode && contactHistoryDialogRecord ? (
-                  <div data-tour="onboarding-stepper">
-                  <OnboardingStepper
-                    record={contactHistoryDialogRecord}
-                    approvalSteps={approvalSteps}
-                    isProcessing={isCreatingContactUpdate}
-                    emailMarketingEnabled={featureFlags.emailMarketingEnabled}
-                    onQuickAction={({ updateType, body, method }) => {
-                      setContactUpdateType(updateType);
-                      if (
-                        updateType === "welcome_email" &&
-                        featureFlags.emailMarketingEnabled &&
-                        method === "platform"
-                      ) {
-                        openSendEmailDialog(contactHistoryDialogRecord, {
-                          progressUpdate: { updateType, body },
-                        });
-                        return;
-                      }
-                      void handleCreateContactUpdate({
-                        updateType,
-                        body,
-                        keepSelectedType: true,
-                      });
+                {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-2"
+                    disabled={
+                      isCreatingContactUpdate ||
+                      syncingContactIds.has(contactHistoryDialogRecord.id)
+                    }
+                    onClick={() => {
+                      void handleSyncContactRecord(contactHistoryDialogRecord);
                     }}
-                    onQuestionnaireAction={(record) => {
-                      openQuestionnaireDialogForRecords([record]);
-                    }}
-                    onGenericStepAction={({ body, stepColumnId }) => {
-                      void (async () => {
-                        if (!sessionToken || !contactHistoryDialogRecord) return;
-                        const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                        await handleCreateContactUpdate({
-                          updateType: "general",
-                          body,
-                          keepSelectedType: true,
-                        });
-                        try {
-                          await fetch(
-                            `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-                            {
-                              method: "POST",
-                              headers: {
-                                "content-type": "application/json",
-                                "x-monday-session-token": sessionToken,
-                              },
-                              body: JSON.stringify({ stepColumnId, action: "done" }),
-                            },
-                          );
-                          await recordsQuery.refetch();
-                          const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
-                            (page) => page.records ?? [],
-                          );
-                          syncContactHistoryDialogFromRecords(refreshedRecords);
-                          toast.success("Onboarding step marked complete");
-                        } catch {
-                          toast.error("Failed to mark step complete");
-                        }
-                      })();
-                    }}
-                    isAdmin={isMondaySettingsAdmin}
-                    isSyncing={syncingContactIds.has(contactHistoryDialogRecord?.id ?? "")}
-                    onSyncUser={(record) => {
-                      void (async () => {
-                        if (!sessionToken) return;
-                        const syncKey = record.id;
-                        setSyncingContactIds((prev) => new Set(prev).add(syncKey));
-                        try {
-                          const targetId = resolveContactUpdateTargetRecordId(record);
-                          const response = await fetch(
-                            `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
-                            {
-                              method: "POST",
-                              headers: {
-                                "content-type": "application/json",
-                                "x-monday-session-token": sessionToken,
-                              },
-                              body: JSON.stringify({ ownerId: identity?.userId }),
-                            },
-                          );
-                          const data = (await response.json()) as {
-                            ok: boolean;
-                            error?: string;
-                            linkedItemCount?: number;
-                            createdParentUpdates?: number;
-                            createdSubitems?: number;
-                            createdSubitemUpdates?: number;
-                            updatedProgressColumns?: number;
-                            skippedSubitems?: number;
-                            warnings?: string[];
-                          };
-                          if (!response.ok || !data.ok) {
-                            throw new Error(data.error ?? "Sync failed");
-                          }
-                          const [, refreshedRecordsResult] = await Promise.all([
-                            contactUpdatesQuery.refetch(),
-                            recordsQuery.refetch(),
-                          ]);
-                          const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
-                            (page) => page.records ?? [],
-                          );
-                          syncContactHistoryDialogFromRecords(refreshedRecords);
-                          const parts = [
-                            data.createdParentUpdates && `${data.createdParentUpdates} updates`,
-                            data.createdSubitems && `${data.createdSubitems} subitems`,
-                            data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
-                          ].filter(Boolean);
-                          toast.success(
-                            parts.length > 0
-                              ? `Synced: ${parts.join(", ")}`
-                              : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
-                          );
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "Sync failed");
-                        } finally {
-                          setSyncingContactIds((prev) => {
-                            const next = new Set(prev);
-                            next.delete(syncKey);
-                            return next;
-                          });
-                        }
-                      })();
-                    }}
-                    actionButtonClassName={boardThemeStyles.actionButtonClassName}
-                    actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
-                    buttonSizeClassName={quickActionButtonSizeClass}
-                  />
-                            </div>
+                  >
+                    {syncingContactIds.has(contactHistoryDialogRecord.id)
+                      ? "Syncing..."
+                      : "Sync User"}
+                  </Button>
                 ) : null}
+              </div>
+              {contactHistoryDialogRecord ? (
+                <div
+                  data-tour="contact-header"
+                  className="mt-3 flex flex-row items-start justify-between gap-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-semibold">
+                      {contactHistoryDialogRecord.name ?? "Contact"}
+                    </p>
+                    <p className="text-muted-foreground truncate text-sm">
+                      {contactHistoryDialogRecord.email ?? "—"}
+                    </p>
+                    <p className="text-muted-foreground truncate text-sm">
+                      {contactHistoryDialogRecord.phone ?? "—"}
+                    </p>
+                  </div>
+                  {!staticMode ? (
+                    <div data-tour="onboarding-stepper" className="w-full max-w-xl shrink-0">
+                      <OnboardingStepper
+                        record={contactHistoryDialogRecord}
+                        approvalSteps={approvalSteps}
+                        isProcessing={isCreatingContactUpdate}
+                        emailMarketingEnabled={featureFlags.emailMarketingEnabled}
+                        onQuickAction={({ updateType, body, method }) => {
+                          setContactUpdateType(updateType);
+                          if (
+                            updateType === "welcome_email" &&
+                            featureFlags.emailMarketingEnabled &&
+                            method === "platform"
+                          ) {
+                            openSendEmailDialog(contactHistoryDialogRecord, {
+                              progressUpdate: { updateType, body },
+                              autoAdvanceToPreview: true,
+                              preferredTemplateType: "welcome_email",
+                            });
+                            return;
+                          }
+                          void handleCreateContactUpdate({
+                            updateType,
+                            body,
+                            keepSelectedType: true,
+                          });
+                        }}
+                        onQuestionnaireAction={(record) => {
+                          openQuestionnaireDialogForRecords([record]);
+                        }}
+                        onGenericStepAction={({ body, stepColumnId }) => {
+                          void (async () => {
+                            if (!sessionToken) return;
+                            const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                            await handleCreateContactUpdate({
+                              updateType: "general",
+                              body,
+                              keepSelectedType: true,
+                            });
+                            try {
+                              await fetch(
+                                `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+                                {
+                                  method: "POST",
+                                  headers: {
+                                    "content-type": "application/json",
+                                    "x-monday-session-token": sessionToken,
+                                  },
+                                  body: JSON.stringify({ stepColumnId, action: "done" }),
+                                },
+                              );
+                              await recordsQuery.refetch();
+                              const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
+                                (page) => page.records ?? [],
+                              );
+                              syncContactHistoryDialogFromRecords(refreshedRecords);
+                              toast.success("Onboarding step marked complete");
+                            } catch {
+                              toast.error("Failed to mark step complete");
+                            }
+                          })();
+                        }}
+                        actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                        actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
+                        buttonSizeClassName={quickActionButtonSizeClass}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+          </DialogHeader>
+            <div className="flex min-h-0 flex-1 flex-col p-4">
+          {contactHistoryDialogRecord ? (
+            <div className="flex min-h-0 flex-1 flex-col space-y-3">
 
-                <Tabs value={contactDialogTab} onValueChange={setContactDialogTab} className="w-full">
+                <Tabs
+                  value={contactDialogTab}
+                  onValueChange={setContactDialogTab}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
                   <TabsList data-tour="contact-tabs">
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="updates" className="mt-3">
+                  <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
                     <ContactUpdates
                       subitems={contactUpdatesQuery.data?.subitems ?? []}
                       isLoading={contactUpdatesQuery.isLoading}
@@ -6024,7 +6060,7 @@ export function MondayBoardView({
                     />
                   </TabsContent>
 
-                  <TabsContent value="info" className="mt-3">
+                  <TabsContent value="info" className="mt-3 min-h-0 flex-1">
                     {contactColumnsQuery.isLoading ? (
                       <div className="space-y-2 p-3">
                         {Array.from({ length: 10 }).map((_, i) => (
@@ -6043,7 +6079,7 @@ export function MondayBoardView({
                         </p>
                         </div>
                     ) : (
-                      <div className="max-h-[60vh] overflow-y-auto rounded-md border">
+                      <div className="h-full overflow-y-auto rounded-md border">
                         <table className="w-full text-sm">
                           <tbody>
                             {(contactColumnsQuery.data?.columns ?? []).map((col) => (
@@ -6065,15 +6101,6 @@ export function MondayBoardView({
                     )}
                   </TabsContent>
                 </Tabs>
-
-              <div className="flex justify-end">
-                <Button
-                  variant="outline"
-                  onClick={() => setContactHistoryDialogRecord(null)}
-                >
-                  Close
-                </Button>
-              </div>
             </div>
           ) : null}
             </div>
@@ -6571,42 +6598,57 @@ export function MondayBoardView({
                 </div>
               ) : null}
 
-              {sendEmailStep === 2 && sendEmailTemplate ? (
+              {sendEmailStep === 2 ? (
                 <div className="space-y-3">
                   <p className="text-sm font-medium">Step 2: Preview template</p>
                   <div className="rounded-md border p-4">
-                    <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                    <p className="mt-1 text-base font-medium">
-                      {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
-                    </p>
-                    <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                      Email Preview (Lead View)
-                    </p>
-                    <div className="bg-card mt-2 rounded-md border p-4">
-                      {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
-                        <p className="text-muted-foreground text-sm">
-                          No content found in template.
+                    {sendEmailTemplate ? (
+                      <>
+                        <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                        <p className="mt-1 text-base font-medium">
+                          {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
                         </p>
-                      ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
-                        <div
-                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                          style={{ whiteSpace: "pre-wrap" }}
-                          dangerouslySetInnerHTML={{
-                            __html: sendEmailResolvedTemplate?.html ?? "",
-                          }}
-                        />
-                      ) : (
-                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                          {sendEmailResolvedTemplate?.text ?? ""}
+                        <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                          Email Preview (Lead View)
+                        </p>
+                        <div className="bg-card mt-2 rounded-md border p-4">
+                          {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                              No content found in template.
+                            </p>
+                          ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                            <div
+                              className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                              style={{ whiteSpace: "pre-wrap" }}
+                              dangerouslySetInnerHTML={{
+                                __html: sendEmailResolvedTemplate?.html ?? "",
+                              }}
+                            />
+                          ) : (
+                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                              {sendEmailResolvedTemplate?.text ?? ""}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </>
+                    ) : emailTemplatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">Loading templates…</p>
+                    ) : (
+                      <p className="text-muted-foreground text-sm">
+                        No templates found. Choose another action or add templates in settings.
+                      </p>
+                    )}
                   </div>
                   <div className="flex justify-between gap-2">
                     <Button variant="outline" onClick={() => setSendEmailStep(1)}>
                       Back
                     </Button>
-                    <Button onClick={() => setSendEmailStep(3)}>Next</Button>
+                    <Button
+                      onClick={() => setSendEmailStep(3)}
+                      disabled={!sendEmailTemplate}
+                    >
+                      Next
+                    </Button>
                   </div>
                 </div>
               ) : null}
