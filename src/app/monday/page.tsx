@@ -588,11 +588,12 @@ export function MondayBoardView({
   });
 
   const shouldAutoLoadMore =
-    !staticMode &&
-    !useUserRecordsEndpoint &&
-    debouncedSearch.trim().length === 0 &&
-    statusFilter.trim().length === 0 &&
-    ownerFilter.trim().length === 0;
+    !staticMode && boardGeneralSettings.pageSize === 0;
+  const handleLoadMoreRecords = () => {
+    if (recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  };
 
   const featureFlagsQuery = useQuery({
     queryKey: ["monday-feature-flags", sessionToken],
@@ -1807,6 +1808,7 @@ export function MondayBoardView({
           to: recipient,
           subject: sendEmailResolvedTemplate.subject,
           html: sendEmailResolvedTemplate.html,
+          contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
@@ -4268,13 +4270,13 @@ export function MondayBoardView({
             <RefreshCcw className="h-4 w-4" />
           </Button>
 
-                {!staticMode && recordsQuery.hasNextPage ? (
+                {!staticMode && recordsQuery.hasNextPage && !shouldAutoLoadMore ? (
                   <Button
                     size="sm"
                     variant="secondary"
               className="h-8 shrink-0 px-2.5 text-xs"
                     onClick={() => {
-                      void recordsQuery.fetchNextPage();
+                      handleLoadMoreRecords();
                     }}
                     disabled={recordsQuery.isFetchingNextPage}
                   >
@@ -6128,6 +6130,10 @@ export function MondayBoardView({
         initialSort={{ id: "createdAt", direction: "desc" }}
         getRowId={(item) => item.id}
         entityActions={entityActions}
+            enableInfiniteScroll={shouldAutoLoadMore}
+            hasNextPage={!!recordsQuery.hasNextPage}
+            isFetchingNextPage={recordsQuery.isFetchingNextPage}
+            onLoadMore={handleLoadMoreRecords}
             bulkActions={({ selectedItems, clearSelection }) => {
               const eligibleByAction = new Map<string, MondayRecord[]>();
               for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
@@ -6641,7 +6647,7 @@ export function MondayBoardView({
         currentUserId={forcedOwnerId || identity?.userId || null}
       />
 
-      {!staticMode && recordsQuery.hasNextPage ? (
+      {!staticMode && recordsQuery.hasNextPage && shouldAutoLoadMore ? (
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>

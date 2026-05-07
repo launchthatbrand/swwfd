@@ -669,6 +669,324 @@ export declare const api: {
       { connectionId: Id<"outlookConnections"> }
     >;
   };
+  outlookInbound: {
+    getGraphSubscriptionBySubscriptionId: FunctionReference<
+      "query",
+      "public",
+      { subscriptionId: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      } | null
+    >;
+    getInboundMessageByDedupeKey: FunctionReference<
+      "query",
+      "public",
+      { dedupeKey: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookInboundMessages">;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationConfidence: "high" | "medium" | "low" | null;
+        correlationMethod:
+          | "inReplyTo"
+          | "conversationId"
+          | "senderEmail"
+          | "none"
+          | null;
+        createdAt: number;
+        dedupeKey: string;
+        errorMessage: string | null;
+        fromEmail: string;
+        graphMessageId: string;
+        inReplyTo: string | null;
+        internetMessageId: string | null;
+        matchedContactEmail: string | null;
+        mirrorMondaySubitemId: string | null;
+        mirrorMondayUpdateId: string | null;
+        mirrorTouchId: string | null;
+        outboundMessageId?: Id<"outlookOutboundMessages">;
+        parsedBody: string | null;
+        rawBodyPreview: string | null;
+        receivedAt: number;
+        status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+        subject: string;
+        updatedAt: number;
+      } | null
+    >;
+    getOutboundByInternetMessageId: FunctionReference<
+      "query",
+      "public",
+      { internetMessageId: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      } | null
+    >;
+    listExpiringGraphSubscriptions: FunctionReference<
+      "query",
+      "public",
+      { expiresBefore: number; limit?: number },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      }>
+    >;
+    listGraphSubscriptionsByIdentity: FunctionReference<
+      "query",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      }>
+    >;
+    listOutboundByConversationId: FunctionReference<
+      "query",
+      "public",
+      { conversationId: string; limit?: number },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      }>
+    >;
+    listRecentOutboundByRecipient: FunctionReference<
+      "query",
+      "public",
+      {
+        limit?: number;
+        mondayAccountId: string;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAtMin: number;
+      },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      }>
+    >;
+    markGraphSubscriptionStatus: FunctionReference<
+      "mutation",
+      "public",
+      {
+        expirationDateTime?: string;
+        expirationTimestamp?: number;
+        lastError?: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageFailed: FunctionReference<
+      "mutation",
+      "public",
+      {
+        errorMessage: string;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        status?: "failed" | "ignored";
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageMirrored: FunctionReference<
+      "mutation",
+      "public",
+      {
+        inboundMessageId: Id<"outlookInboundMessages">;
+        mirrorMondaySubitemId?: string;
+        mirrorMondayUpdateId: string;
+        mirrorTouchId?: string;
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageParsed: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactItemId?: string;
+        correlationConfidence: "high" | "medium" | "low" | null;
+        correlationMethod:
+          | "inReplyTo"
+          | "conversationId"
+          | "senderEmail"
+          | "none"
+          | null;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        matchedContactEmail?: string;
+        outboundMessageId?: Id<"outlookOutboundMessages">;
+        parsedBody: string;
+        status?: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      },
+      { updated: boolean }
+    >;
+    recordInboundMessageReceipt: FunctionReference<
+      "mutation",
+      "public",
+      {
+        conversationId?: string;
+        dedupeKey: string;
+        fromEmail: string;
+        graphMessageId: string;
+        inReplyTo?: string;
+        internetMessageId?: string;
+        rawBodyPreview?: string;
+        receivedAt: number;
+        subject: string;
+      },
+      {
+        alreadyMirrored: boolean;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      }
+    >;
+    removeGraphSubscriptionsByIdentity: FunctionReference<
+      "mutation",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      { updatedCount: number }
+    >;
+    upsertGraphSubscription: FunctionReference<
+      "mutation",
+      "public",
+      {
+        changeType: string;
+        clientState: string;
+        connectionEmail?: string;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError?: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status?: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+      },
+      { created: boolean; graphSubscriptionId: Id<"outlookGraphSubscriptions"> }
+    >;
+    upsertOutboundMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        connectionEmail?: string;
+        contactItemId?: string;
+        conversationId?: string;
+        correlationToken?: string;
+        graphMessageId?: string;
+        internetMessageId?: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status?: "pending_lookup" | "identified";
+        subject: string;
+      },
+      { created: boolean; outboundMessageId: Id<"outlookOutboundMessages"> }
+    >;
+  };
   viewer: {
     me: FunctionReference<
       "query",
@@ -1289,6 +1607,14 @@ export declare const internal: {
         skippedTouches: number;
         updatedTouches: number;
       }
+    >;
+  };
+  outlookInboundCron: {
+    renewOutlookSubscriptions: FunctionReference<
+      "action",
+      "internal",
+      {},
+      { message: string; ok: boolean; status: number }
     >;
   };
 };

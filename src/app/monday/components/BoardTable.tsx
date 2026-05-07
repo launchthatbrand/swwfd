@@ -18,6 +18,10 @@ interface BoardTableProps {
     selectedItems: MondayRecord[];
     clearSelection: () => void;
   }) => React.ReactNode;
+  enableInfiniteScroll?: boolean;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onLoadMore?: () => void;
 }
 
 const renderCell = (
@@ -48,10 +52,15 @@ export const BoardTable = ({
   initialSort,
   getRowId,
   bulkActions,
+  enableInfiniteScroll = false,
+  hasNextPage = false,
+  isFetchingNextPage = false,
+  onLoadMore,
 }: BoardTableProps) => {
   const [sort, setSort] = React.useState(initialSort ?? null);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const scrollViewportRef = React.useRef<HTMLElement | null>(null);
   const [scrollHeight, setScrollHeight] = React.useState("70vh");
 
   const rowId = React.useCallback(
@@ -76,6 +85,37 @@ export const BoardTable = ({
       clearTimeout(timer);
     };
   }, []);
+
+  const maybeLoadMore = React.useCallback(() => {
+    if (!enableInfiniteScroll || !hasNextPage || isFetchingNextPage || !onLoadMore) return;
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+    const distanceFromBottom =
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    if (distanceFromBottom > 160) return;
+    onLoadMore();
+  }, [enableInfiniteScroll, hasNextPage, isFetchingNextPage, onLoadMore]);
+
+  React.useEffect(() => {
+    const root = wrapperRef.current;
+    if (!root || !enableInfiniteScroll || !onLoadMore) return;
+    const viewport = root.querySelector(
+      "[data-radix-scroll-area-viewport]",
+    ) as HTMLElement | null;
+    if (!viewport) return;
+    scrollViewportRef.current = viewport;
+    const handleScroll = () => maybeLoadMore();
+    viewport.addEventListener("scroll", handleScroll, { passive: true });
+    const initialCheckTimer = window.setTimeout(maybeLoadMore, 0);
+
+    return () => {
+      window.clearTimeout(initialCheckTimer);
+      viewport.removeEventListener("scroll", handleScroll);
+      if (scrollViewportRef.current === viewport) {
+        scrollViewportRef.current = null;
+      }
+    };
+  }, [enableInfiniteScroll, maybeLoadMore, onLoadMore, data.length]);
 
   const sortedData = React.useMemo(() => {
     if (!sort) return data;
