@@ -2,6 +2,7 @@
 
 import { Check, Lock, Loader2, ChevronDown, ChevronUp, Circle, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import { Button } from "@launchthatapp/ui/button";
 import {
   Dialog,
@@ -20,9 +21,11 @@ export interface OnboardingStepperProps {
   record: MondayRecord;
   approvalSteps: ApprovalStepConfig[];
   isProcessing: boolean;
+  emailMarketingEnabled?: boolean;
   onQuickAction: (opts: {
     updateType: Exclude<ContactUpdateType, "general">;
     body: string;
+    method?: "manual" | "platform";
   }) => void;
   onQuestionnaireAction: (record: MondayRecord) => void;
   onGenericStepAction: (opts: { body: string; stepColumnId: string }) => void;
@@ -30,6 +33,7 @@ export interface OnboardingStepperProps {
   isSyncing?: boolean;
   onSyncUser?: (record: MondayRecord) => void;
   actionButtonClassName?: string;
+  actionButtonStyle?: CSSProperties;
   buttonSizeClassName?: string;
 }
 
@@ -37,6 +41,7 @@ export const OnboardingStepper = ({
   record,
   approvalSteps,
   isProcessing,
+  emailMarketingEnabled = false,
   onQuickAction,
   onQuestionnaireAction,
   onGenericStepAction,
@@ -44,6 +49,7 @@ export const OnboardingStepper = ({
   isSyncing = false,
   onSyncUser,
   actionButtonClassName = "",
+  actionButtonStyle,
   buttonSizeClassName = "",
 }: OnboardingStepperProps) => {
   const [expanded, setExpanded] = useState(false);
@@ -70,11 +76,11 @@ export const OnboardingStepper = ({
   const currentStep = steps.find((s) => s.isCurrent)
     ?? steps.find((s) => !s.completed);
 
-  const executeAction = (step: StepWithState) => {
+  const executeAction = (step: StepWithState, method?: "manual" | "platform") => {
     if (step.actionVariant === "questionnaire") {
       onQuestionnaireAction(record);
     } else if (step.updateType) {
-      onQuickAction({ updateType: step.updateType, body: step.defaultBody });
+      onQuickAction({ updateType: step.updateType, body: step.defaultBody, method });
     } else {
       onGenericStepAction({ body: step.defaultBody, stepColumnId: step.columnId });
     }
@@ -102,9 +108,11 @@ export const OnboardingStepper = ({
     >
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Confirm Welcome Email</DialogTitle>
+          <DialogTitle>Welcome Email</DialogTitle>
           <DialogDescription>
-            Automated emails are not currently enabled. Please confirm that you have sent this email manually.
+            {emailMarketingEnabled
+              ? "Choose how you want to complete this step."
+              : "Automated emails are not currently enabled. Please confirm that you have sent this email manually."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-end gap-2">
@@ -121,13 +129,26 @@ export const OnboardingStepper = ({
             onClick={() => {
               setWelcomeEmailConfirmOpen(false);
               if (pendingWelcomeStep) {
-                executeAction(pendingWelcomeStep);
+                executeAction(pendingWelcomeStep, "manual");
               }
               setPendingWelcomeStep(null);
             }}
           >
-            I sent it manually
+            Already Sent Manually
           </Button>
+          {emailMarketingEnabled ? (
+            <Button
+              onClick={() => {
+                setWelcomeEmailConfirmOpen(false);
+                if (pendingWelcomeStep) {
+                  executeAction(pendingWelcomeStep, "platform");
+                }
+                setPendingWelcomeStep(null);
+              }}
+            >
+              Send Through Platform
+            </Button>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>
@@ -182,6 +203,7 @@ export const OnboardingStepper = ({
             type="button"
             size="sm"
             className={cn("cursor-pointer shrink-0 rounded-md", buttonSizeClassName, actionButtonClassName)}
+            style={actionButtonStyle}
             disabled={isProcessing}
             onClick={() => handleAction(currentStep)}
           >
@@ -292,6 +314,7 @@ export const OnboardingStepper = ({
                       type="button"
                       size="sm"
                       className={cn("cursor-pointer rounded-md", buttonSizeClassName, actionButtonClassName)}
+                      style={actionButtonStyle}
                       disabled={isProcessing}
                       onClick={() => handleAction(step)}
                     >

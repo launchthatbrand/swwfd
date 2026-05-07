@@ -374,8 +374,15 @@ export declare const api: {
       "public",
       { accountId: string; ownerMondayUserId: string },
       {
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
         createdAt: number;
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
@@ -390,7 +397,14 @@ export declare const api: {
       "public",
       {
         accountId: string;
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
@@ -400,8 +414,15 @@ export declare const api: {
         viewerMondayUserId: string;
       },
       {
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
         createdAt: number;
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
         ownerMondayUserId: string;
