@@ -1057,9 +1057,15 @@ export const GET = async (request: Request) => {
     }
 
     const merged: MergedRecord[] = [];
+    const seenContactKeys = new Set<string>();
     for (const touch of selectedTouches) {
       const contact = touch.contactId ? contactMap.get(touch.contactId) : undefined;
       if (!contact) continue;
+      const dedupeKey = touch.contactId?.trim() || contact.contactId?.trim() || contact.id.trim();
+      if (!dedupeKey) continue;
+      if (seenContactKeys.has(dedupeKey)) {
+        continue;
+      }
       if (
         ownerFilter.length > 0 &&
         !contact.ownerIds.some((ownerId) => ownerId.trim().toLowerCase() === ownerFilter)
@@ -1091,6 +1097,7 @@ export const GET = async (request: Request) => {
         const haystack = [
           mergedRecord.name,
           mergedRecord.id,
+          mergedRecord.contactId ?? "",
           mergedRecord.email ?? "",
           mergedRecord.phone ?? "",
           mergedRecord.address ?? "",
@@ -1102,6 +1109,7 @@ export const GET = async (request: Request) => {
         if (!haystack.includes(search)) continue;
       }
       merged.push(mergedRecord);
+      seenContactKeys.add(dedupeKey);
     }
     merged.sort((a, b) => {
       const aTime = a.createdAt ? Date.parse(a.createdAt) : Number.NEGATIVE_INFINITY;

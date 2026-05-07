@@ -226,8 +226,11 @@ export type DataModel = {
   };
   mondayGlobalSettings: {
     document: {
+      adminUserIds?: Array<string>;
       emailMarketingEnabled: boolean;
+      employeeUserIds?: Array<string>;
       key: string;
+      replyToEmails?: Array<string>;
       updatedAt: number;
       updatedByMondayUserId: string;
       _id: Id<"mondayGlobalSettings">;
@@ -236,8 +239,11 @@ export type DataModel = {
     fieldPaths:
       | "_creationTime"
       | "_id"
+      | "adminUserIds"
       | "emailMarketingEnabled"
+      | "employeeUserIds"
       | "key"
+      | "replyToEmails"
       | "updatedAt"
       | "updatedByMondayUserId";
     indexes: {

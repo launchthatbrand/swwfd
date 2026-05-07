@@ -192,6 +192,9 @@ export default defineSchema({
   mondayGlobalSettings: defineTable({
     key: v.string(),
     emailMarketingEnabled: v.boolean(),
+    adminUserIds: v.optional(v.array(v.string())),
+    employeeUserIds: v.optional(v.array(v.string())),
+    replyToEmails: v.optional(v.array(v.string())),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
   }).index("by_key", ["key"]),

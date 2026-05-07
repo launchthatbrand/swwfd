@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import { api as apiGenerated } from "@convex-config/_generated/api";
 
+import { getConvexHttpClient } from "~/server/convexHttp";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 import { syncContactFromConnectedBoards } from "~/server/monday/sync";
 
 export const runtime = "nodejs";
 
-const ADMIN_USER_IDS = new Set(["38959704", "53441186"]);
+const MASTER_ADMIN_USER_ID = "53441186";
 
 const toJson = (body: unknown, status = 200) =>
   NextResponse.json(body, { status });
@@ -28,7 +30,15 @@ export const POST = async (
     return toJson({ ok: false, error: message }, 401);
   }
 
-  if (!ADMIN_USER_IDS.has(identity.userId)) {
+  const convex = getConvexHttpClient();
+  const platformSettings = await convex.query(
+    apiGenerated.mondaySettings.getPlatformSettings,
+    {},
+  );
+  const isAdmin =
+    identity.userId === MASTER_ADMIN_USER_ID ||
+    platformSettings.adminUserIds.includes(identity.userId);
+  if (!isAdmin) {
     return toJson({ ok: false, error: "Admin access required" }, 403);
   }
 

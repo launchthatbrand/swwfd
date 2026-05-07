@@ -237,11 +237,38 @@ export declare const api: {
       {},
       { emailMarketingEnabled: boolean }
     >;
+    getPlatformSettings: FunctionReference<
+      "query",
+      "public",
+      {},
+      {
+        adminUserIds: Array<string>;
+        employeeUserIds: Array<string>;
+        masterAdminUserId: string;
+        replyToEmails: Array<string>;
+      }
+    >;
     setFeatureFlags: FunctionReference<
       "mutation",
       "public",
       { emailMarketingEnabled: boolean; updatedByMondayUserId: string },
       { emailMarketingEnabled: boolean }
+    >;
+    setPlatformSettings: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserIds: Array<string>;
+        employeeUserIds: Array<string>;
+        replyToEmails: Array<string>;
+        updatedByMondayUserId: string;
+      },
+      {
+        adminUserIds: Array<string>;
+        employeeUserIds: Array<string>;
+        masterAdminUserId: string;
+        replyToEmails: Array<string>;
+      }
     >;
   };
   mondayTouchBackfill: {

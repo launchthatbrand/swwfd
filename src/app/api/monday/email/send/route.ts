@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { api as apiGenerated } from "@convex-config/_generated/api";
 import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
+import { getConvexHttpClient } from "~/server/convexHttp";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
 import { decryptToken, encryptToken } from "~/server/outlook/crypto";
 import {
@@ -31,6 +33,20 @@ const toJson = (body: unknown, status = 200) => {
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const splitEmailList = (value: string | null | undefined) => {
+  if (!value) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .split(/[\s,;]+/)
+        .map((entry) => normalizeEmail(entry))
+        .filter((entry) => entry.length > 0),
+    ),
+  );
+};
 
 const getValidAccessToken = async (args: {
   refreshToken: string;
@@ -87,9 +103,6 @@ export const POST = async (request: Request) => {
     const to = normalizeEmail(body.to ?? "");
     const subject = (body.subject ?? "").trim();
     const html = (body.html ?? "").trim();
-    const configuredReplyTo = env.OUTLOOK_REPLY_TO_EMAIL
-      ? normalizeEmail(env.OUTLOOK_REPLY_TO_EMAIL)
-      : null;
     if (!to || !subject || !html) {
       return toJson(
         { ok: false, error: "Missing required fields: to, subject, html" },
@@ -108,6 +121,31 @@ export const POST = async (request: Request) => {
         400,
       );
     }
+
+    let configuredReplyToEmails = splitEmailList(env.OUTLOOK_REPLY_TO_EMAIL);
+    try {
+      const convex = getConvexHttpClient();
+      const platformSettings = await convex.query(
+        apiGenerated.mondaySettings.getPlatformSettings,
+        {},
+      );
+      if (platformSettings.replyToEmails.length > 0) {
+        configuredReplyToEmails = platformSettings.replyToEmails;
+      }
+    } catch (platformSettingsError) {
+      console.warn(
+        "[monday-email-send] Failed to read platform settings; using env fallback",
+        platformSettingsError,
+      );
+    }
+    const replyToAddresses = Array.from(
+      new Set(
+        [
+          connection.email ? normalizeEmail(connection.email) : null,
+          ...configuredReplyToEmails,
+        ].filter((entry): entry is string => !!entry && entry.length > 0),
+      ),
+    );
 
     const requestOrigin = getRequestOrigin(request);
     const refreshed = await getValidAccessToken({
@@ -149,15 +187,11 @@ export const POST = async (request: Request) => {
               },
             },
           ],
-          ...(configuredReplyTo
+          ...(replyToAddresses.length > 0
             ? {
-                replyTo: [
-                  {
-                    emailAddress: {
-                      address: configuredReplyTo,
-                    },
-                  },
-                ],
+                replyTo: replyToAddresses.map((address) => ({
+                  emailAddress: { address },
+                })),
               }
             : {}),
         },

@@ -245,10 +245,23 @@ export interface MondayFeatureFlags {
   emailMarketingEnabled: boolean;
 }
 
+export interface MondayPlatformSettings {
+  masterAdminUserId: string;
+  adminUserIds: string[];
+  employeeUserIds: string[];
+  replyToEmails: string[];
+}
+
 export interface MondayFeatureFlagsResponse {
   ok: boolean;
   error?: string;
   featureFlags?: MondayFeatureFlags;
+}
+
+export interface MondayPlatformSettingsResponse {
+  ok: boolean;
+  error?: string;
+  platformSettings?: MondayPlatformSettings;
 }
 
 export interface MondayUserFilterPresetsResponse {
