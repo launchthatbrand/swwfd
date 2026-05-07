@@ -8,8 +8,6 @@ import type {
   MockBusinessInfo,
   MondayRecord,
   SavedAdvancedFilterPreset,
-  UserBoardColorTheme,
-  UserBoardFontSize,
   UserBoardGeneralSettings,
 } from "./types";
 import {
@@ -20,6 +18,7 @@ import {
   isUserBoardPageSize,
   isUserBoardRecordSource,
   isUserBoardTableDensity,
+  parseUserBoardCustomTheme,
 } from "./constants";
 
 // --- Formatting / string helpers ---
@@ -768,6 +767,7 @@ export const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralS
     colorTheme: isUserBoardColorTheme(candidate.colorTheme)
       ? candidate.colorTheme
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.colorTheme,
+    customTheme: parseUserBoardCustomTheme(candidate.customTheme),
     fontSize: isUserBoardFontSize(candidate.fontSize)
       ? candidate.fontSize
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.fontSize,

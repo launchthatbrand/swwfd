@@ -398,7 +398,13 @@ export interface SavedAdvancedFilterPreset {
   ownerMondayUserId?: string;
 }
 
-export type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
+export type UserBoardColorTheme =
+  | "neutral"
+  | "sky"
+  | "emerald"
+  | "violet"
+  | "rose"
+  | "custom";
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
 export type UserBoardDisplayMode = "table" | "grid" | "kanban";
@@ -406,9 +412,15 @@ export type UserBoardRecordSource = "created_in_month" | "touched_in_month";
 /** 0 = infinite scroll */
 export type UserBoardPageSize = 20 | 40 | 100 | 0;
 
+export interface UserBoardCustomTheme {
+  colorHex: string;
+  alpha: number;
+}
+
 export interface UserBoardGeneralSettings {
   ownerMondayUserId?: string;
   colorTheme: UserBoardColorTheme;
+  customTheme?: UserBoardCustomTheme;
   fontSize: UserBoardFontSize;
   tableDensity: UserBoardTableDensity;
   pageSize: UserBoardPageSize;

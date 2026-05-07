@@ -595,8 +595,9 @@ export type DataModel = {
   mondayUserBoardSettings: {
     document: {
       accountId: string;
-      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose" | "custom";
       createdAt: number;
+      customTheme?: { alpha: number; colorHex: string };
       displayMode?: "table" | "grid";
       fontSize: "default" | "medium" | "large";
       ownerMondayUserId: string;
@@ -614,6 +615,9 @@ export type DataModel = {
       | "accountId"
       | "colorTheme"
       | "createdAt"
+      | "customTheme"
+      | "customTheme.alpha"
+      | "customTheme.colorHex"
       | "displayMode"
       | "fontSize"
       | "ownerMondayUserId"

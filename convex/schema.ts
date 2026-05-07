@@ -223,6 +223,13 @@ export default defineSchema({
       v.literal("emerald"),
       v.literal("violet"),
       v.literal("rose"),
+      v.literal("custom"),
+    ),
+    customTheme: v.optional(
+      v.object({
+        colorHex: v.string(),
+        alpha: v.number(),
+      }),
     ),
     fontSize: v.union(v.literal("default"), v.literal("medium"), v.literal("large")),
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),

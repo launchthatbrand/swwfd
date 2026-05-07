@@ -100,6 +100,7 @@ export type { MondayBoardViewMode } from "./types";
 import {
   APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE,
   APPROVAL_STEPS,
+  buildUserBoardThemeInlineStyles,
   CONTACT_UPDATE_ACTION_BUTTONS,
   DEFAULT_MONDAY_FEATURE_FLAGS,
   DEFAULT_USER_BOARD_GENERAL_SETTINGS,
@@ -121,6 +122,7 @@ import {
   USER_BOARD_ACTION_BUTTON_SIZE_CLASS,
   USER_BOARD_COLOR_THEME_OPTIONS,
   USER_BOARD_COLOR_THEME_STYLES,
+  parseUserBoardCustomTheme,
   USER_BOARD_FONT_SIZE_OPTIONS,
   USER_BOARD_FONT_SIZE_SCALE,
   USER_BOARD_PAGE_SIZE_OPTIONS,
@@ -310,6 +312,10 @@ export function MondayBoardView({
   const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
+  const [sendEmailProgressUpdate, setSendEmailProgressUpdate] = useState<{
+    updateType: Exclude<ContactUpdateType, "general">;
+    body: string;
+  } | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
     DEFAULT_MONDAY_FEATURE_FLAGS,
@@ -436,9 +442,17 @@ export function MondayBoardView({
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
     [boardGeneralSettings.colorTheme],
   );
+  const boardThemeInlineStyles = useMemo(
+    () => buildUserBoardThemeInlineStyles(boardGeneralSettings),
+    [boardGeneralSettings],
+  );
   const boardDraftThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettingsDraft.colorTheme],
     [boardGeneralSettingsDraft.colorTheme],
+  );
+  const boardDraftThemeInlineStyles = useMemo(
+    () => buildUserBoardThemeInlineStyles(boardGeneralSettingsDraft),
+    [boardGeneralSettingsDraft],
   );
   const boardFontScale = USER_BOARD_FONT_SIZE_SCALE[boardGeneralSettings.fontSize];
   const boardFontScalePercent = Math.round(boardFontScale * 100);
@@ -448,6 +462,9 @@ export function MondayBoardView({
     USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettingsDraft.fontSize];
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
+    boardGeneralSettings.customTheme?.colorHex !==
+      boardGeneralSettingsDraft.customTheme?.colorHex ||
+    boardGeneralSettings.customTheme?.alpha !== boardGeneralSettingsDraft.customTheme?.alpha ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
     boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
     boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
@@ -1493,6 +1510,9 @@ export function MondayBoardView({
 
     setIsSavingBoardGeneralSettings(true);
     try {
+      const parsedCustomTheme = parseUserBoardCustomTheme(
+        boardGeneralSettingsDraft.customTheme,
+      );
       const response = await fetch("/api/monday/settings/user-board", {
         method: "POST",
         cache: "no-store",
@@ -1503,6 +1523,8 @@ export function MondayBoardView({
         body: JSON.stringify({
           ownerId: presetScopeOwnerId,
           colorTheme: boardGeneralSettingsDraft.colorTheme,
+          customTheme:
+            boardGeneralSettingsDraft.colorTheme === "custom" ? parsedCustomTheme : undefined,
           fontSize: boardGeneralSettingsDraft.fontSize,
           tableDensity: boardGeneralSettingsDraft.tableDensity,
           pageSize: boardGeneralSettingsDraft.pageSize,
@@ -1532,15 +1554,25 @@ export function MondayBoardView({
     }
   };
 
-  const openSendEmailDialog = (record: MondayRecord) => {
+  const openSendEmailDialog = (
+    record: MondayRecord,
+    options?: {
+      progressUpdate?: {
+        updateType: Exclude<ContactUpdateType, "general">;
+        body: string;
+      } | null;
+    },
+  ) => {
     setSendEmailRecord(record);
     setSendEmailStep(1);
     setSendEmailTemplateId(emailTemplates[0]?.id ?? null);
+    setSendEmailProgressUpdate(options?.progressUpdate ?? null);
   };
   const closeSendEmailDialog = () => {
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   };
   const sendEmailOwnerVars = useMemo(() => {
@@ -1578,6 +1610,7 @@ export function MondayBoardView({
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
   const handleConfirmSendEmail = async () => {
@@ -1609,7 +1642,82 @@ export function MondayBoardView({
       if (!response.ok || !data.ok) {
         throw new Error(data.error ?? "Failed to send email");
       }
-      toast.success(`Email sent to ${recipient}`);
+      let progressSyncError: string | null = null;
+      if (sendEmailProgressUpdate) {
+        try {
+          const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
+          let updateData: MondayCreateRecordUpdateResponse;
+          if (canCreateUpdatesAsLoggedInMondayUser) {
+            const update = await createMondayRecordUpdateAsContextUser({
+              itemId: targetRecordId,
+              body: sendEmailProgressUpdate.body,
+              updateType: sendEmailProgressUpdate.updateType,
+            });
+            updateData = { ok: true, update };
+          } else {
+            const updateResponse = await fetch(
+              `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  body: sendEmailProgressUpdate.body,
+                  updateType: sendEmailProgressUpdate.updateType,
+                }),
+              },
+            );
+            updateData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+            if (!updateResponse.ok || !updateData.ok) {
+              throw new Error(updateData.error ?? "Failed to track onboarding progress");
+            }
+          }
+
+          if (identity?.userId) {
+            fetch("/api/monday/touches", {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                "x-monday-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                contactItemId: targetRecordId,
+                contactName: sendEmailRecord.name ?? "",
+                ownerId: identity.userId,
+                source: "update",
+              }),
+            }).catch(() => {});
+          }
+
+          const [, refreshedRecordsResult] = await Promise.all([
+            contactUpdatesQuery.refetch(),
+            recordsQuery.refetch(),
+          ]);
+          const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+            (page) => page.records ?? [],
+          );
+          syncContactHistoryDialogFromRecords(refreshedRecords);
+
+          if (updateData.update?.warning) {
+            progressSyncError = updateData.update.warning;
+          }
+        } catch (error) {
+          progressSyncError =
+            error instanceof Error ? error.message : "Failed to sync welcome email progress";
+        }
+      }
+
+      if (progressSyncError) {
+        toast.success(`Email sent to ${recipient}`);
+        toast.error(`Email sent, but welcome step sync failed: ${progressSyncError}`);
+      } else if (sendEmailProgressUpdate) {
+        toast.success(`Email sent to ${recipient} and welcome step marked complete`);
+      } else {
+        toast.success(`Email sent to ${recipient}`);
+      }
       closeSendEmailDialog();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send email";
@@ -2243,48 +2351,93 @@ export function MondayBoardView({
       throw new Error("Monday did not return a new update id");
     }
 
+    const markApprovalStepDoneViaServer = async (stepColumnId: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token for step update");
+      }
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(itemId)}/reset-step`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            stepColumnId,
+            action: "done",
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to mark onboarding step done");
+      }
+    };
+
     let warning: string | null = null;
     let approvalStepMarked = false;
     if (updateType !== "general") {
       const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
-      const boardId = await resolveMondayContextBoardId();
       if (!approvalStepColumnId) {
         warning = "No onboarding step mapping exists for this update type";
-      } else if (!boardId) {
-        warning = "Missing boardId in monday context; skipped onboarding step update";
       } else {
+        const boardId = await resolveMondayContextBoardId();
         try {
-          await callMondayContextApi<{
-            change_multiple_column_values?: { id?: string | number | null } | null;
-          }>(
-            `
-              mutation MarkApprovalStepDone(
-                $boardId: ID!
-                $itemId: ID!
-                $columnValues: JSON!
-              ) {
-                change_multiple_column_values(
-                  board_id: $boardId
-                  item_id: $itemId
-                  column_values: $columnValues
-                  create_labels_if_missing: true
-                ) { id }
-              }
-            `,
-            {
-              boardId,
-              itemId,
-              columnValues: JSON.stringify({
-                [approvalStepColumnId]: { label: "Done" },
-              }),
-            },
-          );
+          if (boardId) {
+            await callMondayContextApi<{
+              change_multiple_column_values?: { id?: string | number | null } | null;
+            }>(
+              `
+                mutation MarkApprovalStepDone(
+                  $boardId: ID!
+                  $itemId: ID!
+                  $columnValues: JSON!
+                ) {
+                  change_multiple_column_values(
+                    board_id: $boardId
+                    item_id: $itemId
+                    column_values: $columnValues
+                    create_labels_if_missing: true
+                  ) { id }
+                }
+              `,
+              {
+                boardId,
+                itemId,
+                columnValues: JSON.stringify({
+                  [approvalStepColumnId]: { label: "Done" },
+                }),
+              },
+            );
+          } else {
+            await markApprovalStepDoneViaServer(approvalStepColumnId);
+          }
           approvalStepMarked = true;
         } catch (error) {
-          warning =
-            error instanceof Error
-              ? error.message
-              : "Failed to mark onboarding step done";
+          if (boardId) {
+            try {
+              await markApprovalStepDoneViaServer(approvalStepColumnId);
+              approvalStepMarked = true;
+              warning = null;
+            } catch (fallbackError) {
+              const primaryMessage =
+                error instanceof Error
+                  ? error.message
+                  : "Failed to mark onboarding step done via monday context";
+              const fallbackMessage =
+                fallbackError instanceof Error
+                  ? fallbackError.message
+                  : "Failed to mark onboarding step done via server fallback";
+              warning = `${primaryMessage} | ${fallbackMessage}`;
+            }
+          } else {
+            warning =
+              error instanceof Error
+                ? error.message
+                : "Failed to mark onboarding step done";
+          }
         }
       }
     }
@@ -3395,7 +3548,11 @@ export function MondayBoardView({
     <GuidedTourProvider>
     <UserSettingsProvider settings={boardGeneralSettings}>
     <div className="monday-like-page mx-auto space-y-3 pb-10">
-      <div data-board-filter-bar className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
+      <div
+        data-board-filter-bar
+        className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+        style={boardThemeInlineStyles.shellCardStyle}
+      >
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Search */}
           <div data-tour="search" className="relative min-w-0 flex-1">
@@ -4061,7 +4218,7 @@ export function MondayBoardView({
                             <p className="text-muted-foreground text-xs">
                               {USER_BOARD_COLOR_THEME_OPTIONS.find(
                                 (o) => o.value === boardGeneralSettingsDraft.colorTheme,
-                              )?.description ?? "Accent color for the board UI."}
+                              )?.description ?? "Board accent and filter bar styling."}
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-1.5">
@@ -4080,10 +4237,77 @@ export function MondayBoardView({
                                   ? "ring-2 ring-offset-2 ring-primary scale-110"
                                   : "opacity-60 hover:opacity-100 hover:scale-105"
                                   }`}
+                                style={
+                                  option.value === "custom"
+                                    ? {
+                                      backgroundColor:
+                                        boardGeneralSettingsDraft.customTheme?.colorHex ??
+                                        "#0ea5e9",
+                                      opacity:
+                                        boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22,
+                                    }
+                                    : undefined
+                                }
                               />
                             ))}
                           </div>
                         </div>
+
+                        {boardGeneralSettingsDraft.colorTheme === "custom" ? (
+                          <div className="rounded-md border p-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="space-y-1.5">
+                                <span className="text-sm font-medium">Custom Color</span>
+                                <input
+                                  type="color"
+                                  value={
+                                    boardGeneralSettingsDraft.customTheme?.colorHex ?? "#0ea5e9"
+                                  }
+                                  onChange={(event) => {
+                                    const nextHex = event.target.value;
+                                    setBoardGeneralSettingsDraft((prev) => ({
+                                      ...prev,
+                                      customTheme: parseUserBoardCustomTheme({
+                                        colorHex: nextHex,
+                                        alpha: prev.customTheme?.alpha,
+                                      }),
+                                    }));
+                                  }}
+                                  className="h-10 w-full cursor-pointer rounded border bg-transparent p-1"
+                                />
+                              </label>
+                              <label className="space-y-1.5">
+                                <span className="text-sm font-medium">Transparency</span>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={Math.round(
+                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                  )}
+                                  onChange={(event) => {
+                                    const nextAlpha = Number(event.target.value) / 100;
+                                    setBoardGeneralSettingsDraft((prev) => ({
+                                      ...prev,
+                                      customTheme: parseUserBoardCustomTheme({
+                                        colorHex: prev.customTheme?.colorHex,
+                                        alpha: nextAlpha,
+                                      }),
+                                    }));
+                                  }}
+                                  className="w-full"
+                                />
+                                <p className="text-muted-foreground text-xs">
+                                  {Math.round(
+                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                  )}
+                                  % opacity
+                                </p>
+                              </label>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {/* Font Size */}
                         <div className="flex items-center justify-between py-3.5">
@@ -4252,7 +4476,10 @@ export function MondayBoardView({
                         </div>
 
                         {/* Preview strip */}
-                        <div className={`flex items-center justify-between rounded-md px-4 py-3 mt-3 ${boardDraftThemeStyles.previewClassName}`}>
+                        <div
+                          className={`mt-3 flex items-center justify-between rounded-md px-4 py-3 ${boardDraftThemeStyles.previewClassName}`}
+                          style={boardDraftThemeInlineStyles.previewStyle}
+                        >
                           <p className="text-xs text-muted-foreground">
                             Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
                             {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
@@ -4262,6 +4489,7 @@ export function MondayBoardView({
                             size="sm"
                             variant="secondary"
                             className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                            style={boardDraftThemeInlineStyles.actionButtonStyle}
                             disabled
                           >
                             Quick Action
@@ -5304,8 +5532,19 @@ export function MondayBoardView({
                     record={contactHistoryDialogRecord}
                     approvalSteps={approvalSteps}
                     isProcessing={isCreatingContactUpdate}
-                    onQuickAction={({ updateType, body }) => {
+                    emailMarketingEnabled={featureFlags.emailMarketingEnabled}
+                    onQuickAction={({ updateType, body, method }) => {
                       setContactUpdateType(updateType);
+                      if (
+                        updateType === "welcome_email" &&
+                        featureFlags.emailMarketingEnabled &&
+                        method === "platform"
+                      ) {
+                        openSendEmailDialog(contactHistoryDialogRecord, {
+                          progressUpdate: { updateType, body },
+                        });
+                        return;
+                      }
                       void handleCreateContactUpdate({
                         updateType,
                         body,
@@ -5411,6 +5650,7 @@ export function MondayBoardView({
                       })();
                     }}
                     actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                    actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
                     buttonSizeClassName={quickActionButtonSizeClass}
                   />
                             </div>
@@ -5617,6 +5857,7 @@ export function MondayBoardView({
                           size="sm"
                           variant="secondary"
                           className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                          style={boardThemeInlineStyles.actionButtonStyle}
                           disabled={!!bulkQuickActionType || !hasEligible}
                           onClick={() => {
                             bulkClearSelectionRef.current = clearSelection;
@@ -5642,6 +5883,7 @@ export function MondayBoardView({
                       size="sm"
                       variant="secondary"
                       className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      style={boardThemeInlineStyles.actionButtonStyle}
                       disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
                       onClick={() => {
                         openQuestionnaireDialogForRecords([...questionnaireEligible]);

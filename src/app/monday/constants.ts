@@ -2,6 +2,7 @@ import type {
   ApprovalStepConfig,
   MondayFeatureFlags,
   UserBoardColorTheme,
+  UserBoardCustomTheme,
   UserBoardDisplayMode,
   UserBoardFontSize,
   UserBoardGeneralSettings,
@@ -295,6 +296,12 @@ export const USER_BOARD_COLOR_THEME_OPTIONS: {
       description: "Warm pink accents.",
       swatchClassName: "bg-rose-400",
     },
+    {
+      value: "custom",
+      label: "Custom",
+      description: "Pick any color and transparency.",
+      swatchClassName: "bg-gradient-to-r from-fuchsia-500 via-sky-500 to-emerald-400",
+    },
   ];
 
 export const USER_BOARD_COLOR_THEME_STYLES: Record<
@@ -348,10 +355,22 @@ export const USER_BOARD_COLOR_THEME_STYLES: Record<
     actionButtonClassName:
       "bg-rose-500/90 text-white hover:bg-rose-600 dark:bg-rose-600 dark:hover:bg-rose-500",
   },
+  custom: {
+    shellCardClassName: "bg-muted border-border",
+    toolbarClassName: "bg-muted/60 border-border",
+    previewClassName: "bg-muted/50 border-border",
+    actionButtonClassName: "text-white hover:opacity-90",
+  },
+};
+
+export const DEFAULT_USER_BOARD_CUSTOM_THEME: UserBoardCustomTheme = {
+  colorHex: "#0ea5e9",
+  alpha: 0.22,
 };
 
 export const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   colorTheme: "neutral",
+  customTheme: DEFAULT_USER_BOARD_CUSTOM_THEME,
   fontSize: "medium",
   tableDensity: "expanded",
   pageSize: 0,
@@ -361,6 +380,76 @@ export const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
 
 export const isUserBoardColorTheme = (value: unknown): value is UserBoardColorTheme => {
   return USER_BOARD_COLOR_THEME_OPTIONS.some((option) => option.value === value);
+};
+
+const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value);
+
+const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
+
+const hexToRgb = (hexColor: string) => {
+  const normalized = hexColor.replace("#", "");
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  return { red, green, blue };
+};
+
+const getReadableTextColor = (hexColor: string) => {
+  const { red, green, blue } = hexToRgb(hexColor);
+  const yiq = (red * 299 + green * 587 + blue * 114) / 1000;
+  return yiq >= 160 ? "#111827" : "#ffffff";
+};
+
+export const parseUserBoardCustomTheme = (input: unknown): UserBoardCustomTheme => {
+  if (!input || typeof input !== "object") {
+    return { ...DEFAULT_USER_BOARD_CUSTOM_THEME };
+  }
+  const candidate = input as Partial<UserBoardCustomTheme>;
+  const colorHex =
+    typeof candidate.colorHex === "string" && isHexColor(candidate.colorHex.trim())
+      ? candidate.colorHex.trim().toLowerCase()
+      : DEFAULT_USER_BOARD_CUSTOM_THEME.colorHex;
+  const alphaRaw =
+    typeof candidate.alpha === "number" && Number.isFinite(candidate.alpha)
+      ? candidate.alpha
+      : DEFAULT_USER_BOARD_CUSTOM_THEME.alpha;
+  return {
+    colorHex,
+    alpha: clamp01(alphaRaw),
+  };
+};
+
+export const buildUserBoardThemeInlineStyles = (settings: {
+  colorTheme: UserBoardColorTheme;
+  customTheme?: UserBoardCustomTheme;
+}) => {
+  if (settings.colorTheme !== "custom") {
+    return {
+      shellCardStyle: undefined,
+      previewStyle: undefined,
+      actionButtonStyle: undefined,
+    };
+  }
+  const customTheme = parseUserBoardCustomTheme(settings.customTheme);
+  const { red, green, blue } = hexToRgb(customTheme.colorHex);
+  const shellAlpha = clamp01(customTheme.alpha);
+  const previewAlpha = clamp01(customTheme.alpha + 0.08);
+  const borderAlpha = clamp01(customTheme.alpha + 0.28);
+  const actionTextColor = getReadableTextColor(customTheme.colorHex);
+  return {
+    shellCardStyle: {
+      backgroundColor: `rgba(${red}, ${green}, ${blue}, ${shellAlpha})`,
+      borderColor: `rgba(${red}, ${green}, ${blue}, ${borderAlpha})`,
+    },
+    previewStyle: {
+      backgroundColor: `rgba(${red}, ${green}, ${blue}, ${previewAlpha})`,
+      borderColor: `rgba(${red}, ${green}, ${blue}, ${borderAlpha})`,
+    },
+    actionButtonStyle: {
+      backgroundColor: customTheme.colorHex,
+      color: actionTextColor,
+    },
+  };
 };
 
 export const isUserBoardFontSize = (value: unknown): value is UserBoardFontSize => {

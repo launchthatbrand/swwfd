@@ -1884,6 +1884,8 @@ export const listMondayEmailTemplates = async (args?: {
   cursor?: string;
   limit?: number;
   workdocColumnId?: string;
+  statusColumnId?: string;
+  readyStatusLabel?: string;
 }) => {
   const fallbackBoardId = env.MONDAY_EMAIL_TEMPLATES_BOARD_ID ?? "18401299370";
   const boardId = args?.boardId?.trim() || fallbackBoardId;
@@ -1892,6 +1894,8 @@ export const listMondayEmailTemplates = async (args?: {
   }
 
   const workdocColumnId = args?.workdocColumnId?.trim() || "doc_mm0wq4r";
+  const statusColumnId = args?.statusColumnId?.trim() || "color_mm16fvtn";
+  const readyStatusLabel = (args?.readyStatusLabel?.trim() || "Done").toLowerCase();
   const limit = Math.min(Math.max(args?.limit ?? 100, 1), 500);
 
   const query = `
@@ -1943,7 +1947,35 @@ export const listMondayEmailTemplates = async (args?: {
 
   const boardName = data.boards?.[0]?.name ?? null;
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
-  const templates = (data.boards?.[0]?.items_page?.items ?? []).map((item) => {
+  const sourceItems = data.boards?.[0]?.items_page?.items ?? [];
+  const readyItems = sourceItems.filter((item) => {
+    const statusColumn = item.column_values?.find((column) => column.id === statusColumnId);
+    const statusText = statusColumn?.text?.trim().toLowerCase() ?? "";
+    if (statusText === readyStatusLabel) return true;
+    const statusValue = parseJsonIfString(statusColumn?.value);
+    if (!statusValue || typeof statusValue !== "object") return false;
+    const statusRecord = statusValue as {
+      label?: unknown;
+      labels?: unknown;
+      index?: unknown;
+    };
+    if (
+      typeof statusRecord.label === "string" &&
+      statusRecord.label.trim().toLowerCase() === readyStatusLabel
+    ) {
+      return true;
+    }
+    if (Array.isArray(statusRecord.labels)) {
+      return statusRecord.labels.some(
+        (entry) =>
+          typeof entry === "string" &&
+          entry.trim().toLowerCase() === readyStatusLabel,
+      );
+    }
+    return false;
+  });
+
+  const templates = readyItems.map((item) => {
     const workdocMeta = parseWorkdocMeta(
       item.column_values?.find((column) => column.id === workdocColumnId)?.value,
     );
@@ -1960,7 +1992,7 @@ export const listMondayEmailTemplates = async (args?: {
 
   const hydratedTemplates = await Promise.all(
     templates.map(async (template) => {
-      const item = (data.boards?.[0]?.items_page?.items ?? []).find(
+      const item = readyItems.find(
         (entry) => entry.id === template.id,
       );
       const workdocColumn = item?.column_values?.find(

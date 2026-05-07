@@ -21,6 +21,7 @@ import {
 } from "~/components/ui/chart";
 
 import {
+  buildUserBoardThemeInlineStyles,
   DEFAULT_USER_BOARD_GENERAL_SETTINGS,
   MONDAY_DEV_BYPASS_TOKEN,
   USER_BOARD_COLOR_THEME_STYLES,
@@ -195,6 +196,10 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const boardThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
     [boardGeneralSettings.colorTheme],
+  );
+  const boardThemeInlineStyles = useMemo(
+    () => buildUserBoardThemeInlineStyles(boardGeneralSettings),
+    [boardGeneralSettings],
   );
 
   useEffect(() => {
@@ -401,6 +406,7 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
       <div
         data-board-filter-bar
         className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+        style={boardThemeInlineStyles.shellCardStyle}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
           <div className="min-w-0 pr-2">
