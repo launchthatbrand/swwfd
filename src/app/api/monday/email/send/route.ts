@@ -4,7 +4,10 @@ import { api as apiGenerated } from "@convex-config/_generated/api";
 import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { getConvexHttpClient } from "~/server/convexHttp";
-import { findMondayContactsByEmail } from "~/server/monday/client";
+import {
+  findMondayContactsByEmail,
+  resolveMondayContactOwnerId,
+} from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 import {
   findRecentlySentMessage,
@@ -19,6 +22,7 @@ interface SendEmailBody {
   subject: string;
   html: string;
   contactItemId?: string;
+  ownerMondayUserId?: string;
 }
 
 const toJson = (body: unknown, status = 200) => {
@@ -61,14 +65,49 @@ export const POST = async (request: Request) => {
       );
     }
 
-    const connection = await getOutlookConnection({
+    const requestedContactItemId = body.contactItemId?.trim() ?? "";
+    const requestedOwnerUserId = body.ownerMondayUserId?.trim() ?? "";
+    let effectiveOwnerUserId = requestedOwnerUserId;
+    if (!effectiveOwnerUserId && requestedContactItemId) {
+      try {
+        const resolvedOwnerId = await resolveMondayContactOwnerId({
+          itemId: requestedContactItemId,
+        });
+        if (resolvedOwnerId) {
+          effectiveOwnerUserId = resolvedOwnerId;
+        }
+      } catch (resolveOwnerError) {
+        console.warn("[monday-email-send] contact owner resolution failed", {
+          contactItemId: requestedContactItemId,
+          error:
+            resolveOwnerError instanceof Error
+              ? resolveOwnerError.message
+              : String(resolveOwnerError),
+        });
+      }
+    }
+    if (!effectiveOwnerUserId) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Unable to resolve the contact owner. This email must be sent from the contact owner's mailbox.",
+        },
+        400,
+      );
+    }
+
+    const ownerConnection = await getOutlookConnection({
       mondayAccountId: identity.accountId,
-      mondayUserId: identity.userId,
+      mondayUserId: effectiveOwnerUserId,
       mondayAppClientId: identity.appClientId,
     });
-    if (!connection) {
+    if (!ownerConnection) {
       return toJson(
-        { ok: false, error: "Outlook is not connected. Connect it in Settings first." },
+        {
+          ok: false,
+          error: `Outlook is not connected for contact owner ${effectiveOwnerUserId}. Ask that owner to connect Outlook in Settings.`,
+        },
         400,
       );
     }
@@ -92,7 +131,7 @@ export const POST = async (request: Request) => {
     const replyToAddresses = Array.from(
       new Set(
         [
-          connection.email ? normalizeEmail(connection.email) : null,
+          ownerConnection.email ? normalizeEmail(ownerConnection.email) : null,
           ...configuredReplyToEmails,
         ].filter((entry): entry is string => !!entry && entry.length > 0),
       ),
@@ -100,7 +139,7 @@ export const POST = async (request: Request) => {
 
     const requestOrigin = getRequestOrigin(request);
     const refreshed = await refreshOutlookAccessToken({
-      connection,
+      connection: ownerConnection,
       requestOrigin,
     });
 
@@ -146,7 +185,6 @@ export const POST = async (request: Request) => {
       );
     }
 
-    const requestedContactItemId = body.contactItemId?.trim() ?? "";
     let resolvedContactItemId = requestedContactItemId;
     if (!resolvedContactItemId) {
       try {
@@ -191,9 +229,9 @@ export const POST = async (request: Request) => {
     try {
       await convex.mutation(apiGenerated.outlookInbound.upsertOutboundMessage, {
         mondayAccountId: identity.accountId,
-        mondayUserId: identity.userId,
+        mondayUserId: effectiveOwnerUserId,
         mondayAppClientId: identity.appClientId,
-        connectionEmail: connection.email ?? undefined,
+        connectionEmail: ownerConnection.email ?? undefined,
         contactItemId: resolvedContactItemId || undefined,
         recipientEmail: to,
         subject,

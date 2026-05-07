@@ -1809,6 +1809,7 @@ export function MondayBoardView({
           subject: sendEmailResolvedTemplate.subject,
           html: sendEmailResolvedTemplate.html,
           contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
+          ownerMondayUserId: sendEmailRecord.ownerIds[0] ?? undefined,
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
