@@ -3014,6 +3014,27 @@ export const fetchMondayItemColumns = async (args: { itemId: string }) => {
   };
 };
 
+export const resolveMondayContactOwnerId = async (args: { itemId: string }) => {
+  const payload = await fetchMondayItemColumns({ itemId: args.itemId });
+  const peopleColumn = payload.columns.find(
+    (column) => column.type.toLowerCase() === "people",
+  );
+  if (!peopleColumn?.value) return null;
+  try {
+    const parsed = JSON.parse(peopleColumn.value) as {
+      personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+    };
+    const firstOwnerId = (parsed.personsAndTeams ?? [])
+      .find((entry) => entry.kind === "person" && entry.id != null)
+      ?.id;
+    if (firstOwnerId == null) return null;
+    const normalized = String(firstOwnerId).trim();
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Delete a subitem
 // ---------------------------------------------------------------------------
