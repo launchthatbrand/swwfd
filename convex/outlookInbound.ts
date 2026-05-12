@@ -303,6 +303,39 @@ export const listRecentOutboundByRecipient = query({
   },
 });
 
+export const identifyOutboundMessage = mutation({
+  args: {
+    outboundMessageId: v.id("outlookOutboundMessages"),
+    internetMessageId: optionalString,
+    conversationId: optionalString,
+    graphMessageId: optionalString,
+  },
+  returns: v.object({ updated: v.boolean() }),
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.outboundMessageId);
+    if (!existing) return { updated: false };
+
+    const internetMessageId =
+      normalizeOptionalString(args.internetMessageId) ?? existing.internetMessageId;
+    const conversationId =
+      normalizeOptionalString(args.conversationId) ?? existing.conversationId;
+    const graphMessageId =
+      normalizeOptionalString(args.graphMessageId) ?? existing.graphMessageId;
+
+    await ctx.db.patch(args.outboundMessageId, {
+      internetMessageId,
+      conversationId,
+      graphMessageId,
+      status:
+        internetMessageId || conversationId
+          ? "identified"
+          : existing.status,
+      updatedAt: Date.now(),
+    });
+    return { updated: true };
+  },
+});
+
 export const recordInboundMessageReceipt = mutation({
   args: {
     dedupeKey: v.string(),

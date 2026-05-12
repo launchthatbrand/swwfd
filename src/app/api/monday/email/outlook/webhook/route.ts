@@ -63,6 +63,12 @@ const normalizeEmail = (value: string | null | undefined) => {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 };
 
+const normalizeThreadSubject = (value: string | null | undefined) => {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) return "";
+  return trimmed.replace(/^((re|fw|fwd)\s*:\s*)+/i, "").trim();
+};
+
 const normalizeMessageIdCandidates = (value: string | null | undefined) => {
   const trimmed = value?.trim();
   if (!trimmed) return [] as string[];
@@ -145,8 +151,82 @@ const resolveContactOwnerId = async (contactItemId: string) => {
   }
 };
 
+const recoverPendingOutboundCorrelation = async (args: {
+  mondayAccountId: string;
+  mondayUserId: string;
+  fromEmail: string;
+  subject: string;
+  receivedAtMs: number;
+  inReplyTo: string | null;
+  conversationId: string | null;
+}) => {
+  const convex = getConvexHttpClient();
+  const lookbackMs = 90 * 24 * 60 * 60 * 1000;
+  const sentAtMin = Math.max(args.receivedAtMs - lookbackMs, 0);
+  const candidates = await convex.query(
+    apiGenerated.outlookInbound.listRecentOutboundByRecipient,
+    {
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      recipientEmail: args.fromEmail,
+      sentAtMin,
+      limit: 50,
+    },
+  );
+
+  const inThreadSubject = normalizeThreadSubject(args.subject);
+  const sentBeforeReply = candidates.filter(
+    (candidate) =>
+      !!candidate.contactItemId && candidate.sentAt <= args.receivedAtMs + 5 * 60 * 1000,
+  );
+  const sameThreadSubject = inThreadSubject
+    ? sentBeforeReply.filter(
+        (candidate) => normalizeThreadSubject(candidate.subject) === inThreadSubject,
+      )
+    : [];
+  const pool = sameThreadSubject.length > 0 ? sameThreadSubject : sentBeforeReply;
+  if (pool.length === 0) return null;
+
+  const uniqueContactIds = Array.from(
+    new Set(
+      pool
+        .map((candidate) => candidate.contactItemId?.trim() ?? "")
+        .filter((contactItemId) => contactItemId.length > 0),
+    ),
+  );
+  if (uniqueContactIds.length !== 1) return null;
+
+  const selected = pool[0];
+  if (
+    selected.status === "pending_lookup" ||
+    (args.conversationId && !selected.conversationId) ||
+    (args.inReplyTo && !selected.internetMessageId)
+  ) {
+    await convex.mutation(apiGenerated.outlookInbound.identifyOutboundMessage, {
+      outboundMessageId: selected._id,
+      internetMessageId: args.inReplyTo ?? undefined,
+      conversationId: args.conversationId ?? undefined,
+    });
+  }
+
+  if (!selected.contactItemId) return null;
+  return {
+    contactItemId: selected.contactItemId,
+    contactName: null,
+    matchedContactEmail: selected.recipientEmail ?? args.fromEmail,
+    method: "senderEmail",
+    confidence: "medium",
+    outboundMessageId: selected._id,
+    ownerMondayUserId: selected.mondayUserId ?? null,
+  } satisfies CorrelationResult;
+};
+
 const correlateInboundMessage = async (args: {
+  mondayAccountId: string;
+  mondayUserId: string;
   fromEmail: string | null;
+  subject: string;
+  receivedAtMs: number;
   inReplyTo: string | null;
   referencesHeader: string | null;
   conversationId: string | null;
@@ -203,6 +283,19 @@ const correlateInboundMessage = async (args: {
         ownerMondayUserId: preferred.mondayUserId ?? null,
       } satisfies CorrelationResult;
     }
+  }
+
+  if (fromEmail) {
+    const recovered = await recoverPendingOutboundCorrelation({
+      mondayAccountId: args.mondayAccountId,
+      mondayUserId: args.mondayUserId,
+      fromEmail,
+      subject: args.subject,
+      receivedAtMs: args.receivedAtMs,
+      inReplyTo: args.inReplyTo,
+      conversationId: args.conversationId,
+    });
+    if (recovered) return recovered;
   }
 
   if (
@@ -330,7 +423,13 @@ const processNotification = async (notification: GraphNotification, request: Req
   });
 
   const correlation = await correlateInboundMessage({
+    mondayAccountId: subscription.mondayAccountId,
+    mondayUserId: subscription.mondayUserId,
     fromEmail: message.fromEmail,
+    subject: message.subject,
+    receivedAtMs: message.receivedDateTime
+      ? Date.parse(message.receivedDateTime)
+      : Date.now(),
     inReplyTo: message.inReplyTo,
     referencesHeader: message.referencesHeader,
     conversationId: message.conversationId,

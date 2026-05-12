@@ -758,6 +758,17 @@ export declare const api: {
         updatedAt: number;
       } | null
     >;
+    identifyOutboundMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        conversationId?: string;
+        graphMessageId?: string;
+        internetMessageId?: string;
+        outboundMessageId: Id<"outlookOutboundMessages">;
+      },
+      { updated: boolean }
+    >;
     listExpiringGraphSubscriptions: FunctionReference<
       "query",
       "public",
