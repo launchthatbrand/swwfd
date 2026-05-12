@@ -45,6 +45,34 @@ const splitEmailList = (value: string | null | undefined) => {
   );
 };
 
+const sleep = async (ms: number) =>
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const findRecentlySentMessageWithRetry = async (args: {
+  accessToken: string;
+  recipientEmail: string;
+  subject: string;
+  sentAfterMs: number;
+}) => {
+  const retryDelaysMs = [300, 700, 1_200, 1_800, 2_500];
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
+    const message = await findRecentlySentMessage({
+      accessToken: args.accessToken,
+      recipientEmail: args.recipientEmail,
+      subject: args.subject,
+      sentAfterMs: args.sentAfterMs,
+      maxResults: 50,
+    });
+    if (message) return message;
+    if (attempt < retryDelaysMs.length) {
+      await sleep(retryDelaysMs[attempt] ?? 500);
+    }
+  }
+  return null;
+};
+
 export const POST = async (request: Request) => {
   try {
     const identity = await requireVerifiedMondaySession(request);
@@ -209,7 +237,7 @@ export const POST = async (request: Request) => {
       conversationId: string | null;
     } | null = null;
     try {
-      sentMessage = await findRecentlySentMessage({
+      sentMessage = await findRecentlySentMessageWithRetry({
         accessToken: refreshed.accessToken,
         recipientEmail: to,
         subject,
