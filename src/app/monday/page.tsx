@@ -1914,12 +1914,14 @@ export function MondayBoardView({
       if (sendEmailProgressUpdate) {
         try {
           const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
+          const sendProgressDateTime = new Date().toISOString();
           let updateData: MondayCreateRecordUpdateResponse;
           if (canCreateUpdatesAsLoggedInMondayUser) {
             const update = await createMondayRecordUpdateAsContextUser({
               itemId: targetRecordId,
               body: sendEmailProgressUpdate.body,
               updateType: sendEmailProgressUpdate.updateType,
+              dateTime: sendProgressDateTime,
             });
             updateData = { ok: true, update };
           } else {
@@ -1935,6 +1937,7 @@ export function MondayBoardView({
                 body: JSON.stringify({
                   body: sendEmailProgressUpdate.body,
                   updateType: sendEmailProgressUpdate.updateType,
+                  dateTime: sendProgressDateTime,
                 }),
               },
             );
@@ -2616,6 +2619,7 @@ export function MondayBoardView({
     body: string;
     updateType?: ContactUpdateType;
     date?: string;
+    dateTime?: string;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -2631,7 +2635,16 @@ export function MondayBoardView({
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
     };
-    if (args.date) {
+    const normalizedDateTime = args.dateTime?.trim();
+    const parsedDateTime = normalizedDateTime
+      ? new Date(normalizedDateTime)
+      : null;
+    if (parsedDateTime && !Number.isNaN(parsedDateTime.getTime())) {
+      columnValues["date0"] = {
+        date: parsedDateTime.toISOString().slice(0, 10),
+        time: parsedDateTime.toISOString().slice(11, 19),
+      };
+    } else if (args.date) {
       columnValues["date0"] = { date: args.date };
     }
 

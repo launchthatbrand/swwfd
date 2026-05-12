@@ -3466,6 +3466,7 @@ export const createMondayRecordUpdate = async (args: {
   body: string;
   updateType?: MondayUpdateType;
   date?: string;
+  dateTime?: string;
   methodOfCommunication?: string;
   subitemNameOverride?: string;
 }) => {
@@ -3555,9 +3556,24 @@ export const createMondayRecordUpdate = async (args: {
       ? "General Update"
       : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
   const methodOfCommunication = args.methodOfCommunication?.trim();
+  const normalizedDateTime = args.dateTime?.trim();
+  const parsedDateTime = normalizedDateTime
+    ? new Date(normalizedDateTime)
+    : null;
+  const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+  const normalizedDate = args.date?.trim();
   const columnValues: Record<string, unknown> = {
     [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
-    ...(args.date ? { [SUBITEM_DATE_COLUMN_ID]: { date: args.date } } : {}),
+    ...(hasValidDateTime
+      ? {
+          [SUBITEM_DATE_COLUMN_ID]: {
+            date: parsedDateTime.toISOString().slice(0, 10),
+            time: parsedDateTime.toISOString().slice(11, 19),
+          },
+        }
+      : normalizedDate
+        ? { [SUBITEM_DATE_COLUMN_ID]: { date: normalizedDate } }
+        : {}),
     ...(methodOfCommunication
       ? { [SUBITEM_METHOD_COLUMN_ID]: { label: methodOfCommunication } }
       : {}),
