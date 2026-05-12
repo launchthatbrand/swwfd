@@ -4,7 +4,12 @@ import { env } from "~/env";
 import { callMondayGraphQL, upsertMondayTouchRecord } from "./client";
 
 const MONTHLY_BOARD_RELATION_COLUMN_ID = "board_relation__1";
-const DEFAULT_MONTHLY_BOARD_ID = "18406885282";
+const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
+
+export interface MonthlyBoardMapping {
+  monthKey: string;
+  boardId: string;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,6 +152,26 @@ const parseSubitemBoardIdFromSubtasksColumn = (column: MondayColumn | null) => {
   if (raw == null) return null;
   const id = String(raw).trim();
   return id.length > 0 ? id : null;
+};
+
+const resolveMonthKeyFromIso = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 7);
+};
+
+const normalizeMonthlyBoardMappings = (values: MonthlyBoardMapping[]) => {
+  const deduped = new Map<string, MonthlyBoardMapping>();
+  for (const entry of values) {
+    const monthKey = entry.monthKey.trim();
+    const boardId = entry.boardId.trim();
+    if (!MONTH_KEY_PATTERN.test(monthKey) || boardId.length === 0) continue;
+    deduped.set(monthKey, { monthKey, boardId });
+  }
+  return Array.from(deduped.values()).sort((a, b) =>
+    a.monthKey.localeCompare(b.monthKey),
+  );
 };
 
 // ---------------------------------------------------------------------------
@@ -339,6 +364,7 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
     items?: Array<{
       id?: string;
       name?: string;
+      created_at?: string;
       column_values?: Array<{
         id?: string;
         value?: string;
@@ -354,6 +380,7 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
       items(ids: $itemIds) {
         id
         name
+        created_at
         column_values {
           id
           value
@@ -365,7 +392,15 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
     }`,
     { itemIds: [itemId] },
   );
-  return data.items?.[0] ?? null;
+  const item = data.items?.[0];
+  if (!item) return null;
+  return {
+    id: item.id ?? "",
+    name: item.name ?? "",
+    createdAt: item.created_at ?? null,
+    columnValues: item.column_values ?? [],
+    subitems: item.subitems ?? [],
+  };
 };
 
 const fetchLinkedItemWithDetails = async (itemId: string) => {
@@ -512,17 +547,47 @@ const updateProgressColumn = async (boardId: string, itemId: string, columnId: s
 
 export const syncContactFromConnectedBoards = async (
   itemId: string,
-  options?: { dryRun?: boolean; ownerId?: string; monthlyBoardId?: string },
+  options?: {
+    dryRun?: boolean;
+    ownerId?: string;
+    monthlyBoardId?: string;
+    monthlyBoardMappings?: MonthlyBoardMapping[];
+  },
 ): Promise<SyncResult> => {
   const boardId = env.MONDAY_BOARD_ID?.trim() ?? "";
   if (!boardId) throw new Error("Missing MONDAY_BOARD_ID");
 
   const warnings: string[] = [];
-  const monthlyBoardId = options?.monthlyBoardId?.trim() || DEFAULT_MONTHLY_BOARD_ID;
 
   // 1. Fetch contact item from the API board
   const contactItem = await fetchContactItem(boardId, itemId);
   if (!contactItem) throw new Error(`Contact item ${itemId} not found`);
+
+  const normalizedMappings = normalizeMonthlyBoardMappings(
+    options?.monthlyBoardMappings ?? [],
+  );
+  const contactMonthKey = resolveMonthKeyFromIso(contactItem.createdAt);
+  const mappedMonthlyBoardId = contactMonthKey
+    ? normalizedMappings.find((entry) => entry.monthKey === contactMonthKey)?.boardId ??
+      ""
+    : "";
+  const monthlyBoardId = options?.monthlyBoardId?.trim() || mappedMonthlyBoardId;
+  if (!monthlyBoardId) {
+    return {
+      ok: true,
+      linkedItemCount: 0,
+      createdParentUpdates: 0,
+      createdSubitems: 0,
+      createdSubitemUpdates: 0,
+      updatedProgressColumns: 0,
+      skippedSubitems: 0,
+      warnings: [
+        contactMonthKey
+          ? `No monthly board mapping found for ${contactMonthKey}`
+          : "Contact created date missing; unable to resolve monthly board mapping",
+      ],
+    };
+  }
 
   // 2. Reverse lookup: find items on the monthly board whose board_relation__1
   //    links back to this API board item

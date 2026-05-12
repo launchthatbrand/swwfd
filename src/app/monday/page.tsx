@@ -205,6 +205,7 @@ const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
   adminUserIds: [MASTER_ADMIN_USER_ID],
   employeeUserIds: [],
   replyToEmails: [],
+  monthlyBoardMappings: [],
 };
 
 export function MondayBoardView({
@@ -459,14 +460,37 @@ export function MondayBoardView({
         .filter((value) => value.length > 0),
     );
   }, []);
+  const normalizeMonthlyBoardMappings = useCallback(
+    (values: MondayPlatformSettings["monthlyBoardMappings"]) => {
+      const deduped = new Map<string, { monthKey: string; boardId: string }>();
+      for (const entry of values) {
+        const monthKey = entry.monthKey.trim();
+        const boardId = entry.boardId.trim();
+        if (!/^\d{4}-\d{2}$/.test(monthKey) || boardId.length === 0) continue;
+        deduped.set(monthKey, { monthKey, boardId });
+      }
+      return Array.from(deduped.values()).sort((a, b) =>
+        a.monthKey.localeCompare(b.monthKey),
+      );
+    },
+    [],
+  );
   const platformSettingsNormalized = useMemo(
     () => ({
       ...platformSettings,
       adminUserIds: normalizeUserIdList(platformSettings.adminUserIds),
       employeeUserIds: normalizeUserIdList(platformSettings.employeeUserIds),
       replyToEmails: normalizeReplyToEmailList(platformSettings.replyToEmails),
+      monthlyBoardMappings: normalizeMonthlyBoardMappings(
+        platformSettings.monthlyBoardMappings,
+      ),
     }),
-    [normalizeReplyToEmailList, normalizeUserIdList, platformSettings],
+    [
+      normalizeMonthlyBoardMappings,
+      normalizeReplyToEmailList,
+      normalizeUserIdList,
+      platformSettings,
+    ],
   );
   const platformSettingsDraftNormalized = useMemo(
     () => ({
@@ -474,16 +498,28 @@ export function MondayBoardView({
       adminUserIds: normalizeUserIdList(platformSettingsDraft.adminUserIds),
       employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
       replyToEmails: normalizeReplyToEmailList(platformSettingsDraft.replyToEmails),
+      monthlyBoardMappings: normalizeMonthlyBoardMappings(
+        platformSettingsDraft.monthlyBoardMappings,
+      ),
     }),
-    [normalizeReplyToEmailList, normalizeUserIdList, platformSettingsDraft],
+    [
+      normalizeMonthlyBoardMappings,
+      normalizeReplyToEmailList,
+      normalizeUserIdList,
+      platformSettingsDraft,
+    ],
   );
+  const platformMappingsSignature = (mappings: MondayPlatformSettings["monthlyBoardMappings"]) =>
+    mappings.map((entry) => `${entry.monthKey}:${entry.boardId}`).join(",");
   const hasUnsavedPlatformSettings =
     platformSettingsNormalized.adminUserIds.join(",") !==
       platformSettingsDraftNormalized.adminUserIds.join(",") ||
     platformSettingsNormalized.employeeUserIds.join(",") !==
       platformSettingsDraftNormalized.employeeUserIds.join(",") ||
     platformSettingsNormalized.replyToEmails.join(",") !==
-      platformSettingsDraftNormalized.replyToEmails.join(",");
+      platformSettingsDraftNormalized.replyToEmails.join(",") ||
+    platformMappingsSignature(platformSettingsNormalized.monthlyBoardMappings) !==
+      platformMappingsSignature(platformSettingsDraftNormalized.monthlyBoardMappings);
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
     !hasForcedOwnerScope &&
@@ -1435,6 +1471,10 @@ export function MondayBoardView({
       outlookStatusQuery.data?.callbackPath ?? "/api/monday/email/outlook/callback";
     return `${window.location.origin}${path}`;
   }, [outlookStatusQuery.data?.callbackPath]);
+  const monthlyWebhookUrl = useMemo(() => {
+    if (typeof window === "undefined") return "/api/monday/routing/monthly-webhook";
+    return `${window.location.origin}/api/monday/routing/monthly-webhook`;
+  }, []);
 
   const handleConnectOutlook = async () => {
     if (!sessionToken) {
@@ -1527,6 +1567,21 @@ export function MondayBoardView({
       toast.error(`Invalid reply-to emails: ${invalidReplyToEmails.join(", ")}`);
       return;
     }
+    const normalizedMonthlyBoardMappings = normalizeMonthlyBoardMappings(
+      platformSettingsDraft.monthlyBoardMappings,
+    );
+    const invalidMonthlyMappings = platformSettingsDraft.monthlyBoardMappings.filter(
+      (entry) =>
+        entry.monthKey.trim().length > 0 &&
+        (!/^\d{4}-\d{2}$/.test(entry.monthKey.trim()) ||
+          entry.boardId.trim().length === 0),
+    );
+    if (invalidMonthlyMappings.length > 0) {
+      toast.error(
+        "Each monthly board mapping row requires a valid month (YYYY-MM) and board ID.",
+      );
+      return;
+    }
 
     const nextPayload: MondayPlatformSettings = {
       masterAdminUserId: masterAdminUserId,
@@ -1536,6 +1591,7 @@ export function MondayBoardView({
       ]),
       employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
       replyToEmails: normalizedReplyToEmails,
+      monthlyBoardMappings: normalizedMonthlyBoardMappings,
     };
 
     setIsSavingPlatformSettings(true);
@@ -1551,6 +1607,7 @@ export function MondayBoardView({
           adminUserIds: nextPayload.adminUserIds,
           employeeUserIds: nextPayload.employeeUserIds,
           replyToEmails: nextPayload.replyToEmails,
+          monthlyBoardMappings: nextPayload.monthlyBoardMappings,
         }),
       });
       const data = (await response.json()) as MondayPlatformSettingsResponse;
@@ -4450,6 +4507,14 @@ export function MondayBoardView({
                         </TabsTrigger>
                     {isMasterAdmin ? (
                       <TabsTrigger
+                        value="monthly-board-mapping"
+                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      >
+                        Monthly Board Mapping
+                      </TabsTrigger>
+                    ) : null}
+                    {isMasterAdmin ? (
+                      <TabsTrigger
                         value="platform-settings"
                         className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                       >
@@ -5225,6 +5290,142 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
+                    {isMasterAdmin ? (
+                      <TabsContent value="monthly-board-mapping" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Monthly Board Mapping</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure which monthly board should sync by month/year.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium">Mappings</p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const currentMonthKey = new Date()
+                                    .toISOString()
+                                    .slice(0, 7);
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    monthlyBoardMappings: [
+                                      ...prev.monthlyBoardMappings,
+                                      { monthKey: currentMonthKey, boardId: "" },
+                                    ],
+                                  }));
+                                }}
+                              >
+                                Add row
+                              </Button>
+                            </div>
+                            {platformSettingsDraft.monthlyBoardMappings.length === 0 ? (
+                              <p className="text-muted-foreground text-xs">
+                                No mappings yet. Add at least one month/year to board ID mapping.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {platformSettingsDraft.monthlyBoardMappings.map(
+                                  (mapping, index) => (
+                                    <div
+                                      key={`${mapping.monthKey}-${mapping.boardId}-${index}`}
+                                      className="grid gap-2 md:grid-cols-[180px_1fr_auto]"
+                                    >
+                                      <Input
+                                        type="month"
+                                        value={mapping.monthKey}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...entry, monthKey: value }
+                                                  : entry,
+                                              ),
+                                          }));
+                                        }}
+                                      />
+                                      <Input
+                                        value={mapping.boardId}
+                                        onChange={(event) => {
+                                          const value = event.target.value.trim();
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...entry, boardId: value }
+                                                  : entry,
+                                              ),
+                                          }));
+                                        }}
+                                        placeholder="Monthly board ID"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.filter(
+                                                (_, entryIndex) => entryIndex !== index,
+                                              ),
+                                          }));
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                            <p className="text-xs font-semibold tracking-wide uppercase">
+                              Monthly Board Webhook URL
+                            </p>
+                            <p className="mt-1 break-all font-mono text-xs">
+                              {monthlyWebhookUrl}
+                            </p>
+                            <p className="text-muted-foreground mt-2 text-xs">
+                              Configure this URL as a webhook on each mapped monthly board.
+                              New monthly updates and subitem changes will sync to the linked
+                              contact in the API board.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                setPlatformSettingsDraft(platformSettings);
+                              }}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                void handleSavePlatformSettings(
+                                  "Monthly board mappings updated",
+                                );
+                              }}
+                            >
+                              {isSavingPlatformSettings ? "Saving..." : "Save mappings"}
+                            </Button>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
                     {isMasterAdmin ? (
                       <TabsContent value="platform-settings" className="mt-0">
                         <div className="space-y-4">
