@@ -268,7 +268,7 @@ export const fetchGraphMessageById = async (args: {
     {
       query: {
         $select:
-          "id,internetMessageId,conversationId,subject,body,uniqueBody,bodyPreview,from,replyTo,toRecipients,ccRecipients,inReplyTo,internetMessageHeaders,receivedDateTime,createdDateTime",
+          "id,internetMessageId,conversationId,subject,body,uniqueBody,bodyPreview,from,replyTo,toRecipients,ccRecipients,internetMessageHeaders,receivedDateTime,createdDateTime",
       },
     },
   );
@@ -288,7 +288,9 @@ export const fetchGraphMessageById = async (args: {
     replyToEmails: unwrapRecipientEmails(message.replyTo),
     toEmails: unwrapRecipientEmails(message.toRecipients),
     ccEmails: unwrapRecipientEmails(message.ccRecipients),
-    inReplyTo: message.inReplyTo?.trim() ?? null,
+    // Graph v1.0 message payload doesn't expose an inReplyTo property.
+    // Use RFC 5322 internet header for correlation.
+    inReplyTo: getHeaderValue(message.internetMessageHeaders, "in-reply-to"),
     referencesHeader: getHeaderValue(message.internetMessageHeaders, "references"),
     receivedDateTime: message.receivedDateTime?.trim() ?? null,
     createdDateTime: message.createdDateTime?.trim() ?? null,
