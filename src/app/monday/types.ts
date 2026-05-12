@@ -250,6 +250,10 @@ export interface MondayPlatformSettings {
   adminUserIds: string[];
   employeeUserIds: string[];
   replyToEmails: string[];
+  monthlyBoardMappings: Array<{
+    monthKey: string;
+    boardId: string;
+  }>;
 }
 
 export interface MondayFeatureFlagsResponse {

@@ -230,6 +230,7 @@ export type DataModel = {
       emailMarketingEnabled: boolean;
       employeeUserIds?: Array<string>;
       key: string;
+      monthlyBoardMappings?: Array<{ boardId: string; monthKey: string }>;
       replyToEmails?: Array<string>;
       updatedAt: number;
       updatedByMondayUserId: string;
@@ -243,6 +244,7 @@ export type DataModel = {
       | "emailMarketingEnabled"
       | "employeeUserIds"
       | "key"
+      | "monthlyBoardMappings"
       | "replyToEmails"
       | "updatedAt"
       | "updatedByMondayUserId";

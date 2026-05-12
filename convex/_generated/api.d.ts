@@ -245,6 +245,7 @@ export declare const api: {
         adminUserIds: Array<string>;
         employeeUserIds: Array<string>;
         masterAdminUserId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
       }
     >;
@@ -260,6 +261,7 @@ export declare const api: {
       {
         adminUserIds: Array<string>;
         employeeUserIds: Array<string>;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
         updatedByMondayUserId: string;
       },
@@ -267,6 +269,7 @@ export declare const api: {
         adminUserIds: Array<string>;
         employeeUserIds: Array<string>;
         masterAdminUserId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
       }
     >;

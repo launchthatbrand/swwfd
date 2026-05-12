@@ -35,6 +35,9 @@ export const POST = async (
     apiGenerated.mondaySettings.getPlatformSettings,
     {},
   );
+  const monthlyBoardMappings = Array.isArray(platformSettings.monthlyBoardMappings)
+    ? platformSettings.monthlyBoardMappings
+    : [];
   const isAdmin =
     identity.userId === MASTER_ADMIN_USER_ID ||
     platformSettings.adminUserIds.includes(identity.userId);
@@ -58,6 +61,7 @@ export const POST = async (
     const result = await syncContactFromConnectedBoards(itemId.trim(), {
       dryRun: body.dryRun ?? false,
       ownerId: body.ownerId ?? identity.userId,
+      monthlyBoardMappings,
     });
     return toJson(result);
   } catch (error) {

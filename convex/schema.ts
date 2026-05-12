@@ -195,6 +195,14 @@ export default defineSchema({
     adminUserIds: v.optional(v.array(v.string())),
     employeeUserIds: v.optional(v.array(v.string())),
     replyToEmails: v.optional(v.array(v.string())),
+    monthlyBoardMappings: v.optional(
+      v.array(
+        v.object({
+          monthKey: v.string(),
+          boardId: v.string(),
+        }),
+      ),
+    ),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
   }).index("by_key", ["key"]),

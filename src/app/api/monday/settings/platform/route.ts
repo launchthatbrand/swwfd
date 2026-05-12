@@ -14,10 +14,28 @@ const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
 };
 
+const normalizePlatformSettingsPayload = (
+  value: Record<string, unknown> | null | undefined,
+) => {
+  return {
+    masterAdminUserId:
+      typeof value?.masterAdminUserId === "string"
+        ? value.masterAdminUserId
+        : MASTER_ADMIN_USER_ID,
+    adminUserIds: parseStringArray(value?.adminUserIds) ?? [MASTER_ADMIN_USER_ID],
+    employeeUserIds: parseStringArray(value?.employeeUserIds) ?? [],
+    replyToEmails: (parseStringArray(value?.replyToEmails) ?? []).map((email) =>
+      email.toLowerCase(),
+    ),
+    monthlyBoardMappings: parseMonthlyBoardMappings(value?.monthlyBoardMappings) ?? [],
+  };
+};
+
 interface PlatformSettingsBody {
   adminUserIds?: unknown;
   employeeUserIds?: unknown;
   replyToEmails?: unknown;
+  monthlyBoardMappings?: unknown;
 }
 
 const parseStringArray = (value: unknown) => {
@@ -31,14 +49,37 @@ const parseStringArray = (value: unknown) => {
     .filter((entry, index, entries) => entries.indexOf(entry) === index);
 };
 
+const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
+
+const parseMonthlyBoardMappings = (value: unknown) => {
+  if (!Array.isArray(value)) return null;
+  const deduped = new Map<string, { monthKey: string; boardId: string }>();
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const rawMonthKey = (entry as { monthKey?: unknown }).monthKey;
+    const rawBoardId = (entry as { boardId?: unknown }).boardId;
+    if (typeof rawMonthKey !== "string" || typeof rawBoardId !== "string") {
+      return null;
+    }
+    const monthKey = rawMonthKey.trim();
+    const boardId = rawBoardId.trim();
+    if (!MONTH_KEY_PATTERN.test(monthKey) || boardId.length === 0) continue;
+    deduped.set(monthKey, { monthKey, boardId });
+  }
+  return Array.from(deduped.values()).sort((a, b) =>
+    a.monthKey.localeCompare(b.monthKey),
+  );
+};
+
 export const GET = async (request: Request) => {
   try {
     await requireVerifiedMondaySession(request);
     const convex = getConvexHttpClient();
-    const platformSettings = await convex.query(
+    const rawPlatformSettings = (await convex.query(
       apiGenerated.mondaySettings.getPlatformSettings,
       {},
-    );
+    )) as Record<string, unknown>;
+    const platformSettings = normalizePlatformSettingsPayload(rawPlatformSettings);
     return toJson({ ok: true, platformSettings });
   } catch (error) {
     const message =
@@ -58,13 +99,21 @@ export const POST = async (request: Request) => {
   const adminUserIds = parseStringArray(body.adminUserIds);
   const employeeUserIds = parseStringArray(body.employeeUserIds);
   const replyToEmailsRaw = parseStringArray(body.replyToEmails);
+  const monthlyBoardMappings = parseMonthlyBoardMappings(
+    body.monthlyBoardMappings,
+  );
 
-  if (!adminUserIds || !employeeUserIds || !replyToEmailsRaw) {
+  if (
+    !adminUserIds ||
+    !employeeUserIds ||
+    !replyToEmailsRaw ||
+    !monthlyBoardMappings
+  ) {
     return toJson(
       {
         ok: false,
         error:
-          "adminUserIds, employeeUserIds, and replyToEmails must be string arrays",
+          "adminUserIds, employeeUserIds, replyToEmails, and monthlyBoardMappings must be valid arrays",
       },
       400,
     );
@@ -91,15 +140,17 @@ export const POST = async (request: Request) => {
     }
 
     const convex = getConvexHttpClient();
-    const platformSettings = await convex.mutation(
+    const rawPlatformSettings = (await convex.mutation(
       apiGenerated.mondaySettings.setPlatformSettings,
       {
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        monthlyBoardMappings,
         updatedByMondayUserId: identity.userId,
       },
-    );
+    )) as Record<string, unknown>;
+    const platformSettings = normalizePlatformSettingsPayload(rawPlatformSettings);
 
     return toJson({ ok: true, platformSettings });
   } catch (error) {
