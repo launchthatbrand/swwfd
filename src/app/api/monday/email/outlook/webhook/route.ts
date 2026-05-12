@@ -489,6 +489,7 @@ const processNotification = async (notification: GraphNotification, request: Req
     itemId: correlation.contactItemId,
     body: mondayBody,
     updateType: "general",
+    dateTime: message.receivedDateTime ?? undefined,
     date: toDateOnly(message.receivedDateTime),
     methodOfCommunication: "Email",
     subitemNameOverride: "Inbound Email Reply",
