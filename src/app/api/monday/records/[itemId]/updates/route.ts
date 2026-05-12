@@ -55,6 +55,7 @@ interface CreateUpdateBody {
   body?: string;
   updateType?: string;
   date?: string;
+  dateTime?: string;
 }
 
 export const POST = async (
@@ -92,6 +93,7 @@ export const POST = async (
       body: updateBody,
       updateType: (payload.updateType as "general") ?? "general",
       date: payload.date,
+      dateTime: payload.dateTime,
     });
     return toJson({
       ok: true,
