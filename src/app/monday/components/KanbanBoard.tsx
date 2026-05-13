@@ -32,21 +32,54 @@ export const KanbanBoard = ({
   const boardRef = useRef<HTMLDivElement>(null);
   const [columnHeight, setColumnHeight] = useState("calc(100vh - 200px)");
 
-  useEffect(() => {
-    const measure = () => {
-      if (!boardRef.current) return;
-      const rect = boardRef.current.getBoundingClientRect();
-      const available = window.innerHeight - rect.top - 16;
-      setColumnHeight(`${Math.max(available, 200)}px`);
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    const timer = setTimeout(measure, 100);
-    return () => {
-      window.removeEventListener("resize", measure);
-      clearTimeout(timer);
-    };
+  const measure = useCallback(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const rect = board.getBoundingClientRect();
+    const available = window.innerHeight - rect.top - 16;
+    const nextHeight = `${Math.max(available, 200)}px`;
+    setColumnHeight((prev) => (prev === nextHeight ? prev : nextHeight));
   }, []);
+
+  useEffect(() => {
+    const scheduleMeasure = () => {
+      window.requestAnimationFrame(() => {
+        measure();
+      });
+    };
+
+    scheduleMeasure();
+    window.addEventListener("resize", measure);
+    const timer = window.setTimeout(measure, 120);
+
+    const board = boardRef.current;
+    let resizeObserver: ResizeObserver | null = null;
+    if (board && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => {
+        scheduleMeasure();
+      });
+      resizeObserver.observe(board);
+    }
+
+    let fontsCancelled = false;
+    const fontsReady = document.fonts?.ready;
+    if (fontsReady) {
+      void fontsReady
+        .then(() => {
+          if (!fontsCancelled) scheduleMeasure();
+        })
+        .catch(() => {
+          // ignore font readiness failures
+        });
+    }
+
+    return () => {
+      fontsCancelled = true;
+      window.removeEventListener("resize", measure);
+      window.clearTimeout(timer);
+      resizeObserver?.disconnect();
+    };
+  }, [isLoading, measure, records.length]);
 
   const columns = useMemo(
     () => buildKanbanColumns(records, approvalSteps),
@@ -104,7 +137,7 @@ export const KanbanBoard = ({
 
   if (isLoading) {
     return (
-      <div className="flex gap-3 overflow-x-auto pb-4">
+      <div ref={boardRef} className="flex gap-3 overflow-x-auto pb-4">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="w-72 shrink-0 space-y-2 rounded-xl border bg-muted/30 p-3">
             <div className="h-5 w-24 animate-pulse rounded bg-muted" />

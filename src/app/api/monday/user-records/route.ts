@@ -6,6 +6,11 @@ import { requireVerifiedMondaySession } from "~/server/monday/session";
 export const runtime = "nodejs";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
+const ENABLE_WHOLE_MONTH_HYDRATION_BY_DEFAULT = false;
+const METADATA_CACHE_TTL_MS = 60_000;
+const CONTACT_CHUNK_CONCURRENCY = 4;
+const CONTACT_CHUNK_RETRY_LIMIT = 2;
+const CONTACT_CHUNK_RETRY_BASE_DELAY_MS = 250;
 
 type MondayColumnValue = {
   id?: string | null;
@@ -250,6 +255,49 @@ interface ContactBoardMeta {
   progressColumnConfig: ProgressColumnConfig | null;
 }
 
+interface TouchColumns {
+  touchDateColumnId: string | null;
+  ownerIdColumnId: string;
+  peopleColumnId: string | null;
+  relationColumnIds: string[];
+  contactItemIdColumnId: string | null;
+  sourceColumnId: string | null;
+}
+
+type CacheEntry<TValue> = {
+  value: TValue;
+  expiresAt: number;
+};
+
+const touchColumnsCache = new Map<string, CacheEntry<TouchColumns>>();
+const contactBoardMetaCache = new Map<string, CacheEntry<ContactBoardMeta>>();
+
+const readCachedValue = <TValue>(
+  cache: Map<string, CacheEntry<TValue>>,
+  key: string,
+): TValue | null => {
+  const now = Date.now();
+  const existing = cache.get(key);
+  if (!existing) return null;
+  if (existing.expiresAt <= now) {
+    cache.delete(key);
+    return null;
+  }
+  return existing.value;
+};
+
+const writeCachedValue = <TValue>(
+  cache: Map<string, CacheEntry<TValue>>,
+  key: string,
+  value: TValue,
+) => {
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + METADATA_CACHE_TTL_MS,
+  });
+  return value;
+};
+
 const resolveContactBoardMeta = async (
   contactBoardId: string,
 ): Promise<ContactBoardMeta> => {
@@ -411,7 +459,7 @@ const parseBatteryProgressValue = (
   return text?.trim() ? parseNumber(text) : null;
 };
 
-const resolveTouchColumns = async (touchBoardId: string) => {
+const resolveTouchColumns = async (touchBoardId: string): Promise<TouchColumns> => {
   interface Data {
     boards?: Array<{
       columns?: Array<{ id?: string | null; title?: string | null; type?: string | null }>;
@@ -477,17 +525,40 @@ const resolveTouchColumns = async (touchBoardId: string) => {
   };
 };
 
+const getCachedTouchColumns = async (touchBoardId: string): Promise<TouchColumns> => {
+  const cached = readCachedValue(touchColumnsCache, touchBoardId);
+  if (cached) return cached;
+  const resolved = await resolveTouchColumns(touchBoardId);
+  return writeCachedValue(touchColumnsCache, touchBoardId, resolved);
+};
+
+const getCachedContactBoardMeta = async (
+  contactBoardId: string,
+): Promise<ContactBoardMeta> => {
+  const cached = readCachedValue(contactBoardMetaCache, contactBoardId);
+  if (cached) return cached;
+  const resolved = await resolveContactBoardMeta(contactBoardId);
+  return writeCachedValue(contactBoardMetaCache, contactBoardId, resolved);
+};
+
 const fetchTouchPage = async (args: {
   touchBoardId: string;
   cursor: string | null;
   limit: number;
   linkedBoardId?: string | null;
   relationColumnId?: string | null;
+  columnValueIds?: string[];
   dateRule?:
     | {
         touchDateColumnId: string;
         dateFrom: string;
         dateTo: string;
+      }
+    | null;
+  ownerRule?:
+    | {
+        ownerColumnId: string;
+        ownerId: string;
       }
     | null;
 }) => {
@@ -503,33 +574,53 @@ const fetchTouchPage = async (args: {
     /^[a-zA-Z0-9_]+$/.test(args.dateRule.touchDateColumnId) &&
     isIsoDateOnly(args.dateRule.dateFrom) &&
     isIsoDateOnly(args.dateRule.dateTo);
+  const canPushOwnerRule =
+    !args.cursor &&
+    !!args.ownerRule &&
+    /^[a-zA-Z0-9_]+$/.test(args.ownerRule.ownerColumnId) &&
+    /^\d+$/.test(args.ownerRule.ownerId);
   const canFetchLinkedItems =
     !!args.linkedBoardId &&
     !!args.relationColumnId &&
     /^[a-zA-Z0-9_]+$/.test(args.relationColumnId);
+  const sanitizedColumnValueIds = (args.columnValueIds ?? [])
+    .map((value) => value.trim())
+    .filter((value) => /^[a-zA-Z0-9_]+$/.test(value));
+  const canLimitColumnValues = sanitizedColumnValueIds.length > 0;
+
+  const queryRules: string[] = [];
+  if (canPushDateRule && args.dateRule) {
+    queryRules.push(`{
+      column_id: "${args.dateRule.touchDateColumnId}"
+      compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
+      operator: between
+    }`);
+  }
+  if (canPushOwnerRule && args.ownerRule) {
+    queryRules.push(`{
+      column_id: "${args.ownerRule.ownerColumnId}"
+      compare_value: ["${args.ownerRule.ownerId}"]
+      operator: any_of
+    }`);
+  }
+  const queryParams = queryRules.length
+    ? `query_params: { rules: [${queryRules.join(", ")}] }`
+    : "";
+
   const query = `
     query ListTouchItems(
       $boardId: ID!
       $limit: Int!
       ${args.cursor ? ", $cursor: String" : ""}
       ${canFetchLinkedItems ? ", $linkedBoardId: ID!, $relationColumnId: String!" : ""}
+      ${canLimitColumnValues ? ", $columnValueIds: [String!]!" : ""}
     ) {
       boards(ids: [$boardId]) {
         name
         items_page(
           limit: $limit
           ${args.cursor ? "cursor: $cursor" : ""}
-          ${
-            canPushDateRule
-              ? `query_params: {
-            rules: [{
-              column_id: "${args.dateRule.touchDateColumnId}"
-              compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
-              operator: between
-            }]
-          }`
-              : ""
-          }
+          ${queryParams}
         ) {
           cursor
           items {
@@ -547,11 +638,18 @@ const fetchTouchPage = async (args: {
                   }`
                 : ""
             }
-            column_values {
-              id
-              type
-              text
-              value
+            ${
+              canLimitColumnValues
+                ? `column_values(ids: $columnValueIds) {
+                    id
+                    text
+                    value
+                  }`
+                : `column_values {
+                    id
+                    text
+                    value
+                  }`
             }
           }
         }
@@ -568,6 +666,7 @@ const fetchTouchPage = async (args: {
           relationColumnId: args.relationColumnId,
         }
       : {}),
+    ...(canLimitColumnValues ? { columnValueIds: sanitizedColumnValueIds } : {}),
   });
   return {
     boardName: data.boards?.[0]?.name ?? null,
@@ -578,7 +677,7 @@ const fetchTouchPage = async (args: {
 
 const extractContactIdFromTouch = (
   item: MondayBoardItem,
-  columnIds: Awaited<ReturnType<typeof resolveTouchColumns>>,
+  columnIds: TouchColumns,
 ) => {
   const values = item.column_values ?? [];
   const byId = (id: string | null) => values.find((column) => column.id === id);
@@ -743,6 +842,41 @@ const parseResumeFiles = (
   }
 };
 
+const sleep = async (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
+const isRateLimitError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("(429)") || message.toLowerCase().includes("rate limit");
+};
+
+const mapWithConcurrency = async <TValue, TResult>(
+  items: TValue[],
+  concurrency: number,
+  worker: (item: TValue, index: number) => Promise<TResult>,
+) => {
+  if (items.length === 0) return [] as TResult[];
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let currentIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, async () => {
+      while (true) {
+        const nextIndex = currentIndex;
+        currentIndex += 1;
+        if (nextIndex >= items.length) break;
+        const item = items[nextIndex] as TValue;
+        results[nextIndex] = await worker(item, nextIndex);
+      }
+    }),
+  );
+
+  return results;
+};
+
 const fetchContactRecordsByIds = async (args: {
   boardId: string;
   itemIds: string[];
@@ -757,35 +891,54 @@ const fetchContactRecordsByIds = async (args: {
     chunks.push(ids.slice(index, index + MONDAY_ITEMS_BY_IDS_CHUNK_SIZE));
   }
 
-  const items: MondayBoardItem[] = [];
-  for (const chunk of chunks) {
-    interface Data {
-      items?: MondayBoardItem[];
-    }
-    const data = await callMondayGraphQL<Data>(
-      `
-        query ContactsByIds($itemIds: [ID!]) {
-          items(ids: $itemIds) {
-            id
-            name
-            url
-            updated_at
-            group {
-              title
-            }
-            column_values {
-              id
-              type
-              text
-              value
-            }
-          }
-        }
-      `,
-      { itemIds: chunk },
-    );
-    items.push(...(data.items ?? []));
+  interface Data {
+    items?: MondayBoardItem[];
   }
+
+  let rateLimitRetries = 0;
+  const fetchContactChunk = async (chunk: string[]) => {
+    let attempt = 0;
+    while (true) {
+      try {
+        const data = await callMondayGraphQL<Data>(
+          `
+            query ContactsByIds($itemIds: [ID!]) {
+              items(ids: $itemIds) {
+                id
+                name
+                url
+                updated_at
+                group {
+                  title
+                }
+                column_values {
+                  id
+                  type
+                  text
+                  value
+                }
+              }
+            }
+          `,
+          { itemIds: chunk },
+        );
+        return data.items ?? [];
+      } catch (error) {
+        if (!isRateLimitError(error) || attempt >= CONTACT_CHUNK_RETRY_LIMIT) {
+          throw error;
+        }
+        rateLimitRetries += 1;
+        const retryDelay = CONTACT_CHUNK_RETRY_BASE_DELAY_MS * 2 ** attempt;
+        attempt += 1;
+        await sleep(retryDelay);
+      }
+    }
+  };
+
+  const chunkResults = await mapWithConcurrency(chunks, CONTACT_CHUNK_CONCURRENCY, (chunk) =>
+    fetchContactChunk(chunk),
+  );
+  const items = chunkResults.flatMap((chunkItems) => chunkItems);
 
   const toContactRecord = (item: MondayBoardItem): MergedRecord => {
     const columns = item.column_values ?? [];
@@ -892,7 +1045,13 @@ const fetchContactRecordsByIds = async (args: {
       );
   }
 
-  return map;
+  return {
+    recordsById: map,
+    chunkCount: chunks.length,
+    chunkConcurrency:
+      chunks.length === 0 ? 0 : Math.min(CONTACT_CHUNK_CONCURRENCY, chunks.length),
+    rateLimitRetries,
+  };
 };
 
 export const GET = async (request: Request) => {
@@ -917,19 +1076,24 @@ export const GET = async (request: Request) => {
   const cursorStart = cursorParam && cursorParam.trim().length > 0 ? cursorParam : null;
   const limit = parseLimit(url.searchParams.get("limit"));
   const search = url.searchParams.get("search")?.trim().toLowerCase() ?? "";
-  const ownerFilter = url.searchParams.get("owner")?.trim().toLowerCase() ?? "";
+  const ownerFilterRaw = url.searchParams.get("owner")?.trim() ?? "";
+  const ownerFilter = ownerFilterRaw.toLowerCase();
   const statusFilter = url.searchParams.get("status")?.trim().toLowerCase() ?? "";
   const dateFrom = parseIsoDateOnly(url.searchParams.get("dateFrom"));
   const dateTo = parseIsoDateOnly(url.searchParams.get("dateTo"));
   const dateFromText = url.searchParams.get("dateFrom")?.trim() ?? "";
   const dateToText = url.searchParams.get("dateTo")?.trim() ?? "";
+  const hydrateWholeMonthParam =
+    url.searchParams.get("hydrateWholeMonth")?.trim().toLowerCase() ?? "";
+  const shouldHydrateWholeMonthRequested =
+    hydrateWholeMonthParam === "1" || hydrateWholeMonthParam === "true";
 
   const startedAt = Date.now();
 
   try {
     const [touchColumns, contactBoardMeta] = await Promise.all([
-      resolveTouchColumns(config.touchBoardId),
-      resolveContactBoardMeta(config.contactBoardId),
+      getCachedTouchColumns(config.touchBoardId),
+      getCachedContactBoardMeta(config.contactBoardId),
     ]);
     const { approvalSteps, progressColumnConfig } = contactBoardMeta;
     const canApplyDateRule =
@@ -937,25 +1101,53 @@ export const GET = async (request: Request) => {
       isIsoDateOnly(dateFromText) &&
       isIsoDateOnly(dateToText);
     const shouldHydrateWholeMonth =
+      (ENABLE_WHOLE_MONTH_HYDRATION_BY_DEFAULT || shouldHydrateWholeMonthRequested) &&
       !cursorStart &&
       canApplyDateRule &&
       search.length === 0 &&
       statusFilter.length === 0;
+    const canEarlyStopByUniqueContacts =
+      !shouldHydrateWholeMonth &&
+      ownerFilter.length === 0 &&
+      search.length === 0 &&
+      statusFilter.length === 0;
+    const uniqueContactTarget = Math.max(limit + 10, Math.ceil(limit * 1.5));
+    const ownerIdForRule = ownerFilterRaw.replace(/[^\d]/g, "");
+    const shouldTryOwnerRule = ownerIdForRule.length > 0;
+    const touchColumnValueIds = Array.from(
+      new Set(
+        [
+          touchColumns.touchDateColumnId,
+          touchColumns.ownerIdColumnId,
+          touchColumns.peopleColumnId,
+          touchColumns.contactItemIdColumnId,
+          touchColumns.sourceColumnId,
+          ...touchColumns.relationColumnIds,
+        ]
+          .map((value) => value?.trim())
+          .filter((value): value is string => !!value && value.length > 0),
+      ),
+    );
+    const relationColumnForLinkedFetch = touchColumns.relationColumnIds[0] ?? null;
 
     const matchedTouches: TouchRecord[] = [];
+    const uniqueContactIdsScanned = new Set<string>();
     let cursor: string | null = cursorStart;
     let boardName: string | null = null;
     let scanPages = 0;
-    const maxScanPages = shouldHydrateWholeMonth ? 200 : canApplyDateRule ? 10 : 25;
+    let ownerRuleDisabled = false;
+    let stoppedAfterUniqueContactTarget = false;
+    const maxScanPages = shouldHydrateWholeMonth ? 200 : canApplyDateRule ? 12 : 25;
     const maxScanDurationMs = shouldHydrateWholeMonth ? 45_000 : 12_000;
-    const maxMatchedTouches = shouldHydrateWholeMonth ? 10_000 : limit;
+    const maxMatchedTouches = shouldHydrateWholeMonth ? 10_000 : Math.max(limit * 3, limit + 20);
     while (matchedTouches.length < maxMatchedTouches && scanPages < maxScanPages) {
-      const page = await fetchTouchPage({
+      const fetchPageArgs = {
         touchBoardId: config.touchBoardId,
         cursor,
         limit: 100,
         linkedBoardId: config.contactBoardId,
-        relationColumnId: touchColumns.relationColumnIds[0] ?? null,
+        relationColumnId: relationColumnForLinkedFetch,
+        columnValueIds: touchColumnValueIds,
         dateRule:
           scanPages === 0 && canApplyDateRule && touchColumns.touchDateColumnId
             ? {
@@ -964,7 +1156,38 @@ export const GET = async (request: Request) => {
                 dateTo: dateToText,
               }
             : null,
-      });
+      };
+      let page;
+      try {
+        page = await fetchTouchPage({
+          ...fetchPageArgs,
+          ownerRule:
+            scanPages === 0 && shouldTryOwnerRule && !ownerRuleDisabled
+              ? {
+                  ownerColumnId: touchColumns.ownerIdColumnId,
+                  ownerId: ownerIdForRule,
+                }
+              : null,
+        });
+      } catch (error) {
+        if (
+          scanPages === 0 &&
+          shouldTryOwnerRule &&
+          !ownerRuleDisabled
+        ) {
+          ownerRuleDisabled = true;
+          console.warn("[MondayUserRecordsRoute] owner pushdown disabled after API error", {
+            error: error instanceof Error ? error.message : String(error),
+            ownerColumnId: touchColumns.ownerIdColumnId,
+          });
+          page = await fetchTouchPage({
+            ...fetchPageArgs,
+            ownerRule: null,
+          });
+        } else {
+          throw error;
+        }
+      }
       boardName = boardName ?? page.boardName;
       cursor = page.nextCursor;
       scanPages += 1;
@@ -1000,10 +1223,18 @@ export const GET = async (request: Request) => {
           continue;
         }
         matchedTouches.push(touch);
+        if (touch.contactId) {
+          uniqueContactIdsScanned.add(touch.contactId);
+        }
+        if (canEarlyStopByUniqueContacts && uniqueContactIdsScanned.size >= uniqueContactTarget) {
+          stoppedAfterUniqueContactTarget = true;
+          break;
+        }
         if (matchedTouches.length >= maxMatchedTouches) break;
       }
 
       if (!cursor) break;
+      if (stoppedAfterUniqueContactTarget) break;
       if (!shouldHydrateWholeMonth && matchedTouches.length >= limit) break;
       if (Date.now() - startedAt >= maxScanDurationMs) break;
     }
@@ -1027,11 +1258,12 @@ export const GET = async (request: Request) => {
           .filter((entry): entry is string => !!entry && entry.trim().length > 0),
       ),
     );
-    const contactMap = await fetchContactRecordsByIds({
+    const contactFetchResult = await fetchContactRecordsByIds({
       boardId: config.contactBoardId,
       itemIds: contactIds,
       progressColumnConfig,
     });
+    const contactMap = contactFetchResult.recordsById;
     if (matchedTouches.length > 0 && (contactIds.length === 0 || contactMap.size === 0)) {
       const sampleTouches = selectedTouches.slice(0, 5).map((touch) => ({
         touchItemId: touch.touchItemId,
@@ -1128,7 +1360,13 @@ export const GET = async (request: Request) => {
       loadedContacts: contactMap.size,
       hasNextCursor: !!cursor,
       scanPages,
+      scannedUniqueContacts: uniqueContactIdsScanned.size,
+      stoppedAfterUniqueContactTarget,
       hydratedWholeMonth: shouldHydrateWholeMonth,
+      ownerPushdownDisabled: ownerRuleDisabled,
+      contactChunkCount: contactFetchResult.chunkCount,
+      contactChunkConcurrency: contactFetchResult.chunkConcurrency,
+      contactChunkRateLimitRetries: contactFetchResult.rateLimitRetries,
       hasOwner: ownerFilter.length > 0,
       hasSearch: search.length > 0,
       hasStatus: statusFilter.length > 0,

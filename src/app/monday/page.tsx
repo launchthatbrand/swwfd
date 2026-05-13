@@ -251,6 +251,7 @@ export function MondayBoardView({
     useState<UserBoardGeneralSettings>({
       ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
     });
+  const [boardSettingsReadyOwnerId, setBoardSettingsReadyOwnerId] = useState("");
   const tableDensity = boardGeneralSettings.tableDensity;
   const [isSavingBoardGeneralSettings, setIsSavingBoardGeneralSettings] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
@@ -525,11 +526,6 @@ export function MondayBoardView({
     !hasForcedOwnerScope &&
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
-  const useUserRecordsEndpoint =
-    isTouchScopedView &&
-    !canOverrideUserScopeOwner &&
-    boardGeneralSettings.recordSource === "touched_in_month" &&
-    debouncedSearch.trim().length < 2;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";
@@ -537,6 +533,18 @@ export function MondayBoardView({
     if (ownerFromFilter.length > 0) return ownerFromFilter;
     return identity?.userId.trim() ?? "";
   }, [forcedOwnerId, hasForcedOwnerScope, identity?.userId, ownerFilter, viewMode]);
+  const shouldGateRecordsForBoardSettings =
+    isTouchScopedView && presetScopeOwnerId.length > 0;
+  const hasResolvedUserScopeOwner =
+    !isTouchScopedView || presetScopeOwnerId.length > 0;
+  const boardSettingsReady =
+    !shouldGateRecordsForBoardSettings || boardSettingsReadyOwnerId === presetScopeOwnerId;
+  const useUserRecordsEndpoint =
+    boardSettingsReady &&
+    isTouchScopedView &&
+    !canOverrideUserScopeOwner &&
+    boardGeneralSettings.recordSource === "touched_in_month" &&
+    debouncedSearch.trim().length < 2;
   const boardThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
     [boardGeneralSettings.colorTheme],
@@ -585,14 +593,18 @@ export function MondayBoardView({
       ownerFilter,
       sessionToken,
     ],
-    enabled: !!sessionToken && !staticMode,
+    enabled:
+      !!sessionToken &&
+      !staticMode &&
+      hasResolvedUserScopeOwner &&
+      boardSettingsReady,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const recordsEndpoint = useUserRecordsEndpoint
         ? "/api/monday/user-records"
         : "/api/monday/records";
       const params = new URLSearchParams();
-      params.set("limit", "100");
+      params.set("limit", useUserRecordsEndpoint ? "50" : "100");
       if (pageParam) params.set("cursor", pageParam);
       const normalizedSearch = debouncedSearch.trim();
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
@@ -600,8 +612,8 @@ export function MondayBoardView({
       if (statusFilter.trim()) params.set("status", statusFilter.trim());
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
       if (!isFullDbSearch) {
-      params.set("dateFrom", monthBounds.from);
-      params.set("dateTo", monthBounds.to);
+        params.set("dateFrom", monthBounds.from);
+        params.set("dateTo", monthBounds.to);
       }
 
       const response = await fetch(`${recordsEndpoint}?${params.toString()}`, {
@@ -618,7 +630,7 @@ export function MondayBoardView({
       return data;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    staleTime: 30_000,
+    staleTime: useUserRecordsEndpoint ? 60_000 : 30_000,
   });
 
   const shouldAutoLoadMore =
@@ -928,9 +940,18 @@ export function MondayBoardView({
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
     setActiveSavedAdvancedFilterId(null);
+    setBoardSettingsReadyOwnerId("");
     setBoardGeneralSettings({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
     setBoardGeneralSettingsDraft({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
   }, [presetScopeOwnerId]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userBoardSettingsQuery.isFetched) return;
+    setBoardSettingsReadyOwnerId((prev) =>
+      prev === presetScopeOwnerId ? prev : presetScopeOwnerId,
+    );
+  }, [presetScopeOwnerId, userBoardSettingsQuery.isFetched]);
 
   useEffect(() => {
     if (!presetScopeOwnerId) return;
@@ -945,6 +966,9 @@ export function MondayBoardView({
   useEffect(() => {
     if (!presetScopeOwnerId) return;
     if (!userBoardSettingsQuery.data) return;
+    setBoardSettingsReadyOwnerId((prev) =>
+      prev === presetScopeOwnerId ? prev : presetScopeOwnerId,
+    );
     setBoardGeneralSettings(userBoardSettingsQuery.data);
     setBoardGeneralSettingsDraft(userBoardSettingsQuery.data);
     if (isUserBoardDisplayMode(userBoardSettingsQuery.data.displayMode)) {
