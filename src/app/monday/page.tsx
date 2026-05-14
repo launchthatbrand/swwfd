@@ -2791,6 +2791,13 @@ export function MondayBoardView({
     ) => {
       if (!sessionToken) return;
       const syncKey = record.id;
+      const resolvedSyncOwnerId =
+        record.ownerIds.map((ownerId) => ownerId.trim()).find((ownerId) => ownerId.length > 0) ??
+        record.ownerProfiles
+          .map((profile) => profile.id.trim())
+          .find((ownerId) => ownerId.length > 0) ??
+        identity?.userId?.trim() ??
+        "";
       setSyncingContactIds((prev) => new Set(prev).add(syncKey));
       try {
         const targetId = resolveContactUpdateTargetRecordId(record);
@@ -2803,7 +2810,7 @@ export function MondayBoardView({
               "x-monday-session-token": sessionToken,
             },
             body: JSON.stringify({
-              ownerId: identity?.userId,
+              ownerId: resolvedSyncOwnerId.length > 0 ? resolvedSyncOwnerId : undefined,
               monthlyBoardId: options?.monthlyBoardId,
             }),
           },
