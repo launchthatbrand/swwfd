@@ -1023,7 +1023,7 @@ export type DataModel = {
   };
   outlookOutboundMessages: {
     document: {
-      actingMondayUserId: string;
+      actingMondayUserId?: string;
       connectionEmail: string | null;
       contactItemId: string | null;
       conversationId: string | null;
