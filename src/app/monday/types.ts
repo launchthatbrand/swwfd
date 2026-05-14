@@ -100,6 +100,26 @@ export interface OutlookConnectionStatusResponse {
   } | null;
 }
 
+export interface OutlookTeamMailbox {
+  mondayUserId: string;
+  name: string | null;
+  userEmail: string | null;
+  connected: boolean;
+  mailboxEmail: string | null;
+  mailboxDisplayName: string | null;
+  accessTokenExpiresAt: number | null;
+  updatedAt: number | null;
+  isCurrentUser: boolean;
+  isContactOwner: boolean;
+}
+
+export interface OutlookTeamMailboxesResponse {
+  ok: boolean;
+  error?: string;
+  mailboxes?: OutlookTeamMailbox[];
+  defaultSenderUserId?: string | null;
+}
+
 export interface MondayRecordEditOptionsResponse {
   ok: boolean;
   error?: string;
@@ -266,6 +286,37 @@ export interface MondayPlatformSettingsResponse {
   ok: boolean;
   error?: string;
   platformSettings?: MondayPlatformSettings;
+}
+
+export type MondayBulkSyncJobStatus = "running" | "done" | "failed" | "cancelled";
+
+export interface MondayBulkSyncJob {
+  jobId: string;
+  status: MondayBulkSyncJobStatus;
+  mondayAccountId: string;
+  requestedByMondayUserId: string;
+  requestedByMondayAppClientId: string | null;
+  ownerId: string;
+  totalContacts: number;
+  nextIndex: number;
+  processedContacts: number;
+  succeededContacts: number;
+  failedContacts: number;
+  warningsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt: number | null;
+  lastError: string | null;
+}
+
+export interface MondayBulkSyncStatusResponse {
+  ok: boolean;
+  error?: string;
+  job?: MondayBulkSyncJob | null;
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  retriedContacts?: number;
 }
 
 export interface MondayUserFilterPresetsResponse {

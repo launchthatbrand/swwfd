@@ -128,6 +128,184 @@ export declare const api: {
       }>
     >;
   };
+  mondayBulkSync: {
+    cancelJob: FunctionReference<
+      "mutation",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    claimNextBatch: FunctionReference<
+      "mutation",
+      "public",
+      { batchSize?: number; jobId: Id<"mondayBulkSyncJobs"> },
+      {
+        contactItemIds: Array<string>;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        ownerId: string;
+        status: "running" | "done" | "failed" | "cancelled";
+      }
+    >;
+    createJob: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactItemIds: Array<string>;
+        mondayAccountId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        ownerId: string;
+        requestedByMondayAppClientId?: string;
+        requestedByMondayUserId: string;
+      },
+      {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    getJob: FunctionReference<
+      "query",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    getLatestJobForAccount: FunctionReference<
+      "query",
+      "public",
+      { mondayAccountId: string },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    listFailedContactIds: FunctionReference<
+      "query",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      Array<string>
+    >;
+    markJobFailed: FunctionReference<
+      "mutation",
+      "public",
+      { error: string; jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    recordBatchResults: FunctionReference<
+      "mutation",
+      "public",
+      {
+        jobId: Id<"mondayBulkSyncJobs">;
+        results: Array<{
+          contactItemId: string;
+          createdParentUpdates: number;
+          createdSubitemUpdates: number;
+          createdSubitems: number;
+          error: string | null;
+          linkedItemCount: number;
+          skippedSubitems: number;
+          status: "success" | "failed";
+          updatedProgressColumns: number;
+          warnings: Array<string>;
+        }>;
+      },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+  };
   mondayHireEventBackfill: {
     cancelBackfill: FunctionReference<
       "mutation",
@@ -588,6 +766,61 @@ export declare const api: {
       }
     >;
   };
+  mondayUsers: {
+    getByAccountAndUser: FunctionReference<
+      "query",
+      "public",
+      { mondayAccountId: string; mondayUserId: string },
+      {
+        _creationTime: number;
+        _id: Id<"mondayUsers">;
+        email: string | null;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        name: string | null;
+      } | null
+    >;
+    listByAccount: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; mondayAccountId: string },
+      Array<{
+        _creationTime: number;
+        _id: Id<"mondayUsers">;
+        email: string | null;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        name: string | null;
+      }>
+    >;
+    upsertFromSession: FunctionReference<
+      "mutation",
+      "public",
+      {
+        email?: string;
+        lastSeenAt?: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        name?: string;
+      },
+      {
+        created: boolean;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        mondayUserRecordId: Id<"mondayUsers">;
+      }
+    >;
+  };
   outlookConnections: {
     getByMondayIdentity: FunctionReference<
       "query",
@@ -741,6 +974,7 @@ export declare const api: {
       {
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
@@ -830,6 +1064,7 @@ export declare const api: {
       Array<{
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
@@ -860,6 +1095,7 @@ export declare const api: {
       Array<{
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
@@ -984,6 +1220,7 @@ export declare const api: {
       "mutation",
       "public",
       {
+        actingMondayUserId: string;
         connectionEmail?: string;
         contactItemId?: string;
         conversationId?: string;
