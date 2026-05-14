@@ -6702,6 +6702,10 @@ export function MondayBoardView({
           onSaved={handleQuestionnaireSaved}
         />
 
+        <p className="text-muted-foreground px-1 text-xs font-medium">
+          {filteredRecordCountLabel}
+        </p>
+
         {userScopedDisplayMode === "kanban" ? (
           <KanbanBoard
             records={filteredRecords}
