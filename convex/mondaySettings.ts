@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
 const GLOBAL_SETTINGS_KEY = "global";
-const DEFAULT_EMAIL_MARKETING_ENABLED = true;
+const DEFAULT_EMAIL_MARKETING_ENABLED = false;
 const MASTER_ADMIN_USER_ID = "53441186";
 const DEFAULT_ADMIN_USER_IDS = ["38959704", MASTER_ADMIN_USER_ID];
 

@@ -5,7 +5,7 @@ import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
 import { getConvexHttpClient } from "~/server/convexHttp";
 import {
-  findMondayContactsByEmail,
+  fetchMondayItemColumns,
   resolveMondayContactOwnerId,
 } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
@@ -30,6 +30,8 @@ const toJson = (body: unknown, status = 200) => {
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const normalizeUserId = (value: string | null | undefined) => value?.trim() ?? "";
 const splitEmailList = (value: string | null | undefined) => {
   if (!value) {
     return [];
@@ -43,6 +45,45 @@ const splitEmailList = (value: string | null | undefined) => {
         .filter((entry) => entry.length > 0),
     ),
   );
+};
+
+const parseEmailFromColumnValue = (value: string | null) => {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as {
+      email?: unknown;
+      address?: unknown;
+      text?: unknown;
+    };
+    if (typeof parsed.email === "string" && parsed.email.trim().length > 0) {
+      return normalizeEmail(parsed.email);
+    }
+    if (typeof parsed.address === "string" && parsed.address.trim().length > 0) {
+      return normalizeEmail(parsed.address);
+    }
+    if (typeof parsed.text === "string" && parsed.text.trim().length > 0) {
+      return normalizeEmail(parsed.text);
+    }
+  } catch {
+    // Fall back to text-based extraction.
+  }
+  return null;
+};
+
+const resolveContactEmail = (
+  columns: Array<{ type: string; title: string; text: string | null; value: string | null }>,
+) => {
+  const emailColumn =
+    columns.find((column) => column.type.trim().toLowerCase() === "email") ??
+    columns.find((column) => column.title.trim().toLowerCase().includes("email")) ??
+    null;
+  if (!emailColumn) return null;
+
+  const parsedValue = parseEmailFromColumnValue(emailColumn.value);
+  if (parsedValue) return parsedValue;
+  const text = emailColumn.text?.trim();
+  if (!text) return null;
+  return normalizeEmail(text);
 };
 
 const sleep = async (ms: number) =>
@@ -92,36 +133,148 @@ export const POST = async (request: Request) => {
         400,
       );
     }
+    if (!EMAIL_PATTERN.test(to)) {
+      return toJson({ ok: false, error: "Recipient email is invalid" }, 400);
+    }
 
     const requestedContactItemId = body.contactItemId?.trim() ?? "";
-    const requestedOwnerUserId = body.ownerMondayUserId?.trim() ?? "";
-    let effectiveOwnerUserId = requestedOwnerUserId;
-    if (!effectiveOwnerUserId && requestedContactItemId) {
-      try {
-        const resolvedOwnerId = await resolveMondayContactOwnerId({
-          itemId: requestedContactItemId,
-        });
-        if (resolvedOwnerId) {
-          effectiveOwnerUserId = resolvedOwnerId;
-        }
-      } catch (resolveOwnerError) {
-        console.warn("[monday-email-send] contact owner resolution failed", {
-          contactItemId: requestedContactItemId,
+    if (!requestedContactItemId) {
+      return toJson(
+        {
+          ok: false,
           error:
-            resolveOwnerError instanceof Error
-              ? resolveOwnerError.message
-              : String(resolveOwnerError),
-        });
-      }
+            "A contactItemId is required. Emails can only be sent to explicit contact records.",
+        },
+        400,
+      );
     }
+
+    const convex = getConvexHttpClient();
+    const featureFlags = await convex.query(
+      apiGenerated.mondaySettings.getFeatureFlags,
+      {},
+    );
+    if (!featureFlags.emailMarketingEnabled) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Email sending is disabled by platform feature flags. Ask an admin to enable Email Marketing first.",
+        },
+        403,
+      );
+    }
+    const platformSettings = await convex.query(
+      apiGenerated.mondaySettings.getPlatformSettings,
+      {},
+    );
+    const teamUserIds = Array.from(
+      new Set(
+        [
+          platformSettings.masterAdminUserId,
+          ...platformSettings.adminUserIds,
+          ...platformSettings.employeeUserIds,
+        ]
+          .map((entry) => normalizeUserId(entry))
+          .filter((entry) => entry.length > 0),
+      ),
+    );
+    if (!teamUserIds.includes(identity.userId)) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "You are not authorized to send marketing emails for this workspace.",
+        },
+        403,
+      );
+    }
+
+    const contactColumns = await fetchMondayItemColumns({
+      itemId: requestedContactItemId,
+    });
+    const contactEmail = resolveContactEmail(contactColumns.columns);
+    if (!contactEmail) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "The selected contact does not have a valid email address on record.",
+        },
+        400,
+      );
+    }
+    if (contactEmail !== to) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Recipient email must match the selected contact's email address.",
+        },
+        400,
+      );
+    }
+
+    const requestedOwnerUserId = body.ownerMondayUserId?.trim() ?? "";
+    let contactOwnerUserId = "";
+    try {
+      const resolvedOwnerId = await resolveMondayContactOwnerId({
+        itemId: requestedContactItemId,
+      });
+      if (resolvedOwnerId) {
+        contactOwnerUserId = resolvedOwnerId;
+      }
+    } catch (resolveOwnerError) {
+      console.warn("[monday-email-send] contact owner resolution failed", {
+        contactItemId: requestedContactItemId,
+        error:
+          resolveOwnerError instanceof Error
+            ? resolveOwnerError.message
+            : String(resolveOwnerError),
+      });
+    }
+    if (!contactOwnerUserId && !requestedOwnerUserId) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Unable to resolve the contact owner. Select a sender mailbox to continue.",
+        },
+        400,
+      );
+    }
+    if (
+      identity.userId !== contactOwnerUserId &&
+      requestedOwnerUserId.length === 0
+    ) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Select a sender mailbox when sending on behalf of another teammate.",
+        },
+        400,
+      );
+    }
+    const effectiveOwnerUserId = requestedOwnerUserId || contactOwnerUserId;
     if (!effectiveOwnerUserId) {
       return toJson(
         {
           ok: false,
           error:
-            "Unable to resolve the contact owner. This email must be sent from the contact owner's mailbox.",
+            "Unable to determine sender mailbox.",
         },
         400,
+      );
+    }
+    if (!teamUserIds.includes(effectiveOwnerUserId)) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "Selected sender is not part of the allowed workspace team list.",
+        },
+        403,
       );
     }
 
@@ -134,27 +287,15 @@ export const POST = async (request: Request) => {
       return toJson(
         {
           ok: false,
-          error: `Outlook is not connected for contact owner ${effectiveOwnerUserId}. Ask that owner to connect Outlook in Settings.`,
+          error: `Outlook is not connected for selected sender ${effectiveOwnerUserId}. Ask that teammate to connect Outlook in Settings.`,
         },
         400,
       );
     }
 
-    const convex = getConvexHttpClient();
     let configuredReplyToEmails = splitEmailList(env.OUTLOOK_REPLY_TO_EMAIL);
-    try {
-      const platformSettings = await convex.query(
-        apiGenerated.mondaySettings.getPlatformSettings,
-        {},
-      );
-      if (platformSettings.replyToEmails.length > 0) {
-        configuredReplyToEmails = platformSettings.replyToEmails;
-      }
-    } catch (platformSettingsError) {
-      console.warn(
-        "[monday-email-send] Failed to read platform settings; using env fallback",
-        platformSettingsError,
-      );
+    if (platformSettings.replyToEmails.length > 0) {
+      configuredReplyToEmails = platformSettings.replyToEmails;
     }
     const replyToAddresses = Array.from(
       new Set(
@@ -170,6 +311,28 @@ export const POST = async (request: Request) => {
       connection: ownerConnection,
       requestOrigin,
     });
+
+    const recentOutbound = await convex.query(
+      apiGenerated.outlookInbound.listRecentOutboundByRecipient,
+      {
+        mondayAccountId: identity.accountId,
+        mondayUserId: effectiveOwnerUserId,
+        recipientEmail: to,
+        sentAtMin: Date.now() - 2 * 60 * 1000,
+        limit: 10,
+      },
+    );
+    const hasRecentDuplicate = recentOutbound.some((row) => row.subject.trim() === subject);
+    if (hasRecentDuplicate) {
+      return toJson(
+        {
+          ok: false,
+          error:
+            "A matching email was already sent to this contact recently. Wait before sending again.",
+        },
+        409,
+      );
+    }
 
     const sentAt = Date.now();
     const correlationToken = randomUUID();
@@ -213,24 +376,6 @@ export const POST = async (request: Request) => {
       );
     }
 
-    let resolvedContactItemId = requestedContactItemId;
-    if (!resolvedContactItemId) {
-      try {
-        const candidates = await findMondayContactsByEmail(to, 2);
-        if (candidates.length === 1) {
-          resolvedContactItemId = candidates[0]?.id?.trim() ?? "";
-        }
-      } catch (resolveContactError) {
-        console.warn("[monday-email-send] contact auto-resolution failed", {
-          to,
-          error:
-            resolveContactError instanceof Error
-              ? resolveContactError.message
-              : String(resolveContactError),
-        });
-      }
-    }
-
     let sentMessage: {
       id: string;
       internetMessageId: string | null;
@@ -258,9 +403,10 @@ export const POST = async (request: Request) => {
       await convex.mutation(apiGenerated.outlookInbound.upsertOutboundMessage, {
         mondayAccountId: identity.accountId,
         mondayUserId: effectiveOwnerUserId,
+        actingMondayUserId: identity.userId,
         mondayAppClientId: identity.appClientId,
         connectionEmail: ownerConnection.email ?? undefined,
-        contactItemId: resolvedContactItemId || undefined,
+        contactItemId: requestedContactItemId,
         recipientEmail: to,
         subject,
         sentAt,
@@ -274,7 +420,7 @@ export const POST = async (request: Request) => {
       console.warn("[monday-email-send] failed to persist outbound mapping", {
         to,
         subject,
-        contactItemId: resolvedContactItemId || null,
+        contactItemId: requestedContactItemId,
         error:
           storeMappingError instanceof Error
             ? storeMappingError.message

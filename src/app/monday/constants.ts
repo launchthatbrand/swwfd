@@ -126,7 +126,7 @@ export const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
 };
 
 export const DEFAULT_MONDAY_FEATURE_FLAGS: MondayFeatureFlags = {
-  emailMarketingEnabled: true,
+  emailMarketingEnabled: false,
 };
 
 export const APPROVAL_STEPS: ApprovalStepConfig[] = [
