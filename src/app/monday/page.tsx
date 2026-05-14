@@ -299,6 +299,7 @@ export function MondayBoardView({
   const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
   const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
   const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
+  const hasHydratedInitialQueryParamsRef = useRef(false);
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
   >(null);
@@ -998,6 +999,8 @@ export function MondayBoardView({
   });
 
   useEffect(() => {
+    if (hasHydratedInitialQueryParamsRef.current) return;
+    hasHydratedInitialQueryParamsRef.current = true;
     const params = new URLSearchParams(window.location.search);
     const ownerIdParam = params.get("ownerId");
     const ownerParam = ownerIdParam ?? params.get("owner");
@@ -1021,7 +1024,7 @@ export function MondayBoardView({
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, [hasForcedOwnerScope, outlookStatusQuery.refetch]);
+  }, [hasForcedOwnerScope, outlookStatusQuery]);
 
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
@@ -2726,19 +2729,24 @@ export function MondayBoardView({
   const syncContactHistoryDialogFromRecords = (refreshedRecords: MondayRecord[]) => {
     setContactHistoryDialogRecord((prev) => {
       if (!prev) return prev;
+      const previousRecordId = prev.id.trim();
       const prevContactId = prev.contactId?.trim() ?? "";
-      const matchedRecord = refreshedRecords.find((candidate) => {
-        const candidateId = candidate.id.trim();
-        const candidateContactId = candidate.contactId?.trim() ?? "";
-        const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
-        return (
-          candidateId === prev.id ||
-          candidateId === prevContactId ||
-          candidateContactId === prev.id ||
-          candidateContactId === prevContactId ||
-          candidateTouchItemId === prev.id
-        );
-      });
+      const findSingleMatch = (
+        predicate: (candidate: MondayRecord) => boolean,
+      ): MondayRecord | null => {
+        const matches = refreshedRecords.filter(predicate);
+        return matches.length === 1 ? matches[0] : null;
+      };
+      const matchedRecord =
+        refreshedRecords.find((candidate) => candidate.id.trim() === previousRecordId) ??
+        findSingleMatch(
+          (candidate) => (candidate.touchItemId?.trim() ?? "") === previousRecordId,
+        ) ??
+        (prevContactId
+          ? findSingleMatch((candidate) => candidate.id.trim() === prevContactId) ??
+            findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === prevContactId)
+          : null) ??
+        findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === previousRecordId);
       if (!matchedRecord) return prev;
       const matchedBatteryProgress =
         typeof matchedRecord.batteryProgress === "number" &&
