@@ -42,43 +42,43 @@ export const ContactCard = ({
             <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-start gap-1">
-          {onHelpDesk && (
-            <span
-              role="button"
-              tabIndex={0}
-              title="Submit support ticket"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-primary group-hover:opacity-100"
-              onClick={(e) => {
+        {onHelpDesk && (
+          <span
+            role="button"
+            tabIndex={0}
+            title="Submit support ticket"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-primary group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onHelpDesk(record);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
                 e.stopPropagation();
                 onHelpDesk(record);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.stopPropagation();
-                  onHelpDesk(record);
-                }
-              }}
-            >
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          )}
-          <div className="flex flex-col items-end gap-1">
-            {record.statusText ? (
-              <span
-                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
-              >
-                {record.statusText}
-              </span>
-            ) : null}
-            {hasResumeAttached ? (
-              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
-                Resume Attached
-              </span>
-            ) : null}
-          </div>
-        </div>
+              }
+            }}
+          >
+            <CircleHelp className="h-3.5 w-3.5" />
+          </span>
+        )}
       </div>
+      {record.statusText || hasResumeAttached ? (
+        <div className="flex min-h-6 flex-wrap items-center justify-end gap-1">
+          {hasResumeAttached ? (
+            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+              Resume Attached
+            </span>
+          ) : null}
+          {record.statusText ? (
+            <span
+              className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
+            >
+              {record.statusText}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       <ApprovalProgressIndicator
         progressValue={record.batteryProgress}
