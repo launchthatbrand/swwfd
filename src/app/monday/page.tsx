@@ -61,6 +61,8 @@ import type {
   ApprovalStepConfig,
   KanbanMoveConfirmation,
   MondayBoardViewMode,
+  MondayBulkSyncJob,
+  MondayBulkSyncStatusResponse,
   MondayBoardViewProps,
   MondayContactCandidate,
   MondayContactsLookupResponse,
@@ -89,6 +91,7 @@ import type {
   MondayUserFilterPresetsResponse,
   MondayUserProfileResponse,
   OutlookConnectionStatusResponse,
+  OutlookTeamMailboxesResponse,
   ResumePreviewState,
   SavedAdvancedFilterPreset,
   UserBoardColorTheme,
@@ -194,6 +197,7 @@ import {
   KanbanBoard,
   NameCellContent,
   OnboardingStepper,
+  PdfResumePreview,
   QuestionnaireFormDialog,
   UserSettingsProvider,
 } from "./components";
@@ -282,6 +286,9 @@ export function MondayBoardView({
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
+  const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
+  const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
+  const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
   >(null);
@@ -322,6 +329,7 @@ export function MondayBoardView({
   const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
+  const [sendEmailOwnerUserId, setSendEmailOwnerUserId] = useState("");
   const [sendEmailProgressUpdate, setSendEmailProgressUpdate] = useState<{
     updateType: Exclude<ContactUpdateType, "general">;
     body: string;
@@ -760,6 +768,41 @@ export function MondayBoardView({
     },
     staleTime: 30_000,
   });
+  const sendEmailContactOwnerId = sendEmailRecord?.ownerIds[0]?.trim() ?? "";
+  const outlookTeamMailboxesQuery = useQuery({
+    queryKey: [
+      "monday-outlook-team-mailboxes",
+      sessionToken,
+      sendEmailRecord?.id,
+      sendEmailContactOwnerId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      !!sendEmailRecord &&
+      featureFlags.emailMarketingEnabled &&
+      !staticMode,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (sendEmailContactOwnerId) {
+        params.set("contactOwnerUserId", sendEmailContactOwnerId);
+      }
+      const response = await fetch(
+        `/api/monday/email/outlook/team-mailboxes?${params.toString()}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+        },
+      );
+      const data = (await response.json()) as OutlookTeamMailboxesResponse;
+      if (!response.ok || !data.ok || !Array.isArray(data.mailboxes)) {
+        throw new Error(data.error ?? "Failed to load team sender mailboxes");
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
 
   const routingStatusQuery = useQuery({
     queryKey: ["monday-routing-status", sessionToken, identity?.userId, settingsOpen],
@@ -1022,6 +1065,15 @@ export function MondayBoardView({
 
       try {
         let maybeToken = readTokenFromLocation();
+        if (maybeToken && typeof window !== "undefined") {
+          const currentUrl = new URL(window.location.href);
+          if (currentUrl.searchParams.has("sessionToken")) {
+            currentUrl.searchParams.delete("sessionToken");
+            const nextSearch = currentUrl.searchParams.toString();
+            const nextUrl = `${currentUrl.pathname}${nextSearch ? `?${nextSearch}` : ""}${currentUrl.hash}`;
+            window.history.replaceState(null, "", nextUrl);
+          }
+        }
 
         if (!maybeToken) {
           const tokenResponse = await monday.get("sessionToken");
@@ -1216,6 +1268,17 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [outlookStatusQuery.error, settingsOpen, staticMode]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!sendEmailRecord) return;
+    if (!outlookTeamMailboxesQuery.error) return;
+    const message =
+      outlookTeamMailboxesQuery.error instanceof Error
+        ? outlookTeamMailboxesQuery.error.message
+        : "Failed to load sender mailbox options";
+    toast.error(message);
+  }, [outlookTeamMailboxesQuery.error, sendEmailRecord, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1835,12 +1898,14 @@ export function MondayBoardView({
     setSendEmailRecord(record);
     setSendEmailStep(options?.autoAdvanceToPreview ? 2 : 1);
     setSendEmailTemplateId(resolvePreferredTemplateId());
+    setSendEmailOwnerUserId(record.ownerIds[0]?.trim() ?? "");
     setSendEmailProgressUpdate(options?.progressUpdate ?? null);
   };
   const closeSendEmailDialog = () => {
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailOwnerUserId("");
     setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   };
@@ -1900,9 +1965,49 @@ export function MondayBoardView({
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailOwnerUserId("");
     setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
+  useEffect(() => {
+    if (!sendEmailRecord) return;
+    const mailboxes = outlookTeamMailboxesQuery.data?.mailboxes ?? [];
+    if (mailboxes.length === 0) return;
+    const selectedExists = mailboxes.some(
+      (entry) => entry.mondayUserId === sendEmailOwnerUserId,
+    );
+    if (selectedExists) return;
+    const preferredId = outlookTeamMailboxesQuery.data?.defaultSenderUserId?.trim();
+    if (preferredId) {
+      setSendEmailOwnerUserId(preferredId);
+      return;
+    }
+    const fallbackMailbox =
+      mailboxes.find((entry) => entry.isContactOwner && entry.connected) ??
+      mailboxes.find((entry) => entry.isCurrentUser && entry.connected) ??
+      mailboxes.find((entry) => entry.connected) ??
+      mailboxes[0];
+    if (fallbackMailbox) {
+      setSendEmailOwnerUserId(fallbackMailbox.mondayUserId);
+    }
+  }, [
+    outlookTeamMailboxesQuery.data?.defaultSenderUserId,
+    outlookTeamMailboxesQuery.data?.mailboxes,
+    sendEmailOwnerUserId,
+    sendEmailRecord,
+  ]);
+  const sendEmailMailboxOptions = outlookTeamMailboxesQuery.data?.mailboxes ?? [];
+  const selectedSendEmailMailbox =
+    sendEmailMailboxOptions.find(
+      (entry) => entry.mondayUserId === sendEmailOwnerUserId,
+    ) ?? null;
+  const sendEmailCanSubmit =
+    !isSendingEmail &&
+    !!sendEmailRecord?.email &&
+    sendEmailOwnerUserId.trim().length > 0 &&
+    (selectedSendEmailMailbox ? selectedSendEmailMailbox.connected : true) &&
+    !outlookTeamMailboxesQuery.isLoading &&
+    !outlookTeamMailboxesQuery.isFetching;
   const handleConfirmSendEmail = async () => {
     if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
@@ -1911,6 +2016,15 @@ export function MondayBoardView({
     const recipient = sendEmailRecord.email?.trim() ?? "";
     if (!recipient) {
       toast.error("This contact does not have an email address");
+      return;
+    }
+    const senderMailboxUserId = sendEmailOwnerUserId.trim();
+    if (!senderMailboxUserId) {
+      toast.error("Select a sender mailbox before sending");
+      return;
+    }
+    if (selectedSendEmailMailbox && !selectedSendEmailMailbox.connected) {
+      toast.error("Selected sender mailbox is not connected to Outlook");
       return;
     }
     setIsSendingEmail(true);
@@ -1927,7 +2041,7 @@ export function MondayBoardView({
           subject: sendEmailResolvedTemplate.subject,
           html: sendEmailResolvedTemplate.html,
           contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
-          ownerMondayUserId: sendEmailRecord.ownerIds[0] ?? undefined,
+          ownerMondayUserId: senderMailboxUserId,
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
@@ -2151,6 +2265,9 @@ export function MondayBoardView({
       ),
     );
   }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+  const filteredRecordCountLabel = `${filteredRecords.length} total contact${
+    filteredRecords.length === 1 ? "" : "s"
+  }`;
 
   const handleAddAdvancedFilterCondition = () => {
     setActiveSavedAdvancedFilterId(null);
@@ -2559,6 +2676,234 @@ export function MondayBoardView({
       syncContactHistoryDialogFromRecords,
     ],
   );
+
+  const fetchBulkSyncStatus = useCallback(
+    async (jobId?: string | null) => {
+      if (!sessionToken) return null;
+      const params = new URLSearchParams();
+      if (jobId && jobId.trim().length > 0) {
+        params.set("jobId", jobId.trim());
+      }
+      const response = await fetch(
+        `/api/monday/sync/bulk/status${params.toString() ? `?${params.toString()}` : ""}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: { "x-monday-session-token": sessionToken },
+        },
+      );
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load bulk sync status");
+      }
+      const job = data.job ?? null;
+      setLatestBulkSyncJob(job);
+      if (job?.status === "running") {
+        setActiveBulkSyncJobId(job.jobId);
+        setSyncingContactIds((prev) => {
+          const next = new Set(prev);
+          next.add("__bulk_sync__");
+          return next;
+        });
+      }
+      return job;
+    },
+    [sessionToken],
+  );
+
+  const startBulkSyncJob = useCallback(
+    async (records: MondayRecord[]) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const dedupedTargetIds = Array.from(
+        new Set(
+          records
+            .map((record) => resolveContactUpdateTargetRecordId(record).trim())
+            .filter((id) => id.length > 0),
+        ),
+      );
+      if (dedupedTargetIds.length === 0) {
+        throw new Error("No valid contact records selected");
+      }
+      const response = await fetch("/api/monday/sync/bulk/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          contactItemIds: dedupedTargetIds,
+          ownerId: identity?.userId,
+        }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok || !data.job) {
+        throw new Error(data.error ?? "Failed to start bulk sync");
+      }
+      finalizedBulkSyncJobIdRef.current = null;
+      setLatestBulkSyncJob(data.job);
+      setActiveBulkSyncJobId(data.job.jobId);
+      setSyncingContactIds((prev) => {
+        const next = new Set(prev);
+        next.add("__bulk_sync__");
+        return next;
+      });
+      return data.job;
+    },
+    [identity?.userId, sessionToken],
+  );
+
+  const cancelBulkSyncJob = useCallback(
+    async (jobId: string) => {
+      if (!sessionToken) return;
+      const response = await fetch("/api/monday/sync/bulk/cancel", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to cancel bulk sync");
+      }
+      if (data.job) {
+        setLatestBulkSyncJob(data.job);
+      }
+      setActiveBulkSyncJobId(null);
+    },
+    [sessionToken],
+  );
+
+  const retryFailedBulkSyncJob = useCallback(
+    async (jobId: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const response = await fetch("/api/monday/sync/bulk/retry", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok || !data.job) {
+        throw new Error(data.error ?? "Failed to retry failed contacts");
+      }
+      finalizedBulkSyncJobIdRef.current = null;
+      setLatestBulkSyncJob(data.job);
+      setActiveBulkSyncJobId(data.job.jobId);
+      setSyncingContactIds((prev) => {
+        const next = new Set(prev);
+        next.add("__bulk_sync__");
+        return next;
+      });
+      return data;
+    },
+    [sessionToken],
+  );
+
+  useEffect(() => {
+    if (!sessionToken || staticMode || !isMondaySettingsAdmin) return;
+    void fetchBulkSyncStatus(null)
+      .then((job) => {
+        if (job && job.status !== "running") {
+          finalizedBulkSyncJobIdRef.current = job.jobId;
+        }
+      })
+      .catch(() => null);
+  }, [fetchBulkSyncStatus, isMondaySettingsAdmin, sessionToken, staticMode]);
+
+  useEffect(() => {
+    if (!sessionToken || !activeBulkSyncJobId) return;
+    if (latestBulkSyncJob?.status !== "running") return;
+
+    let cancelled = false;
+    let inFlight = false;
+    const tick = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/monday/sync/bulk/tick", {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            jobId: activeBulkSyncJobId,
+            batchSize: 6,
+            concurrency: 3,
+          }),
+        });
+        const data = (await response.json()) as MondayBulkSyncStatusResponse;
+        if (cancelled) return;
+        if (response.ok && data.ok && data.job) {
+          setLatestBulkSyncJob(data.job);
+          return;
+        }
+        await fetchBulkSyncStatus(activeBulkSyncJobId);
+      } catch {
+        // status polling failures are tolerated; next interval retries
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2_500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeBulkSyncJobId, fetchBulkSyncStatus, latestBulkSyncJob?.status, sessionToken]);
+
+  useEffect(() => {
+    if (!latestBulkSyncJob) return;
+    if (latestBulkSyncJob.status === "running") return;
+    if (finalizedBulkSyncJobIdRef.current === latestBulkSyncJob.jobId) return;
+
+    finalizedBulkSyncJobIdRef.current = latestBulkSyncJob.jobId;
+    setActiveBulkSyncJobId(null);
+    setSyncingContactIds((prev) => {
+      if (!prev.has("__bulk_sync__")) return prev;
+      const next = new Set(prev);
+      next.delete("__bulk_sync__");
+      return next;
+    });
+
+    void (async () => {
+      await recordsQuery.refetch();
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+      if (latestBulkSyncJob.status === "cancelled") {
+        toast.error("Bulk sync cancelled");
+        return;
+      }
+      if (latestBulkSyncJob.status === "failed") {
+        toast.error(latestBulkSyncJob.lastError ?? "Bulk sync failed");
+        return;
+      }
+      const summary = `${latestBulkSyncJob.succeededContacts}/${latestBulkSyncJob.totalContacts} synced`;
+      if (latestBulkSyncJob.failedContacts > 0) {
+        toast.error(`${summary} (${latestBulkSyncJob.failedContacts} failed)`);
+      } else {
+        toast.success(summary);
+      }
+    })();
+  }, [contactHistoryDialogRecord, contactUpdatesQuery, latestBulkSyncJob, recordsQuery]);
 
   const openQuestionnaireDialogForRecords = useCallback(
     (items: MondayRecord[]) => {
@@ -6423,6 +6768,13 @@ export function MondayBoardView({
                 const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
                 return currentStep === questionnaireStepIndex;
               });
+              const bulkSyncProgressPercent =
+                latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
+                  ? Math.round(
+                      (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
+                        100,
+                    )
+                  : 0;
 
               return (
                 <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -6488,52 +6840,87 @@ export function MondayBoardView({
                         disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
                         onClick={() => {
                           void (async () => {
-                            if (!sessionToken) return;
-                            const items = [...selectedItems];
-                            const bulkSyncKey = "__bulk_sync__";
-                            setSyncingContactIds((prev) => new Set(prev).add(bulkSyncKey));
-                            let synced = 0;
-                            let errors = 0;
-                            for (const item of items) {
-                              const targetId = resolveContactUpdateTargetRecordId(item);
-                              if (!targetId.trim()) { errors++; continue; }
-                              try {
-                                toast(`Syncing ${synced + 1}/${items.length}...`);
-                                const response = await fetch(
-                                  `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
-                                  {
-                                    method: "POST",
-                                    headers: {
-                                      "content-type": "application/json",
-                                      "x-monday-session-token": sessionToken,
-                                    },
-                                    body: JSON.stringify({ ownerId: identity?.userId }),
-                                  },
-                                );
-                                const data = (await response.json()) as { ok: boolean; error?: string };
-                                if (!response.ok || !data.ok) throw new Error(data.error ?? "Sync failed");
-                                synced++;
-                              } catch {
-                                errors++;
-                              }
-                            }
-                            await recordsQuery.refetch();
-                            setSyncingContactIds((prev) => {
-                              const next = new Set(prev);
-                              next.delete(bulkSyncKey);
-                              return next;
-                            });
-                            if (errors > 0) {
-                              toast.error(`Synced ${synced}/${items.length} (${errors} failed)`);
-                            } else {
-                              toast.success(`Synced ${synced} contact${synced === 1 ? "" : "s"}`);
+                            try {
+                              const items = [...selectedItems];
+                              const job = await startBulkSyncJob(items);
+                              clearSelection();
+                              toast.success(
+                                `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
+                              );
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to start bulk sync",
+                              );
                             }
                           })();
                         }}
                       >
-                        {syncingContactIds.has("__bulk_sync__") ? "Syncing..." : `Sync Users (${selectedItems.length})`}
+                        {syncingContactIds.has("__bulk_sync__")
+                          ? latestBulkSyncJob
+                            ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
+                            : "Syncing..."
+                          : `Sync Users (${selectedItems.length})`}
                       </Button>
                     )}
+                    {isMondaySettingsAdmin &&
+                    latestBulkSyncJob &&
+                    latestBulkSyncJob.status === "running" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              await cancelBulkSyncJob(latestBulkSyncJob.jobId);
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to cancel bulk sync",
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        Cancel Bulk Sync
+                      </Button>
+                    ) : null}
+                    {isMondaySettingsAdmin &&
+                    latestBulkSyncJob &&
+                    latestBulkSyncJob.status !== "running" &&
+                    latestBulkSyncJob.failedContacts > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        disabled={syncingContactIds.has("__bulk_sync__")}
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              const result = await retryFailedBulkSyncJob(
+                                latestBulkSyncJob.jobId,
+                              );
+                              toast.success(
+                                `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
+                              );
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to retry failed bulk sync contacts",
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        Retry Failed ({latestBulkSyncJob.failedContacts})
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -6544,11 +6931,33 @@ export function MondayBoardView({
                       Clear
                     </Button>
                   </div>
+                  {isMondaySettingsAdmin && latestBulkSyncJob ? (
+                    <div className="w-full rounded-md border px-2 py-1">
+                      <div className="mb-1 flex items-center justify-between text-[11px]">
+                        <span className="text-muted-foreground">
+                          Bulk Sync {latestBulkSyncJob.status}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
+                        </span>
+                      </div>
+                      <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+                        <div
+                          className="bg-primary h-full transition-[width] duration-300 ease-out"
+                          style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             }}
           />
         )}
+
+        <p className="text-muted-foreground px-1 text-xs font-medium">
+          {filteredRecordCountLabel}
+        </p>
 
         <Dialog
           open={!!bulkQuickActionConfirmation}
@@ -6677,10 +7086,9 @@ export function MondayBoardView({
                     </div>
                     <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
                       {isPdf ? (
-                        <iframe
-                          src={resumePreview.href}
-                          title={`Resume preview: ${resumePreview.fileName}`}
-                          className="h-full w-full"
+                        <PdfResumePreview
+                          fileUrl={resumePreview.href}
+                          fileName={resumePreview.fileName}
                         />
                       ) : isImage ? (
                         <object
@@ -6894,8 +7302,66 @@ export function MondayBoardView({
               {sendEmailStep === 3 && sendEmailTemplate ? (
                 <div className="space-y-3">
                   <p className="text-sm font-medium">Step 3: Confirm send</p>
-                  <div className="rounded-md border p-4 text-sm">
-                    Are you sure you want to send this email?
+                  <div className="space-y-3 rounded-md border p-4 text-sm">
+                    <p>Are you sure you want to send this email?</p>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold tracking-wide uppercase">
+                        From mailbox
+                      </p>
+                      {outlookTeamMailboxesQuery.isLoading ||
+                      outlookTeamMailboxesQuery.isFetching ? (
+                        <p className="text-muted-foreground text-xs">
+                          Loading mailbox options…
+                        </p>
+                      ) : sendEmailMailboxOptions.length === 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          No team sender mailboxes are configured for this workspace.
+                        </p>
+                      ) : (
+                        <select
+                          value={sendEmailOwnerUserId}
+                          onChange={(event) => {
+                            setSendEmailOwnerUserId(event.target.value);
+                          }}
+                          className="bg-background border-input h-9 w-full rounded-md border px-2 text-xs shadow-sm"
+                          disabled={
+                            isSendingEmail ||
+                            outlookTeamMailboxesQuery.isLoading ||
+                            outlookTeamMailboxesQuery.isFetching
+                          }
+                        >
+                          <option value="">Select sender mailbox</option>
+                          {sendEmailMailboxOptions.map((mailbox) => {
+                            const displayName =
+                              mailbox.name?.trim() ||
+                              mailbox.mailboxDisplayName?.trim() ||
+                              mailbox.userEmail?.trim() ||
+                              mailbox.mondayUserId;
+                            const mailboxEmail =
+                              mailbox.mailboxEmail?.trim() ||
+                              mailbox.userEmail?.trim() ||
+                              "no mailbox email";
+                            return (
+                              <option
+                                key={mailbox.mondayUserId}
+                                value={mailbox.mondayUserId}
+                              >
+                                {`${displayName} • ${mailboxEmail} • ${mailbox.connected ? "connected" : "not connected"}`}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      {selectedSendEmailMailbox ? (
+                        <p
+                          className={`text-xs ${selectedSendEmailMailbox.connected ? "text-emerald-700" : "text-rose-600"}`}
+                        >
+                          {selectedSendEmailMailbox.connected
+                            ? "Selected mailbox is connected and ready."
+                            : "Selected mailbox is not connected. Connect Outlook before sending."}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex justify-between gap-2">
                     <Button variant="outline" onClick={() => setSendEmailStep(2)}>
@@ -6905,7 +7371,7 @@ export function MondayBoardView({
                       onClick={() => {
                         void handleConfirmSendEmail();
                       }}
-                      disabled={isSendingEmail || !sendEmailRecord.email}
+                      disabled={!sendEmailCanSubmit}
                     >
                       {isSendingEmail ? "Sending..." : "Send Email"}
                     </Button>

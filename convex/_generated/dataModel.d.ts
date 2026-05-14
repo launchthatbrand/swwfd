@@ -224,6 +224,103 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayBulkSyncJobResults: {
+    document: {
+      attemptedAt: number;
+      contactItemId: string;
+      createdParentUpdates: number;
+      createdSubitemUpdates: number;
+      createdSubitems: number;
+      error: string | null;
+      jobId: Id<"mondayBulkSyncJobs">;
+      linkedItemCount: number;
+      skippedSubitems: number;
+      status: "success" | "failed";
+      updatedProgressColumns: number;
+      warnings: Array<string>;
+      _id: Id<"mondayBulkSyncJobResults">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "attemptedAt"
+      | "contactItemId"
+      | "createdParentUpdates"
+      | "createdSubitems"
+      | "createdSubitemUpdates"
+      | "error"
+      | "jobId"
+      | "linkedItemCount"
+      | "skippedSubitems"
+      | "status"
+      | "updatedProgressColumns"
+      | "warnings";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_jobId: ["jobId", "_creationTime"];
+      by_jobId_and_contactItemId: ["jobId", "contactItemId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayBulkSyncJobs: {
+    document: {
+      contactItemIds: Array<string>;
+      failedContacts: number;
+      finishedAt?: number | null;
+      lastError?: string | null;
+      mondayAccountId: string;
+      monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+      nextIndex: number;
+      ownerId: string;
+      processedContacts: number;
+      requestedByMondayAppClientId: string | null;
+      requestedByMondayUserId: string;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      succeededContacts: number;
+      totalContacts: number;
+      updatedAt: number;
+      warningsCount: number;
+      _id: Id<"mondayBulkSyncJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactItemIds"
+      | "failedContacts"
+      | "finishedAt"
+      | "lastError"
+      | "mondayAccountId"
+      | "monthlyBoardMappings"
+      | "nextIndex"
+      | "ownerId"
+      | "processedContacts"
+      | "requestedByMondayAppClientId"
+      | "requestedByMondayUserId"
+      | "startedAt"
+      | "status"
+      | "succeededContacts"
+      | "totalContacts"
+      | "updatedAt"
+      | "warningsCount";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_startedAt: [
+        "mondayAccountId",
+        "startedAt",
+        "_creationTime",
+      ];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayGlobalSettings: {
     document: {
       adminUserIds?: Array<string>;
@@ -709,6 +806,45 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayUsers: {
+    document: {
+      email: string | null;
+      firstSeenAt: number;
+      lastSeenAt: number;
+      lastSeenSource: string;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      name: string | null;
+      _id: Id<"mondayUsers">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "email"
+      | "firstSeenAt"
+      | "lastSeenAt"
+      | "lastSeenSource"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "name";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account: ["mondayAccountId", "_creationTime"];
+      by_account_and_user: ["mondayAccountId", "mondayUserId", "_creationTime"];
+      by_account_and_user_and_app_client: [
+        "mondayAccountId",
+        "mondayUserId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   outlookConnections: {
     document: {
       accessTokenExpiresAt: number;
@@ -887,6 +1023,7 @@ export type DataModel = {
   };
   outlookOutboundMessages: {
     document: {
+      actingMondayUserId: string;
       connectionEmail: string | null;
       contactItemId: string | null;
       conversationId: string | null;
@@ -908,6 +1045,7 @@ export type DataModel = {
     fieldPaths:
       | "_creationTime"
       | "_id"
+      | "actingMondayUserId"
       | "connectionEmail"
       | "contactItemId"
       | "conversationId"

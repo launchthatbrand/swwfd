@@ -64,6 +64,7 @@ const outboundMessageValidator = v.object({
   _creationTime: v.number(),
   mondayAccountId: v.string(),
   mondayUserId: v.string(),
+  actingMondayUserId: v.string(),
   mondayAppClientId: nullableString,
   connectionEmail: nullableString,
   contactItemId: nullableString,
@@ -131,6 +132,7 @@ export const upsertOutboundMessage = mutation({
   args: {
     mondayAccountId: v.string(),
     mondayUserId: v.string(),
+    actingMondayUserId: v.string(),
     mondayAppClientId: optionalString,
     connectionEmail: optionalString,
     contactItemId: optionalString,
@@ -188,6 +190,7 @@ export const upsertOutboundMessage = mutation({
       await ctx.db.patch(existing._id, {
         mondayAccountId: normalizeRequiredString(args.mondayAccountId),
         mondayUserId: normalizeRequiredString(args.mondayUserId),
+        actingMondayUserId: normalizeRequiredString(args.actingMondayUserId),
         mondayAppClientId: normalizedAppClientId,
         connectionEmail: normalizedConnectionEmail ?? null,
         contactItemId: normalizeOptionalString(args.contactItemId) ?? null,
@@ -213,6 +216,7 @@ export const upsertOutboundMessage = mutation({
     const outboundMessageId = await ctx.db.insert("outlookOutboundMessages", {
       mondayAccountId: normalizeRequiredString(args.mondayAccountId),
       mondayUserId: normalizeRequiredString(args.mondayUserId),
+      actingMondayUserId: normalizeRequiredString(args.actingMondayUserId),
       mondayAppClientId: normalizedAppClientId,
       connectionEmail: normalizedConnectionEmail ?? null,
       contactItemId: normalizeOptionalString(args.contactItemId) ?? null,

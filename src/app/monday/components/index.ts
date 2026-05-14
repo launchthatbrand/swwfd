@@ -7,6 +7,7 @@ export { ContactUpdates } from "./ContactUpdates";
 export { KanbanBoard } from "./KanbanBoard";
 export { NameCellContent } from "./NameCellContent";
 export { OnboardingStepper } from "./OnboardingStepper";
+export { PdfResumePreview } from "./PdfResumePreview";
 export { QuestionnaireFormDialog } from "./QuestionnaireFormDialog";
 export { GuidedTourProvider, useGuidedTour, isTourLockingDialog } from "./GuidedTourProvider";
 export { HelpDeskDialog } from "./HelpDeskDialog";

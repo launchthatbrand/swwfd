@@ -5,6 +5,10 @@ import { callMondayGraphQL, upsertMondayTouchRecord } from "./client";
 
 const MONTHLY_BOARD_RELATION_COLUMN_ID = "board_relation__1";
 const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
+const LINKED_ITEM_CHUNK_SIZE = 25;
+const LINKED_ITEM_CHUNK_CONCURRENCY = 3;
+const LINKED_ITEM_CHUNK_RETRY_LIMIT = 2;
+const LINKED_ITEM_CHUNK_RETRY_BASE_DELAY_MS = 300;
 
 export interface MonthlyBoardMapping {
   monthKey: string;
@@ -51,6 +55,16 @@ interface SourceItem {
   boardName: string | null;
   updates: SourceUpdate[];
   subitems: SourceSubitem[];
+}
+
+interface SyncPhaseTimings {
+  resolveContactMs: number;
+  monthlyLookupMs: number;
+  dedupeLoadMs: number;
+  linkedDetailLoadMs: number;
+  targetMetadataMs: number;
+  syncReplayMs: number;
+  totalMs: number;
 }
 
 export interface SyncResult {
@@ -174,6 +188,32 @@ const normalizeMonthlyBoardMappings = (values: MonthlyBoardMapping[]) => {
   );
 };
 
+const sleep = async (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
+const mapWithConcurrency = async <TValue, TResult>(
+  items: TValue[],
+  concurrency: number,
+  worker: (item: TValue, index: number) => Promise<TResult>,
+) => {
+  if (items.length === 0) return [] as TResult[];
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(items[index] as TValue, index);
+      }
+    }),
+  );
+  return results;
+};
+
 // ---------------------------------------------------------------------------
 // Migration body builder
 // ---------------------------------------------------------------------------
@@ -284,7 +324,10 @@ const classifySubitemForProgressColumn = (name: string): string | null => {
  * Search the monthly board for items whose board_relation__1 column links
  * back to the given API board item ID.
  */
-const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBoardId: string) => {
+const findMonthlyBoardItemsForContact = async (
+  apiBoardItemId: string,
+  monthlyBoardId: string,
+) => {
   interface Data {
     boards?: Array<{
       items_page?: {
@@ -306,6 +349,53 @@ const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBo
   let cursor: string | null = null;
   let page = 0;
   const maxPages = 10;
+  let usedFallbackScan = false;
+  let relationQueryError: string | null = null;
+
+  const queryWithRelationRule = `query ($boardId: ID!, $limit: Int!, $apiItemId: String!) {
+    boards(ids: [$boardId]) {
+      items_page(
+        limit: $limit
+        query_params: {
+          rules: [{
+            column_id: "${colId}"
+            compare_value: [$apiItemId]
+            operator: any_of
+          }]
+        }
+      ) {
+        cursor
+        items { id }
+      }
+    }
+  }`;
+
+  try {
+    const relationData = await callMondayGraphQL<Data>(
+      queryWithRelationRule,
+      {
+        boardId: monthlyBoardId,
+        limit: 500,
+        apiItemId: apiBoardItemId,
+      },
+    );
+    const relationItems = relationData.boards?.[0]?.items_page?.items ?? [];
+    for (const item of relationItems) {
+      if (item.id?.trim()) matchedIds.push(item.id.trim());
+    }
+    if (matchedIds.length > 0) {
+      return {
+        matchedIds: Array.from(new Set(matchedIds)),
+        usedFallbackScan,
+        relationQueryError,
+      };
+    }
+    // If filter succeeds but returns no rows, still run fallback scan for compatibility.
+    usedFallbackScan = true;
+  } catch (error) {
+    usedFallbackScan = true;
+    relationQueryError = error instanceof Error ? error.message : String(error);
+  }
 
   const queryWithCursor = `query ($boardId: ID!, $limit: Int!, $cursor: String!) {
     boards(ids: [$boardId]) {
@@ -356,7 +446,11 @@ const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBo
     if (!cursor || items.length === 0) break;
   }
 
-  return matchedIds;
+  return {
+    matchedIds: Array.from(new Set(matchedIds)),
+    usedFallbackScan,
+    relationQueryError,
+  };
 };
 
 const fetchContactItem = async (_boardId: string, itemId: string) => {
@@ -403,7 +497,7 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
   };
 };
 
-const fetchLinkedItemWithDetails = async (itemId: string) => {
+const fetchLinkedItemsWithDetails = async (itemIds: string[]) => {
   interface Data {
     items?: Array<{
       id?: string;
@@ -429,59 +523,100 @@ const fetchLinkedItemWithDetails = async (itemId: string) => {
       }>;
     }>;
   }
-  const data = await callMondayGraphQL<Data>(
-    `query GetLinkedItemDetails($itemIds: [ID!]!) {
-      items(ids: $itemIds) {
-        id
-        name
-        board { id name }
-        updates(limit: 200) {
-          id body created_at
-          creator { name }
-        }
-        subitems {
-          id name created_at
-          updates(limit: 200) {
-            id body created_at
-            creator { name }
-          }
-          column_values { id type text value }
-        }
-      }
-    }`,
-    { itemIds: [itemId] },
-  );
-  const item = data.items?.[0];
-  if (!item?.id) return null;
 
-  const mapUpdate = (u: NonNullable<typeof item.updates>[number]): SourceUpdate => ({
+  const mapUpdate = (u: {
+    id?: string;
+    body?: string;
+    created_at?: string;
+    creator?: { name?: string } | null;
+  }): SourceUpdate => ({
     id: String(u.id ?? ""),
     body: u.body ?? "",
     createdAt: u.created_at ?? null,
     creatorName: u.creator?.name ?? null,
   });
 
-  const subitems: SourceSubitem[] = (item.subitems ?? []).map((si) => ({
-    id: String(si.id ?? ""),
-    name: (si.name ?? "").trim(),
-    createdAt: si.created_at ?? null,
-    columnValues: (si.column_values ?? []).map((cv) => ({
-      id: cv.id ?? "",
-      type: cv.type ?? "",
-      text: cv.text ?? null,
-      value: cv.value ?? null,
-    })),
-    updates: (si.updates ?? []).map(mapUpdate),
-  }));
+  const queryText = `query GetLinkedItemDetails($itemIds: [ID!]!) {
+    items(ids: $itemIds) {
+      id
+      name
+      board { id name }
+      updates(limit: 200) {
+        id body created_at
+        creator { name }
+      }
+      subitems {
+        id name created_at
+        updates(limit: 200) {
+          id body created_at
+          creator { name }
+        }
+        column_values { id type text value }
+      }
+    }
+  }`;
+
+  const chunks: string[][] = [];
+  for (let index = 0; index < itemIds.length; index += LINKED_ITEM_CHUNK_SIZE) {
+    chunks.push(itemIds.slice(index, index + LINKED_ITEM_CHUNK_SIZE));
+  }
+  let retryCount = 0;
+
+  const chunkResults = await mapWithConcurrency(
+    chunks,
+    LINKED_ITEM_CHUNK_CONCURRENCY,
+    async (chunk) => {
+      let attempt = 0;
+      while (true) {
+        try {
+          const data = await callMondayGraphQL<Data>(queryText, { itemIds: chunk });
+          return data.items ?? [];
+        } catch (error) {
+          if (attempt >= LINKED_ITEM_CHUNK_RETRY_LIMIT) {
+            throw error;
+          }
+          const delay = LINKED_ITEM_CHUNK_RETRY_BASE_DELAY_MS * 2 ** attempt;
+          attempt += 1;
+          retryCount += 1;
+          await sleep(delay);
+        }
+      }
+    },
+  );
+  const rawItems = chunkResults.flatMap((chunk) => chunk);
+
+  const mappedItems: SourceItem[] = [];
+  for (const item of rawItems) {
+    if (!item.id?.trim()) continue;
+    const subitems: SourceSubitem[] = (item.subitems ?? [])
+      .map((si) => ({
+        id: String(si.id ?? ""),
+        name: (si.name ?? "").trim(),
+        createdAt: si.created_at ?? null,
+        columnValues: (si.column_values ?? []).map((cv) => ({
+          id: cv.id ?? "",
+          type: cv.type ?? "",
+          text: cv.text ?? null,
+          value: cv.value ?? null,
+        })),
+        updates: (si.updates ?? []).map(mapUpdate),
+      }))
+      .filter((subitem) => subitem.id.trim().length > 0);
+    mappedItems.push({
+      id: String(item.id),
+      name: (item.name ?? "").trim(),
+      boardId: String(item.board?.id ?? ""),
+      boardName: item.board?.name?.trim() ?? null,
+      updates: (item.updates ?? []).map(mapUpdate),
+      subitems,
+    });
+  }
 
   return {
-    id: String(item.id),
-    name: (item.name ?? "").trim(),
-    boardId: String(item.board?.id ?? ""),
-    boardName: item.board?.name?.trim() ?? null,
-    updates: (item.updates ?? []).map(mapUpdate),
-    subitems,
-  } satisfies SourceItem;
+    items: mappedItems,
+    retryCount,
+    chunkCount: chunks.length,
+  };
 };
 
 const fetchBoardColumns = async (boardId: string) => {
@@ -554,13 +689,84 @@ export const syncContactFromConnectedBoards = async (
     monthlyBoardMappings?: MonthlyBoardMapping[];
   },
 ): Promise<SyncResult> => {
+  const syncStartedAt = Date.now();
   const boardId = env.MONDAY_BOARD_ID?.trim() ?? "";
   if (!boardId) throw new Error("Missing MONDAY_BOARD_ID");
 
   const warnings: string[] = [];
+  const timings: SyncPhaseTimings = {
+    resolveContactMs: 0,
+    monthlyLookupMs: 0,
+    dedupeLoadMs: 0,
+    linkedDetailLoadMs: 0,
+    targetMetadataMs: 0,
+    syncReplayMs: 0,
+    totalMs: 0,
+  };
+
+  const boardColumnsCache = new Map<string, MondayColumn[]>();
+  const boardSubitemBoardIdCache = new Map<string, string | null>();
+  const boardColumnsByTitleCache = new Map<string, Map<string, MondayColumn[]>>();
+  const boardColumnsByIdCache = new Map<string, Map<string, MondayColumn>>();
+
+  const getCachedBoardColumns = async (targetBoardId: string) => {
+    const normalizedBoardId = targetBoardId.trim();
+    if (!normalizedBoardId) return [] as MondayColumn[];
+    const cached = boardColumnsCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const fetched = await fetchBoardColumns(normalizedBoardId);
+    boardColumnsCache.set(normalizedBoardId, fetched);
+    return fetched;
+  };
+
+  const getCachedSubitemBoardId = async (targetBoardId: string) => {
+    const normalizedBoardId = targetBoardId.trim();
+    if (!normalizedBoardId) return null;
+    if (boardSubitemBoardIdCache.has(normalizedBoardId)) {
+      return boardSubitemBoardIdCache.get(normalizedBoardId) ?? null;
+    }
+    const parentColumns = await getCachedBoardColumns(normalizedBoardId);
+    const subtasksColumn =
+      parentColumns.find((column) => normalizeText(column.type) === "subtasks") ?? null;
+    const resolvedSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(subtasksColumn);
+    boardSubitemBoardIdCache.set(normalizedBoardId, resolvedSubitemBoardId);
+    return resolvedSubitemBoardId;
+  };
+
+  const getCachedColumnsByTitle = (targetBoardId: string, columns: MondayColumn[]) => {
+    const normalizedBoardId = targetBoardId.trim();
+    const cached = boardColumnsByTitleCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const mappedByTitle = new Map<string, MondayColumn[]>();
+    for (const column of columns) {
+      const title = normalizeText(column.title);
+      if (!title) continue;
+      const list = mappedByTitle.get(title) ?? [];
+      list.push(column);
+      mappedByTitle.set(title, list);
+    }
+    boardColumnsByTitleCache.set(normalizedBoardId, mappedByTitle);
+    return mappedByTitle;
+  };
+
+  const getCachedColumnsById = (targetBoardId: string, columns: MondayColumn[]) => {
+    const normalizedBoardId = targetBoardId.trim();
+    const cached = boardColumnsByIdCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const mappedById = new Map<string, MondayColumn>();
+    for (const column of columns) {
+      const id = column.id?.trim() ?? "";
+      if (!id) continue;
+      mappedById.set(id, column);
+    }
+    boardColumnsByIdCache.set(normalizedBoardId, mappedById);
+    return mappedById;
+  };
 
   // 1. Fetch contact item from the API board
+  const resolveContactStart = Date.now();
   const contactItem = await fetchContactItem(boardId, itemId);
+  timings.resolveContactMs = Date.now() - resolveContactStart;
   if (!contactItem) throw new Error(`Contact item ${itemId} not found`);
 
   const normalizedMappings = normalizeMonthlyBoardMappings(
@@ -591,8 +797,19 @@ export const syncContactFromConnectedBoards = async (
 
   // 2. Reverse lookup: find items on the monthly board whose board_relation__1
   //    links back to this API board item
+  const monthlyLookupStart = Date.now();
   console.log("[Sync] Searching monthly board", monthlyBoardId, "for item", itemId, contactItem.name);
-  const linkedIds = await findMonthlyBoardItemsForContact(itemId, monthlyBoardId);
+  const monthlyLookup = await findMonthlyBoardItemsForContact(itemId, monthlyBoardId);
+  const linkedIds = monthlyLookup.matchedIds;
+  timings.monthlyLookupMs = Date.now() - monthlyLookupStart;
+  if (monthlyLookup.usedFallbackScan) {
+    warnings.push("Monthly relation query fallback scan was used");
+    if (monthlyLookup.relationQueryError) {
+      warnings.push(
+        `Monthly relation query failed: ${monthlyLookup.relationQueryError}`,
+      );
+    }
+  }
   console.log("[Sync] Found", linkedIds.length, "monthly board items");
 
   if (linkedIds.length === 0) {
@@ -619,6 +836,7 @@ export const syncContactFromConnectedBoards = async (
 
   // Fetch existing updates on the target item to dedup parent and subitem
   // updates. Synced updates contain "source_entity_id=XYZ" in the body.
+  const dedupeLoadStart = Date.now();
   const existingSyncedEntityIds = new Set<string>();
   {
     interface UpdatesData {
@@ -653,17 +871,33 @@ export const syncContactFromConnectedBoards = async (
     }
     console.log("[Sync] Found", existingSyncedEntityIds.size, "already-synced entity IDs");
   }
+  timings.dedupeLoadMs = Date.now() - dedupeLoadStart;
 
   // 3. Fetch each linked item with full details
-  const sourceItems: SourceItem[] = [];
-  for (const linkedId of linkedIds) {
-    try {
-      const item = await fetchLinkedItemWithDetails(linkedId);
-      if (item) sourceItems.push(item);
-    } catch (err) {
-      warnings.push(`Failed to fetch linked item ${linkedId}: ${err instanceof Error ? err.message : String(err)}`);
+  const linkedDetailsStart = Date.now();
+  let sourceItems: SourceItem[] = [];
+  let linkedDetailRetryCount = 0;
+  let linkedDetailChunkCount = 0;
+  try {
+    const linkedDetailResult = await fetchLinkedItemsWithDetails(linkedIds);
+    sourceItems = linkedDetailResult.items;
+    linkedDetailRetryCount = linkedDetailResult.retryCount;
+    linkedDetailChunkCount = linkedDetailResult.chunkCount;
+  } catch (err) {
+    warnings.push(
+      `Failed to fetch linked items details: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  if (sourceItems.length > 0) {
+    const foundSourceItemIds = new Set(sourceItems.map((sourceItem) => sourceItem.id.trim()));
+    const missingLinkedIds = linkedIds.filter((linkedId) => !foundSourceItemIds.has(linkedId));
+    for (const missingId of missingLinkedIds) {
+      warnings.push(`Linked item ${missingId} was not returned by Monday detail query`);
     }
   }
+  timings.linkedDetailLoadMs = Date.now() - linkedDetailsStart;
 
   if (sourceItems.length === 0) {
     return {
@@ -679,22 +913,22 @@ export const syncContactFromConnectedBoards = async (
   }
 
   // 3. Resolve target subitem board columns for column mapping
-  const targetColumns = await fetchBoardColumns(boardId);
-  const targetSubtasksCol = targetColumns.find((c) => normalizeText(c.type) === "subtasks") ?? null;
-  const targetSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(targetSubtasksCol);
+  const targetMetadataStart = Date.now();
+  const targetColumns = await getCachedBoardColumns(boardId);
+  const targetSubitemBoardId = await getCachedSubitemBoardId(boardId);
   let targetSubitemColumns: MondayColumn[] = [];
   if (targetSubitemBoardId) {
-    targetSubitemColumns = await fetchBoardColumns(targetSubitemBoardId);
+    targetSubitemColumns = await getCachedBoardColumns(targetSubitemBoardId);
   }
-  const targetSubitemByTitle = new Map<string, MondayColumn[]>();
-  for (const col of targetSubitemColumns) {
-    const title = normalizeText(col.title);
-    if (!title) continue;
-    const list = targetSubitemByTitle.get(title) ?? [];
-    list.push(col);
-    targetSubitemByTitle.set(title, list);
-  }
-  const targetSubitemById = new Map(targetSubitemColumns.map((c) => [c.id?.trim() ?? "", c]));
+  const targetSubitemByTitle = getCachedColumnsByTitle(
+    targetSubitemBoardId ?? boardId,
+    targetSubitemColumns,
+  );
+  const targetSubitemById = getCachedColumnsById(
+    targetSubitemBoardId ?? boardId,
+    targetSubitemColumns,
+  );
+  timings.targetMetadataMs = Date.now() - targetMetadataStart;
 
   let createdParentUpdates = 0;
   let createdSubitems = 0;
@@ -702,16 +936,15 @@ export const syncContactFromConnectedBoards = async (
   let skippedSubitems = 0;
   const progressColumnsToUpdate = new Set<string>();
   const dryRun = options?.dryRun ?? false;
+  const syncReplayStart = Date.now();
 
   for (const source of sourceItems) {
     // Resolve source subitem board columns
     let sourceSubitemColumnTitleById: Record<string, string> = {};
     if (source.subitems.length > 0) {
-      const sourceBoardColumns = await fetchBoardColumns(source.boardId);
-      const sourceSubtasksCol = sourceBoardColumns.find((c) => normalizeText(c.type) === "subtasks") ?? null;
-      const sourceSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(sourceSubtasksCol);
+      const sourceSubitemBoardId = await getCachedSubitemBoardId(source.boardId);
       if (sourceSubitemBoardId) {
-        const sourceSubitemCols = await fetchBoardColumns(sourceSubitemBoardId);
+        const sourceSubitemCols = await getCachedBoardColumns(sourceSubitemBoardId);
         sourceSubitemColumnTitleById = Object.fromEntries(
           sourceSubitemCols
             .filter((c) => c.id && c.title)
@@ -874,6 +1107,7 @@ export const syncContactFromConnectedBoards = async (
       }
     }
   }
+  timings.syncReplayMs = Date.now() - syncReplayStart;
 
   // 4. Set progress columns
   let updatedProgressColumns = 0;
@@ -902,7 +1136,20 @@ export const syncContactFromConnectedBoards = async (
     }
   }
 
-  console.log("[Sync] Complete for", itemId, { linkedItems: sourceItems.length, createdParentUpdates, createdSubitems, createdSubitemUpdates, updatedProgressColumns, skippedSubitems, warnings: warnings.length });
+  timings.totalMs = Date.now() - syncStartedAt;
+  console.log("[Sync] Complete for", itemId, {
+    linkedItems: sourceItems.length,
+    createdParentUpdates,
+    createdSubitems,
+    createdSubitemUpdates,
+    updatedProgressColumns,
+    skippedSubitems,
+    warnings: warnings.length,
+    usedMonthlyLookupFallback: monthlyLookup.usedFallbackScan,
+    linkedDetailChunkCount,
+    linkedDetailRetryCount,
+    phaseTimingsMs: timings,
+  });
 
   return {
     ok: true,
