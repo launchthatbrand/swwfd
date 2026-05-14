@@ -15,6 +15,7 @@ const toJson = (body: unknown, status = 200) =>
 interface SyncBody {
   dryRun?: boolean;
   ownerId?: string;
+  monthlyBoardId?: string;
 }
 
 export const POST = async (
@@ -58,9 +59,11 @@ export const POST = async (
   }
 
   try {
+    const selectedMonthlyBoardId = body.monthlyBoardId?.trim() ?? "";
     const result = await syncContactFromConnectedBoards(itemId.trim(), {
       dryRun: body.dryRun ?? false,
       ownerId: body.ownerId ?? identity.userId,
+      monthlyBoardId: selectedMonthlyBoardId.length > 0 ? selectedMonthlyBoardId : undefined,
       monthlyBoardMappings,
     });
     return toJson(result);
