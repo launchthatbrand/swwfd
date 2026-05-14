@@ -293,6 +293,9 @@ export function MondayBoardView({
   const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
   const [isSavingContactColumn, setIsSavingContactColumn] = useState(false);
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
+  const [syncContactBoardPickerRecord, setSyncContactBoardPickerRecord] =
+    useState<MondayRecord | null>(null);
+  const [syncContactBoardSelection, setSyncContactBoardSelection] = useState("");
   const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
   const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
   const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
@@ -527,6 +530,35 @@ export function MondayBoardView({
   );
   const platformMappingsSignature = (mappings: MondayPlatformSettings["monthlyBoardMappings"]) =>
     mappings.map((entry) => `${entry.monthKey}:${entry.boardId}`).join(",");
+  const formatMonthMappingLabel = useCallback((monthKey: string) => {
+    const [yearPart, monthPart] = monthKey.split("-");
+    const year = Number(yearPart);
+    const monthIndex = Number(monthPart) - 1;
+    if (!Number.isInteger(year) || !Number.isInteger(monthIndex)) return monthKey;
+    if (monthIndex < 0 || monthIndex > 11) return monthKey;
+    const parsed = new Date(Date.UTC(year, monthIndex, 1));
+    if (Number.isNaN(parsed.getTime())) return monthKey;
+    return parsed.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  }, []);
+  const syncMonthlyBoardOptions = useMemo(
+    () =>
+      platformSettingsNormalized.monthlyBoardMappings
+        .map((entry) => {
+          const monthLabel = formatMonthMappingLabel(entry.monthKey);
+          return {
+            value: `${entry.monthKey}:${entry.boardId}`,
+            boardId: entry.boardId,
+            monthKey: entry.monthKey,
+            label: `${monthLabel} (${entry.monthKey})`,
+          };
+        })
+        .filter((entry) => entry.boardId.trim().length > 0),
+    [formatMonthMappingLabel, platformSettingsNormalized.monthlyBoardMappings],
+  );
   const hasUnsavedPlatformSettings =
     platformSettingsNormalized.adminUserIds.join(",") !==
       platformSettingsDraftNormalized.adminUserIds.join(",") ||
@@ -2724,8 +2756,39 @@ export function MondayBoardView({
     });
   };
 
+  const openSyncContactBoardPicker = useCallback(
+    (record: MondayRecord) => {
+      if (!sessionToken) {
+        toast.error("Missing monday session context");
+        return;
+      }
+      if (syncMonthlyBoardOptions.length === 0) {
+        toast.error("No monthly board mappings configured in platform settings.");
+        return;
+      }
+      const recordMonthKey = (() => {
+        if (!record.createdAt) return null;
+        const parsed = Date.parse(record.createdAt);
+        if (Number.isNaN(parsed)) return null;
+        return new Date(parsed).toISOString().slice(0, 7);
+      })();
+      const defaultSelection =
+        (recordMonthKey
+          ? syncMonthlyBoardOptions.find((entry) => entry.monthKey === recordMonthKey)
+          : null) ?? syncMonthlyBoardOptions[0];
+      setSyncContactBoardSelection(defaultSelection?.value ?? "");
+      setSyncContactBoardPickerRecord(record);
+    },
+    [sessionToken, syncMonthlyBoardOptions],
+  );
+
   const handleSyncContactRecord = useCallback(
-    async (record: MondayRecord) => {
+    async (
+      record: MondayRecord,
+      options?: {
+        monthlyBoardId?: string;
+      },
+    ) => {
       if (!sessionToken) return;
       const syncKey = record.id;
       setSyncingContactIds((prev) => new Set(prev).add(syncKey));
@@ -2739,7 +2802,10 @@ export function MondayBoardView({
               "content-type": "application/json",
               "x-monday-session-token": sessionToken,
             },
-            body: JSON.stringify({ ownerId: identity?.userId }),
+            body: JSON.stringify({
+              ownerId: identity?.userId,
+              monthlyBoardId: options?.monthlyBoardId,
+            }),
           },
         );
         const data = (await response.json()) as {
@@ -2792,6 +2858,25 @@ export function MondayBoardView({
       syncContactHistoryDialogFromRecords,
     ],
   );
+
+  const confirmSyncContactFromSelectedBoard = useCallback(() => {
+    const record = syncContactBoardPickerRecord;
+    if (!record) return;
+    const selectedBoard = syncMonthlyBoardOptions.find(
+      (entry) => entry.value === syncContactBoardSelection,
+    );
+    if (!selectedBoard) {
+      toast.error("Select a monthly board to sync.");
+      return;
+    }
+    setSyncContactBoardPickerRecord(null);
+    void handleSyncContactRecord(record, { monthlyBoardId: selectedBoard.boardId });
+  }, [
+    handleSyncContactRecord,
+    syncContactBoardPickerRecord,
+    syncContactBoardSelection,
+    syncMonthlyBoardOptions,
+  ]);
 
   const fetchBulkSyncStatus = useCallback(
     async (jobId?: string | null) => {
@@ -6618,7 +6703,7 @@ export function MondayBoardView({
                       syncingContactIds.has(contactHistoryDialogRecord.id)
                     }
                     onClick={() => {
-                      void handleSyncContactRecord(contactHistoryDialogRecord);
+                      openSyncContactBoardPicker(contactHistoryDialogRecord);
                     }}
                   >
                     {syncingContactIds.has(contactHistoryDialogRecord.id)
@@ -6963,6 +7048,74 @@ export function MondayBoardView({
             </div>
           ) : null}
             </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!syncContactBoardPickerRecord}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSyncContactBoardPickerRecord(null);
+            setSyncContactBoardSelection("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sync User</DialogTitle>
+            <DialogDescription>
+              Choose which monthly board to scrape for{" "}
+              {syncContactBoardPickerRecord?.name ?? "this contact"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Select
+              value={syncContactBoardSelection}
+              onValueChange={setSyncContactBoardSelection}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select monthly board" />
+              </SelectTrigger>
+              <SelectContent>
+                {syncMonthlyBoardOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label} · {option.boardId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {syncMonthlyBoardOptions.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No monthly board mappings are configured in platform settings.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSyncContactBoardPickerRecord(null);
+                setSyncContactBoardSelection("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmSyncContactFromSelectedBoard}
+              disabled={
+                !syncContactBoardSelection ||
+                !syncContactBoardPickerRecord ||
+                syncingContactIds.has(syncContactBoardPickerRecord?.id ?? "")
+              }
+            >
+              {syncContactBoardPickerRecord &&
+              syncingContactIds.has(syncContactBoardPickerRecord.id)
+                ? "Syncing..."
+                : "Start Sync"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
