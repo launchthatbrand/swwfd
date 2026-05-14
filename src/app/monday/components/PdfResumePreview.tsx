@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 
 pdfjs.GlobalWorkerOptions.workerSrc =
@@ -13,6 +13,7 @@ export const PdfResumePreview = (props: {
   const [numPages, setNumPages] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setNumPages(0);
@@ -20,18 +21,30 @@ export const PdfResumePreview = (props: {
   }, [props.fileUrl]);
 
   useEffect(() => {
-    const viewportWidth = window.innerWidth;
-    const desiredWidth = Math.max(320, Math.min(1000, viewportWidth - 140));
-    setContainerWidth(desiredWidth);
+    const measure = () => {
+      const container = containerRef.current;
+      if (!container) return;
+      const next = Math.floor(container.clientWidth - 24);
+      if (!Number.isFinite(next) || next <= 0) return;
+      setContainerWidth(Math.max(280, next));
+    };
+
+    measure();
+
+    const resizeObserver = new ResizeObserver(() => {
+      measure();
+    });
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current);
+    }
 
     const handleResize = () => {
-      const nextViewportWidth = window.innerWidth;
-      const nextWidth = Math.max(320, Math.min(1000, nextViewportWidth - 140));
-      setContainerWidth(nextWidth);
+      measure();
     };
 
     window.addEventListener("resize", handleResize);
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener("resize", handleResize);
     };
   }, []);
@@ -59,7 +72,7 @@ export const PdfResumePreview = (props: {
   }
 
   return (
-    <div className="h-full overflow-auto p-3">
+    <div ref={containerRef} className="h-full overflow-auto p-3">
       <Document
         file={props.fileUrl}
         loading={
@@ -83,7 +96,7 @@ export const PdfResumePreview = (props: {
       >
         <div className="space-y-3">
           {pageNumbers.map((pageNumber) => (
-            <div key={pageNumber} className="mx-auto w-fit overflow-hidden rounded border bg-white">
+            <div key={pageNumber} className="mx-auto flex w-full justify-center rounded border bg-white">
               <Page
                 pageNumber={pageNumber}
                 width={containerWidth}
