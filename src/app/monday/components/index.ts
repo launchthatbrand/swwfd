@@ -4,6 +4,7 @@ export { ApprovalProgressIndicator } from "./ApprovalProgressIndicator";
 export { BusinessInfoHoverCard } from "./BusinessInfoHoverCard";
 export { ContactCard } from "./ContactCard";
 export { ContactUpdates } from "./ContactUpdates";
+export { DocxResumePreview } from "./DocxResumePreview";
 export { KanbanBoard } from "./KanbanBoard";
 export { NameCellContent } from "./NameCellContent";
 export { OnboardingStepper } from "./OnboardingStepper";

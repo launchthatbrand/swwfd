@@ -14,6 +14,7 @@ export const PdfResumePreview = (props: {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const lastMeasuredWidthRef = useRef(0);
 
   useEffect(() => {
     setNumPages(0);
@@ -24,19 +25,23 @@ export const PdfResumePreview = (props: {
     const measure = () => {
       const container = containerRef.current;
       if (!container) return;
-      const next = Math.floor(container.clientWidth - 24);
+      const parentWidth = container.parentElement?.clientWidth ?? container.clientWidth;
+      const next = Math.floor(parentWidth - 24);
       if (!Number.isFinite(next) || next <= 0) return;
-      setContainerWidth(Math.max(280, next));
+      const normalized = Math.max(280, next);
+      if (Math.abs(normalized - lastMeasuredWidthRef.current) < 2) {
+        return;
+      }
+      lastMeasuredWidthRef.current = normalized;
+      setContainerWidth(normalized);
     };
 
-    measure();
-
-    const resizeObserver = new ResizeObserver(() => {
-      measure();
-    });
-    if (containerRef.current) {
-      resizeObserver.observe(containerRef.current);
-    }
+    const measureOnNextFrame = () => {
+      window.requestAnimationFrame(() => {
+        measure();
+      });
+    };
+    measureOnNextFrame();
 
     const handleResize = () => {
       measure();
@@ -44,7 +49,6 @@ export const PdfResumePreview = (props: {
 
     window.addEventListener("resize", handleResize);
     return () => {
-      resizeObserver.disconnect();
       window.removeEventListener("resize", handleResize);
     };
   }, []);

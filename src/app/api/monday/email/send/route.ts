@@ -190,29 +190,31 @@ export const POST = async (request: Request) => {
       );
     }
 
-    const contactColumns = await fetchMondayItemColumns({
-      itemId: requestedContactItemId,
-    });
-    const contactEmail = resolveContactEmail(contactColumns.columns);
-    if (!contactEmail) {
-      return toJson(
-        {
-          ok: false,
-          error:
-            "The selected contact does not have a valid email address on record.",
-        },
-        400,
-      );
-    }
-    if (contactEmail !== to) {
-      return toJson(
-        {
-          ok: false,
-          error:
-            "Recipient email must match the selected contact's email address.",
-        },
-        400,
-      );
+    let contactEmail: string | null = null;
+    try {
+      const contactColumns = await fetchMondayItemColumns({
+        itemId: requestedContactItemId,
+      });
+      contactEmail = resolveContactEmail(contactColumns.columns);
+      if (contactEmail && contactEmail !== to) {
+        return toJson(
+          {
+            ok: false,
+            error:
+              "Recipient email must match the selected contact's email address.",
+          },
+          400,
+        );
+      }
+    } catch (contactLookupError) {
+      console.warn("[monday-email-send] contact lookup failed; continuing with payload values", {
+        contactItemId: requestedContactItemId,
+        to,
+        error:
+          contactLookupError instanceof Error
+            ? contactLookupError.message
+            : String(contactLookupError),
+      });
     }
 
     const requestedOwnerUserId = body.ownerMondayUserId?.trim() ?? "";

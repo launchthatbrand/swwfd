@@ -194,6 +194,7 @@ import {
   BusinessInfoHoverCard,
   ContactCard,
   ContactUpdates,
+  DocxResumePreview,
   GuidedTourProvider,
   isTourLockingDialog,
   HelpDeskDialog,
@@ -7343,6 +7344,17 @@ export function MondayBoardView({
               {(() => {
                 const lowerName = resumePreview.fileName.toLowerCase();
                 const isPdf = lowerName.endsWith(".pdf");
+                const isDocxDocument =
+                  lowerName.endsWith(".docx") ||
+                  lowerName.endsWith(".docm") ||
+                  lowerName.endsWith(".dotx") ||
+                  lowerName.endsWith(".dotm");
+                const isLegacyWordDocument =
+                  lowerName.endsWith(".doc") ||
+                  lowerName.endsWith(".rtf");
+                const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+                  resumePreview.href,
+                )}`;
                 const isImage =
                   lowerName.endsWith(".png") ||
                   lowerName.endsWith(".jpg") ||
@@ -7368,6 +7380,17 @@ export function MondayBoardView({
                         <PdfResumePreview
                           fileUrl={resumePreview.href}
                           fileName={resumePreview.fileName}
+                        />
+                      ) : isDocxDocument ? (
+                        <DocxResumePreview
+                          fileUrl={resumePreview.href}
+                          fileName={resumePreview.fileName}
+                        />
+                      ) : isLegacyWordDocument ? (
+                        <iframe
+                          src={officeEmbedUrl}
+                          title={`Word preview: ${resumePreview.fileName}`}
+                          className="h-full w-full border-0 bg-white"
                         />
                       ) : isImage ? (
                         <object
