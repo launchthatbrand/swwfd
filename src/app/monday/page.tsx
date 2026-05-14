@@ -5,15 +5,18 @@ import { Skeleton } from "~/components/ui/skeleton";
 import {
   ChevronLeft,
   ChevronRight,
+  Check,
   Columns3,
   ExternalLink,
   Filter,
   LayoutGrid,
+  Pencil,
   CircleHelp,
   List,
   Mail,
   RefreshCcw,
   Settings,
+  X,
   UserPlus,
 } from "lucide-react";
 import type {
@@ -285,6 +288,9 @@ export function MondayBoardView({
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
+  const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
+  const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
+  const [isSavingContactColumn, setIsSavingContactColumn] = useState(false);
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
   const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
   const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
@@ -859,18 +865,22 @@ export function MondayBoardView({
     staleTime: 30_000,
   });
 
+  interface ContactColumnEntry {
+    id: string;
+    title: string;
+    type: string;
+    text: string | null;
+    value: string | null;
+    options?: string[];
+    isEditable?: boolean;
+  }
+
   interface ContactColumnsResponse {
     ok: boolean;
     error?: string;
     itemId?: string;
     itemName?: string | null;
-    columns?: Array<{
-      id: string;
-      title: string;
-      type: string;
-      text: string | null;
-      value: string | null;
-    }>;
+    columns?: ContactColumnEntry[];
   }
 
   const contactColumnsQuery = useQuery({
@@ -2574,6 +2584,111 @@ export function MondayBoardView({
     if (contactId && contactId.length > 0) return contactId;
     return record.id;
   };
+
+  const normalizeEditableColumnDraft = useCallback((column: ContactColumnEntry) => {
+    const normalizedType = column.type.toLowerCase();
+    if (normalizedType === "date") {
+      if (column.value) {
+        try {
+          const parsed = JSON.parse(column.value) as { date?: string };
+          if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+            return parsed.date;
+          }
+        } catch {
+          // ignore malformed value JSON
+        }
+      }
+      const text = column.text?.trim() ?? "";
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+    }
+    if (normalizedType === "dropdown") {
+      const first = (column.text ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .find((entry) => entry.length > 0);
+      return first ?? "";
+    }
+    return column.text ?? "";
+  }, []);
+
+  const startEditingContactColumn = useCallback((column: ContactColumnEntry) => {
+    if (!column.isEditable) return;
+    setEditingContactColumnId(column.id);
+    setEditingContactColumnDraft(normalizeEditableColumnDraft(column));
+  }, [normalizeEditableColumnDraft]);
+
+  const cancelEditingContactColumn = useCallback(() => {
+    setEditingContactColumnId(null);
+    setEditingContactColumnDraft("");
+  }, []);
+
+  const saveEditingContactColumn = useCallback(async () => {
+    if (!sessionToken || !contactHistoryDialogRecord || !editingContactColumnId) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    const column = (contactColumnsQuery.data?.columns ?? []).find(
+      (entry) => entry.id === editingContactColumnId,
+    );
+    if (!column) {
+      toast.error("Column no longer available");
+      return;
+    }
+
+    setIsSavingContactColumn(true);
+    try {
+      const targetRecordId = resolveContactUpdateTargetRecordId(
+        contactHistoryDialogRecord,
+      );
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/columns`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            columnId: column.id,
+            columnType: column.type,
+            value: editingContactColumnDraft,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to update column");
+      }
+
+      await contactColumnsQuery.refetch();
+      const refreshedRecordsResult = await recordsQuery.refetch();
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      cancelEditingContactColumn();
+      toast.success(`Updated ${column.title}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update column value",
+      );
+    } finally {
+      setIsSavingContactColumn(false);
+    }
+  }, [
+    cancelEditingContactColumn,
+    contactColumnsQuery,
+    contactHistoryDialogRecord,
+    editingContactColumnDraft,
+    editingContactColumnId,
+    recordsQuery,
+    sessionToken,
+  ]);
+
+  useEffect(() => {
+    cancelEditingContactColumn();
+  }, [cancelEditingContactColumn, contactHistoryDialogRecord?.id, contactDialogTab]);
 
   const syncContactHistoryDialogFromRecords = (refreshedRecords: MondayRecord[]) => {
     setContactHistoryDialogRecord((prev) => {
@@ -6474,6 +6589,23 @@ export function MondayBoardView({
                     {contactDialogIndex + 1} / {filteredRecords.length}
                   </span>
                 ) : null}
+                {contactHistoryDialogRecord?.url ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="ml-2"
+                    onClick={() => {
+                      window.open(
+                        contactHistoryDialogRecord.url ?? "",
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                  >
+                    Open
+                  </Button>
+                ) : null}
                 {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
                   <Button
                     type="button"
@@ -6673,8 +6805,151 @@ export function MondayBoardView({
                                 <td className="text-muted-foreground bg-muted/30 w-[180px] shrink-0 border-r px-3 py-2 text-xs font-medium">
                                   {col.title}
                                 </td>
-                                <td className="break-words px-3 py-2 text-xs">
-                                  {col.text || <span className="text-muted-foreground">—</span>}
+                                <td className="group relative break-words px-3 py-2 pr-10 text-xs">
+                                  {editingContactColumnId === col.id ? (
+                                    <div className="space-y-2">
+                                      {(() => {
+                                        const normalizedType = col.type.toLowerCase();
+                                        if (
+                                          normalizedType === "status" ||
+                                          normalizedType === "dropdown"
+                                        ) {
+                                          const options = Array.from(
+                                            new Set((col.options ?? []).filter(Boolean)),
+                                          );
+                                          return (
+                                            <Select
+                                              value={
+                                                editingContactColumnDraft.length > 0
+                                                  ? editingContactColumnDraft
+                                                  : "__clear__"
+                                              }
+                                              onValueChange={(value) => {
+                                                setEditingContactColumnDraft(
+                                                  value === "__clear__" ? "" : value,
+                                                );
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="Select value" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="__clear__">Clear</SelectItem>
+                                                {options.map((option) => (
+                                                  <SelectItem key={option} value={option}>
+                                                    {option}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          );
+                                        }
+                                        if (normalizedType === "date") {
+                                          return (
+                                            <Input
+                                              type="date"
+                                              className="h-8 text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        if (
+                                          normalizedType === "long_text" ||
+                                          normalizedType === "long-text"
+                                        ) {
+                                          return (
+                                            <Textarea
+                                              className="min-h-[72px] text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        if (
+                                          normalizedType === "numbers" ||
+                                          normalizedType === "numeric"
+                                        ) {
+                                          return (
+                                            <Input
+                                              type="number"
+                                              className="h-8 text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        return (
+                                          <Input
+                                            type="text"
+                                            className="h-8 text-xs"
+                                            value={editingContactColumnDraft}
+                                            onChange={(event) =>
+                                              setEditingContactColumnDraft(
+                                                event.target.value,
+                                              )
+                                            }
+                                          />
+                                        );
+                                      })()}
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          className="h-6 w-6"
+                                          onClick={() => {
+                                            void saveEditingContactColumn();
+                                          }}
+                                          disabled={isSavingContactColumn}
+                                        >
+                                          <Check className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6"
+                                          onClick={cancelEditingContactColumn}
+                                          disabled={isSavingContactColumn}
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {col.text || (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                      {col.isEditable ? (
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="ghost"
+                                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                                          onClick={() => {
+                                            startEditingContactColumn(col);
+                                          }}
+                                          title={`Edit ${col.title}`}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                      ) : null}
+                                    </>
+                                  )}
                                 </td>
                               </tr>
                             ))}

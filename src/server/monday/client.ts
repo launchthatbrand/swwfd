@@ -2317,6 +2317,147 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   });
 };
 
+interface UpdateMondayRecordColumnValueArgs {
+  itemId: string;
+  columnId: string;
+  columnType: string;
+  value: string | null;
+}
+
+const CONTACT_EDITABLE_COLUMN_TYPES = new Set([
+  "text",
+  "long_text",
+  "long-text",
+  "date",
+  "numbers",
+  "numeric",
+  "status",
+  "dropdown",
+]);
+
+export const updateMondayRecordColumnValue = async (
+  args: UpdateMondayRecordColumnValueArgs,
+) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  const columnId = args.columnId.trim();
+  const columnType = args.columnType.trim().toLowerCase();
+  const rawValue = args.value?.trim() ?? "";
+  const normalizedValue = rawValue.length > 0 ? rawValue : null;
+
+  if (!itemId) throw new Error("Missing itemId");
+  if (!columnId) throw new Error("Missing columnId");
+  if (!/^[a-zA-Z0-9_]+$/.test(columnId)) {
+    throw new Error("Invalid columnId");
+  }
+  if (!CONTACT_EDITABLE_COLUMN_TYPES.has(columnType)) {
+    throw new Error(`Column type "${columnType}" is not editable`);
+  }
+
+  const columnValues: Record<string, unknown> = {};
+  if (columnType === "status" || columnType === "dropdown") {
+    interface BoardColumnsData {
+      boards?: Array<{
+        columns?: Array<{
+          id?: string | null;
+          type?: string | null;
+          settings_str?: string | null;
+        }>;
+      }>;
+    }
+    const boardData = await callMondayGraphQL<BoardColumnsData>(
+      `query ResolveBoardColumn($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id type settings_str }
+        }
+      }`,
+      { boardId: mondayBoard.boardId },
+    );
+    const matchedColumn = (boardData.boards?.[0]?.columns ?? []).find(
+      (column) => column.id === columnId,
+    );
+    if (!matchedColumn) {
+      throw new Error("Column does not exist on the main API board");
+    }
+    const allowedLabels = parseDropdownLabelsFromSettings(
+      matchedColumn.settings_str ?? null,
+    );
+    if (normalizedValue && allowedLabels.length === 0) {
+      throw new Error("No predefined options are available for this column");
+    }
+    if (
+      normalizedValue &&
+      !allowedLabels.some(
+        (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+      )
+    ) {
+      throw new Error("Value must match one of the predefined options");
+    }
+    const canonicalValue =
+      normalizedValue == null
+        ? null
+        : allowedLabels.find(
+            (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+          ) ?? normalizedValue;
+    columnValues[columnId] = canonicalValue
+      ? columnType === "status"
+        ? { label: canonicalValue }
+        : { labels: [canonicalValue] }
+      : null;
+  } else if (columnType === "date") {
+    const dateOnly = normalizeDateOnlyValue(normalizedValue);
+    if (normalizedValue && !dateOnly) {
+      throw new Error("Date must be in YYYY-MM-DD format");
+    }
+    columnValues[columnId] = dateOnly ? { date: dateOnly } : null;
+  } else if (columnType === "numbers" || columnType === "numeric") {
+    if (!normalizedValue) {
+      columnValues[columnId] = null;
+    } else {
+      const numericValue = Number(normalizedValue);
+      if (!Number.isFinite(numericValue)) {
+        throw new Error("Numbers columns require a valid numeric value");
+      }
+      columnValues[columnId] = numericValue;
+    }
+  } else if (columnType === "long_text" || columnType === "long-text") {
+    columnValues[columnId] = normalizedValue ? { text: normalizedValue } : null;
+  } else {
+    columnValues[columnId] = normalizedValue ?? null;
+  }
+
+  const mutation = `
+    mutation UpdateMondayItemColumnValue(
+      $boardId: ID!
+      $itemId: ID!
+      $columnValues: JSON!
+    ) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+        create_labels_if_missing: false
+      ) {
+        id
+      }
+    }
+  `;
+
+  interface UpdateColumnMutationData {
+    change_multiple_column_values?: { id?: string };
+  }
+
+  await callMondayGraphQL<UpdateColumnMutationData>(mutation, {
+    boardId: mondayBoard.boardId,
+    itemId,
+    columnValues: JSON.stringify(columnValues),
+  });
+};
+
 export const uploadMondayRecordFile = async (args: {
   itemId: string;
   file: Blob;
@@ -2941,6 +3082,16 @@ export const listMondayRecordUpdates = async (args: {
 export const fetchMondayItemColumns = async (args: { itemId: string }) => {
   const itemId = args.itemId.trim();
   if (!itemId) throw new Error("Missing item id");
+  const editableColumnTypes = new Set([
+    "text",
+    "long_text",
+    "long-text",
+    "date",
+    "numbers",
+    "numeric",
+    "status",
+    "dropdown",
+  ]);
 
   interface ItemData {
     items?: Array<{
@@ -2976,16 +3127,25 @@ export const fetchMondayItemColumns = async (args: { itemId: string }) => {
   const boardId = item?.board?.id;
 
   let columnTitles = new Map<string, string>();
+  let boardColumnsById = new Map<
+    string,
+    { id: string; title: string; type: string; settingsStr: string | null }
+  >();
   if (boardId) {
     interface BoardData {
       boards?: Array<{
-        columns?: Array<{ id?: string | null; title?: string | null }>;
+        columns?: Array<{
+          id?: string | null;
+          title?: string | null;
+          type?: string | null;
+          settings_str?: string | null;
+        }>;
       }>;
     }
     const boardData = await callMondayGraphQL<BoardData>(
       `query GetBoardColumns($boardId: ID!) {
         boards(ids: [$boardId]) {
-          columns { id title }
+          columns { id title type settings_str }
         }
       }`,
       { boardId },
@@ -2995,17 +3155,51 @@ export const fetchMondayItemColumns = async (args: { itemId: string }) => {
         .filter((c) => c.id && c.title)
         .map((c) => [c.id!, c.title!]),
     );
+    boardColumnsById = new Map(
+      (boardData.boards?.[0]?.columns ?? [])
+        .filter((column): column is {
+          id: string;
+          title: string;
+          type: string;
+          settings_str?: string | null;
+        } => Boolean(column.id && column.title && column.type))
+        .map((column) => [
+          column.id,
+          {
+            id: column.id,
+            title: column.title,
+            type: column.type,
+            settingsStr: column.settings_str ?? null,
+          },
+        ]),
+    );
   }
 
   const columns = (item?.column_values ?? [])
     .filter((col) => col.id)
-    .map((col) => ({
-      id: col.id!,
-      title: columnTitles.get(col.id!) ?? col.id!,
-      type: col.type ?? "unknown",
-      text: col.text?.trim() || null,
-      value: col.value ?? null,
-    }));
+    .map((col) => {
+      const resolvedColumn = boardColumnsById.get(col.id!);
+      const type = (col.type ?? resolvedColumn?.type ?? "unknown").trim();
+      const normalizedType = type.toLowerCase();
+      const options =
+        normalizedType === "status" || normalizedType === "dropdown"
+          ? parseDropdownLabelsFromSettings(resolvedColumn?.settingsStr)
+          : [];
+      const isEditable =
+        editableColumnTypes.has(normalizedType) &&
+        (normalizedType !== "status" && normalizedType !== "dropdown"
+          ? true
+          : options.length > 0);
+      return {
+        id: col.id!,
+        title: columnTitles.get(col.id!) ?? col.id!,
+        type,
+        text: col.text?.trim() || null,
+        value: col.value ?? null,
+        options,
+        isEditable,
+      };
+    });
 
   return {
     itemId: item?.id ?? itemId,

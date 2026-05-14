@@ -197,7 +197,7 @@ const MessageBubble = ({
             <span className="text-muted-foreground text-[11px] font-medium">
               {creator?.name ?? config.label}
             </span>
-            <span className="text-muted-foreground/60 text-[11px]">
+            <span className="text-[11px] text-black dark:text-white">
               {subitem.createdAt ? formatUpdatedAt(subitem.createdAt) : ""}
             </span>
           </div>
