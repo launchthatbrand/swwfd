@@ -407,7 +407,7 @@ export default defineSchema({
   outlookOutboundMessages: defineTable({
     mondayAccountId: v.string(),
     mondayUserId: v.string(),
-    actingMondayUserId: v.string(),
+    actingMondayUserId: v.optional(v.string()),
     mondayAppClientId: v.union(v.string(), v.null()),
     connectionEmail: v.union(v.string(), v.null()),
     contactItemId: v.union(v.string(), v.null()),

@@ -64,7 +64,7 @@ const outboundMessageValidator = v.object({
   _creationTime: v.number(),
   mondayAccountId: v.string(),
   mondayUserId: v.string(),
-  actingMondayUserId: v.string(),
+  actingMondayUserId: v.optional(v.string()),
   mondayAppClientId: nullableString,
   connectionEmail: nullableString,
   contactItemId: nullableString,

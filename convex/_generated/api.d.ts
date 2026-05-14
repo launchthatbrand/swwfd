@@ -974,7 +974,7 @@ export declare const api: {
       {
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
-        actingMondayUserId: string;
+        actingMondayUserId?: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
@@ -1064,7 +1064,7 @@ export declare const api: {
       Array<{
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
-        actingMondayUserId: string;
+        actingMondayUserId?: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
@@ -1095,7 +1095,7 @@ export declare const api: {
       Array<{
         _creationTime: number;
         _id: Id<"outlookOutboundMessages">;
-        actingMondayUserId: string;
+        actingMondayUserId?: string;
         connectionEmail: string | null;
         contactItemId: string | null;
         conversationId: string | null;
