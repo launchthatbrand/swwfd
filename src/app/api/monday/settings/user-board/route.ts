@@ -25,6 +25,7 @@ interface UpsertBoardSettingsBody {
   customTheme?: BoardCustomTheme;
   fontSize?: BoardFontSize;
   tableDensity?: BoardTableDensity;
+  hoverPopoversEnabled?: boolean;
   pageSize?: number;
   displayMode?: BoardDisplayMode;
   recordSource?: BoardRecordSource;
@@ -78,6 +79,7 @@ const isBoardRecordSource = (value: unknown): value is BoardRecordSource => {
 const isValidPageSize = (value: unknown): value is number => {
   return typeof value === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(value);
 };
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 
 const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value);
 
@@ -149,6 +151,9 @@ export const POST = async (request: Request) => {
   if (body.tableDensity !== undefined && !isBoardTableDensity(body.tableDensity)) {
     return toJson({ ok: false, error: "tableDensity is invalid" }, 400);
   }
+  if (body.hoverPopoversEnabled !== undefined && !isBoolean(body.hoverPopoversEnabled)) {
+    return toJson({ ok: false, error: "hoverPopoversEnabled is invalid" }, 400);
+  }
 
   try {
     const identity = await requireVerifiedMondaySession(request);
@@ -163,6 +168,9 @@ export const POST = async (request: Request) => {
         customTheme: body.colorTheme === "custom" ? parsedCustomTheme : undefined,
         fontSize: body.fontSize,
         tableDensity: isBoardTableDensity(body.tableDensity) ? body.tableDensity : undefined,
+        hoverPopoversEnabled: isBoolean(body.hoverPopoversEnabled)
+          ? body.hoverPopoversEnabled
+          : undefined,
         pageSize: isValidPageSize(body.pageSize) ? body.pageSize : undefined,
         displayMode: isBoardDisplayMode(body.displayMode) ? body.displayMode : undefined,
         recordSource: isBoardRecordSource(body.recordSource)

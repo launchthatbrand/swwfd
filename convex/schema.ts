@@ -262,6 +262,7 @@ export default defineSchema({
     ),
     fontSize: v.union(v.literal("default"), v.literal("medium"), v.literal("large")),
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),
+    hoverPopoversEnabled: v.optional(v.boolean()),
     pageSize: v.optional(v.number()),
     displayMode: v.optional(v.union(v.literal("table"), v.literal("grid"))),
     recordSource: v.optional(

@@ -491,6 +491,7 @@ export interface UserBoardGeneralSettings {
   customTheme?: UserBoardCustomTheme;
   fontSize: UserBoardFontSize;
   tableDensity: UserBoardTableDensity;
+  hoverPopoversEnabled: boolean;
   pageSize: UserBoardPageSize;
   displayMode: UserBoardDisplayMode;
   recordSource: UserBoardRecordSource;

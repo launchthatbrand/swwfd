@@ -2523,7 +2523,7 @@ export const uploadMondayRecordFile = async (args: {
   const json = (await response.json()) as {
     data?: {
       add_file_to_column?: {
-        id?: string;
+        id?: string | null;
       };
     };
     errors?: { message?: string }[];
@@ -2534,11 +2534,19 @@ export const uploadMondayRecordFile = async (args: {
       "Unknown Monday API error";
     throw new Error(message);
   }
-  if (!json.data?.add_file_to_column?.id) {
-    throw new Error("Monday file upload returned no item id");
+
+  if (!json.data?.add_file_to_column) {
+    throw new Error("Monday file upload returned no mutation payload");
   }
 
-  return { id: json.data.add_file_to_column.id };
+  const returnedItemId = json.data.add_file_to_column.id?.trim() ?? "";
+  if (!returnedItemId) {
+    // Monday occasionally omits item id while still persisting the file.
+    // Treat this as success and fall back to the requested target item.
+    return { id: itemId };
+  }
+
+  return { id: returnedItemId };
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();

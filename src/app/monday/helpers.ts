@@ -774,6 +774,10 @@ export const parseUserBoardGeneralSettings = (input: unknown): UserBoardGeneralS
     tableDensity: isUserBoardTableDensity(candidate.tableDensity)
       ? candidate.tableDensity
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.tableDensity,
+    hoverPopoversEnabled:
+      typeof candidate.hoverPopoversEnabled === "boolean"
+        ? candidate.hoverPopoversEnabled
+        : DEFAULT_USER_BOARD_GENERAL_SETTINGS.hoverPopoversEnabled,
     pageSize: isUserBoardPageSize(candidate.pageSize)
       ? candidate.pageSize
       : DEFAULT_USER_BOARD_GENERAL_SETTINGS.pageSize,

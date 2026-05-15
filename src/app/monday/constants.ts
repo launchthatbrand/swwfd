@@ -373,6 +373,7 @@ export const DEFAULT_USER_BOARD_GENERAL_SETTINGS: UserBoardGeneralSettings = {
   customTheme: DEFAULT_USER_BOARD_CUSTOM_THEME,
   fontSize: "medium",
   tableDensity: "expanded",
+  hoverPopoversEnabled: true,
   pageSize: 0,
   displayMode: "table",
   recordSource: "created_in_month",
