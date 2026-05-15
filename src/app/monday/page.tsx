@@ -3968,30 +3968,57 @@ export function MondayBoardView({
       return;
     }
 
-    const contactId = record.contactId?.trim();
-    const targetRecordId = contactId && contactId.length > 0 ? contactId : record.id;
+    const contactId = record.contactId?.trim() ?? "";
+    const recordId = record.id.trim();
+    const targetRecordIds = Array.from(
+      new Set([contactId, recordId].filter((value) => value.length > 0)),
+    );
+    if (targetRecordIds.length === 0) {
+      toast.error("Missing record id for resume upload");
+      return;
+    }
 
     setUploadingResumeByRecordId((prev) => ({
       ...prev,
       [record.id]: true,
     }));
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/resume`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "x-monday-session-token": sessionToken,
+      let lastErrorMessage = "Failed to upload resume";
+      let uploaded = false;
+
+      for (let index = 0; index < targetRecordIds.length; index += 1) {
+        const targetRecordId = targetRecordIds[index]!;
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}/resume`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "x-monday-session-token": sessionToken,
+            },
+            body: formData,
           },
-          body: formData,
-        },
-      );
-      const data = (await response.json()) as MondayResumeUploadResponse;
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to upload resume");
+        );
+        const data = (await response.json()) as MondayResumeUploadResponse;
+        if (response.ok && data.ok) {
+          uploaded = true;
+          break;
+        }
+
+        lastErrorMessage = data.error ?? "Failed to upload resume";
+
+        // If the first target fails and we still have another possible Monday item id,
+        // retry once against that alternate target before surfacing the error.
+        const hasFallback = index < targetRecordIds.length - 1;
+        if (!hasFallback) {
+          throw new Error(lastErrorMessage);
+        }
+      }
+
+      if (!uploaded) {
+        throw new Error(lastErrorMessage);
       }
       toast.success("Resume uploaded");
       await recordsQuery.refetch();
