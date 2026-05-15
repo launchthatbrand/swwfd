@@ -1,6 +1,5 @@
 "use client";
 
-import { renderAsync } from "docx-preview";
 import { useEffect, useRef, useState } from "react";
 
 export const DocxResumePreview = (props: {
@@ -24,6 +23,7 @@ export const DocxResumePreview = (props: {
       setErrorMessage(null);
 
       try {
+        const { renderAsync } = await import("docx-preview");
         const response = await fetch(props.fileUrl, {
           signal: abortController.signal,
         });

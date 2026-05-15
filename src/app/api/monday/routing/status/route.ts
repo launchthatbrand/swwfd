@@ -35,6 +35,13 @@ export const GET = async (request: Request) => {
       error instanceof Error
         ? error.message
         : "Failed to load routing status";
-    return toJson({ ok: false, error: message }, 500);
+    const isUnauthorized =
+      message === "Missing Monday session token" ||
+      message === "signature verification failed" ||
+      message === "Invalid Monday session token payload";
+    return toJson(
+      { ok: false, error: isUnauthorized ? "Unauthorized Monday session" : message },
+      isUnauthorized ? 401 : 500,
+    );
   }
 };
