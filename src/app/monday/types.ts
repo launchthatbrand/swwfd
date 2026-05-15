@@ -397,6 +397,15 @@ export interface MondayMetricsOwnerBreakdown extends MondayMetricsSummaryTotals 
   ownerLabel: string;
 }
 
+export interface MondayMetricsHiredContact {
+  contactId: string;
+  name: string;
+  email: string | null;
+  url: string | null;
+  hireCount: number;
+  latestHireDate: string | null;
+}
+
 export interface MondayMetricsSummary {
   fiscalYear: string;
   ownerId: string | null;
@@ -404,6 +413,7 @@ export interface MondayMetricsSummary {
   totals: MondayMetricsSummaryTotals;
   monthly: MondayMetricsMonthlyPoint[];
   ownerBreakdown: MondayMetricsOwnerBreakdown[];
+  hiredContacts: MondayMetricsHiredContact[];
   generatedAt: string;
 }
 

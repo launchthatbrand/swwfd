@@ -5,6 +5,7 @@ import {
 } from "./client";
 
 import type {
+  MondayMetricsHiredContact,
   MondayMetricsMonthlyPoint,
   MondayMetricsOwnerBreakdown,
   MondayMetricsSummary,
@@ -56,6 +57,12 @@ const includesTag = (tags: string[], needle: string) => {
   return tags.some((entry) => entry.includes(needle));
 };
 
+const toTimestamp = (value: string | null | undefined) => {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
 interface ContactMetricsRecord {
   ownerIds: string[];
   ownerLabel: string | null;
@@ -67,6 +74,7 @@ interface HireEventMetricsRecord {
   ownerIds: string[];
   ownerId: string | null;
   ownerLabel: string | null;
+  contactItemId: string | null;
   eventDate: string | null;
   isCandidatesGroup: boolean;
   isReentry: boolean;
@@ -268,6 +276,7 @@ const resolveMetricsColumnIds = async (boardId: string) => {
       "date1__1",
     tagsColumnId: byId("dropdown_mkvw578t")?.id ?? byTitle("tag")?.id ?? null,
     peopleColumnId: byType("people")?.id ?? null,
+    emailColumnId: byType("email")?.id ?? byTitle("email")?.id ?? null,
     creationLogColumnId: byType("creation_log")?.id ?? null,
   };
 };
@@ -452,6 +461,7 @@ const fetchHireEventsPage = async (args: {
   interface Subitem {
     id: string;
     name?: string | null;
+    parent_item?: { id?: string | null } | null;
     column_values?: Array<{
       id?: string | null;
       text?: string | null;
@@ -499,6 +509,9 @@ const fetchHireEventsPage = async (args: {
           items {
             id
             name
+            parent_item {
+              id
+            }
             column_values(ids: [${safeColumnIds}]) {
               id
               text
@@ -518,6 +531,79 @@ const fetchHireEventsPage = async (args: {
     nextCursor: data.boards?.[0]?.items_page?.cursor ?? null,
     items: data.boards?.[0]?.items_page?.items ?? [],
   };
+};
+
+const chunkStrings = (values: string[], size: number) => {
+  const chunks: string[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+};
+
+const fetchHiredContactsByIds = async (args: {
+  itemIds: string[];
+  emailColumnId: string | null;
+}) => {
+  interface Data {
+    items?: Array<{
+      id?: string | null;
+      name?: string | null;
+      url?: string | null;
+      column_values?: Array<{
+        id?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    }>;
+  }
+
+  const uniqueItemIds = Array.from(
+    new Set(args.itemIds.map((value) => value.trim()).filter((value) => value.length > 0)),
+  );
+  if (uniqueItemIds.length === 0) {
+    return new Map<
+      string,
+      { id: string; name: string | null; email: string | null; url: string | null }
+    >();
+  }
+
+  const safeEmailColumnId = args.emailColumnId ? sanitizeColumnId(args.emailColumnId) : null;
+  const emailColumnFragment = safeEmailColumnId
+    ? `column_values(ids: ["${safeEmailColumnId}"]) { id text value }`
+    : "";
+
+  const byId = new Map<string, { id: string; name: string | null; email: string | null; url: string | null }>();
+
+  for (const itemIdsChunk of chunkStrings(uniqueItemIds, 100)) {
+    const data = await callMondayGraphQL<Data>(
+      `
+        query GetHiredContacts($itemIds: [ID!]) {
+          items(ids: $itemIds) {
+            id
+            name
+            url
+            ${emailColumnFragment}
+          }
+        }
+      `,
+      { itemIds: itemIdsChunk },
+    );
+    for (const item of data.items ?? []) {
+      const normalizedId = item.id?.trim() ?? "";
+      if (!normalizedId) continue;
+      const emailColumn = item.column_values?.[0];
+      const email = toColumnDisplayValue(emailColumn?.text, emailColumn?.value) || null;
+      byId.set(normalizedId, {
+        id: normalizedId,
+        name: item.name?.trim() || null,
+        email,
+        url: item.url?.trim() || null,
+      });
+    }
+  }
+
+  return byId;
 };
 
 export const buildMondayMetricsSummary = async (args?: {
@@ -709,11 +795,14 @@ export const buildMondayMetricsSummary = async (args?: {
           (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
         const ownerIds = parsePeopleIds(peopleColumn?.value);
         const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
+        const contactItemId =
+          metadata?.contactItemId?.trim() || item.parent_item?.id?.trim() || null;
         if (!eventDate || !ownerId) continue;
         allHireEvents.push({
           ownerIds,
           ownerId,
           ownerLabel: peopleColumn?.text?.trim() || ownerId,
+          contactItemId,
           eventDate,
           isCandidatesGroup: metadata?.segments.isCandidatesGroup ?? false,
           isReentry: metadata?.segments.isReentry ?? false,
@@ -742,6 +831,52 @@ export const buildMondayMetricsSummary = async (args?: {
           ),
       )
     : allHireEvents;
+
+  const hiredContactSummaryById = new Map<
+    string,
+    { contactId: string; hireCount: number; latestHireDate: string | null }
+  >();
+  for (const event of hireEvents) {
+    const contactItemId = event.contactItemId?.trim() ?? "";
+    if (!contactItemId) continue;
+    const existing = hiredContactSummaryById.get(contactItemId) ?? {
+      contactId: contactItemId,
+      hireCount: 0,
+      latestHireDate: null,
+    };
+    existing.hireCount += 1;
+    if (
+      event.eventDate &&
+      (!existing.latestHireDate ||
+        Date.parse(event.eventDate) > Date.parse(existing.latestHireDate))
+    ) {
+      existing.latestHireDate = event.eventDate;
+    }
+    hiredContactSummaryById.set(contactItemId, existing);
+  }
+  const hiredContactDetailsById = await fetchHiredContactsByIds({
+    itemIds: Array.from(hiredContactSummaryById.keys()),
+    emailColumnId: columnMeta.emailColumnId,
+  });
+  const hiredContacts: MondayMetricsHiredContact[] = Array.from(
+    hiredContactSummaryById.values(),
+  )
+    .map((entry) => {
+      const contact = hiredContactDetailsById.get(entry.contactId);
+      return {
+        contactId: entry.contactId,
+        name: contact?.name || entry.contactId,
+        email: contact?.email ?? null,
+        url: contact?.url ?? null,
+        hireCount: entry.hireCount,
+        latestHireDate: entry.latestHireDate,
+      };
+    })
+    .sort(
+      (a, b) =>
+        toTimestamp(b.latestHireDate) - toTimestamp(a.latestHireDate) ||
+        a.name.localeCompare(b.name),
+    );
 
   const totals = createZeroTotals();
   const monthlyPoints = buildFiscalYearMonths(fiscalYearEnd);
@@ -807,6 +942,7 @@ export const buildMondayMetricsSummary = async (args?: {
     totals,
     monthly: monthlyPoints,
     ownerBreakdown,
+    hiredContacts,
     generatedAt: new Date().toISOString(),
   };
   metricsSummaryCache.set(cacheKey, {

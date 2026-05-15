@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import mondaySdkInitialize from "monday-sdk-js";
 import type { MondayClientSdk } from "monday-sdk-js";
+import { EntityList, type ColumnDefinition } from "@launchthatapp/ui/entity-list";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
@@ -37,6 +38,7 @@ import {
 } from "../helpers";
 import type {
   MondayIdentity,
+  MondayMetricsHiredContact,
   MondayMetricsOwnerBreakdown,
   MondayMetricsResponse,
   MondayMetricsSummary,
@@ -48,6 +50,8 @@ import type {
 interface MondayMetricsViewProps {
   forcedOwnerId?: string;
 }
+
+type HiredContactListRow = MondayMetricsHiredContact & Record<string, unknown>;
 
 const getCurrentFiscalYear = () => {
   const now = new Date();
@@ -99,6 +103,39 @@ const ownerChartConfig = {
     color: "var(--chart-3)",
   },
 } satisfies ChartConfig;
+
+const hiredContactsColumns: ColumnDefinition<HiredContactListRow>[] = [
+  {
+    id: "name",
+    header: "Name",
+    accessorKey: "name",
+    sortable: true,
+    cell: (item: HiredContactListRow) =>
+      item.url ? (
+        <Link
+          href={item.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:text-primary/80 block truncate px-2 py-2 font-medium underline underline-offset-2"
+        >
+          {item.name}
+        </Link>
+      ) : (
+        <span className="block truncate px-2 py-2 font-medium">{item.name}</span>
+      ),
+  },
+  {
+    id: "email",
+    header: "Email",
+    accessorKey: "email",
+    sortable: true,
+    cell: (item: HiredContactListRow) => (
+      <span className="block truncate px-2 py-2">
+        {item.email?.trim() ? item.email.trim() : "—"}
+      </span>
+    ),
+  },
+];
 
 const MetricsCardGrid = ({ summary }: { summary: MondayMetricsSummary }) => {
   return (
@@ -423,6 +460,10 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   }, [settingsScopeOwnerId, userBoardSettingsQuery.data]);
 
   const summary = metricsQuery.data;
+  const hiredContactRows = useMemo<HiredContactListRow[]>(
+    () => summary?.hiredContacts.map((row) => ({ ...row })) ?? [],
+    [summary?.hiredContacts],
+  );
   const isInitialMetricsLoading =
     !!sessionToken && (metricsQuery.isLoading || metricsQuery.isFetching) && !summary;
   const metricsErrorMessage =
@@ -624,6 +665,32 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
           {!effectiveOwnerId ? (
             <OwnerBreakdownChart rows={summary.ownerBreakdown} />
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                {summary.fiscalYear} - Hired Contacts ({numberFormatter.format(summary.hiredContacts.length)})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EntityList
+                data={hiredContactRows}
+                columns={hiredContactsColumns}
+                viewModes={["list"]}
+                defaultViewMode="list"
+                enableSearch
+                enableFooter={false}
+                showRowCount
+                hideFilters
+                getRowId={(item) => String(item.contactId)}
+                emptyState={
+                  <div className="text-muted-foreground py-6 text-sm">
+                    No hired contacts found for this period.
+                  </div>
+                }
+              />
+            </CardContent>
+          </Card>
         </>
       ) : metricsQuery.isError ? (
         <Card>
