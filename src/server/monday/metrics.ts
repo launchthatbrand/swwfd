@@ -75,6 +75,9 @@ interface HireEventMetricsRecord {
   ownerId: string | null;
   ownerLabel: string | null;
   contactItemId: string | null;
+  parentContactName: string | null;
+  parentContactEmail: string | null;
+  parentContactUrl: string | null;
   eventDate: string | null;
   isCandidatesGroup: boolean;
   isReentry: boolean;
@@ -450,6 +453,7 @@ const fetchHireEventsPage = async (args: {
   cursor: string | null;
   limit: number;
   columnIds: string[];
+  parentEmailColumnId: string | null;
   dateColumnId: string;
   dateFrom: string;
   dateTo: string;
@@ -461,7 +465,16 @@ const fetchHireEventsPage = async (args: {
   interface Subitem {
     id: string;
     name?: string | null;
-    parent_item?: { id?: string | null } | null;
+    parent_item?: {
+      id?: string | null;
+      name?: string | null;
+      url?: string | null;
+      column_values?: Array<{
+        id?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    } | null;
     column_values?: Array<{
       id?: string | null;
       text?: string | null;
@@ -480,6 +493,16 @@ const fetchHireEventsPage = async (args: {
     : "";
   const safeOwnerId = args.ownerRule?.ownerId
     ? args.ownerRule.ownerId.replace(/[^0-9]/g, "")
+    : "";
+  const safeParentEmailColumnId = args.parentEmailColumnId
+    ? sanitizeColumnId(args.parentEmailColumnId)
+    : "";
+  const parentEmailFragment = safeParentEmailColumnId
+    ? `column_values(ids: ["${safeParentEmailColumnId}"]) {
+                id
+                text
+                value
+              }`
     : "";
   const safeOwnerPeopleToken = safeOwnerId ? `person-${safeOwnerId}` : "";
   const includeCursor = !!args.cursor;
@@ -511,6 +534,9 @@ const fetchHireEventsPage = async (args: {
             name
             parent_item {
               id
+              name
+              url
+              ${parentEmailFragment}
             }
             column_values(ids: [${safeColumnIds}]) {
               id
@@ -749,6 +775,7 @@ export const buildMondayMetricsSummary = async (args?: {
           cursor: hireCursor,
           limit: 500,
           columnIds: hireEventColumnIds,
+          parentEmailColumnId: columnMeta.emailColumnId,
           dateColumnId: hireColumnMeta.dateColumnId,
           dateFrom: range.start,
           dateTo: range.end,
@@ -795,6 +822,11 @@ export const buildMondayMetricsSummary = async (args?: {
           (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
         const ownerIds = parsePeopleIds(peopleColumn?.value);
         const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
+        const parentEmailColumn = item.parent_item?.column_values?.[0];
+        const parentContactEmail =
+          toColumnDisplayValue(parentEmailColumn?.text, parentEmailColumn?.value) || null;
+        const parentContactName = item.parent_item?.name?.trim() || null;
+        const parentContactUrl = item.parent_item?.url?.trim() || null;
         // Prefer the concrete parent link from Monday over token metadata.
         // Older tokens can point at stale contact ids after board migrations.
         const contactItemId =
@@ -805,6 +837,9 @@ export const buildMondayMetricsSummary = async (args?: {
           ownerId,
           ownerLabel: peopleColumn?.text?.trim() || ownerId,
           contactItemId,
+          parentContactName,
+          parentContactEmail,
+          parentContactUrl,
           eventDate,
           isCandidatesGroup: metadata?.segments.isCandidatesGroup ?? false,
           isReentry: metadata?.segments.isReentry ?? false,
@@ -836,7 +871,14 @@ export const buildMondayMetricsSummary = async (args?: {
 
   const hiredContactSummaryById = new Map<
     string,
-    { contactId: string; hireCount: number; latestHireDate: string | null }
+    {
+      contactId: string;
+      hireCount: number;
+      latestHireDate: string | null;
+      fallbackName: string | null;
+      fallbackEmail: string | null;
+      fallbackUrl: string | null;
+    }
   >();
   for (const event of hireEvents) {
     const contactItemId = event.contactItemId?.trim() ?? "";
@@ -845,8 +887,20 @@ export const buildMondayMetricsSummary = async (args?: {
       contactId: contactItemId,
       hireCount: 0,
       latestHireDate: null,
+      fallbackName: null,
+      fallbackEmail: null,
+      fallbackUrl: null,
     };
     existing.hireCount += 1;
+    if (!existing.fallbackName && event.parentContactName) {
+      existing.fallbackName = event.parentContactName;
+    }
+    if (!existing.fallbackEmail && event.parentContactEmail) {
+      existing.fallbackEmail = event.parentContactEmail;
+    }
+    if (!existing.fallbackUrl && event.parentContactUrl) {
+      existing.fallbackUrl = event.parentContactUrl;
+    }
     if (
       event.eventDate &&
       (!existing.latestHireDate ||
@@ -867,9 +921,9 @@ export const buildMondayMetricsSummary = async (args?: {
       const contact = hiredContactDetailsById.get(entry.contactId);
       return {
         contactId: entry.contactId,
-        name: contact?.name || entry.contactId,
-        email: contact?.email ?? null,
-        url: contact?.url ?? null,
+        name: contact?.name || entry.fallbackName || entry.contactId,
+        email: contact?.email ?? entry.fallbackEmail ?? null,
+        url: contact?.url ?? entry.fallbackUrl ?? null,
         hireCount: entry.hireCount,
         latestHireDate: entry.latestHireDate,
       };
