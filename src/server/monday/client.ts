@@ -2484,27 +2484,15 @@ export const uploadMondayRecordFile = async (args: {
     throw new Error("MONDAY_API_KEY is missing");
   }
 
-  const mutation = `
-    mutation AddFileToColumn($itemId: ID!, $columnId: String!, $file: File!) {
-      add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
-        id
-      }
+  const mutation = `mutation ($file: File!) {
+    add_file_to_column(item_id: ${JSON.stringify(itemId)}, column_id: ${JSON.stringify(columnId)}, file: $file) {
+      id
     }
-  `;
+  }`;
 
   const formData = new FormData();
-  formData.append(
-    "operations",
-    JSON.stringify({
-      query: mutation,
-      variables: {
-        itemId,
-        columnId,
-        file: null,
-      },
-    }),
-  );
-  formData.append("map", JSON.stringify({ file: ["variables.file"] }));
+  formData.append("query", mutation);
+  formData.append("map", JSON.stringify({ file: "variables.file" }));
   formData.append("file", args.file, filename);
 
   const response = await fetch(`${MONDAY_API_URL}/file`, {
@@ -2516,11 +2504,31 @@ export const uploadMondayRecordFile = async (args: {
     cache: "no-store",
   });
 
+  const responseText = await response.text();
+  const json = (() => {
+    if (!responseText) return null;
+    try {
+      return JSON.parse(responseText) as {
+        data?: {
+          add_file_to_column?: {
+            id?: string | null;
+          };
+        };
+        errors?: { message?: string }[];
+      };
+    } catch {
+      return null;
+    }
+  })();
+  const responseErrorMessage =
+    json?.errors?.map((error) => error.message).filter(Boolean).join(" | ") ?? "";
+
   if (!response.ok) {
-    throw new Error(`Monday file upload failed with ${response.status}`);
+    const messageSuffix = responseErrorMessage ? `: ${responseErrorMessage}` : "";
+    throw new Error(`Monday file upload failed with ${response.status}${messageSuffix}`);
   }
 
-  const json = (await response.json()) as {
+  const parsed = json as {
     data?: {
       add_file_to_column?: {
         id?: string | null;
@@ -2528,18 +2536,18 @@ export const uploadMondayRecordFile = async (args: {
     };
     errors?: { message?: string }[];
   };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
+  if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
     const message =
-      json.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
+      parsed.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
       "Unknown Monday API error";
     throw new Error(message);
   }
 
-  if (!json.data?.add_file_to_column) {
+  if (!parsed.data?.add_file_to_column) {
     throw new Error("Monday file upload returned no mutation payload");
   }
 
-  const returnedItemId = json.data.add_file_to_column.id?.trim() ?? "";
+  const returnedItemId = parsed.data.add_file_to_column.id?.trim() ?? "";
   if (!returnedItemId) {
     // Monday occasionally omits item id while still persisting the file.
     // Treat this as success and fall back to the requested target item.
