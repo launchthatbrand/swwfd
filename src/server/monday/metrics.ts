@@ -718,10 +718,10 @@ export const buildMondayMetricsSummary = async (args?: {
 
   const contactRecords = ownerIdFilter
     ? allContactRecords.filter((record) =>
-        record.ownerIds.some(
-          (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
-        ),
-      )
+      record.ownerIds.some(
+        (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
+      ),
+    )
     : allContactRecords;
 
   const { subitemBoardId } = await resolveSubitemBoardAndColumns(boardId);
@@ -824,12 +824,12 @@ export const buildMondayMetricsSummary = async (args?: {
 
   const hireEvents = ownerIdFilter
     ? allHireEvents.filter(
-        (event) =>
-          event.ownerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
-          event.ownerIds.some(
-            (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
-          ),
-      )
+      (event) =>
+        event.ownerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
+        event.ownerIds.some(
+          (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
+        ),
+    )
     : allHireEvents;
 
   const hiredContactSummaryById = new Map<
