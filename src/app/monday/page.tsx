@@ -16,6 +16,7 @@ import {
   Mail,
   RefreshCcw,
   Settings,
+  Upload,
   X,
   UserPlus,
 } from "lucide-react";
@@ -622,6 +623,8 @@ export function MondayBoardView({
     boardGeneralSettings.customTheme?.alpha !== boardGeneralSettingsDraft.customTheme?.alpha ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
     boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
+    boardGeneralSettings.hoverPopoversEnabled !==
+      boardGeneralSettingsDraft.hoverPopoversEnabled ||
     boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
     boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode ||
     boardGeneralSettings.recordSource !== boardGeneralSettingsDraft.recordSource;
@@ -1110,8 +1113,8 @@ export function MondayBoardView({
       setIsMondayEmbeddedContext(false);
 
       try {
-        let maybeToken = readTokenFromLocation();
-        if (maybeToken && typeof window !== "undefined") {
+        const queryToken = readTokenFromLocation();
+        if (queryToken && typeof window !== "undefined") {
           const currentUrl = new URL(window.location.href);
           if (currentUrl.searchParams.has("sessionToken")) {
             currentUrl.searchParams.delete("sessionToken");
@@ -1121,10 +1124,14 @@ export function MondayBoardView({
           }
         }
 
-        if (!maybeToken) {
+        let sdkToken: string | null = null;
+        try {
           const tokenResponse = await monday.get("sessionToken");
-          maybeToken = readTokenFromSdkResponse(tokenResponse);
+          sdkToken = readTokenFromSdkResponse(tokenResponse);
+        } catch {
+          sdkToken = null;
         }
+        let maybeToken = sdkToken ?? queryToken;
 
         if (!maybeToken) {
           const devAuthResponse = await fetch("/api/monday/auth/session", {
@@ -1153,22 +1160,36 @@ export function MondayBoardView({
           );
         }
 
-        const authResponse = await fetch("/api/monday/auth/session", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": maybeToken,
-          },
-          body: JSON.stringify({ sessionToken: maybeToken }),
-          cache: "no-store",
-        });
-
-        const authData = (await authResponse.json()) as {
-          ok: boolean;
-          error?: string;
-          identity?: MondayIdentity;
-          sessionToken?: string;
+        const verifyWithToken = async (token: string) => {
+          const authResponse = await fetch("/api/monday/auth/session", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": token,
+            },
+            body: JSON.stringify({ sessionToken: token }),
+            cache: "no-store",
+          });
+          const authData = (await authResponse.json()) as {
+            ok: boolean;
+            error?: string;
+            identity?: MondayIdentity;
+            sessionToken?: string;
+          };
+          return { authResponse, authData };
         };
+
+        let { authResponse, authData } = await verifyWithToken(maybeToken);
+
+        if (
+          (!authResponse.ok || !authData.ok || !authData.identity) &&
+          authData.error === "signature verification failed" &&
+          sdkToken &&
+          sdkToken !== maybeToken
+        ) {
+          maybeToken = sdkToken;
+          ({ authResponse, authData } = await verifyWithToken(maybeToken));
+        }
 
         if (!authResponse.ok || !authData.ok || !authData.identity) {
           throw new Error(authData.error ?? "Unable to verify Monday session");
@@ -1887,6 +1908,7 @@ export function MondayBoardView({
             boardGeneralSettingsDraft.colorTheme === "custom" ? parsedCustomTheme : undefined,
           fontSize: boardGeneralSettingsDraft.fontSize,
           tableDensity: boardGeneralSettingsDraft.tableDensity,
+          hoverPopoversEnabled: boardGeneralSettingsDraft.hoverPopoversEnabled,
           pageSize: boardGeneralSettingsDraft.pageSize,
           displayMode: boardGeneralSettingsDraft.displayMode,
           recordSource: boardGeneralSettingsDraft.recordSource,
@@ -2604,6 +2626,13 @@ export function MondayBoardView({
     if (!contactHistoryDialogRecord) return -1;
     return filteredRecords.findIndex((r) => r.id === contactHistoryDialogRecord.id);
   }, [contactHistoryDialogRecord, filteredRecords]);
+  const contactDialogResumeFile = contactHistoryDialogRecord?.resumeFiles[0] ?? null;
+  const isContactDialogUploadingResume = contactHistoryDialogRecord
+    ? uploadingResumeByRecordId[contactHistoryDialogRecord.id] === true
+    : false;
+  const contactDialogResumeInputId = contactHistoryDialogRecord
+    ? `contact-dialog-resume-upload-${contactHistoryDialogRecord.id}`
+    : "";
 
   const navigateContactDialog = useCallback(
     (direction: -1 | 1) => {
@@ -2735,7 +2764,7 @@ export function MondayBoardView({
         predicate: (candidate: MondayRecord) => boolean,
       ): MondayRecord | null => {
         const matches = refreshedRecords.filter(predicate);
-        return matches.length === 1 ? matches[0] : null;
+        return matches.length === 1 ? (matches[0] ?? null) : null;
       };
       const matchedRecord =
         refreshedRecords.find((candidate) => candidate.id.trim() === previousRecordId) ??
@@ -4114,6 +4143,7 @@ export function MondayBoardView({
           item={item}
           tableDensity={tableDensity}
           approvalSteps={approvalSteps}
+          hoverPopoversEnabled={boardGeneralSettings.hoverPopoversEnabled}
           onOpen={() => openContactHistoryDialog(item)}
         />
       ),
@@ -5333,6 +5363,48 @@ export function MondayBoardView({
                                 {option.label}
                               </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* Hover Popovers */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Hover Popovers</p>
+                            <p className="text-muted-foreground text-xs">
+                              Show or hide hover details on contact name and progress bar columns.
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft((prev) => ({
+                                  ...prev,
+                                  hoverPopoversEnabled: true,
+                                }));
+                              }}
+                              className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.hoverPopoversEnabled
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background text-muted-foreground hover:bg-muted"
+                                }`}
+                            >
+                              Enabled
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft((prev) => ({
+                                  ...prev,
+                                  hoverPopoversEnabled: false,
+                                }));
+                              }}
+                              className={`h-8 px-3 text-xs font-medium transition-colors ${!boardGeneralSettingsDraft.hoverPopoversEnabled
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background text-muted-foreground hover:bg-muted"
+                                }`}
+                            >
+                              Disabled
+                            </button>
                           </div>
                         </div>
 
@@ -6706,6 +6778,42 @@ export function MondayBoardView({
                   >
                     Open
                   </Button>
+                ) : null}
+                {!staticMode && contactHistoryDialogRecord ? (
+                  <>
+                    <input
+                      id={contactDialogResumeInputId}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) return;
+                        void handleUploadResume(contactHistoryDialogRecord, file);
+                        event.currentTarget.value = "";
+                      }}
+                      disabled={isContactDialogUploadingResume || !sessionToken}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="ml-2"
+                      disabled={isContactDialogUploadingResume || !sessionToken}
+                      onClick={() => {
+                        const input = document.getElementById(contactDialogResumeInputId);
+                        if (input instanceof HTMLInputElement) {
+                          input.click();
+                        }
+                      }}
+                    >
+                      <Upload className="mr-1.5 h-3.5 w-3.5" />
+                      {isContactDialogUploadingResume
+                        ? "Uploading..."
+                        : contactDialogResumeFile
+                          ? "Replace Resume"
+                          : "Upload Resume"}
+                    </Button>
+                  </>
                 ) : null}
                 {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
                   <Button

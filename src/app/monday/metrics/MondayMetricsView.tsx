@@ -255,12 +255,25 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
       setIsMondayEmbeddedContext(false);
 
       try {
-        let maybeToken = readTokenFromLocation();
-
-        if (!maybeToken) {
-          const tokenResponse = await monday.get("sessionToken");
-          maybeToken = readTokenFromSdkResponse(tokenResponse);
+        const queryToken = readTokenFromLocation();
+        if (queryToken && typeof window !== "undefined") {
+          const currentUrl = new URL(window.location.href);
+          if (currentUrl.searchParams.has("sessionToken")) {
+            currentUrl.searchParams.delete("sessionToken");
+            const nextSearch = currentUrl.searchParams.toString();
+            const nextUrl = `${currentUrl.pathname}${nextSearch ? `?${nextSearch}` : ""}${currentUrl.hash}`;
+            window.history.replaceState(null, "", nextUrl);
+          }
         }
+
+        let sdkToken: string | null = null;
+        try {
+          const tokenResponse = await monday.get("sessionToken");
+          sdkToken = readTokenFromSdkResponse(tokenResponse);
+        } catch {
+          sdkToken = null;
+        }
+        let maybeToken = sdkToken ?? queryToken;
 
         if (!maybeToken) {
           const devAuthResponse = await fetch("/api/monday/auth/session", {
@@ -288,21 +301,37 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
           );
         }
 
-        const authResponse = await fetch("/api/monday/auth/session", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": maybeToken,
-          },
-          body: JSON.stringify({ sessionToken: maybeToken }),
-          cache: "no-store",
-        });
-        const authData = (await authResponse.json()) as {
-          ok: boolean;
-          error?: string;
-          identity?: MondayIdentity;
-          sessionToken?: string;
+        const verifyWithToken = async (token: string) => {
+          const authResponse = await fetch("/api/monday/auth/session", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": token,
+            },
+            body: JSON.stringify({ sessionToken: token }),
+            cache: "no-store",
+          });
+          const authData = (await authResponse.json()) as {
+            ok: boolean;
+            error?: string;
+            identity?: MondayIdentity;
+            sessionToken?: string;
+          };
+          return { authResponse, authData };
         };
+
+        let { authResponse, authData } = await verifyWithToken(maybeToken);
+
+        if (
+          (!authResponse.ok || !authData.ok || !authData.identity) &&
+          authData.error === "signature verification failed" &&
+          sdkToken &&
+          sdkToken !== maybeToken
+        ) {
+          maybeToken = sdkToken;
+          ({ authResponse, authData } = await verifyWithToken(maybeToken));
+        }
+
         if (!authResponse.ok || !authData.ok || !authData.identity) {
           throw new Error(authData.error ?? "Unable to verify Monday session");
         }

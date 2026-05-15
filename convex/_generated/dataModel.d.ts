@@ -705,6 +705,7 @@ export type DataModel = {
       customTheme?: { alpha: number; colorHex: string };
       displayMode?: "table" | "grid";
       fontSize: "default" | "medium" | "large";
+      hoverPopoversEnabled?: boolean;
       ownerMondayUserId: string;
       pageSize?: number;
       recordSource?: "created_in_month" | "touched_in_month";
@@ -725,6 +726,7 @@ export type DataModel = {
       | "customTheme.colorHex"
       | "displayMode"
       | "fontSize"
+      | "hoverPopoversEnabled"
       | "ownerMondayUserId"
       | "pageSize"
       | "recordSource"

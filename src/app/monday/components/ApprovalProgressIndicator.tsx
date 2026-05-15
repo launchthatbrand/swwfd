@@ -11,9 +11,12 @@ export const ApprovalProgressIndicator = (props: {
   rawProgressValue?: string | null;
   className?: string;
   onHoverChange?: (hovering: boolean) => void;
+  hoverPopoversEnabled?: boolean;
 }) => {
   const [open, setOpen] = useState(false);
+  const hoverPopoversEnabled = props.hoverPopoversEnabled ?? true;
   const updateOpen = (next: boolean) => {
+    if (!hoverPopoversEnabled) return;
     setOpen(next);
     props.onHoverChange?.(next);
   };
@@ -21,46 +24,52 @@ export const ApprovalProgressIndicator = (props: {
   const stepCount = Math.max(props.steps.length, 1);
   const stepSize = 100 / stepCount;
   const completedSteps = Math.floor(safeProgress / stepSize);
+  const shouldShowRaw = props.rawProgressValue != null && hoverPopoversEnabled;
+  const indicator = (
+    <div className={cn("mt-1 space-y-1", props.className)}>
+      <div className="text-muted-foreground flex items-center justify-end text-[10px]">
+        <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
+      </div>
+      <div
+        className="relative h-2 cursor-default overflow-hidden rounded-full bg-muted/80"
+        onMouseEnter={hoverPopoversEnabled ? () => updateOpen(true) : undefined}
+        onMouseLeave={hoverPopoversEnabled ? () => updateOpen(false) : undefined}
+      >
+        <div
+          className="bg-primary h-full transition-all"
+          style={{ width: `${safeProgress}%` }}
+        />
+        {props.steps.map((step, index) => {
+          const left =
+            props.steps.length === 1
+              ? 0
+              : (index / (props.steps.length - 1)) * 100;
+          const completed = safeProgress >= (index + 1) * stepSize;
+          return (
+            <span
+              key={step.id}
+              className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${completed ? "bg-foreground/60" : "bg-border/70"
+                }`}
+              style={{ left: `${left}%` }}
+            />
+          );
+        })}
+      </div>
+      {shouldShowRaw && (
+        <p className="text-muted-foreground font-mono text-[10px] leading-tight break-all">
+          raw: {props.rawProgressValue}
+        </p>
+      )}
+    </div>
+  );
+
+  if (!hoverPopoversEnabled) {
+    return indicator;
+  }
 
   return (
     <Popover open={open} onOpenChange={updateOpen}>
-      <div className={cn("mt-1 space-y-1", props.className)}>
-        <div className="text-muted-foreground flex items-center justify-end text-[10px]">
-          <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
-        </div>
-        <PopoverTrigger asChild>
-          <div
-            className="relative h-2 cursor-default overflow-hidden rounded-full bg-muted/80"
-            onMouseEnter={() => updateOpen(true)}
-            onMouseLeave={() => updateOpen(false)}
-          >
-            <div
-              className="bg-primary h-full transition-all"
-              style={{ width: `${safeProgress}%` }}
-            />
-            {props.steps.map((step, index) => {
-              const left =
-                props.steps.length === 1
-                  ? 0
-                  : (index / (props.steps.length - 1)) * 100;
-              const completed = safeProgress >= (index + 1) * stepSize;
-              return (
-                <span
-                  key={step.id}
-                  className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${completed ? "bg-foreground/60" : "bg-border/70"
-                    }`}
-                  style={{ left: `${left}%` }}
-                />
-              );
-            })}
-          </div>
-        </PopoverTrigger>
-        {props.rawProgressValue != null && (
-          <p className="text-muted-foreground font-mono text-[10px] leading-tight break-all">
-            raw: {props.rawProgressValue}
-          </p>
-        )}
-      </div>
+      <PopoverTrigger asChild>{indicator}</PopoverTrigger>
       <PopoverContent
         portal={false}
         side="top"
