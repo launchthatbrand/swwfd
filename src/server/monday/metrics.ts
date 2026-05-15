@@ -795,8 +795,10 @@ export const buildMondayMetricsSummary = async (args?: {
           (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
         const ownerIds = parsePeopleIds(peopleColumn?.value);
         const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
+        // Prefer the concrete parent link from Monday over token metadata.
+        // Older tokens can point at stale contact ids after board migrations.
         const contactItemId =
-          metadata?.contactItemId?.trim() || item.parent_item?.id?.trim() || null;
+          item.parent_item?.id?.trim() || metadata?.contactItemId?.trim() || null;
         if (!eventDate || !ownerId) continue;
         allHireEvents.push({
           ownerIds,
