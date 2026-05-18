@@ -2196,7 +2196,10 @@ interface UpdateMondayRecordFieldsArgs {
   tags?: string[] | null;
   status?: string | null;
   ownerId?: string | null;
+  districtLabel?: string | null;
 }
+
+const ROUTING_DISTRICT_COLUMN_ID = "district_1__1";
 
 const normalizeDateOnlyValue = (value: string | null | undefined) => {
   if (!value) return null;
@@ -2283,6 +2286,10 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
         ],
       };
     }
+  }
+  if ("districtLabel" in args) {
+    const label = args.districtLabel?.trim() ?? "";
+    columnValues[ROUTING_DISTRICT_COLUMN_ID] = label ? { label } : null;
   }
 
   if (Object.keys(columnValues).length === 0) {

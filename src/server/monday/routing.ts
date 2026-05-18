@@ -138,6 +138,14 @@ const normalizeDistrictCode = (value: string | null | undefined) => {
   return `D${looseMatch[1]}`;
 };
 
+const toDistrictLabel = (districtCode: string) => {
+  const normalized = normalizeDistrictCode(districtCode);
+  if (!normalized) return districtCode;
+  const match = /^D(\d{1,2})$/.exec(normalized);
+  if (!match?.[1]) return normalized;
+  return `District ${Number(match[1])}`;
+};
+
 const getRoutingConfig = () => {
   const issues: string[] = [];
   const apiKey = normalizeValue(env.MONDAY_API_KEY);
@@ -797,6 +805,7 @@ export const assignMondayContactOwnerByDistrict = async (args: {
     await updateMondayRecordFields({
       itemId,
       ownerId,
+      districtLabel: toDistrictLabel(districtCode),
     });
 
     // Non-fatal: upsert a touchpoint record (one per contact-employee-month).
