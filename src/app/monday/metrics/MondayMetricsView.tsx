@@ -135,6 +135,17 @@ const hiredContactsColumns: ColumnDefinition<HiredContactListRow>[] = [
       </span>
     ),
   },
+  {
+    id: "hireCount",
+    header: "Times Hired",
+    accessorKey: "hireCount",
+    sortable: true,
+    cell: (item: HiredContactListRow) => (
+      <span className="block px-2 py-2 text-right tabular-nums">
+        {numberFormatter.format(Number(item.hireCount ?? 0))}
+      </span>
+    ),
+  },
 ];
 
 const MetricsCardGrid = ({ summary }: { summary: MondayMetricsSummary }) => {
@@ -673,6 +684,10 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <p className="text-muted-foreground mb-2 text-xs">
+                {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
+                {numberFormatter.format(summary.totals.hiredTotal)} individual hires
+              </p>
               <EntityList
                 data={hiredContactRows}
                 columns={hiredContactsColumns}
@@ -680,7 +695,7 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
                 defaultViewMode="list"
                 enableSearch
                 enableFooter={false}
-                showRowCount
+                showRowCount={false}
                 hideFilters
                 getRowId={(item) => String(item.contactId)}
                 emptyState={
@@ -689,6 +704,10 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
                   </div>
                 }
               />
+              <p className="text-muted-foreground mt-2 text-xs">
+                {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
+                {numberFormatter.format(summary.totals.hiredTotal)} individual hires
+              </p>
             </CardContent>
           </Card>
         </>
