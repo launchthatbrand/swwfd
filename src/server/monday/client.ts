@@ -3771,6 +3771,7 @@ export const createMondayRecordUpdate = async (args: {
     ? new Date(normalizedDateTime)
     : null;
   const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+  const fallbackNow = new Date();
   const normalizedDate = args.date?.trim();
   const columnValues: Record<string, unknown> = {
     [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
@@ -3783,7 +3784,12 @@ export const createMondayRecordUpdate = async (args: {
         }
       : normalizedDate
         ? { [SUBITEM_DATE_COLUMN_ID]: { date: normalizedDate } }
-        : {}),
+        : {
+            [SUBITEM_DATE_COLUMN_ID]: {
+              date: fallbackNow.toISOString().slice(0, 10),
+              time: fallbackNow.toISOString().slice(11, 19),
+            },
+          }),
     ...(methodOfCommunication
       ? { [SUBITEM_METHOD_COLUMN_ID]: { label: methodOfCommunication } }
       : {}),
