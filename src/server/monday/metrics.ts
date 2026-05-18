@@ -5,6 +5,7 @@ import {
 } from "./client";
 
 import type {
+  MondayMetricsCommunicationTotals,
   MondayMetricsHiredContact,
   MondayMetricsMonthlyPoint,
   MondayMetricsOwnerBreakdown,
@@ -30,6 +31,12 @@ const createZeroTotals = (): MondayMetricsSummaryTotals => ({
   hiredCandidatesGroup: 0,
   hiredReentry: 0,
   hiredVeterans: 0,
+});
+
+const createZeroCommunicationTotals = (): MondayMetricsCommunicationTotals => ({
+  emailCommunications: 0,
+  textCommunications: 0,
+  phoneCallCommunications: 0,
 });
 
 const createMonthLabel = (date: Date) =>
@@ -87,6 +94,15 @@ interface HireEventMetricsRecord {
   isVeteran: boolean;
 }
 
+type CommunicationMethod = "email" | "text" | "phone_call";
+
+interface CommunicationMetricsRecord {
+  method: CommunicationMethod;
+  eventDate: string;
+  parentContactOwnerIds: string[];
+  parentContactOwnerId: string | null;
+}
+
 const detectContactSegments = (record: ContactMetricsRecord) => {
   const tags = splitTags(record.tags);
   return {
@@ -117,6 +133,39 @@ const applyHireEventTotals = (
   if (event.isCandidatesGroup) totals.hiredCandidatesGroup += 1;
   if (event.isReentry) totals.hiredReentry += 1;
   if (event.isVeteran) totals.hiredVeterans += 1;
+};
+
+const applyCommunicationTotals = (
+  totals: MondayMetricsCommunicationTotals,
+  method: CommunicationMethod,
+) => {
+  if (method === "email") {
+    totals.emailCommunications += 1;
+    return;
+  }
+  if (method === "text") {
+    totals.textCommunications += 1;
+    return;
+  }
+  totals.phoneCallCommunications += 1;
+};
+
+const normalizeCommunicationMethod = (value: string | null | undefined): CommunicationMethod | null => {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized) return null;
+  if (normalized === "email" || normalized === "e-mail") return "email";
+  if (normalized === "text" || normalized === "sms" || normalized === "text message") {
+    return "text";
+  }
+  if (
+    normalized === "phone" ||
+    normalized === "phone call" ||
+    normalized === "call" ||
+    normalized === "phonecall"
+  ) {
+    return "phone_call";
+  }
+  return null;
 };
 
 const parseFiscalYearEnd = (fiscalYear: string | null | undefined): number | null => {
@@ -153,6 +202,7 @@ const buildFiscalYearMonths = (endYear: number): MondayMetricsMonthlyPoint[] => 
       monthKey: cursor.toISOString().slice(0, 7),
       monthLabel: createMonthLabel(cursor),
       ...createZeroTotals(),
+      ...createZeroCommunicationTotals(),
     });
   }
   return points;
@@ -360,6 +410,11 @@ const resolveHireEventColumnIds = async (subitemBoardId: string) => {
     typeColumnId: byId("color_mm2x49t2")?.id ?? byTitle("type")?.id ?? byType("status")?.id ?? null,
     dateColumnId: byId("date0")?.id ?? byTitle("date")?.id ?? byType("date")?.id ?? "date0",
     peopleColumnId: byId("person")?.id ?? byTitle("person")?.id ?? byType("people")?.id ?? null,
+    methodColumnId:
+      byId("method_of_communication__1")?.id ??
+      byTitle("method of communication")?.id ??
+      byTitle("method")?.id ??
+      null,
   };
 };
 
@@ -469,6 +524,7 @@ const fetchHireEventsPage = async (args: {
   interface Subitem {
     id: string;
     name?: string | null;
+    created_at?: string | null;
     parent_item?: {
       id?: string | null;
       name?: string | null;
@@ -547,6 +603,7 @@ const fetchHireEventsPage = async (args: {
           items {
             id
             name
+            created_at
             parent_item {
               id
               name
@@ -767,13 +824,17 @@ export const buildMondayMetricsSummary = async (args?: {
 
   const { subitemBoardId } = await resolveSubitemBoardAndColumns(boardId);
   const allHireEvents: HireEventMetricsRecord[] = [];
+  const allCommunicationEvents: CommunicationMetricsRecord[] = [];
   if (subitemBoardId) {
     const hireColumnMeta = await resolveHireEventColumnIds(subitemBoardId);
     const hireEventColumnIds = Array.from(
       new Set(
-        [hireColumnMeta.typeColumnId, hireColumnMeta.dateColumnId, hireColumnMeta.peopleColumnId].filter(
-          (value): value is string => !!value && value.trim().length > 0,
-        ),
+        [
+          hireColumnMeta.typeColumnId,
+          hireColumnMeta.dateColumnId,
+          hireColumnMeta.peopleColumnId,
+          hireColumnMeta.methodColumnId,
+        ].filter((value): value is string => !!value && value.trim().length > 0),
       ),
     );
     let hireCursor: string | null = null;
@@ -801,10 +862,11 @@ export const buildMondayMetricsSummary = async (args?: {
               : null,
         });
       } catch (error) {
-        if (allHireEvents.length === 0) throw error;
+        if (allHireEvents.length === 0 && allCommunicationEvents.length === 0) throw error;
         console.warn("[MondayMetrics] continuing with partial hire-event result after page error", {
           scannedPages: hireScannedPages,
           collectedRecords: allHireEvents.length,
+          collectedCommunicationRecords: allCommunicationEvents.length,
           error: error instanceof Error ? error.message : String(error),
         });
         break;
@@ -821,6 +883,7 @@ export const buildMondayMetricsSummary = async (args?: {
         hireScannedPages = 0;
         hireCursor = null;
         allHireEvents.length = 0;
+        allCommunicationEvents.length = 0;
         continue;
       }
       for (const item of page.items) {
@@ -830,14 +893,14 @@ export const buildMondayMetricsSummary = async (args?: {
         const typeColumn = byId(hireColumnMeta.typeColumnId);
         const peopleColumn = byId(hireColumnMeta.peopleColumnId);
         const dateColumn = byId(hireColumnMeta.dateColumnId);
-        const typeText = typeColumn?.text?.trim().toLowerCase() ?? "";
-        const isHireEventFromType = typeText === MONDAY_HIRE_EVENT_TYPE_LABEL.toLowerCase();
-        if (!isHireEventFromType && !metadata) continue;
+        const methodColumn = byId(hireColumnMeta.methodColumnId);
+        const methodValue = toColumnDisplayValue(methodColumn?.text, methodColumn?.value) || null;
+        const communicationMethod = normalizeCommunicationMethod(methodValue);
         const eventDate =
           parseDateValue(dateColumn?.value, dateColumn?.text) ??
-          (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
-        const ownerIds = parsePeopleIds(peopleColumn?.value);
-        const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
+          (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null) ??
+          item.created_at ??
+          null;
         const parentColumns = item.parent_item?.column_values ?? [];
         const parentById = (id: string | null) =>
           id ? parentColumns.find((column) => column.id === id) : null;
@@ -850,6 +913,21 @@ export const buildMondayMetricsSummary = async (args?: {
         const parentContactOwnerLabel = parentPeopleColumn?.text?.trim() ?? null;
         const parentContactName = item.parent_item?.name?.trim() || null;
         const parentContactUrl = item.parent_item?.url?.trim() || null;
+
+        if (communicationMethod && eventDate) {
+          allCommunicationEvents.push({
+            method: communicationMethod,
+            eventDate,
+            parentContactOwnerIds,
+            parentContactOwnerId,
+          });
+        }
+
+        const typeText = typeColumn?.text?.trim().toLowerCase() ?? "";
+        const isHireEventFromType = typeText === MONDAY_HIRE_EVENT_TYPE_LABEL.toLowerCase();
+        if (!isHireEventFromType && !metadata) continue;
+        const ownerIds = parsePeopleIds(peopleColumn?.value);
+        const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
         // Prefer the concrete parent link from Monday over token metadata.
         // Older tokens can point at stale contact ids after board migrations.
         const contactItemId =
@@ -894,6 +972,16 @@ export const buildMondayMetricsSummary = async (args?: {
         ),
     )
     : allHireEvents;
+
+  const communicationEvents = ownerIdFilter
+    ? allCommunicationEvents.filter(
+      (event) =>
+        event.parentContactOwnerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
+        event.parentContactOwnerIds.some(
+          (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
+        ),
+    )
+    : allCommunicationEvents;
 
   const hiredContactSummaryById = new Map<
     string,
@@ -961,6 +1049,7 @@ export const buildMondayMetricsSummary = async (args?: {
     );
 
   const totals = createZeroTotals();
+  const communicationTotals = createZeroCommunicationTotals();
   const monthlyPoints = buildFiscalYearMonths(fiscalYearEnd);
   const monthMap = new Map(monthlyPoints.map((point) => [point.monthKey, point]));
   const ownerMap = new Map<string, MondayMetricsOwnerBreakdown>();
@@ -1010,6 +1099,14 @@ export const buildMondayMetricsSummary = async (args?: {
     ownerMap.set(ownerKey, ownerRow);
   }
 
+  for (const event of communicationEvents) {
+    applyCommunicationTotals(communicationTotals, event.method);
+    const eventMonthKey = normalizeMonthKey(event.eventDate);
+    const eventMonth = eventMonthKey ? monthMap.get(eventMonthKey) : null;
+    if (!eventMonth) continue;
+    applyCommunicationTotals(eventMonth, event.method);
+  }
+
   const ownerBreakdown = Array.from(ownerMap.values()).sort(
     (a, b) =>
       b.allContacts - a.allContacts ||
@@ -1022,6 +1119,7 @@ export const buildMondayMetricsSummary = async (args?: {
     ownerId: ownerIdFilter || null,
     boardName,
     totals,
+    communicationTotals,
     monthly: monthlyPoints,
     ownerBreakdown,
     hiredContacts,
