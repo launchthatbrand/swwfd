@@ -14,6 +14,7 @@ import {
   CircleHelp,
   List,
   Mail,
+  MessageSquare,
   RefreshCcw,
   Settings,
   Upload,
@@ -3233,6 +3234,7 @@ export function MondayBoardView({
     updateType?: ContactUpdateType;
     date?: string;
     dateTime?: string;
+    methodOfCommunication?: string;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -3248,6 +3250,10 @@ export function MondayBoardView({
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
     };
+    const methodOfCommunication = args.methodOfCommunication?.trim();
+    if (methodOfCommunication) {
+      columnValues["method_of_communication__1"] = { label: methodOfCommunication };
+    }
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
       ? new Date(normalizedDateTime)
@@ -3259,6 +3265,12 @@ export function MondayBoardView({
       };
     } else if (args.date) {
       columnValues["date0"] = { date: args.date };
+    } else {
+      const now = new Date();
+      columnValues["date0"] = {
+        date: now.toISOString().slice(0, 10),
+        time: now.toISOString().slice(11, 19),
+      };
     }
 
     interface CreateSubitemData {
@@ -3422,6 +3434,7 @@ export function MondayBoardView({
       updateType?: ContactUpdateType;
       keepSelectedType?: boolean;
       date?: string;
+      methodOfCommunication?: string;
     },
   ) => {
     if (staticMode) {
@@ -3449,6 +3462,7 @@ export function MondayBoardView({
           body,
           updateType,
           date: options?.date,
+          methodOfCommunication: options?.methodOfCommunication,
         });
         data = { ok: true, update };
       } else {
@@ -3461,7 +3475,12 @@ export function MondayBoardView({
               "content-type": "application/json",
               "x-monday-session-token": sessionToken,
             },
-            body: JSON.stringify({ body, updateType, date: options?.date }),
+            body: JSON.stringify({
+              body,
+              updateType,
+              date: options?.date,
+              methodOfCommunication: options?.methodOfCommunication,
+            }),
           },
         );
         data = (await response.json()) as MondayCreateRecordUpdateResponse;
@@ -6836,6 +6855,42 @@ export function MondayBoardView({
                         : contactDialogResumeFile
                           ? "Replace Resume"
                           : "Upload Resume"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={`ml-2 rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      style={boardThemeInlineStyles.actionButtonStyle}
+                      disabled={isCreatingContactUpdate || !sessionToken}
+                      onClick={() => {
+                        void handleCreateContactUpdate({
+                          updateType: "general",
+                          body: "General Email Update",
+                          keepSelectedType: true,
+                          methodOfCommunication: "Email",
+                        });
+                      }}
+                    >
+                      <Mail className="mr-1.5 h-3.5 w-3.5" />
+                      General Email Update
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={`ml-2 rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      style={boardThemeInlineStyles.actionButtonStyle}
+                      disabled={isCreatingContactUpdate || !sessionToken}
+                      onClick={() => {
+                        void handleCreateContactUpdate({
+                          updateType: "general",
+                          body: "General Text Update",
+                          keepSelectedType: true,
+                          methodOfCommunication: "Text",
+                        });
+                      }}
+                    >
+                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
+                      General Text Update
                     </Button>
                   </>
                 ) : null}
