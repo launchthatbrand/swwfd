@@ -1,7 +1,11 @@
 import "server-only";
 
 import { env } from "~/env";
-import { callMondayGraphQL, upsertMondayTouchRecord } from "./client";
+import {
+  callMondayGraphQL,
+  upsertMondayHireEventSubitem,
+  upsertMondayTouchRecord,
+} from "./client";
 
 const MONTHLY_BOARD_RELATION_COLUMN_ID = "board_relation__1";
 const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
@@ -9,6 +13,9 @@ const LINKED_ITEM_CHUNK_SIZE = 25;
 const LINKED_ITEM_CHUNK_CONCURRENCY = 3;
 const LINKED_ITEM_CHUNK_RETRY_LIMIT = 2;
 const LINKED_ITEM_CHUNK_RETRY_BASE_DELAY_MS = 300;
+const CONTACT_HIRE_DATE_COLUMN_ID = "date_mkty234p";
+const CONTACT_TAGS_COLUMN_ID = "dropdown_mkvw578t";
+const HIRED_PROGRESS_COLUMN_ID = "color_mm1djwjj";
 
 export interface MonthlyBoardMapping {
   monthKey: string;
@@ -173,6 +180,33 @@ const resolveMonthKeyFromIso = (value: string | null | undefined) => {
   const parsed = Date.parse(value);
   if (Number.isNaN(parsed)) return null;
   return new Date(parsed).toISOString().slice(0, 7);
+};
+
+const splitTags = (value: string | null | undefined) =>
+  (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+
+const includesTag = (tags: string[], needle: string) =>
+  tags.some((entry) => entry.includes(needle));
+
+const detectHireSegments = (statusText: string, hireDate: string | null, tagsText: string) => {
+  const tags = splitTags(tagsText);
+  const normalizedStatus = statusText.trim().toLowerCase();
+  const isCandidatesGroup =
+    includesTag(tags, "candidate") &&
+    (includesTag(tags, "group") || includesTag(tags, "train"));
+  const isReentry = includesTag(tags, "reentry");
+  const isVeteran = includesTag(tags, "veteran");
+  const isHired =
+    normalizedStatus.includes("hired") || !!hireDate || includesTag(tags, "hired");
+  return {
+    isCandidatesGroup,
+    isReentry,
+    isVeteran,
+    isHired,
+  };
 };
 
 const normalizeMonthlyBoardMappings = (values: MonthlyBoardMapping[]) => {
@@ -768,6 +802,30 @@ export const syncContactFromConnectedBoards = async (
   const contactItem = await fetchContactItem(boardId, itemId);
   timings.resolveContactMs = Date.now() - resolveContactStart;
   if (!contactItem) throw new Error(`Contact item ${itemId} not found`);
+  const contactColumns = contactItem.columnValues ?? [];
+  const contactOwnerIdFromColumns = contactColumns
+    .map((column) => {
+      const ids = parsePeopleColumnValue(column.value);
+      return ids.length > 0 ? String(ids[0] ?? "").trim() : "";
+    })
+    .find((ownerId) => ownerId.length > 0);
+  const resolvedPrimaryOwnerId =
+    options?.ownerId?.trim() || contactOwnerIdFromColumns || "";
+  const contactHireDateColumn = contactColumns.find(
+    (column) => column.id === CONTACT_HIRE_DATE_COLUMN_ID,
+  );
+  const contactHireDate = parseDateFromColumnValue(
+    contactHireDateColumn?.value,
+    contactHireDateColumn?.text ?? null,
+  );
+  const contactTagsText =
+    contactColumns.find((column) => column.id === CONTACT_TAGS_COLUMN_ID)?.text ?? "";
+  const contactStatusText = "";
+  const contactHireSegments = detectHireSegments(
+    contactStatusText,
+    contactHireDate,
+    contactTagsText,
+  );
 
   const normalizedMappings = normalizeMonthlyBoardMappings(
     options?.monthlyBoardMappings ?? [],
@@ -934,7 +992,11 @@ export const syncContactFromConnectedBoards = async (
   let createdSubitems = 0;
   let createdSubitemUpdates = 0;
   let skippedSubitems = 0;
+  let createdHireEvents = 0;
+  let skippedHireEvents = 0;
   const progressColumnsToUpdate = new Set<string>();
+  const hireEventDatesToUpsert = new Set<string>();
+  let hasHiredSignalFromSyncedSubitems = false;
   const dryRun = options?.dryRun ?? false;
   const syncReplayStart = Date.now();
 
@@ -988,6 +1050,19 @@ export const syncContactFromConnectedBoards = async (
       // was already synced — re-syncs should fix any missing progress steps.
       const progressColId = classifySubitemForProgressColumn(subitem.name);
       if (progressColId) {
+        if (progressColId === HIRED_PROGRESS_COLUMN_ID) {
+          hasHiredSignalFromSyncedSubitems = true;
+          const dateColumn =
+            subitem.columnValues.find(
+              (column) =>
+                normalizeText(column.id) === "date0" ||
+                normalizeText(column.type) === "date",
+            ) ?? null;
+          const parsedDate =
+            parseDateFromColumnValue(dateColumn?.value, dateColumn?.text ?? null) ??
+            (subitem.createdAt ? new Date(subitem.createdAt).toISOString().slice(0, 10) : null);
+          if (parsedDate) hireEventDatesToUpsert.add(parsedDate);
+        }
         const statusCol = subitem.columnValues.find(
           (c) => c.id === "status9" || normalizeText(c.type) === "color",
         );
@@ -1122,13 +1197,49 @@ export const syncContactFromConnectedBoards = async (
     }
   }
 
-  // 5. Upsert touch record
-  if (!dryRun && options?.ownerId) {
+  // 5. Upsert canonical hire events for metrics compatibility.
+  if (!dryRun && resolvedPrimaryOwnerId) {
+    const shouldUpsertHireEvents =
+      hasHiredSignalFromSyncedSubitems || contactHireSegments.isHired;
+    if (shouldUpsertHireEvents) {
+      if (contactHireDate) {
+        hireEventDatesToUpsert.add(contactHireDate);
+      }
+      if (hireEventDatesToUpsert.size === 0) {
+        hireEventDatesToUpsert.add(new Date().toISOString().slice(0, 10));
+      }
+      for (const hireDate of hireEventDatesToUpsert) {
+        try {
+          const result = await upsertMondayHireEventSubitem({
+            contactItemId: itemId,
+            contactName: contactItem.name ?? "",
+            ownerId: resolvedPrimaryOwnerId,
+            hireDate,
+            source: "sync_user",
+            segments: {
+              isCandidatesGroup: contactHireSegments.isCandidatesGroup,
+              isReentry: contactHireSegments.isReentry,
+              isVeteran: contactHireSegments.isVeteran,
+            },
+          });
+          if (result.upserted === "created") createdHireEvents += 1;
+          else skippedHireEvents += 1;
+        } catch (err) {
+          warnings.push(
+            `Failed to upsert canonical hire event (${hireDate}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+  }
+
+  // 6. Upsert touch record
+  if (!dryRun && resolvedPrimaryOwnerId) {
     try {
       await upsertMondayTouchRecord({
         contactItemId: itemId,
         contactName: contactItem.name ?? "",
-        ownerId: options.ownerId,
+        ownerId: resolvedPrimaryOwnerId,
         source: "sync",
       });
     } catch {
@@ -1142,6 +1253,8 @@ export const syncContactFromConnectedBoards = async (
     createdParentUpdates,
     createdSubitems,
     createdSubitemUpdates,
+    createdHireEvents,
+    skippedHireEvents,
     updatedProgressColumns,
     skippedSubitems,
     warnings: warnings.length,

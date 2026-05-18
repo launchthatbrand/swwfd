@@ -75,6 +75,9 @@ interface HireEventMetricsRecord {
   ownerId: string | null;
   ownerLabel: string | null;
   contactItemId: string | null;
+  parentContactOwnerIds: string[];
+  parentContactOwnerId: string | null;
+  parentContactOwnerLabel: string | null;
   parentContactName: string | null;
   parentContactEmail: string | null;
   parentContactUrl: string | null;
@@ -454,6 +457,7 @@ const fetchHireEventsPage = async (args: {
   limit: number;
   columnIds: string[];
   parentEmailColumnId: string | null;
+  parentPeopleColumnId: string | null;
   dateColumnId: string;
   dateFrom: string;
   dateTo: string;
@@ -497,13 +501,24 @@ const fetchHireEventsPage = async (args: {
   const safeParentEmailColumnId = args.parentEmailColumnId
     ? sanitizeColumnId(args.parentEmailColumnId)
     : "";
-  const parentEmailFragment = safeParentEmailColumnId
-    ? `column_values(ids: ["${safeParentEmailColumnId}"]) {
+  const safeParentPeopleColumnId = args.parentPeopleColumnId
+    ? sanitizeColumnId(args.parentPeopleColumnId)
+    : "";
+  const safeParentColumnIds = Array.from(
+    new Set(
+      [safeParentEmailColumnId, safeParentPeopleColumnId].filter(
+        (value) => value.length > 0,
+      ),
+    ),
+  );
+  const parentColumnsFragment =
+    safeParentColumnIds.length > 0
+      ? `column_values(ids: [${safeParentColumnIds.map((id) => `"${id}"`).join(", ")}]) {
                 id
                 text
                 value
               }`
-    : "";
+      : "";
   const safeOwnerPeopleToken = safeOwnerId ? `person-${safeOwnerId}` : "";
   const includeCursor = !!args.cursor;
   const rulesForFirstPage: string[] = [
@@ -536,7 +551,7 @@ const fetchHireEventsPage = async (args: {
               id
               name
               url
-              ${parentEmailFragment}
+              ${parentColumnsFragment}
             }
             column_values(ids: [${safeColumnIds}]) {
               id
@@ -776,6 +791,7 @@ export const buildMondayMetricsSummary = async (args?: {
           limit: 500,
           columnIds: hireEventColumnIds,
           parentEmailColumnId: columnMeta.emailColumnId,
+          parentPeopleColumnId: columnMeta.peopleColumnId,
           dateColumnId: hireColumnMeta.dateColumnId,
           dateFrom: range.start,
           dateTo: range.end,
@@ -822,9 +838,16 @@ export const buildMondayMetricsSummary = async (args?: {
           (metadata?.hireDate ? `${metadata.hireDate}T00:00:00Z` : null);
         const ownerIds = parsePeopleIds(peopleColumn?.value);
         const ownerId = metadata?.ownerId?.trim() || ownerIds[0]?.trim() || null;
-        const parentEmailColumn = item.parent_item?.column_values?.[0];
+        const parentColumns = item.parent_item?.column_values ?? [];
+        const parentById = (id: string | null) =>
+          id ? parentColumns.find((column) => column.id === id) : null;
+        const parentEmailColumn = parentById(columnMeta.emailColumnId);
+        const parentPeopleColumn = parentById(columnMeta.peopleColumnId);
         const parentContactEmail =
           toColumnDisplayValue(parentEmailColumn?.text, parentEmailColumn?.value) || null;
+        const parentContactOwnerIds = parsePeopleIds(parentPeopleColumn?.value);
+        const parentContactOwnerId = parentContactOwnerIds[0]?.trim() ?? null;
+        const parentContactOwnerLabel = parentPeopleColumn?.text?.trim() ?? null;
         const parentContactName = item.parent_item?.name?.trim() || null;
         const parentContactUrl = item.parent_item?.url?.trim() || null;
         // Prefer the concrete parent link from Monday over token metadata.
@@ -837,6 +860,9 @@ export const buildMondayMetricsSummary = async (args?: {
           ownerId,
           ownerLabel: peopleColumn?.text?.trim() || ownerId,
           contactItemId,
+          parentContactOwnerIds,
+          parentContactOwnerId,
+          parentContactOwnerLabel,
           parentContactName,
           parentContactEmail,
           parentContactUrl,
@@ -862,8 +888,8 @@ export const buildMondayMetricsSummary = async (args?: {
   const hireEvents = ownerIdFilter
     ? allHireEvents.filter(
       (event) =>
-        event.ownerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
-        event.ownerIds.some(
+        event.parentContactOwnerId?.trim().toLowerCase() === ownerIdFilter.toLowerCase() ||
+        event.parentContactOwnerIds.some(
           (ownerId) => ownerId.trim().toLowerCase() === ownerIdFilter.toLowerCase(),
         ),
     )
@@ -973,11 +999,11 @@ export const buildMondayMetricsSummary = async (args?: {
       if (event.isVeteran) eventMonth.hiredVeterans += 1;
     }
 
-    const ownerKey = event.ownerId?.trim() ?? "";
+    const ownerKey = event.parentContactOwnerId?.trim() ?? "";
     if (!ownerKey) continue;
     const ownerRow = ownerMap.get(ownerKey) ?? {
       ownerId: ownerKey,
-      ownerLabel: event.ownerLabel?.trim() || ownerKey,
+      ownerLabel: event.parentContactOwnerLabel?.trim() || ownerKey,
       ...createZeroTotals(),
     };
     applyHireEventTotals(ownerRow, event);
