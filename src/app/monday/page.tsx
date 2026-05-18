@@ -197,7 +197,6 @@ import {
   ContactUpdates,
   DocxResumePreview,
   GuidedTourProvider,
-  isTourLockingDialog,
   HelpDeskDialog,
   KanbanBoard,
   NameCellContent,
@@ -6750,14 +6749,12 @@ export function MondayBoardView({
       <Dialog
         open={!!contactHistoryDialogRecord}
         onOpenChange={(open) => {
-            if (!open && !isTourLockingDialog()) setContactHistoryDialogRecord(null);
+            if (!open) setContactHistoryDialogRecord(null);
           }}
         >
           <DialogContent
             data-tour="contact-dialog"
             className="flex h-[90vh] max-h-[90vh] max-w-6xl flex-col overflow-hidden p-0"
-            onPointerDownOutside={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
-            onEscapeKeyDown={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
           >
             <DialogHeader className="z-10 border-b bg-background p-4">
               <div className="flex items-center gap-2">
@@ -6861,6 +6858,16 @@ export function MondayBoardView({
                       : "Sync User"}
                   </Button>
                 ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="ml-1 h-8 w-8 shrink-0"
+                  onClick={() => setContactHistoryDialogRecord(null)}
+                  title="Close contact dialog"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
               {contactHistoryDialogRecord ? (
                 <div
