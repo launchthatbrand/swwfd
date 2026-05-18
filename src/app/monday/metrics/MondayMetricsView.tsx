@@ -97,6 +97,21 @@ const hiredChartConfig = {
   },
 } satisfies ChartConfig;
 
+const communicationsChartConfig = {
+  emailCommunications: {
+    label: "Emails",
+    color: "var(--chart-1)",
+  },
+  textCommunications: {
+    label: "Texts",
+    color: "var(--chart-2)",
+  },
+  phoneCallCommunications: {
+    label: "Phone Calls",
+    color: "var(--chart-4)",
+  },
+} satisfies ChartConfig;
+
 const ownerChartConfig = {
   allContacts: {
     label: "Contacts",
@@ -587,7 +602,7 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         <>
           <MetricsCardGrid summary={summary} />
 
-          <div className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-4 xl:grid-cols-3">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">
@@ -669,6 +684,63 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {summary.fiscalYear} - Communications Per Month
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer config={communicationsChartConfig}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={summary.monthly}
+                      margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="monthLabel"
+                        tickLine={false}
+                        axisLine={false}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                      <ChartTooltip
+                        cursor={false}
+                        content={
+                          <ChartTooltipContent
+                            valueFormatter={(value) =>
+                              numberFormatter.format(Number(value ?? 0))
+                            }
+                          />
+                        }
+                      />
+                      <Bar
+                        dataKey="emailCommunications"
+                        fill="var(--color-emailCommunications)"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="textCommunications"
+                        fill="var(--color-textCommunications)"
+                        radius={[4, 4, 0, 0]}
+                      />
+                      <Bar
+                        dataKey="phoneCallCommunications"
+                        fill="var(--color-phoneCallCommunications)"
+                        radius={[4, 4, 0, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartContainer>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  Emails: {numberFormatter.format(summary.communicationTotals.emailCommunications)} |{" "}
+                  Texts: {numberFormatter.format(summary.communicationTotals.textCommunications)} |{" "}
+                  Phone Calls: {numberFormatter.format(summary.communicationTotals.phoneCallCommunications)}
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -387,9 +387,18 @@ export interface MondayMetricsSummaryTotals {
   hiredVeterans: number;
 }
 
+export interface MondayMetricsCommunicationTotals {
+  emailCommunications: number;
+  textCommunications: number;
+  phoneCallCommunications: number;
+}
+
 export interface MondayMetricsMonthlyPoint extends MondayMetricsSummaryTotals {
   monthKey: string;
   monthLabel: string;
+  emailCommunications: number;
+  textCommunications: number;
+  phoneCallCommunications: number;
 }
 
 export interface MondayMetricsOwnerBreakdown extends MondayMetricsSummaryTotals {
@@ -411,6 +420,7 @@ export interface MondayMetricsSummary {
   ownerId: string | null;
   boardName: string | null;
   totals: MondayMetricsSummaryTotals;
+  communicationTotals: MondayMetricsCommunicationTotals;
   monthly: MondayMetricsMonthlyPoint[];
   ownerBreakdown: MondayMetricsOwnerBreakdown[];
   hiredContacts: MondayMetricsHiredContact[];
