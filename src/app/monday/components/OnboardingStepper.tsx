@@ -43,6 +43,7 @@ export interface OnboardingStepperProps {
   actionButtonClassName?: string;
   actionButtonStyle?: CSSProperties;
   buttonSizeClassName?: string;
+  layout?: "stacked" | "inline";
 }
 
 export const OnboardingStepper = ({
@@ -59,6 +60,7 @@ export const OnboardingStepper = ({
   actionButtonClassName = "",
   actionButtonStyle,
   buttonSizeClassName = "",
+  layout = "stacked",
 }: OnboardingStepperProps) => {
   const [expanded, setExpanded] = useState(false);
   const [welcomeEmailConfirmOpen, setWelcomeEmailConfirmOpen] = useState(false);
@@ -87,6 +89,7 @@ export const OnboardingStepper = ({
   // If the current step is hidden, advance to the next visible one
   const currentStep = steps.find((s) => s.isCurrent)
     ?? steps.find((s) => !s.completed);
+  const isInline = layout === "inline";
 
   const executeAction = (step: StepWithState, method?: "manual" | "platform") => {
     if (step.actionVariant === "questionnaire") {
@@ -164,6 +167,59 @@ export const OnboardingStepper = ({
           </div>
         </DialogContent>
       </Dialog>
+      {isInline ? (
+        <section className="flex min-w-0 items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
+          <p className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wide uppercase">
+            Onboarding {steps.filter((s) => s.completed).length}/{steps.length}
+          </p>
+          <div className="flex min-w-[90px] max-w-[180px] flex-1 gap-0.5">
+            {steps.map((step) => (
+              <div
+                key={step.columnId}
+                className={cn(
+                  "h-1.5 flex-1 rounded-full transition-colors",
+                  step.completed
+                    ? "bg-emerald-500"
+                    : step.isCurrent
+                      ? "bg-border"
+                      : "bg-muted",
+                )}
+              />
+            ))}
+          </div>
+          <div className="min-w-0 flex-1">
+            {currentStep ? (
+              <p className="truncate text-xs font-medium">{currentStep.title}</p>
+            ) : (
+              <p className="truncate text-xs font-medium text-emerald-700 dark:text-emerald-400">
+                All steps completed
+              </p>
+            )}
+          </div>
+          {currentStep ? (
+            <Button
+              type="button"
+              size="sm"
+              className={cn("h-7 shrink-0 cursor-pointer rounded-md px-2 text-xs", buttonSizeClassName, actionButtonClassName)}
+              style={actionButtonStyle}
+              disabled={isProcessing}
+              onClick={() => handleAction(currentStep)}
+            >
+              {isProcessing ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Processing...
+                </span>
+              ) : (
+                currentStep.actionLabel
+              )}
+            </Button>
+          ) : (
+            <span className="shrink-0 rounded-full bg-emerald-500/15 p-1 text-emerald-600">
+              <Check className="h-3.5 w-3.5" />
+            </span>
+          )}
+        </section>
+      ) : (
       <section className="space-y-2 rounded-md border p-3">
         <div className="flex items-center justify-between">
           <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
@@ -385,6 +441,7 @@ export const OnboardingStepper = ({
           </div>
         )}
       </section>
+      )}
     </>
   );
 };
