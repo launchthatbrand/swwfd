@@ -3,6 +3,7 @@ export { BoardTable } from "./BoardTable";
 export { ApprovalProgressIndicator } from "./ApprovalProgressIndicator";
 export { BusinessInfoHoverCard } from "./BusinessInfoHoverCard";
 export { ContactCard } from "./ContactCard";
+export { CommunicationQuickActionDialog } from "./CommunicationQuickActionDialog";
 export { ContactUpdates } from "./ContactUpdates";
 export { DocxResumePreview } from "./DocxResumePreview";
 export { KanbanBoard } from "./KanbanBoard";

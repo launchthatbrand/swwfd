@@ -232,13 +232,12 @@ const toColumnDisplayValue = (
 
 const APPROVAL_STEP_COLUMN_IDS = [
   "color_mm1db321",
-  "color_mm1dwtvd",
+  "color_mm3ggf4t",
   "color_mm1dwr4k",
   "color_mm1dnr11",
   "color_mm1dgeqy",
   "color_mm1d80yc",
   "color_mm1djwjj",
-  "color_mm1d4e3y",
 ] as const;
 
 interface ProgressColumnConfig {
@@ -819,6 +818,8 @@ const parseResumeFiles = (
         assetId?: number | string | null;
         name?: string | null;
         fileType?: string | null;
+        url?: string | null;
+        public_url?: string | null;
       }>;
     };
     return (parsed.files ?? [])
@@ -835,7 +836,12 @@ const parseResumeFiles = (
       .map((f) => ({
         assetId: f.assetId != null ? String(f.assetId) : null,
         name: f.name ?? "Resume",
-        url: null,
+        url:
+          typeof f.public_url === "string" && f.public_url.trim().length > 0
+            ? f.public_url.trim()
+            : typeof f.url === "string" && f.url.trim().length > 0
+              ? f.url.trim()
+              : null,
       }));
   } catch {
     return [];

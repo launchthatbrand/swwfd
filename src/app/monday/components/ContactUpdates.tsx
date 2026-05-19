@@ -53,7 +53,7 @@ const TYPE_CONFIG: Record<
   },
   followup: {
     icon: Phone,
-    label: "Follow-Up",
+    label: "Questionnaire Sent",
     bgColor: "bg-amber-50 dark:bg-amber-950/40",
   },
   questionnaire: {
@@ -276,7 +276,6 @@ interface ContactUpdatesProps {
   onDeleteSubitem: (subitemId: string) => Promise<void>;
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmitting: boolean;
-  sessionToken: string | null;
   currentUserId: string | null;
 }
 
@@ -291,16 +290,15 @@ export const ContactUpdates = ({
   onDeleteSubitem,
   onUpdateSubitemDate,
   isSubmitting,
-  sessionToken,
   currentUserId,
 }: ContactUpdatesProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Post-submit dialog state
   const [showTypeDialog, setShowTypeDialog] = useState(false);
-  const [pendingBody, setPendingBody] = useState("");
   const [selectedType, setSelectedType] = useState<ContactUpdateType>("general");
   const [selectedDate, setSelectedDate] = useState(() => toYMD(new Date()));
+  const [showAdvancedComposer, setShowAdvancedComposer] = useState(false);
 
   // Delete confirmation
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
@@ -326,7 +324,6 @@ export const ContactUpdates = ({
   const handleSendClick = useCallback(() => {
     const body = draft.trim();
     if (!body || isSubmitting) return;
-    setPendingBody(body);
     setSelectedType("general");
     setSelectedDate(toYMD(new Date()));
     setShowTypeDialog(true);
@@ -425,36 +422,71 @@ export const ContactUpdates = ({
         </div>
 
         <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
-          <div className="flex items-end gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Textarea
-                value={draft}
-                onChange={(e) => onDraftChange(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Write an update..."
-                rows={1}
-                disabled={isSubmitting}
-                className="max-h-[120px] min-h-[36px] resize-none pr-10 text-sm"
-              />
+          {showAdvancedComposer ? (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-muted-foreground text-[11px]">
+                  Advanced note composer
+                </p>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[11px]"
+                  onClick={() => setShowAdvancedComposer(false)}
+                  disabled={isSubmitting}
+                >
+                  Hide
+                </Button>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => onDraftChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Write an update..."
+                    rows={1}
+                    disabled={isSubmitting}
+                    className="max-h-[120px] min-h-[36px] resize-none pr-10 text-sm"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 bottom-1 h-7 w-7"
+                    onClick={handleSendClick}
+                    disabled={isSubmitting || draft.trim().length === 0}
+                  >
+                    <SendHorizontal className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <p className="text-muted-foreground mt-1 text-[11px]">
+                Press{" "}
+                {typeof navigator !== "undefined" &&
+                /Mac/.test(navigator.userAgent)
+                  ? "⌘"
+                  : "Ctrl"}
+                +Enter to send
+              </p>
+            </>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-muted-foreground text-[11px]">
+                Prefer quick action buttons in the header for communication logs.
+              </p>
               <Button
-                size="icon"
-                variant="ghost"
-                className="absolute right-1 bottom-1 h-7 w-7"
-                onClick={handleSendClick}
-                disabled={isSubmitting || draft.trim().length === 0}
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 px-2.5 text-xs"
+                onClick={() => setShowAdvancedComposer(true)}
+                disabled={isSubmitting}
               >
-                <SendHorizontal className="h-4 w-4" />
+                Advanced note
               </Button>
             </div>
-          </div>
-          <p className="text-muted-foreground mt-1 text-[11px]">
-            Press{" "}
-            {typeof navigator !== "undefined" &&
-            /Mac/.test(navigator.userAgent)
-              ? "⌘"
-              : "Ctrl"}
-            +Enter to send
-          </p>
+          )}
         </div>
       </div>
 

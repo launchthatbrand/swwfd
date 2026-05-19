@@ -783,9 +783,9 @@ const ONBOARDING_STEP_COLUMN_MAP: Array<{
   columnId: string;
 }> = [
   { patterns: ["welcome email"], columnId: "color_mm1db321" },
-  { patterns: ["phone screen"], columnId: "color_mm1dwr4k" },
-  { patterns: ["program lead", "pl contact"], columnId: "color_mm1dwtvd" },
-  { patterns: ["referred", "resume referral"], columnId: "color_mm1dnr11" },
+  { patterns: ["questionnaire sent", "send questionnaire"], columnId: "color_mm3ggf4t" },
+  { patterns: ["screening complete", "questionnaire update", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
+  { patterns: ["resume submitted", "resume received", "referred", "resume referral"], columnId: "color_mm1dnr11" },
   { patterns: ["interview"], columnId: "color_mm1dgeqy" },
   { patterns: ["hired"], columnId: "color_mm1d80yc" },
   { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },

@@ -201,7 +201,7 @@ export const POST = async (
 
     await createMondayRecordUpdate({
       itemId: itemId.trim(),
-      body: "Questionnaire Update",
+      body: "Screening Complete",
       updateType: "questionnaire",
     });
 

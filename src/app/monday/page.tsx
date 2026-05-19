@@ -15,6 +15,8 @@ import {
   List,
   Mail,
   MessageSquare,
+  MoreHorizontal,
+  Phone,
   RefreshCcw,
   Settings,
   Upload,
@@ -43,6 +45,12 @@ import {
 } from "@launchthatapp/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@launchthatapp/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
@@ -194,6 +202,7 @@ import {
   AddNewContactForm,
   BoardTable,
   BusinessInfoHoverCard,
+  CommunicationQuickActionDialog,
   ContactCard,
   ContactUpdates,
   DocxResumePreview,
@@ -209,6 +218,37 @@ import {
 
 const MASTER_ADMIN_USER_ID = "53441186";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call";
+interface CommunicationQuickActionDefinition {
+  id: "email" | "text" | "phone";
+  label: string;
+  defaultBody: string;
+  method: CommunicationQuickActionMethod;
+  icon: typeof Mail;
+}
+const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
+  {
+    id: "email",
+    label: "Email Update",
+    defaultBody: "General Email Update",
+    method: "Email",
+    icon: Mail,
+  },
+  {
+    id: "text",
+    label: "Text Update",
+    defaultBody: "General Text Update",
+    method: "Text",
+    icon: MessageSquare,
+  },
+  {
+    id: "phone",
+    label: "Phone Call Update",
+    defaultBody: "General Phone Call Update",
+    method: "Phone Call",
+    icon: Phone,
+  },
+];
 const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
   masterAdminUserId: MASTER_ADMIN_USER_ID,
   adminUserIds: [MASTER_ADMIN_USER_ID],
@@ -289,6 +329,8 @@ export function MondayBoardView({
   const [contactUpdateType, setContactUpdateType] =
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
+  const [communicationQuickAction, setCommunicationQuickAction] =
+    useState<CommunicationQuickActionDefinition | null>(null);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
   const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
   const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
@@ -2122,15 +2164,12 @@ export function MondayBoardView({
           const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
           const sendProgressDateTime = new Date().toISOString();
           let updateData: MondayCreateRecordUpdateResponse;
-          if (canCreateUpdatesAsLoggedInMondayUser) {
-            const update = await createMondayRecordUpdateAsContextUser({
-              itemId: targetRecordId,
-              body: sendEmailProgressUpdate.body,
+
+          const syncViaServer = async () => {
+            console.log("[sendEmail] falling back to server-side progress sync", {
+              targetRecordId,
               updateType: sendEmailProgressUpdate.updateType,
-              dateTime: sendProgressDateTime,
             });
-            updateData = { ok: true, update };
-          } else {
             const updateResponse = await fetch(
               `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
               {
@@ -2147,10 +2186,38 @@ export function MondayBoardView({
                 }),
               },
             );
-            updateData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
-            if (!updateResponse.ok || !updateData.ok) {
-              throw new Error(updateData.error ?? "Failed to track onboarding progress");
+            const serverData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+            if (!updateResponse.ok || !serverData.ok) {
+              throw new Error(serverData.error ?? "Failed to track onboarding progress");
             }
+            return serverData;
+          };
+
+          if (canCreateUpdatesAsLoggedInMondayUser) {
+            try {
+              console.log("[sendEmail] attempting context-user progress sync", {
+                targetRecordId,
+                updateType: sendEmailProgressUpdate.updateType,
+                userId: identity?.userId,
+              });
+              const update = await createMondayRecordUpdateAsContextUser({
+                itemId: targetRecordId,
+                body: sendEmailProgressUpdate.body,
+                updateType: sendEmailProgressUpdate.updateType,
+                dateTime: sendProgressDateTime,
+              });
+              updateData = { ok: true, update };
+            } catch (contextError) {
+              const contextMsg =
+                contextError instanceof Error ? contextError.message : String(contextError);
+              console.warn(
+                "[sendEmail] context-user progress sync failed, falling back to server",
+                { error: contextMsg, targetRecordId, userId: identity?.userId },
+              );
+              updateData = await syncViaServer();
+            }
+          } else {
+            updateData = await syncViaServer();
           }
 
           if (identity?.userId) {
@@ -2182,8 +2249,13 @@ export function MondayBoardView({
             progressSyncError = updateData.update.warning;
           }
         } catch (error) {
-          progressSyncError =
-            error instanceof Error ? error.message : "Failed to sync welcome email progress";
+          const msg = error instanceof Error ? error.message : "Failed to sync welcome email progress";
+          console.error("[sendEmail] progress sync failed (all paths)", {
+            error: msg,
+            userId: identity?.userId,
+            canCreateUpdatesAsLoggedInMondayUser,
+          });
+          progressSyncError = msg;
         }
       }
 
@@ -2627,12 +2699,98 @@ export function MondayBoardView({
     return filteredRecords.findIndex((r) => r.id === contactHistoryDialogRecord.id);
   }, [contactHistoryDialogRecord, filteredRecords]);
   const contactDialogResumeFile = contactHistoryDialogRecord?.resumeFiles[0] ?? null;
+  const contactDialogResumeFileName =
+    contactDialogResumeFile?.name?.trim() && contactDialogResumeFile.name.trim().length > 0
+      ? contactDialogResumeFile.name.trim()
+      : "Resume";
+  const contactDialogResumeHref = contactDialogResumeFile
+    ? getResumeFileHref(contactDialogResumeFile)
+    : null;
   const isContactDialogUploadingResume = contactHistoryDialogRecord
     ? uploadingResumeByRecordId[contactHistoryDialogRecord.id] === true
     : false;
   const contactDialogResumeInputId = contactHistoryDialogRecord
     ? `contact-dialog-resume-upload-${contactHistoryDialogRecord.id}`
     : "";
+  const renderResumePreviewContent = (
+    fileName: string,
+    href: string,
+    previewHeightClass = "h-[65vh]",
+  ) => {
+    const lowerName = fileName.toLowerCase();
+    const isPdf = lowerName.endsWith(".pdf");
+    const isDocxDocument =
+      lowerName.endsWith(".docx") ||
+      lowerName.endsWith(".docm") ||
+      lowerName.endsWith(".dotx") ||
+      lowerName.endsWith(".dotm");
+    const isLegacyWordDocument = lowerName.endsWith(".doc") || lowerName.endsWith(".rtf");
+    const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+      href,
+    )}`;
+    const isImage =
+      lowerName.endsWith(".png") ||
+      lowerName.endsWith(".jpg") ||
+      lowerName.endsWith(".jpeg") ||
+      lowerName.endsWith(".gif") ||
+      lowerName.endsWith(".webp") ||
+      lowerName.endsWith(".svg");
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-sm font-medium">{fileName}</p>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary text-xs underline"
+          >
+            Open in new tab
+          </a>
+        </div>
+        <div className={`bg-muted/20 ${previewHeightClass} overflow-hidden rounded-md border`}>
+          {isPdf ? (
+            <PdfResumePreview fileUrl={href} fileName={fileName} />
+          ) : isDocxDocument ? (
+            <DocxResumePreview fileUrl={href} fileName={fileName} />
+          ) : isLegacyWordDocument ? (
+            <iframe
+              src={officeEmbedUrl}
+              title={`Word preview: ${fileName}`}
+              className="h-full w-full border-0 bg-white"
+            />
+          ) : isImage ? (
+            <object data={href} className="h-full w-full">
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                <p className="text-sm font-medium">Image preview unavailable</p>
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary text-xs underline"
+                >
+                  Open resume in new tab
+                </a>
+              </div>
+            </object>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+              <p className="text-sm font-medium">This file type cannot be previewed inline.</p>
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary text-xs underline"
+              >
+                Open resume in new tab
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const navigateContactDialog = useCallback(
     (direction: -1 | 1) => {
@@ -3434,6 +3592,7 @@ export function MondayBoardView({
       updateType?: ContactUpdateType;
       keepSelectedType?: boolean;
       date?: string;
+      dateTime?: string;
       methodOfCommunication?: string;
     },
   ) => {
@@ -3462,6 +3621,7 @@ export function MondayBoardView({
           body,
           updateType,
           date: options?.date,
+          dateTime: options?.dateTime,
           methodOfCommunication: options?.methodOfCommunication,
         });
         data = { ok: true, update };
@@ -3479,6 +3639,7 @@ export function MondayBoardView({
               body,
               updateType,
               date: options?.date,
+              dateTime: options?.dateTime,
               methodOfCommunication: options?.methodOfCommunication,
             }),
           },
@@ -3534,6 +3695,27 @@ export function MondayBoardView({
     } finally {
       setIsCreatingContactUpdate(false);
     }
+  };
+
+  const handleSubmitCommunicationQuickAction = async (values: {
+    body: string;
+    methodOfCommunication: CommunicationQuickActionMethod;
+    date: string;
+    time: string;
+  }) => {
+    const dateOnly = values.date.trim();
+    const timeOnly = values.time.trim();
+    const dateTime =
+      dateOnly && timeOnly ? `${dateOnly}T${timeOnly}:00` : undefined;
+    await handleCreateContactUpdate({
+      updateType: "general",
+      body: values.body,
+      keepSelectedType: true,
+      date: dateOnly || undefined,
+      dateTime,
+      methodOfCommunication: values.methodOfCommunication,
+    });
+    setCommunicationQuickAction(null);
   };
 
   const handleBulkQuickActionUpdates = async (
@@ -4052,16 +4234,16 @@ export function MondayBoardView({
     }
   };
 
-  const getResumeFileHref = (file: {
+  function getResumeFileHref(file: {
     assetId: string | null;
     url: string | null;
-  }) => {
+  }) {
     if (file.assetId) {
       return `/api/monday/email-templates/assets/${encodeURIComponent(file.assetId)}`;
     }
     if (file.url) return file.url;
     return null;
-  };
+  }
 
   const resetAddContactDialog = () => {
     setAddContactStep(1);
@@ -6773,7 +6955,7 @@ export function MondayBoardView({
         >
           <DialogContent
             data-tour="contact-dialog"
-            className="flex h-[90vh] max-h-[90vh] max-w-6xl flex-col overflow-hidden p-0"
+            className="flex h-[90vh] gap-0 max-h-[90vh] max-w-[90vw] flex-col overflow-hidden p-0"
           >
             <DialogHeader className="z-10 border-b bg-background p-4">
               <div className="flex items-center gap-2">
@@ -6797,122 +6979,124 @@ export function MondayBoardView({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <DialogTitle className="min-w-0 flex-1 truncate">
-              {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
+                <DialogTitle className="min-w-0 max-w-[300px] shrink-0 truncate">
+              {contactHistoryDialogRecord?.name ?? "Contact"}
             </DialogTitle>
+                {!staticMode && contactHistoryDialogRecord ? (
+                  <div data-tour="onboarding-stepper" className="mx-2 min-w-0 flex-1">
+                    <OnboardingStepper
+                      record={contactHistoryDialogRecord}
+                      approvalSteps={approvalSteps}
+                      isProcessing={isCreatingContactUpdate}
+                      layout="inline"
+                      emailMarketingEnabled={featureFlags.emailMarketingEnabled}
+                      onQuickAction={({ updateType, body, method }) => {
+                        setContactUpdateType(updateType);
+                        if (
+                          updateType === "welcome_email" &&
+                          featureFlags.emailMarketingEnabled &&
+                          method === "platform"
+                        ) {
+                          openSendEmailDialog(contactHistoryDialogRecord, {
+                            progressUpdate: { updateType, body },
+                            autoAdvanceToPreview: true,
+                            preferredTemplateType: "welcome_email",
+                          });
+                          return;
+                        }
+                        void handleCreateContactUpdate({
+                          updateType,
+                          body,
+                          keepSelectedType: true,
+                        });
+                      }}
+                      onQuestionnaireAction={(record) => {
+                        openQuestionnaireDialogForRecords([record]);
+                      }}
+                      onGenericStepAction={({ body, stepColumnId }) => {
+                        void (async () => {
+                          if (!sessionToken) return;
+                          const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                          await handleCreateContactUpdate({
+                            updateType: "general",
+                            body,
+                            keepSelectedType: true,
+                          });
+                          try {
+                            await fetch(
+                              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+                              {
+                                method: "POST",
+                                headers: {
+                                  "content-type": "application/json",
+                                  "x-monday-session-token": sessionToken,
+                                },
+                                body: JSON.stringify({ stepColumnId, action: "done" }),
+                              },
+                            );
+                            await recordsQuery.refetch();
+                            const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
+                              (page) => page.records ?? [],
+                            );
+                            syncContactHistoryDialogFromRecords(refreshedRecords);
+                            toast.success("Onboarding step marked complete");
+                          } catch {
+                            toast.error("Failed to mark step complete");
+                          }
+                        })();
+                      }}
+                      actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                      actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
+                      buttonSizeClassName={quickActionButtonSizeClass}
+                    />
+                  </div>
+                ) : null}
                 {contactDialogIndex >= 0 ? (
                   <span className="text-muted-foreground shrink-0 text-xs">
                     {contactDialogIndex + 1} / {filteredRecords.length}
                   </span>
                 ) : null}
-                {contactHistoryDialogRecord?.url ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-2"
-                    onClick={() => {
-                      window.open(
-                        contactHistoryDialogRecord.url ?? "",
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }}
-                  >
-                    Open
-                  </Button>
-                ) : null}
-                {!staticMode && contactHistoryDialogRecord ? (
-                  <>
-                    <input
-                      id={contactDialogResumeInputId}
-                      type="file"
-                      className="hidden"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (!file) return;
-                        void handleUploadResume(contactHistoryDialogRecord, file);
-                        event.currentTarget.value = "";
-                      }}
-                      disabled={isContactDialogUploadingResume || !sessionToken}
-                    />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
-                      className="ml-2"
-                      disabled={isContactDialogUploadingResume || !sessionToken}
-                      onClick={() => {
-                        const input = document.getElementById(contactDialogResumeInputId);
-                        if (input instanceof HTMLInputElement) {
-                          input.click();
+                      size="icon"
+                      className="ml-2 h-8 w-8 shrink-0"
+                      title="More actions"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={!contactHistoryDialogRecord?.url}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        if (!contactHistoryDialogRecord?.url) return;
+                        window.open(contactHistoryDialogRecord.url, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      Open
+                    </DropdownMenuItem>
+                    {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
+                      <DropdownMenuItem
+                        disabled={
+                          isCreatingContactUpdate ||
+                          syncingContactIds.has(contactHistoryDialogRecord.id)
                         }
-                      }}
-                    >
-                      <Upload className="mr-1.5 h-3.5 w-3.5" />
-                      {isContactDialogUploadingResume
-                        ? "Uploading..."
-                        : contactDialogResumeFile
-                          ? "Replace Resume"
-                          : "Upload Resume"}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className={`ml-2 rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                      style={boardThemeInlineStyles.actionButtonStyle}
-                      disabled={isCreatingContactUpdate || !sessionToken}
-                      onClick={() => {
-                        void handleCreateContactUpdate({
-                          updateType: "general",
-                          body: "General Email Update",
-                          keepSelectedType: true,
-                          methodOfCommunication: "Email",
-                        });
-                      }}
-                    >
-                      <Mail className="mr-1.5 h-3.5 w-3.5" />
-                      General Email Update
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      className={`ml-2 rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                      style={boardThemeInlineStyles.actionButtonStyle}
-                      disabled={isCreatingContactUpdate || !sessionToken}
-                      onClick={() => {
-                        void handleCreateContactUpdate({
-                          updateType: "general",
-                          body: "General Text Update",
-                          keepSelectedType: true,
-                          methodOfCommunication: "Text",
-                        });
-                      }}
-                    >
-                      <MessageSquare className="mr-1.5 h-3.5 w-3.5" />
-                      General Text Update
-                    </Button>
-                  </>
-                ) : null}
-                {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-2"
-                    disabled={
-                      isCreatingContactUpdate ||
-                      syncingContactIds.has(contactHistoryDialogRecord.id)
-                    }
-                    onClick={() => {
-                      openSyncContactBoardPicker(contactHistoryDialogRecord);
-                    }}
-                  >
-                    {syncingContactIds.has(contactHistoryDialogRecord.id)
-                      ? "Syncing..."
-                      : "Sync User"}
-                  </Button>
-                ) : null}
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openSyncContactBoardPicker(contactHistoryDialogRecord);
+                        }}
+                      >
+                        {syncingContactIds.has(contactHistoryDialogRecord.id)
+                          ? "Syncing..."
+                          : "Sync User"}
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   type="button"
                   variant="ghost"
@@ -6924,97 +7108,100 @@ export function MondayBoardView({
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              {contactHistoryDialogRecord ? (
-                <div
-                  data-tour="contact-header"
-                  className="mt-3 flex flex-row items-start justify-between gap-4"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-semibold">
-                      {contactHistoryDialogRecord.name ?? "Contact"}
-                    </p>
-                    <p className="text-muted-foreground truncate text-sm">
-                      {contactHistoryDialogRecord.email ?? "—"}
-                    </p>
-                    <p className="text-muted-foreground truncate text-sm">
-                      {contactHistoryDialogRecord.phone ?? "—"}
-                    </p>
-                  </div>
-                  {!staticMode ? (
-                    <div data-tour="onboarding-stepper" className="w-full max-w-xl shrink-0">
-                      <OnboardingStepper
-                        record={contactHistoryDialogRecord}
-                        approvalSteps={approvalSteps}
-                        isProcessing={isCreatingContactUpdate}
-                        emailMarketingEnabled={featureFlags.emailMarketingEnabled}
-                        onQuickAction={({ updateType, body, method }) => {
-                          setContactUpdateType(updateType);
-                          if (
-                            updateType === "welcome_email" &&
-                            featureFlags.emailMarketingEnabled &&
-                            method === "platform"
-                          ) {
-                            openSendEmailDialog(contactHistoryDialogRecord, {
-                              progressUpdate: { updateType, body },
-                              autoAdvanceToPreview: true,
-                              preferredTemplateType: "welcome_email",
-                            });
-                            return;
-                          }
-                          void handleCreateContactUpdate({
-                            updateType,
-                            body,
-                            keepSelectedType: true,
-                          });
-                        }}
-                        onQuestionnaireAction={(record) => {
-                          openQuestionnaireDialogForRecords([record]);
-                        }}
-                        onGenericStepAction={({ body, stepColumnId }) => {
-                          void (async () => {
-                            if (!sessionToken) return;
-                            const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                            await handleCreateContactUpdate({
-                              updateType: "general",
-                              body,
-                              keepSelectedType: true,
-                            });
-                            try {
-                              await fetch(
-                                `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-                                {
-                                  method: "POST",
-                                  headers: {
-                                    "content-type": "application/json",
-                                    "x-monday-session-token": sessionToken,
-                                  },
-                                  body: JSON.stringify({ stepColumnId, action: "done" }),
-                                },
-                              );
-                              await recordsQuery.refetch();
-                              const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
-                                (page) => page.records ?? [],
-                              );
-                              syncContactHistoryDialogFromRecords(refreshedRecords);
-                              toast.success("Onboarding step marked complete");
-                            } catch {
-                              toast.error("Failed to mark step complete");
-                            }
-                          })();
-                        }}
-                        actionButtonClassName={boardThemeStyles.actionButtonClassName}
-                        actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
-                        buttonSizeClassName={quickActionButtonSizeClass}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
           </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col p-4">
+            <div className="flex min-h-0 flex-1 p-4">
           {contactHistoryDialogRecord ? (
-            <div className="flex min-h-0 flex-1 flex-col space-y-3">
-
+            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2fr)]">
+              <div
+                data-tour="contact-header"
+                className="min-h-0 space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold">
+                    {contactHistoryDialogRecord.name ?? "Contact"}
+                  </p>
+                  <p className="text-muted-foreground truncate text-sm">
+                    {contactHistoryDialogRecord.email ?? "—"}
+                  </p>
+                  <p className="text-muted-foreground truncate text-sm">
+                    {contactHistoryDialogRecord.phone ?? "—"}
+                  </p>
+                </div>
+                {!staticMode ? (
+                  <>
+                    <input
+                      id={contactDialogResumeInputId}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file || !contactHistoryDialogRecord) return;
+                        void handleUploadResume(contactHistoryDialogRecord, file);
+                        event.currentTarget.value = "";
+                      }}
+                      disabled={isContactDialogUploadingResume || !sessionToken}
+                    />
+                    <div className="space-y-1.5">
+                      <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                        Communication
+                      </p>
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                          Resume
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={isContactDialogUploadingResume || !sessionToken}
+                            onClick={() => {
+                              const input = document.getElementById(contactDialogResumeInputId);
+                              if (input instanceof HTMLInputElement) {
+                                input.click();
+                              }
+                            }}
+                          >
+                            <Upload className="mr-1.5 h-3.5 w-3.5" />
+                            {isContactDialogUploadingResume
+                              ? "Uploading..."
+                              : contactDialogResumeFile
+                                ? "Replace Resume"
+                                : "Upload Resume"}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                          Outreach
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {COMMUNICATION_QUICK_ACTIONS.map((action) => {
+                            const Icon = action.icon;
+                            return (
+                              <Button
+                                key={action.id}
+                                type="button"
+                                size="sm"
+                                className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                                style={boardThemeInlineStyles.actionButtonStyle}
+                                disabled={isCreatingContactUpdate || !sessionToken}
+                                onClick={() => {
+                                  setCommunicationQuickAction(action);
+                                }}
+                              >
+                                <Icon className="mr-1.5 h-3.5 w-3.5" />
+                                {action.label}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              <div className="flex min-h-0 flex-col">
                 <Tabs
                   value={contactDialogTab}
                   onValueChange={setContactDialogTab}
@@ -7023,6 +7210,7 @@ export function MondayBoardView({
                   <TabsList data-tour="contact-tabs">
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
+                    <TabsTrigger value="resume">Resume</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
@@ -7068,7 +7256,6 @@ export function MondayBoardView({
                         await contactUpdatesQuery.refetch();
                       }}
                       isSubmitting={isCreatingContactUpdate}
-                      sessionToken={sessionToken}
                       currentUserId={forcedOwnerId || identity?.userId || null}
                     />
                   </TabsContent>
@@ -7092,18 +7279,18 @@ export function MondayBoardView({
                         </p>
                         </div>
                     ) : (
-                      <div className="h-full overflow-y-auto rounded-md border">
-                        <table className="w-full text-sm">
+                      <div className="h-full max-w-full overflow-x-hidden overflow-y-auto rounded-md border">
+                        <table className="w-full table-fixed text-sm">
                           <tbody>
                             {(contactColumnsQuery.data?.columns ?? []).map((col) => (
                               <tr
                                 key={col.id}
                                 className="border-b last:border-b-0"
                               >
-                                <td className="text-muted-foreground bg-muted/30 w-[180px] shrink-0 border-r px-3 py-2 text-xs font-medium">
+                                <td className="text-muted-foreground bg-muted/30 w-[180px] max-w-[180px] border-r px-3 py-2 text-xs font-medium align-top truncate">
                                   {col.title}
                                 </td>
-                                <td className="group relative break-words px-3 py-2 pr-10 text-xs">
+                                <td className="group relative min-w-0 max-w-0 overflow-hidden px-3 py-2 pr-10 text-xs align-top">
                                   {editingContactColumnId === col.id ? (
                                     <div className="space-y-2">
                                       {(() => {
@@ -7229,7 +7416,11 @@ export function MondayBoardView({
                                     </div>
                                   ) : (
                                     <>
-                                      {col.text || (
+                                      {col.text ? (
+                                        <span className="block max-w-full truncate" title={col.text}>
+                                          {col.text}
+                                        </span>
+                                      ) : (
                                         <span className="text-muted-foreground">—</span>
                                       )}
                                       {col.isEditable ? (
@@ -7237,7 +7428,7 @@ export function MondayBoardView({
                                           type="button"
                                           size="icon"
                                           variant="ghost"
-                                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2"
                                           onClick={() => {
                                             startEditingContactColumn(col);
                                           }}
@@ -7256,12 +7447,55 @@ export function MondayBoardView({
                     </div>
                     )}
                   </TabsContent>
+                  <TabsContent value="resume" className="mt-3 min-h-0 flex-1">
+                    {contactDialogResumeHref ? (
+                      renderResumePreviewContent(
+                        contactDialogResumeFileName,
+                        contactDialogResumeHref,
+                        "h-[60vh]",
+                      )
+                    ) : (
+                      <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                        <p className="text-sm font-medium">No resume attached yet.</p>
+                        {!staticMode ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            disabled={isContactDialogUploadingResume || !sessionToken}
+                            onClick={() => {
+                              const input = document.getElementById(contactDialogResumeInputId);
+                              if (input instanceof HTMLInputElement) {
+                                input.click();
+                              }
+                            }}
+                          >
+                            <Upload className="mr-1.5 h-3.5 w-3.5" />
+                            Upload Resume
+                          </Button>
+                        ) : null}
+                      </div>
+                    )}
+                  </TabsContent>
                 </Tabs>
+              </div>
             </div>
           ) : null}
-            </div>
+        </div>
         </DialogContent>
       </Dialog>
+
+      <CommunicationQuickActionDialog
+        open={!!communicationQuickAction}
+        onOpenChange={(open) => {
+          if (!open) setCommunicationQuickAction(null);
+        }}
+        actionLabel={communicationQuickAction?.label ?? "Communication Update"}
+        defaultMethod={communicationQuickAction?.method ?? "Email"}
+        isSubmitting={isCreatingContactUpdate}
+        onSubmit={handleSubmitCommunicationQuickAction}
+      />
 
       <Dialog
         open={!!syncContactBoardPickerRecord}
@@ -7705,95 +7939,7 @@ export function MondayBoardView({
             </DialogDescription>
           </DialogHeader>
           {resumePreview ? (
-            <div className="space-y-3">
-              {(() => {
-                const lowerName = resumePreview.fileName.toLowerCase();
-                const isPdf = lowerName.endsWith(".pdf");
-                const isDocxDocument =
-                  lowerName.endsWith(".docx") ||
-                  lowerName.endsWith(".docm") ||
-                  lowerName.endsWith(".dotx") ||
-                  lowerName.endsWith(".dotm");
-                const isLegacyWordDocument =
-                  lowerName.endsWith(".doc") ||
-                  lowerName.endsWith(".rtf");
-                const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-                  resumePreview.href,
-                )}`;
-                const isImage =
-                  lowerName.endsWith(".png") ||
-                  lowerName.endsWith(".jpg") ||
-                  lowerName.endsWith(".jpeg") ||
-                  lowerName.endsWith(".gif") ||
-                  lowerName.endsWith(".webp") ||
-                  lowerName.endsWith(".svg");
-                return (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                      <a
-                        href={resumePreview.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-primary text-xs underline"
-                      >
-                        Open in new tab
-                      </a>
-                    </div>
-                    <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                      {isPdf ? (
-                        <PdfResumePreview
-                          fileUrl={resumePreview.href}
-                          fileName={resumePreview.fileName}
-                        />
-                      ) : isDocxDocument ? (
-                        <DocxResumePreview
-                          fileUrl={resumePreview.href}
-                          fileName={resumePreview.fileName}
-                        />
-                      ) : isLegacyWordDocument ? (
-                        <iframe
-                          src={officeEmbedUrl}
-                          title={`Word preview: ${resumePreview.fileName}`}
-                          className="h-full w-full border-0 bg-white"
-                        />
-                      ) : isImage ? (
-                        <object
-                          data={resumePreview.href}
-                          className="h-full w-full"
-                        >
-                          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                            <p className="text-sm font-medium">Image preview unavailable</p>
-                            <a
-                              href={resumePreview.href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary text-xs underline"
-                            >
-                              Open resume in new tab
-                            </a>
-                          </div>
-                        </object>
-                      ) : (
-                        <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                          <p className="text-sm font-medium">
-                            This file type cannot be previewed inline.
-                          </p>
-                          <a
-                            href={resumePreview.href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary text-xs underline"
-                          >
-                            Open resume in new tab
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+            renderResumePreviewContent(resumePreview.fileName, resumePreview.href)
           ) : null}
         </DialogContent>
       </Dialog>

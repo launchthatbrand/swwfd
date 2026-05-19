@@ -11,13 +11,12 @@ const TAGS_COLUMN_ID = "dropdown_mkvw578t";
 const RESUME_FILES_COLUMN_ID = "files__1";
 const APPROVAL_STEP_COLUMN_IDS = [
   "color_mm1db321",
-  "color_mm1dwtvd",
+  "color_mm3ggf4t",
   "color_mm1dwr4k",
   "color_mm1dnr11",
   "color_mm1dgeqy",
   "color_mm1d80yc",
   "color_mm1djwjj",
-  "color_mm1d4e3y",
 ] as const;
 
 export interface MondayRecord {
@@ -125,7 +124,7 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   string
 > = {
   welcome_email: "Welcome Email Update",
-  followup: "Followup Update",
+  followup: "Questionnaire Sent Update",
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
@@ -141,7 +140,7 @@ const MONDAY_HIRE_EVENT_TOKEN_PREFIX = "hk";
 const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   general: "General",
   welcome_email: "Welcome Email",
-  followup: "Followup",
+  followup: "Questionnaire Sent",
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
@@ -168,7 +167,6 @@ const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   followup: APPROVAL_STEP_COLUMN_IDS[1],
   questionnaire: APPROVAL_STEP_COLUMN_IDS[2],
   resume: APPROVAL_STEP_COLUMN_IDS[3],
-  resume_referral: APPROVAL_STEP_COLUMN_IDS[4],
 };
 
 export const isMondayUpdateType = (value: string | null | undefined): value is MondayUpdateType => {
@@ -2890,6 +2888,7 @@ export const listMondayRecordUpdates = async (args: {
     if (normalized.includes("question")) return "questionnaire";
     if (normalized.includes("welcome")) return "welcome_email";
     if (
+      normalized.includes("questionnaire sent") ||
       normalized.includes("follow-up") ||
       normalized.includes("follow up") ||
       normalized.includes("followup")
