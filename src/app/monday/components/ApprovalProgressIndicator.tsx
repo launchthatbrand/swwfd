@@ -39,17 +39,16 @@ export const ApprovalProgressIndicator = (props: {
           className="bg-primary h-full transition-all"
           style={{ width: `${safeProgress}%` }}
         />
-        {props.steps.map((step, index) => {
-          const left =
-            props.steps.length === 1
-              ? 0
-              : (index / (props.steps.length - 1)) * 100;
-          const completed = safeProgress >= (index + 1) * stepSize;
+        {Array.from({ length: Math.max(props.steps.length - 1, 0) }, (_, index) => {
+          const dividerIndex = index + 1;
+          const left = (dividerIndex / Math.max(props.steps.length, 1)) * 100;
+          const completed = safeProgress >= dividerIndex * stepSize;
           return (
             <span
-              key={step.id}
-              className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${completed ? "bg-foreground/60" : "bg-border/70"
-                }`}
+              key={`divider-${dividerIndex}`}
+              className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${
+                completed ? "bg-background/90" : "bg-border/70"
+              }`}
               style={{ left: `${left}%` }}
             />
           );

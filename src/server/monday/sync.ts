@@ -333,13 +333,12 @@ const mapColumnValueForTarget = (sourceColumn: SourceColumnValue, targetType: st
 
 const ONBOARDING_STEP_COLUMN_MAP: Array<{ patterns: string[]; columnId: string }> = [
   { patterns: ["welcome email"], columnId: "color_mm1db321" },
-  { patterns: ["follow-up", "followup", "follow up", "program lead", "pl contact"], columnId: "color_mm1dwtvd" },
-  { patterns: ["questionnaire", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
-  { patterns: ["resume referral", "referred"], columnId: "color_mm1dgeqy" },
-  { patterns: ["resume received", "resume"], columnId: "color_mm1dnr11" },
-  { patterns: ["interview"], columnId: "color_mm1d80yc" },
-  { patterns: ["hired"], columnId: "color_mm1djwjj" },
-  { patterns: ["retained", "30-60-90"], columnId: "color_mm1d4e3y" },
+  { patterns: ["questionnaire sent", "send questionnaire"], columnId: "color_mm3ggf4t" },
+  { patterns: ["screening complete", "questionnaire update", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
+  { patterns: ["resume submitted", "resume received", "resume referral", "referred", "resume"], columnId: "color_mm1dnr11" },
+  { patterns: ["interview"], columnId: "color_mm1dgeqy" },
+  { patterns: ["hired"], columnId: "color_mm1d80yc" },
+  { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },
 ];
 
 const classifySubitemForProgressColumn = (name: string): string | null => {

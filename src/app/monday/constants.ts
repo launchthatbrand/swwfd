@@ -14,7 +14,7 @@ import type {
 export const CONTACT_UPDATE_TYPE_OPTIONS = [
   { value: "general", label: "General Update" },
   { value: "welcome_email", label: "Welcome Email Update" },
-  { value: "followup", label: "Followup Update" },
+  { value: "followup", label: "Questionnaire Sent Update" },
   { value: "questionnaire", label: "Questionaire Update" },
   { value: "resume", label: "Resume Update" },
   { value: "resume_referral", label: "Resume Referral Update" },
@@ -34,8 +34,8 @@ export const CONTACT_UPDATE_ACTION_BUTTONS: {
     },
     {
       type: "followup",
-      label: "Follow-Up Email Sent",
-      defaultBody: "Follow-Up Email Sent",
+      label: "Questionnaire Sent",
+      defaultBody: "Questionnaire Sent",
     },
     {
       type: "questionnaire",
@@ -44,20 +44,15 @@ export const CONTACT_UPDATE_ACTION_BUTTONS: {
     },
     {
       type: "resume",
-      label: "Resume Received",
-      defaultBody: "Resume Received",
-    },
-    {
-      type: "resume_referral",
-      label: "Resume Referral",
-      defaultBody: "Resume Referral",
+      label: "Resume Submitted",
+      defaultBody: "Resume Submitted",
     },
   ];
 
 export type QuickContactActionButton = (typeof CONTACT_UPDATE_ACTION_BUTTONS)[number];
 
 export const QUESTIONNAIRE_UPDATE_ACTION = {
-  label: "Questionnaire Update",
+  label: "Screening Complete",
 } as const;
 
 export const QUESTIONNAIRE_ENTRY_LEVEL_OPTIONS = [
@@ -98,7 +93,7 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   string
 > = {
   welcome_email: "Welcome Email Update",
-  followup: "Followup Update",
+  followup: "Questionnaire Sent Update",
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
@@ -109,7 +104,7 @@ export const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
 export const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<ContactUpdateType, string> = {
   general: "General",
   welcome_email: "Welcome Email",
-  followup: "Followup",
+  followup: "Questionnaire Sent",
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
@@ -119,10 +114,9 @@ export const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   Record<Exclude<ContactUpdateType, "general">, string>
 > = {
   welcome_email: "color_mm1db321",
-  followup: "color_mm1dwtvd",
+  followup: "color_mm3ggf4t",
   questionnaire: "color_mm1dwr4k",
   resume: "color_mm1dnr11",
-  resume_referral: "color_mm1dgeqy",
 };
 
 export const DEFAULT_MONDAY_FEATURE_FLAGS: MondayFeatureFlags = {
@@ -130,14 +124,13 @@ export const DEFAULT_MONDAY_FEATURE_FLAGS: MondayFeatureFlags = {
 };
 
 export const APPROVAL_STEPS: ApprovalStepConfig[] = [
-  { id: "color_mm1db321", title: "Approval Step 1" },
-  { id: "color_mm1dwtvd", title: "Approval Step 2" },
-  { id: "color_mm1dwr4k", title: "Approval Step 3" },
-  { id: "color_mm1dnr11", title: "Approval Step 4" },
-  { id: "color_mm1dgeqy", title: "Approval Step 5" },
-  { id: "color_mm1d80yc", title: "Approval Step 6" },
-  { id: "color_mm1djwjj", title: "Approval Step 7" },
-  { id: "color_mm1d4e3y", title: "Approval Step 8" },
+  { id: "color_mm1db321", title: "Welcome Email Sent" },
+  { id: "color_mm3ggf4t", title: "Questionaire Sent" },
+  { id: "color_mm1dwr4k", title: "Screening Complete" },
+  { id: "color_mm1dnr11", title: "Resume Submitted" },
+  { id: "color_mm1dgeqy", title: "Interviewing" },
+  { id: "color_mm1d80yc", title: "Hired" },
+  { id: "color_mm1djwjj", title: "Retained 30/60/90 Days" },
 ];
 
 export const KANBAN_STEP_CONFIG: {
@@ -146,13 +139,12 @@ export const KANBAN_STEP_CONFIG: {
   stepColumnId: string;
 }[] = [
   { updateType: "welcome_email", defaultBody: "Welcome Email Sent", stepColumnId: "color_mm1db321" },
-  { updateType: "followup", defaultBody: "Follow-Up Email Sent", stepColumnId: "color_mm1dwtvd" },
-  { updateType: "questionnaire", defaultBody: "Questionnaire Sent", stepColumnId: "color_mm1dwr4k" },
-  { updateType: "resume", defaultBody: "Resume Received", stepColumnId: "color_mm1dnr11" },
-  { updateType: "resume_referral", defaultBody: "Resume Referral", stepColumnId: "color_mm1dgeqy" },
-  { updateType: null, defaultBody: "Interviewing", stepColumnId: "color_mm1d80yc" },
-  { updateType: null, defaultBody: "Hired", stepColumnId: "color_mm1djwjj" },
-  { updateType: null, defaultBody: "Retained (30-60-90)", stepColumnId: "color_mm1d4e3y" },
+  { updateType: "followup", defaultBody: "Questionnaire Sent", stepColumnId: "color_mm3ggf4t" },
+  { updateType: "questionnaire", defaultBody: "Screening Complete", stepColumnId: "color_mm1dwr4k" },
+  { updateType: "resume", defaultBody: "Resume Submitted", stepColumnId: "color_mm1dnr11" },
+  { updateType: null, defaultBody: "Interviewing", stepColumnId: "color_mm1dgeqy" },
+  { updateType: null, defaultBody: "Hired", stepColumnId: "color_mm1d80yc" },
+  { updateType: null, defaultBody: "Retained (30-60-90)", stepColumnId: "color_mm1djwjj" },
 ];
 
 export type StepActionVariant = "default" | "questionnaire" | "generic";
@@ -170,13 +162,12 @@ export interface StepActionConfig {
 
 export const STEP_ACTION_CONFIG: StepActionConfig[] = [
   { stepIndex: 0, columnId: "color_mm1db321", updateType: "welcome_email", defaultBody: "Welcome Email Sent", actionLabel: "Send Welcome Email", actionVariant: "default" },
-  { stepIndex: 1, columnId: "color_mm1dwtvd", updateType: "followup", defaultBody: "Follow-Up Email Sent", actionLabel: "Send Follow-Up", actionVariant: "default", hiddenFromStepper: true },
-  { stepIndex: 2, columnId: "color_mm1dwr4k", updateType: "questionnaire", defaultBody: "Questionnaire Sent", actionLabel: "Complete Questionnaire", actionVariant: "questionnaire" },
-  { stepIndex: 3, columnId: "color_mm1dnr11", updateType: "resume", defaultBody: "Resume Received", actionLabel: "Mark Resume Received", actionVariant: "default" },
-  { stepIndex: 4, columnId: "color_mm1dgeqy", updateType: "resume_referral", defaultBody: "Resume Referral", actionLabel: "Submit Resume Referral", actionVariant: "default" },
-  { stepIndex: 5, columnId: "color_mm1d80yc", updateType: null, defaultBody: "Interviewing", actionLabel: "Mark Interviewing", actionVariant: "generic" },
-  { stepIndex: 6, columnId: "color_mm1djwjj", updateType: null, defaultBody: "Hired", actionLabel: "Mark as Hired", actionVariant: "generic" },
-  { stepIndex: 7, columnId: "color_mm1d4e3y", updateType: null, defaultBody: "Retained (30-60-90)", actionLabel: "Mark Retained", actionVariant: "generic" },
+  { stepIndex: 1, columnId: "color_mm3ggf4t", updateType: "followup", defaultBody: "Questionnaire Sent", actionLabel: "Mark Questionnaire Sent", actionVariant: "default" },
+  { stepIndex: 2, columnId: "color_mm1dwr4k", updateType: "questionnaire", defaultBody: "Screening Complete", actionLabel: "Complete Screening", actionVariant: "questionnaire" },
+  { stepIndex: 3, columnId: "color_mm1dnr11", updateType: "resume", defaultBody: "Resume Submitted", actionLabel: "Mark Resume Submitted", actionVariant: "default" },
+  { stepIndex: 4, columnId: "color_mm1dgeqy", updateType: null, defaultBody: "Interviewing", actionLabel: "Mark Interviewing", actionVariant: "generic" },
+  { stepIndex: 5, columnId: "color_mm1d80yc", updateType: null, defaultBody: "Hired", actionLabel: "Mark as Hired", actionVariant: "generic" },
+  { stepIndex: 6, columnId: "color_mm1djwjj", updateType: null, defaultBody: "Retained (30-60-90)", actionLabel: "Mark Retained", actionVariant: "generic" },
 ];
 
 // --- User board settings ---
