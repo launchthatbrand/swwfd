@@ -21,6 +21,7 @@ import {
   Settings,
   Upload,
   X,
+  UserCheck,
   UserPlus,
 } from "lucide-react";
 import type {
@@ -218,9 +219,9 @@ import {
 
 const MASTER_ADMIN_USER_ID = "53441186";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call";
+type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call" | "In Person";
 interface CommunicationQuickActionDefinition {
-  id: "email" | "text" | "phone";
+  id: "email" | "text" | "phone" | "in_person";
   label: string;
   defaultBody: string;
   method: CommunicationQuickActionMethod;
@@ -247,6 +248,13 @@ const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
     defaultBody: "General Phone Call Update",
     method: "Phone Call",
     icon: Phone,
+  },
+  {
+    id: "in_person",
+    label: "In Person Update",
+    defaultBody: "General In Person Update",
+    method: "In Person",
+    icon: UserCheck,
   },
 ];
 
@@ -3501,7 +3509,7 @@ export function MondayBoardView({
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const desiredSubitemName = updateType === "general"
-      ? "General Update"
+      ? body
       : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
 
     const columnValues: Record<string, unknown> = {
@@ -3557,30 +3565,6 @@ export function MondayBoardView({
         : String(createdSubitemIdRaw).trim();
     if (!targetSubitemId) {
       throw new Error("Failed to create subitem for update");
-    }
-
-    // Post the update body on the subitem
-    interface CreateUpdateData {
-      create_update?: {
-        id?: string | number | null;
-        body?: string | null;
-      } | null;
-    }
-    const createUpdateData = await callMondayContextApi<CreateUpdateData>(
-      `
-        mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-          create_update(item_id: $itemId, body: $body) { id body }
-        }
-      `,
-      { itemId: targetSubitemId, body },
-    );
-    const createdUpdateIdRaw = createUpdateData.create_update?.id;
-    const createdUpdateId =
-      createdUpdateIdRaw === null || createdUpdateIdRaw === undefined
-        ? ""
-        : String(createdUpdateIdRaw).trim();
-    if (!createdUpdateId) {
-      throw new Error("Monday did not return a new update id");
     }
 
     const markApprovalStepDoneViaServer = async (stepColumnId: string) => {
@@ -3675,8 +3659,8 @@ export function MondayBoardView({
     }
 
     return {
-      id: createdUpdateId,
-      body: createUpdateData.create_update?.body ?? body,
+      id: targetSubitemId,
+      body,
       updateType,
       source: "subitem" as const,
       subitemName: desiredSubitemName,
@@ -3711,9 +3695,12 @@ export function MondayBoardView({
     }
 
     setIsCreatingContactUpdate(true);
+    const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+    let data: MondayCreateRecordUpdateResponse;
+    const writePath = canCreateUpdatesAsLoggedInMondayUser
+      ? "monday-context-user"
+      : "server-fallback";
     try {
-      const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-      let data: MondayCreateRecordUpdateResponse;
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
           itemId: targetRecordId,
@@ -3748,29 +3735,43 @@ export function MondayBoardView({
           throw new Error(data.error ?? "Failed to post Monday update");
         }
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      console.error("[monday][contact-update] write failed", {
+        targetRecordId,
+        updateType,
+        writePath,
+        error: message,
+      });
+      toast.error(`Failed to post update (${writePath}): ${message}`);
+      setIsCreatingContactUpdate(false);
+      return;
+    }
 
-      setContactUpdateDraft("");
-      if (!options?.keepSelectedType) {
-        setContactUpdateType("general");
-      }
+    setContactUpdateDraft("");
+    if (!options?.keepSelectedType) {
+      setContactUpdateType("general");
+    }
 
-      if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
-        const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-        fetch("/api/monday/touches", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            contactItemId: contactId,
-            contactName: contactHistoryDialogRecord.name ?? "",
-            ownerId: identity.userId,
-            source: "update",
-          }),
-        }).catch(() => {});
-      }
+    if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
+      const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+      fetch("/api/monday/touches", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          contactItemId: contactId,
+          contactName: contactHistoryDialogRecord.name ?? "",
+          ownerId: identity.userId,
+          source: "update",
+        }),
+      }).catch(() => {});
+    }
 
+    try {
       const [, refreshedRecordsResult] = await Promise.all([
         contactUpdatesQuery.refetch(),
         recordsQuery.refetch(),
@@ -3779,6 +3780,16 @@ export function MondayBoardView({
         (page) => page.records ?? [],
       );
       syncContactHistoryDialogFromRecords(refreshedRecords);
+    } catch (error) {
+      const syncMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to refresh contact data after posting update";
+      console.error("[monday][contact-update] update posted but sync failed", {
+        targetRecordId,
+        updateType,
+        error: syncMessage,
+      });
       if (data.update?.warning) {
         toast.success("Update posted to monday.com");
         toast.error(`Onboarding step sync warning: ${data.update.warning}`);
@@ -3787,13 +3798,23 @@ export function MondayBoardView({
       } else {
         toast.success("Update posted to monday.com");
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to post Monday update";
-      toast.error(message);
-    } finally {
+      toast.error(
+        `Update posted, but refreshing contact history failed: ${syncMessage}`,
+      );
       setIsCreatingContactUpdate(false);
+      return;
     }
+
+    if (data.update?.warning) {
+      toast.success("Update posted to monday.com");
+      toast.error(`Onboarding step sync warning: ${data.update.warning}`);
+    } else if (data.update?.approvalStepMarked) {
+      toast.success("Update posted and onboarding step marked complete");
+    } else {
+      toast.success("Update posted to monday.com");
+    }
+
+    setIsCreatingContactUpdate(false);
   };
 
   const handleSubmitCommunicationQuickAction = async (values: {

@@ -20,7 +20,7 @@ import {
 } from "@launchthatapp/ui/select";
 import { Textarea } from "@launchthatapp/ui/textarea";
 
-type CommunicationMethodOption = "Email" | "Text" | "Phone Call";
+type CommunicationMethodOption = "Email" | "Text" | "Phone Call" | "In Person";
 
 interface CommunicationQuickActionDialogProps {
   open: boolean;
@@ -110,6 +110,7 @@ export const CommunicationQuickActionDialog = ({
                 <SelectItem value="Email">Email</SelectItem>
                 <SelectItem value="Text">Text</SelectItem>
                 <SelectItem value="Phone Call">Phone Call</SelectItem>
+                <SelectItem value="In Person">In Person</SelectItem>
               </SelectContent>
             </Select>
           </div>

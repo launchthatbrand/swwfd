@@ -125,7 +125,7 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   Exclude<MondayUpdateType, "general">,
   string
 > = {
-  welcome_email: "Welcome Email Update",
+  welcome_email: "Welcome Email Sent",
   followup: "Questionnaire Sent Update",
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
@@ -3778,7 +3778,7 @@ export const createMondayRecordUpdate = async (args: {
   const subitemName = subitemNameOverride && subitemNameOverride.length > 0
     ? subitemNameOverride
     : updateType === "general"
-      ? "General Update"
+      ? body
       : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
   const methodOfCommunication = args.methodOfCommunication?.trim();
   const normalizedDateTime = args.dateTime?.trim();
@@ -3836,28 +3836,11 @@ export const createMondayRecordUpdate = async (args: {
     throw new Error("Failed to create subitem for update");
   }
 
-  // Post the body as an update on the subitem
-  interface CreateUpdateData {
-    create_update?: { id?: string | null; body?: string | null } | null;
-  }
-  const data = await callMondayGraphQL<CreateUpdateData>(
-    `
-      mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-        create_update(item_id: $itemId, body: $body) { id body }
-      }
-    `,
-    { itemId: targetSubitemId, body },
-  );
-  const updateId = data.create_update?.id?.trim() ?? "";
-  if (!updateId) {
-    throw new Error("Monday did not return a new update id");
-  }
-
   const approvalStepResult = await markApprovalStepCompleteForUpdateType();
 
   return {
-    id: updateId,
-    body: data.create_update?.body ?? body,
+    id: targetSubitemId,
+    body,
     updateType,
     source: "subitem" as const,
     targetItemId: targetSubitemId,
