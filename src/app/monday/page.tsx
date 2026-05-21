@@ -134,6 +134,7 @@ import {
   MONDAY_DEV_BYPASS_TOKEN,
   QUESTIONNAIRE_UPDATE_ACTION,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+  SUBITEM_NOTES_COLUMN_ID,
   STEP_ACTION_CONFIG,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -258,6 +259,14 @@ const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
     icon: UserCheck,
   },
 ];
+
+const SUBITEM_NAME_MAX_LENGTH = 120;
+const buildSubitemName = (rawValue: string, fallbackName: string) => {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const candidate = normalized.length > 0 ? normalized : fallbackName.trim();
+  if (candidate.length <= SUBITEM_NAME_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, SUBITEM_NAME_MAX_LENGTH - 3).trimEnd()}...`;
+};
 
 type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
 
@@ -387,10 +396,16 @@ export function MondayBoardView({
     hireDate: "",
     retentionPeriod: "",
   });
+  const [resumeReferralDialogState, setResumeReferralDialogState] = useState<{
+    targetRecordId: string;
+    body: string;
+    selectedContractors: string[];
+  } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
   const [statusDraft, setStatusDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
   const [isSavingRetention, setIsSavingRetention] = useState(false);
+  const [isSavingResumeReferralStep, setIsSavingResumeReferralStep] = useState(false);
   const [retentionHireDatePopoverOpen, setRetentionHireDatePopoverOpen] =
     useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -3516,9 +3531,11 @@ export function MondayBoardView({
     }
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-    const desiredSubitemName = updateType === "general"
-      ? body
-      : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const baseSubitemName =
+      updateType === "general"
+        ? body
+        : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const desiredSubitemName = buildSubitemName(baseSubitemName, "General Update");
 
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
@@ -3537,6 +3554,7 @@ export function MondayBoardView({
     if (internalExternalStatus) {
       columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
+    columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
       ? new Date(normalizedDateTime)
@@ -4186,6 +4204,64 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsSavingRetention(false);
+    }
+  };
+
+  const closeResumeReferralDialog = () => {
+    const targetRecordId = resumeReferralDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setResumeReferralDialogState(null);
+    setIsSavingResumeReferralStep(false);
+  };
+
+  const handleConfirmResumeReferralStep = async () => {
+    if (!sessionToken || !resumeReferralDialogState) {
+      toast.error("Missing monday session context");
+      closeResumeReferralDialog();
+      return;
+    }
+
+    if (resumeReferralDialogState.selectedContractors.length === 0) {
+      toast.error("Select at least one contractor before continuing");
+      return;
+    }
+
+    setIsSavingResumeReferralStep(true);
+    try {
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(resumeReferralDialogState.targetRecordId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            referredToContractors: resumeReferralDialogState.selectedContractors,
+          }),
+        },
+      );
+      const data = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to save referred contractor values");
+      }
+
+      await handleCreateContactUpdate({
+        updateType: "resume",
+        body: resumeReferralDialogState.body,
+        keepSelectedType: true,
+      });
+
+      closeResumeReferralDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete resume submitted step";
+      toast.error(message);
+    } finally {
+      setIsSavingResumeReferralStep(false);
     }
   };
 
@@ -6656,6 +6732,69 @@ export function MondayBoardView({
       </Dialog>
 
       <Dialog
+        open={!!resumeReferralDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeResumeReferralDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Resume Submitted to Contractor</DialogTitle>
+            <DialogDescription>
+              Choose which contractor(s) this contact was referred to. This updates the API board
+              referral column before completing the onboarding step.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Referred To Contractor(s)</label>
+              <MultiSelect
+                key={`${resumeReferralDialogState?.targetRecordId ?? "no-item"}-${resumeReferralDialogState?.selectedContractors.join("|") ?? ""}`}
+                options={Array.from(
+                  new Set([
+                    ...retentionOptions.referredToContractors,
+                    ...(resumeReferralDialogState?.selectedContractors ?? []),
+                  ]),
+                )
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={resumeReferralDialogState?.selectedContractors ?? []}
+                onValueChange={(values) => {
+                  setResumeReferralDialogState((prev) =>
+                    prev ? { ...prev, selectedContractors: values } : prev,
+                  );
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeResumeReferralDialog}
+                disabled={isSavingResumeReferralStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmResumeReferralStep();
+                }}
+                disabled={
+                  isSavingResumeReferralStep ||
+                  (resumeReferralDialogState?.selectedContractors.length ?? 0) === 0
+                }
+              >
+                {isSavingResumeReferralStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={!!retentionDialogRecord}
         onOpenChange={(open) => {
           if (!open) setRetentionDialogRecord(null);
@@ -7151,6 +7290,16 @@ export function MondayBoardView({
                         if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
                         setOnboardingActionPending(targetRecordId, true);
                         setContactUpdateType(updateType);
+                        if (updateType === "resume") {
+                          setResumeReferralDialogState({
+                            targetRecordId,
+                            body,
+                            selectedContractors: splitCsvValues(
+                              contactHistoryDialogRecord.referredToContractors,
+                            ),
+                          });
+                          return;
+                        }
                         if (
                           updateType === "welcome_email" &&
                           featureFlags.emailMarketingEnabled &&

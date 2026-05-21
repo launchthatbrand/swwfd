@@ -137,6 +137,8 @@ const SUBITEM_DATE_COLUMN_ID = "date0";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
 const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
+const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
+const SUBITEM_NAME_MAX_LENGTH = 120;
 export const MONDAY_HIRE_EVENT_TYPE_LABEL = "Hire Event";
 const MONDAY_HIRE_EVENT_TOKEN_PREFIX = "hk";
 
@@ -147,6 +149,13 @@ const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+};
+
+const buildSubitemName = (rawValue: string, fallbackName: string) => {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const candidate = normalized.length > 0 ? normalized : fallbackName.trim();
+  if (candidate.length <= SUBITEM_NAME_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, SUBITEM_NAME_MAX_LENGTH - 3).trimEnd()}...`;
 };
 
 export interface MondayHireEventSegments {
@@ -2810,6 +2819,7 @@ export const listMondayRecordUpdates = async (args: {
   const methodColId = SUBITEM_METHOD_COLUMN_ID;
   const dateColId = "date0";
   const personColId = "person";
+  const notesColId = SUBITEM_NOTES_COLUMN_ID;
   const query = `
     query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
       items(ids: $itemIds) {
@@ -2829,7 +2839,7 @@ export const listMondayRecordUpdates = async (args: {
           id
           name
           created_at
-          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}"]) {
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${notesColId}"]) {
             id
             text
             value
@@ -2951,6 +2961,23 @@ export const listMondayRecordUpdates = async (args: {
     return null;
   };
 
+  const readSubitemNotes = (value: string | null | undefined, text: string | null | undefined) => {
+    if (value) {
+      try {
+        const parsed = JSON.parse(value) as { text?: string };
+        if (typeof parsed.text === "string" && parsed.text.trim().length > 0) {
+          return parsed.text;
+        }
+      } catch {
+        // Ignore parse failures and fall through to text.
+      }
+    }
+    if (typeof text === "string" && text.trim().length > 0) {
+      return text;
+    }
+    return null;
+  };
+
   const subitemUpdates: MondayRecordUpdate[] = [];
   interface SubitemCreatorProfile {
     id: string;
@@ -3013,6 +3040,9 @@ export const listMondayRecordUpdates = async (args: {
     const typeColText = subitem.column_values?.find((c) => c.id === typeColId)?.text ?? null;
     const methodText = subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
+    const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
+    const subitemNotes = readSubitemNotes(notesCol?.value, notesCol?.text);
+    const subitemDisplayName = subitemNotes ?? subitemName;
     let subitemCreatedAt: string | null = null;
     if (dateCol?.value) {
       try {
@@ -3056,7 +3086,7 @@ export const listMondayRecordUpdates = async (args: {
         updateType,
         source: "subitem",
         subitemId: subitemId.length > 0 ? subitemId : null,
-        subitemName,
+        subitemName: subitemDisplayName,
         createdAt,
         updatedAt,
         creatorId: update.creator?.id ?? null,
@@ -3076,7 +3106,7 @@ export const listMondayRecordUpdates = async (args: {
     if (subitemId) {
       subitems.push({
         id: subitemId,
-        name: subitemName ?? `Subitem ${subitemId}`,
+        name: subitemDisplayName ?? `Subitem ${subitemId}`,
         typeLabel: typeColText ?? methodText,
         updateType,
         methodOfCommunication: methodText,
@@ -3778,11 +3808,12 @@ export const createMondayRecordUpdate = async (args: {
 
   const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
   const subitemNameOverride = args.subitemNameOverride?.trim();
-  const subitemName = subitemNameOverride && subitemNameOverride.length > 0
+  const baseSubitemName = subitemNameOverride && subitemNameOverride.length > 0
     ? subitemNameOverride
     : updateType === "general"
       ? body
       : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
+  const subitemName = buildSubitemName(baseSubitemName, "General Update");
   const methodOfCommunication = args.methodOfCommunication?.trim();
   const normalizedDateTime = args.dateTime?.trim();
   const parsedDateTime = normalizedDateTime
@@ -3817,6 +3848,7 @@ export const createMondayRecordUpdate = async (args: {
     ...(normalizedInternalExternalStatus
       ? { [SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID]: { label: normalizedInternalExternalStatus } }
       : {}),
+    [SUBITEM_NOTES_COLUMN_ID]: { text: body },
     ...(/^\d+$/.test(normalizedActorMondayUserId)
       ? {
           [SUBITEM_PERSON_COLUMN_ID]: {
