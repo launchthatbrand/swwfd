@@ -119,6 +119,7 @@ const MessageBubble = ({
   const config = getTypeConfig(subitem.updateType);
   const Icon = config.icon;
   const creator = subitem.creatorProfile;
+  const methodBadgeLabel = subitem.methodOfCommunication?.trim() ?? "";
 
   const avatar = creator?.photoThumb ? (
     <img
@@ -160,7 +161,7 @@ const MessageBubble = ({
                 : "bg-muted rounded-tl-sm"
             }`}
           >
-            <div className="text-[13px] leading-relaxed">
+            <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
               {subitem.name.trim() || config.label}
             </div>
           </div>
@@ -175,6 +176,14 @@ const MessageBubble = ({
             >
               {config.label}
             </Badge>
+            {methodBadgeLabel ? (
+              <Badge
+                variant="outline"
+                className="px-1.5 py-0 text-[10px] font-normal"
+              >
+                {methodBadgeLabel}
+              </Badge>
+            ) : null}
 
             <div className="flex items-center gap-0 opacity-0 transition-opacity group-hover:opacity-100">
               <Button

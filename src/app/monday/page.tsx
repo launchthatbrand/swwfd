@@ -134,6 +134,7 @@ import {
   MONDAY_DEV_BYPASS_TOKEN,
   QUESTIONNAIRE_UPDATE_ACTION,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+  SUBITEM_NOTES_COLUMN_ID,
   STEP_ACTION_CONFIG,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -258,6 +259,14 @@ const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
     icon: UserCheck,
   },
 ];
+
+const SUBITEM_NAME_MAX_LENGTH = 120;
+const buildSubitemName = (rawValue: string, fallbackName: string) => {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const candidate = normalized.length > 0 ? normalized : fallbackName.trim();
+  if (candidate.length <= SUBITEM_NAME_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, SUBITEM_NAME_MAX_LENGTH - 3).trimEnd()}...`;
+};
 
 type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
 
@@ -3522,9 +3531,11 @@ export function MondayBoardView({
     }
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-    const desiredSubitemName = updateType === "general"
-      ? body
-      : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const baseSubitemName =
+      updateType === "general"
+        ? body
+        : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const desiredSubitemName = buildSubitemName(baseSubitemName, "General Update");
 
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
@@ -3543,6 +3554,7 @@ export function MondayBoardView({
     if (internalExternalStatus) {
       columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
+    columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
       ? new Date(normalizedDateTime)
