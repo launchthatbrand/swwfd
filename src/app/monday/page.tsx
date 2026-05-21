@@ -389,6 +389,8 @@ export function MondayBoardView({
     body: string;
   } | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [pendingOnboardingActionsByTargetId, setPendingOnboardingActionsByTargetId] =
+    useState<Record<string, boolean>>({});
   const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
     DEFAULT_MONDAY_FEATURE_FLAGS,
   );
@@ -415,6 +417,24 @@ export function MondayBoardView({
     console.info("[MondayThemeSync] Initialized monday-sdk-js instance");
     return sdk;
   }, []);
+
+  const setOnboardingActionPending = useCallback(
+    (targetRecordId: string, pending: boolean) => {
+      const normalizedTargetRecordId = targetRecordId.trim();
+      if (!normalizedTargetRecordId) return;
+      setPendingOnboardingActionsByTargetId((prev) => {
+        if (pending) {
+          if (prev[normalizedTargetRecordId]) return prev;
+          return { ...prev, [normalizedTargetRecordId]: true };
+        }
+        if (!prev[normalizedTargetRecordId]) return prev;
+        const next = { ...prev };
+        delete next[normalizedTargetRecordId];
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -2012,6 +2032,13 @@ export function MondayBoardView({
     setSendEmailProgressUpdate(options?.progressUpdate ?? null);
   };
   const closeSendEmailDialog = () => {
+    if (sendEmailProgressUpdate && sendEmailRecord) {
+      const targetRecordId =
+        sendEmailRecord.contactId?.trim() || sendEmailRecord.id?.trim() || "";
+      if (targetRecordId) {
+        setOnboardingActionPending(targetRecordId, false);
+      }
+    }
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
@@ -2072,13 +2099,25 @@ export function MondayBoardView({
   useEffect(() => {
     if (featureFlags.emailMarketingEnabled) return;
     if (!sendEmailRecord) return;
+    if (sendEmailProgressUpdate) {
+      const targetRecordId =
+        sendEmailRecord.contactId?.trim() || sendEmailRecord.id?.trim() || "";
+      if (targetRecordId) {
+        setOnboardingActionPending(targetRecordId, false);
+      }
+    }
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
     setSendEmailOwnerUserId("");
     setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
-  }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
+  }, [
+    featureFlags.emailMarketingEnabled,
+    sendEmailProgressUpdate,
+    sendEmailRecord,
+    setOnboardingActionPending,
+  ]);
   useEffect(() => {
     if (!sendEmailRecord) return;
     const mailboxes = outlookTeamMailboxesQuery.data?.mailboxes ?? [];
@@ -6987,10 +7026,20 @@ export function MondayBoardView({
                     <OnboardingStepper
                       record={contactHistoryDialogRecord}
                       approvalSteps={approvalSteps}
-                      isProcessing={isCreatingContactUpdate}
+                      isProcessing={
+                        isCreatingContactUpdate ||
+                        isSendingEmail ||
+                        !!pendingOnboardingActionsByTargetId[
+                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+                        ]
+                      }
                       layout="inline"
                       emailMarketingEnabled={featureFlags.emailMarketingEnabled}
                       onQuickAction={({ updateType, body, method }) => {
+                        const targetRecordId =
+                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                        if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                        setOnboardingActionPending(targetRecordId, true);
                         setContactUpdateType(updateType);
                         if (
                           updateType === "welcome_email" &&
@@ -7004,11 +7053,17 @@ export function MondayBoardView({
                           });
                           return;
                         }
-                        void handleCreateContactUpdate({
-                          updateType,
-                          body,
-                          keepSelectedType: true,
-                        });
+                        void (async () => {
+                          try {
+                            await handleCreateContactUpdate({
+                              updateType,
+                              body,
+                              keepSelectedType: true,
+                            });
+                          } finally {
+                            setOnboardingActionPending(targetRecordId, false);
+                          }
+                        })();
                       }}
                       onQuestionnaireAction={(record) => {
                         openQuestionnaireDialogForRecords([record]);
@@ -7017,6 +7072,8 @@ export function MondayBoardView({
                         void (async () => {
                           if (!sessionToken) return;
                           const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                          if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                          setOnboardingActionPending(targetRecordId, true);
                           await handleCreateContactUpdate({
                             updateType: "general",
                             body,
@@ -7042,6 +7099,8 @@ export function MondayBoardView({
                             toast.success("Onboarding step marked complete");
                           } catch {
                             toast.error("Failed to mark step complete");
+                          } finally {
+                            setOnboardingActionPending(targetRecordId, false);
                           }
                         })();
                       }}
