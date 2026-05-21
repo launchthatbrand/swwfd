@@ -38,6 +38,7 @@ import {
 } from "../helpers";
 import type {
   MondayIdentity,
+  MondayMetricsContractorReferralBreakdown,
   MondayMetricsHiredContact,
   MondayMetricsOwnerBreakdown,
   MondayMetricsResponse,
@@ -116,6 +117,13 @@ const ownerChartConfig = {
   allContacts: {
     label: "Contacts",
     color: "var(--chart-3)",
+  },
+} satisfies ChartConfig;
+
+const contractorReferralChartConfig = {
+  referredCount: {
+    label: "Referred Contacts",
+    color: "var(--chart-4)",
   },
 } satisfies ChartConfig;
 
@@ -232,6 +240,71 @@ const OwnerBreakdownChart = ({ rows }: { rows: MondayMetricsOwnerBreakdown[] }) 
                 }
               />
               <Bar dataKey="allContacts" fill="var(--color-allContacts)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+};
+
+const ContractorReferralsChart = ({
+  fiscalYear,
+  rows,
+}: {
+  fiscalYear: string;
+  rows: MondayMetricsContractorReferralBreakdown[];
+}) => {
+  if (rows.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{fiscalYear} - Referred to Contractor</CardTitle>
+        </CardHeader>
+        <CardContent className="text-muted-foreground text-sm">
+          No contractor referrals found for this period.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const chartHeight = Math.max(260, rows.length * 34);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {fiscalYear} - Referred to Contractor ({numberFormatter.format(rows.length)})
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={contractorReferralChartConfig} className="w-full">
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={rows}
+              layout="vertical"
+              margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="contractorName"
+                width={220}
+                tickLine={false}
+                axisLine={false}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    label="Contractor"
+                    hideLabel
+                    valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                  />
+                }
+              />
+              <Bar dataKey="referredCount" fill="var(--color-referredCount)" radius={[0, 4, 4, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartContainer>
@@ -744,6 +817,11 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
               </CardContent>
             </Card>
           </div>
+
+          <ContractorReferralsChart
+            fiscalYear={summary.fiscalYear}
+            rows={summary.contractorReferrals}
+          />
 
           {!effectiveOwnerId ? (
             <OwnerBreakdownChart rows={summary.ownerBreakdown} />
