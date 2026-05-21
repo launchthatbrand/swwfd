@@ -4,6 +4,7 @@ import { env } from "~/env";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const RETENTION_REFERRED_COLUMN_ID = "dropdown_mkwqcc1w";
+const RETENTION_INTERVIEWING_WITH_COLUMN_ID = "dropdown_mm3jj2gr";
 const RETENTION_HIRED_WITH_COLUMN_ID = "dropdown_mkwqm5fb";
 const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
@@ -39,6 +40,7 @@ export interface MondayRecord {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
@@ -872,6 +874,9 @@ export const listMondayBoardRecords = async (args?: {
     const referredToContractorsColumn = columns.find(
       (column) => column.id === "dropdown_mkwqcc1w",
     );
+    const interviewingWithContractorColumn = columns.find(
+      (column) => column.id === "dropdown_mm3jj2gr",
+    );
     const hiredWithContractorColumn = columns.find(
       (column) => column.id === "dropdown_mkwqm5fb",
     );
@@ -1035,6 +1040,11 @@ export const listMondayBoardRecords = async (args?: {
         referredToContractorsColumn?.text,
         referredToContractorsColumn?.value,
       ) || null,
+      interviewingWithContractors:
+        toColumnDisplayValue(
+          interviewingWithContractorColumn?.text,
+          interviewingWithContractorColumn?.value,
+        ) || null,
       hiredWithContractor:
         toColumnDisplayValue(
           hiredWithContractorColumn?.text,
@@ -1521,6 +1531,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       phone: null,
       address: null,
       referredToContractors: null,
+      interviewingWithContractors: null,
       hiredWithContractor: null,
       hireDate: null,
       retentionPeriod: null,
@@ -2218,6 +2229,7 @@ export const getMondayRecordEditOptions = async () => {
 interface UpdateMondayRecordFieldsArgs {
   itemId: string;
   referredToContractors?: string[] | string | null;
+  interviewingWithContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
   lastInteractionDate?: string | null;
@@ -2261,6 +2273,17 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     columnValues[RETENTION_REFERRED_COLUMN_ID] = labels.length > 0
+      ? { labels }
+      : null;
+  }
+  if (args.interviewingWithContractors !== undefined) {
+    const valuesRaw = Array.isArray(args.interviewingWithContractors)
+      ? args.interviewingWithContractors
+      : splitCsvValues(args.interviewingWithContractors);
+    const labels = valuesRaw
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    columnValues[RETENTION_INTERVIEWING_WITH_COLUMN_ID] = labels.length > 0
       ? { labels }
       : null;
   }

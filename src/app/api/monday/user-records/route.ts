@@ -60,6 +60,7 @@ type MergedRecord = {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
@@ -1211,6 +1212,7 @@ const fetchContactRecordsByIds = async (args: {
     const emailColumn = byId("email__1") ?? byType("email");
     const phoneColumn = byId("phone____1") ?? byType("phone");
     const referredColumn = byId("dropdown_mkwqcc1w");
+    const interviewingColumn = byId("dropdown_mm3jj2gr");
     const hiredColumn = byId("dropdown_mkwqm5fb");
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
@@ -1268,6 +1270,8 @@ const fetchContactRecordsByIds = async (args: {
       phone: phoneColumn?.text ?? null,
       address,
       referredToContractors: toColumnDisplayValue(referredColumn?.text, referredColumn?.value) || null,
+      interviewingWithContractors:
+        toColumnDisplayValue(interviewingColumn?.text, interviewingColumn?.value) || null,
       hiredWithContractor: toColumnDisplayValue(hiredColumn?.text, hiredColumn?.value) || null,
       hireDate: hireDate,
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
