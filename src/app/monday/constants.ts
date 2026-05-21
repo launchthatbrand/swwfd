@@ -165,7 +165,7 @@ export interface StepActionConfig {
 
 export const STEP_ACTION_CONFIG: StepActionConfig[] = [
   { stepIndex: 0, columnId: "color_mm1db321", updateType: "welcome_email", defaultBody: "Welcome Email Sent", actionLabel: "Send Welcome Email", actionVariant: "default" },
-  { stepIndex: 1, columnId: "color_mm3ggf4t", updateType: "followup", defaultBody: "Questionnaire Sent", actionLabel: "Mark Questionnaire Sent", actionVariant: "default" },
+  { stepIndex: 1, columnId: "color_mm3ggf4t", updateType: "followup", defaultBody: "Questionnaire Sent", actionLabel: "Send Questionnaire Email", actionVariant: "default" },
   { stepIndex: 2, columnId: "color_mm1dwr4k", updateType: "questionnaire", defaultBody: "Screening Complete", actionLabel: "Complete Screening", actionVariant: "questionnaire" },
   { stepIndex: 3, columnId: "color_mm1dnr11", updateType: "resume", defaultBody: "Resume Submitted", actionLabel: "Mark Resume Submitted", actionVariant: "default" },
   { stepIndex: 4, columnId: "color_mm1dgeqy", updateType: null, defaultBody: "Interviewing", actionLabel: "Mark Interviewing", actionVariant: "generic" },

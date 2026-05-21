@@ -156,7 +156,7 @@ export const OnboardingStepper = ({
               }}
               disabled={isProcessing}
             >
-              Already Sent Manually (Internal)
+              Already Sent Manually
             </Button>
             {emailMarketingEnabled ? (
               <Button
@@ -169,7 +169,7 @@ export const OnboardingStepper = ({
                 }}
                 disabled={isProcessing}
               >
-                Send Through Platform (External)
+                Send Through Platform
               </Button>
             ) : null}
           </div>
