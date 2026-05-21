@@ -148,6 +148,7 @@ export const OnboardingStepper = ({
                 }
                 setPendingWelcomeStep(null);
               }}
+              disabled={isProcessing}
             >
               Already Sent Manually
             </Button>
@@ -160,6 +161,7 @@ export const OnboardingStepper = ({
                   }
                   setPendingWelcomeStep(null);
                 }}
+                disabled={isProcessing}
               >
                 Send Through Platform
               </Button>
