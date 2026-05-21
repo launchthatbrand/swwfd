@@ -4624,8 +4624,8 @@ export function MondayBoardView({
       throw new Error(resetStepData.error ?? "Failed to mark onboarding step done");
     }
 
-    await recordsQuery.refetch();
-    const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
+    const refreshedRecordsResult = await recordsQuery.refetch();
+    const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
       (page) => page.records ?? [],
     );
     syncContactHistoryDialogFromRecords(refreshedRecords);
