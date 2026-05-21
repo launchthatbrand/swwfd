@@ -63,8 +63,8 @@ export const OnboardingStepper = ({
   layout = "stacked",
 }: OnboardingStepperProps) => {
   const [expanded, setExpanded] = useState(false);
-  const [welcomeEmailConfirmOpen, setWelcomeEmailConfirmOpen] = useState(false);
-  const [pendingWelcomeStep, setPendingWelcomeStep] = useState<(typeof steps)[number] | null>(null);
+  const [emailConfirmOpen, setEmailConfirmOpen] = useState(false);
+  const [pendingEmailStep, setPendingEmailStep] = useState<(typeof steps)[number] | null>(null);
   const [overrideStepColumnId, setOverrideStepColumnId] = useState("");
 
   const stepCount = approvalSteps.length;
@@ -101,29 +101,35 @@ export const OnboardingStepper = ({
     }
   };
 
+  const isEmailStep = (step: StepWithState) =>
+    step.updateType === "welcome_email" || step.updateType === "followup";
+
   const handleAction = (step: StepWithState) => {
-    if (step.updateType === "welcome_email") {
-      setPendingWelcomeStep(step);
-      setWelcomeEmailConfirmOpen(true);
+    if (isEmailStep(step)) {
+      setPendingEmailStep(step);
+      setEmailConfirmOpen(true);
       return;
     }
     executeAction(step);
   };
 
+  const pendingEmailTitle =
+    pendingEmailStep?.updateType === "followup" ? "Questionnaire Email" : "Welcome Email";
+
   return (
     <>
       <Dialog
-        open={welcomeEmailConfirmOpen}
+        open={emailConfirmOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setWelcomeEmailConfirmOpen(false);
-            setPendingWelcomeStep(null);
+            setEmailConfirmOpen(false);
+            setPendingEmailStep(null);
           }
         }}
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Welcome Email</DialogTitle>
+            <DialogTitle>{pendingEmailTitle}</DialogTitle>
             <DialogDescription>
               {emailMarketingEnabled
                 ? "Choose how you want to complete this step."
@@ -134,36 +140,36 @@ export const OnboardingStepper = ({
             <Button
               variant="outline"
               onClick={() => {
-                setWelcomeEmailConfirmOpen(false);
-                setPendingWelcomeStep(null);
+                setEmailConfirmOpen(false);
+                setPendingEmailStep(null);
               }}
             >
               Cancel
             </Button>
             <Button
               onClick={() => {
-                setWelcomeEmailConfirmOpen(false);
-                if (pendingWelcomeStep) {
-                  executeAction(pendingWelcomeStep, "manual");
+                setEmailConfirmOpen(false);
+                if (pendingEmailStep) {
+                  executeAction(pendingEmailStep, "manual");
                 }
-                setPendingWelcomeStep(null);
+                setPendingEmailStep(null);
               }}
               disabled={isProcessing}
             >
-              Already Sent Manually
+              Already Sent Manually (Internal)
             </Button>
             {emailMarketingEnabled ? (
               <Button
                 onClick={() => {
-                  setWelcomeEmailConfirmOpen(false);
-                  if (pendingWelcomeStep) {
-                    executeAction(pendingWelcomeStep, "platform");
+                  setEmailConfirmOpen(false);
+                  if (pendingEmailStep) {
+                    executeAction(pendingEmailStep, "platform");
                   }
-                  setPendingWelcomeStep(null);
+                  setPendingEmailStep(null);
                 }}
                 disabled={isProcessing}
               >
-                Send Through Platform
+                Send Through Platform (External)
               </Button>
             ) : null}
           </div>
