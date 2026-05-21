@@ -423,6 +423,11 @@ export interface MondayMetricsHiredContact {
   latestHireDate: string | null;
 }
 
+export interface MondayMetricsContractorReferralBreakdown {
+  contractorName: string;
+  referredCount: number;
+}
+
 export interface MondayMetricsSummary {
   fiscalYear: string;
   ownerId: string | null;
@@ -432,6 +437,7 @@ export interface MondayMetricsSummary {
   monthly: MondayMetricsMonthlyPoint[];
   ownerBreakdown: MondayMetricsOwnerBreakdown[];
   hiredContacts: MondayMetricsHiredContact[];
+  contractorReferrals: MondayMetricsContractorReferralBreakdown[];
   generatedAt: string;
 }
 

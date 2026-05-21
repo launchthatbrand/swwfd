@@ -5,6 +5,7 @@ import {
 } from "./client";
 
 import type {
+  MondayMetricsContractorReferralBreakdown,
   MondayMetricsCommunicationTotals,
   MondayMetricsHiredContact,
   MondayMetricsMonthlyPoint,
@@ -50,6 +51,14 @@ const splitTags = (value: string | null | undefined) => {
     .filter((entry) => entry.length > 0);
 };
 
+const splitCommaValues = (value: string | null | undefined) => {
+  if (!value) return [] as string[];
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
 const normalizeMonthKey = (value: string | null | undefined) => {
   if (!value) return null;
   const trimmed = value.trim();
@@ -75,6 +84,7 @@ interface ContactMetricsRecord {
   ownerLabel: string | null;
   tags: string | null;
   createdAt: string | null;
+  referredToContractors: string[];
 }
 
 interface HireEventMetricsRecord {
@@ -331,6 +341,11 @@ const resolveMetricsColumnIds = async (boardId: string) => {
       byType("date")?.id ??
       "date1__1",
     tagsColumnId: byId("dropdown_mkvw578t")?.id ?? byTitle("tag")?.id ?? null,
+    referredToContractorsColumnId:
+      byId("dropdown_mkwqcc1w")?.id ??
+      byTitle("referred to contractor")?.id ??
+      byTitle("referred")?.id ??
+      null,
     peopleColumnId: byType("people")?.id ?? null,
     emailColumnId: byType("email")?.id ?? byTitle("email")?.id ?? null,
     creationLogColumnId: byType("creation_log")?.id ?? null,
@@ -726,6 +741,7 @@ export const buildMondayMetricsSummary = async (args?: {
       [
         columnMeta.dateColumnId,
         columnMeta.tagsColumnId,
+        columnMeta.referredToContractorsColumnId,
         columnMeta.peopleColumnId,
         columnMeta.creationLogColumnId,
       ].filter((value): value is string => !!value && value.trim().length > 0),
@@ -787,6 +803,7 @@ export const buildMondayMetricsSummary = async (args?: {
       const byId = (id: string | null) => columns.find((column) => column.id === id);
       const peopleColumn = byId(columnMeta.peopleColumnId);
       const tagsColumn = byId(columnMeta.tagsColumnId);
+      const referredToContractorsColumn = byId(columnMeta.referredToContractorsColumnId);
       const createdColumn = byId(columnMeta.dateColumnId);
       const creationLogColumn = byId(columnMeta.creationLogColumnId);
       const ownerIds = parsePeopleIds(peopleColumn?.value);
@@ -800,6 +817,12 @@ export const buildMondayMetricsSummary = async (args?: {
         ownerLabel: peopleColumn?.text?.trim() ?? null,
         tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
         createdAt,
+        referredToContractors: splitCommaValues(
+          toColumnDisplayValue(
+            referredToContractorsColumn?.text,
+            referredToContractorsColumn?.value,
+          ) || null,
+        ),
       });
     }
     cursor = page.nextCursor ?? null;
@@ -821,6 +844,35 @@ export const buildMondayMetricsSummary = async (args?: {
       ),
     )
     : allContactRecords;
+
+  const contractorReferralMap = new Map<string, number>();
+  for (const record of contactRecords) {
+    const uniqueContractors = Array.from(
+      new Set(
+        record.referredToContractors
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    for (const contractorName of uniqueContractors) {
+      contractorReferralMap.set(
+        contractorName,
+        (contractorReferralMap.get(contractorName) ?? 0) + 1,
+      );
+    }
+  }
+  const contractorReferrals: MondayMetricsContractorReferralBreakdown[] = Array.from(
+    contractorReferralMap.entries(),
+  )
+    .map(([contractorName, referredCount]) => ({
+      contractorName,
+      referredCount,
+    }))
+    .sort(
+      (a, b) =>
+        b.referredCount - a.referredCount ||
+        a.contractorName.localeCompare(b.contractorName),
+    );
 
   const { subitemBoardId } = await resolveSubitemBoardAndColumns(boardId);
   const allHireEvents: HireEventMetricsRecord[] = [];
@@ -1123,6 +1175,7 @@ export const buildMondayMetricsSummary = async (args?: {
     monthly: monthlyPoints,
     ownerBreakdown,
     hiredContacts,
+    contractorReferrals,
     generatedAt: new Date().toISOString(),
   };
   metricsSummaryCache.set(cacheKey, {
