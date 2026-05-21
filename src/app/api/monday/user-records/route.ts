@@ -11,6 +11,8 @@ const METADATA_CACHE_TTL_MS = 60_000;
 const CONTACT_CHUNK_CONCURRENCY = 4;
 const CONTACT_CHUNK_RETRY_LIMIT = 2;
 const CONTACT_CHUNK_RETRY_BASE_DELAY_MS = 250;
+const API_BOARD_CREATED_AT_COLUMN_ID = "date1__1";
+const API_BOARD_UPDATED_AT_COLUMN_ID = "pulse_updated_mm3av0c5";
 
 type MondayColumnValue = {
   id?: string | null;
@@ -174,9 +176,20 @@ const parseDateValue = (column: MondayColumnValue | undefined) => {
   if (!column) return null;
   if (column.value) {
     try {
-      const parsed = JSON.parse(column.value) as { date?: string; time?: string };
+      const parsed = JSON.parse(column.value) as {
+        date?: string;
+        time?: string;
+        created_at?: string;
+        updated_at?: string;
+        changed_at?: string;
+      };
       if (parsed.date && parsed.time) return `${parsed.date}T${parsed.time}Z`;
       if (parsed.date) return `${parsed.date}T00:00:00Z`;
+      const rawTimestamp =
+        parsed.updated_at ?? parsed.changed_at ?? parsed.created_at ?? null;
+      if (typeof rawTimestamp === "string" && rawTimestamp.trim().length > 0) {
+        return rawTimestamp.trim();
+      }
     } catch {
       // ignore
     }
@@ -1200,8 +1213,8 @@ const fetchContactRecordsByIds = async (args: {
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
     const tagsColumn = byId("dropdown_mkvw578t");
-    const dateColumn = byId("date1__1");
-    const creationLogColumn = byType("creation_log");
+    const dateColumn = byId(API_BOARD_CREATED_AT_COLUMN_ID);
+    const pulseUpdatedColumn = byId(API_BOARD_UPDATED_AT_COLUMN_ID);
 
     const addressParts = [
       byId("text6__1")?.text,
@@ -1224,15 +1237,8 @@ const fetchContactRecordsByIds = async (args: {
     const batteryProgress =
       computedProgress ?? parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
 
-    let createdAt: string | null = parseDateValue(dateColumn);
-    if (!createdAt && creationLogColumn?.value) {
-      try {
-        const parsed = JSON.parse(creationLogColumn.value) as { created_at?: unknown };
-        if (typeof parsed.created_at === "string") createdAt = parsed.created_at;
-      } catch {
-        // ignore
-      }
-    }
+    const createdAt = parseDateValue(dateColumn);
+    const updatedAt = parseDateValue(pulseUpdatedColumn);
 
     const details: Array<{ label: string; value: string }> = [];
     if ((item.name ?? "").trim()) details.push({ label: "Name", value: item.name ?? "" });
@@ -1264,8 +1270,8 @@ const fetchContactRecordsByIds = async (args: {
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress,
       batteryRawValue: batteryColumn?.value ?? null,
-      createdAt: createdAt ?? item.updated_at ?? null,
-      updatedAt: item.updated_at ?? null,
+      createdAt: createdAt ?? null,
+      updatedAt: updatedAt ?? null,
       contactDetails: details,
       resumeFiles: parseResumeFiles(columns),
     };
@@ -1539,7 +1545,7 @@ export const GET = async (request: Request) => {
         touchedAt: touch.touchedAt,
         touchedBy: touch.touchedBy,
         touchSource: touch.touchSource,
-        createdAt: touch.touchedAt ?? contact.createdAt,
+        createdAt: contact.createdAt,
         contactDetails: [...detailPrefix, ...contact.contactDetails],
       };
       if (statusFilter.length > 0) {

@@ -9,6 +9,8 @@ const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
 const TAGS_COLUMN_ID = "dropdown_mkvw578t";
 const RESUME_FILES_COLUMN_ID = "files__1";
+const API_BOARD_CREATED_AT_COLUMN_ID = "date1__1";
+const API_BOARD_UPDATED_AT_COLUMN_ID = "pulse_updated_mm3av0c5";
 const APPROVAL_STEP_COLUMN_IDS = [
   "color_mm1db321",
   "color_mm3ggf4t",
@@ -790,15 +792,35 @@ export const listMondayBoardRecords = async (args?: {
     | null = null;
 
   let boardName: string | null = null;
-  const readCreatedAtFromCreationLog = (
+  const parseTimestampFromColumn = (
     value: string | null | undefined,
     text: string | null | undefined,
   ) => {
     if (typeof value === "string" && value.length > 0) {
       try {
-        const parsed = JSON.parse(value) as { created_at?: unknown };
-        if (typeof parsed.created_at === "string" && parsed.created_at.length > 0) {
-          return parsed.created_at;
+        const parsed = JSON.parse(value) as {
+          date?: unknown;
+          time?: unknown;
+          created_at?: unknown;
+          updated_at?: unknown;
+          changed_at?: unknown;
+        };
+        if (typeof parsed.date === "string" && parsed.date.length > 0) {
+          if (typeof parsed.time === "string" && parsed.time.length > 0) {
+            return `${parsed.date}T${parsed.time}Z`;
+          }
+          return `${parsed.date}T00:00:00Z`;
+        }
+        const rawTimestamp =
+          typeof parsed.updated_at === "string"
+            ? parsed.updated_at
+            : typeof parsed.changed_at === "string"
+              ? parsed.changed_at
+              : typeof parsed.created_at === "string"
+                ? parsed.created_at
+                : null;
+        if (rawTimestamp && rawTimestamp.length > 0) {
+          return rawTimestamp;
         }
       } catch {
         // Fall through to text parsing.
@@ -874,26 +896,14 @@ export const listMondayBoardRecords = async (args?: {
     const city = columns.find((column) => column.id === "text1__1")?.text;
     const state = columns.find((column) => column.id === "text7__1")?.text;
     const zip = columns.find((column) => column.id === "text3__1")?.text;
-    const dateColumn = columns.find((column) => column.id === "date1__1");
-    const creationLogColumn = columns.find(
-      (column) => column.type === "creation_log",
+    const dateColumn = columns.find((column) => column.id === API_BOARD_CREATED_AT_COLUMN_ID);
+    const pulseUpdatedColumn = columns.find(
+      (column) => column.id === API_BOARD_UPDATED_AT_COLUMN_ID,
     );
-    let createdAtFromDateColumn: string | null = null;
-    if (dateColumn?.value) {
-      try {
-        const parsed = JSON.parse(dateColumn.value) as {
-          date?: string;
-          time?: string;
-        };
-        if (parsed.date && parsed.time) {
-          createdAtFromDateColumn = `${parsed.date}T${parsed.time}Z`;
-        } else if (parsed.date) {
-          createdAtFromDateColumn = `${parsed.date}T00:00:00Z`;
-        }
-      } catch {
-        // Ignore malformed date JSON.
-      }
-    }
+    const createdAtFromDateColumn = parseTimestampFromColumn(
+      dateColumn?.value,
+      dateColumn?.text,
+    );
     let hireDateFromColumn: string | null = null;
     if (hireDateColumn?.value) {
       try {
@@ -910,9 +920,9 @@ export const listMondayBoardRecords = async (args?: {
         // Ignore malformed date JSON.
       }
     }
-    const createdAtFromColumn = readCreatedAtFromCreationLog(
-      creationLogColumn?.value,
-      creationLogColumn?.text,
+    const updatedAtFromPulseColumn = parseTimestampFromColumn(
+      pulseUpdatedColumn?.value,
+      pulseUpdatedColumn?.text,
     );
     const addressParts = [addressLine1, addressLine2, city, state, zip]
       .map((value) => value?.trim())
@@ -1021,9 +1031,8 @@ export const listMondayBoardRecords = async (args?: {
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress: parsedBatteryProgress,
       batteryRawValue: batteryColumn?.value ?? null,
-      createdAt:
-        createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
-      updatedAt: item.updated_at ?? null,
+      createdAt: createdAtFromDateColumn ?? null,
+      updatedAt: updatedAtFromPulseColumn ?? null,
       contactDetails,
       resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
     };
