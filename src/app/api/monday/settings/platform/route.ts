@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const MASTER_ADMIN_USER_ID = "53441186";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_SYSTEM_TAG_PATTERN = /^[a-z][a-z0-9_.-]*$/;
 
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
@@ -27,6 +28,7 @@ const normalizePlatformSettingsPayload = (
     replyToEmails: (parseStringArray(value?.replyToEmails) ?? []).map((email) =>
       email.toLowerCase(),
     ),
+    emailSystemTags: parseEmailSystemTags(value?.emailSystemTags) ?? [],
     monthlyBoardMappings: parseMonthlyBoardMappings(value?.monthlyBoardMappings) ?? [],
   };
 };
@@ -35,6 +37,7 @@ interface PlatformSettingsBody {
   adminUserIds?: unknown;
   employeeUserIds?: unknown;
   replyToEmails?: unknown;
+  emailSystemTags?: unknown;
   monthlyBoardMappings?: unknown;
 }
 
@@ -71,6 +74,40 @@ const parseMonthlyBoardMappings = (value: unknown) => {
   );
 };
 
+const parseEmailSystemTags = (value: unknown) => {
+  if (value == null) return [];
+  if (!Array.isArray(value)) return null;
+  const deduped = new Map<
+    string,
+    { tag: string; columnId: string; columnTitle: string }
+  >();
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) return null;
+    const rawTag = (entry as { tag?: unknown }).tag;
+    const rawColumnId = (entry as { columnId?: unknown }).columnId;
+    const rawColumnTitle = (entry as { columnTitle?: unknown }).columnTitle;
+    if (
+      typeof rawTag !== "string" ||
+      typeof rawColumnId !== "string" ||
+      typeof rawColumnTitle !== "string"
+    ) {
+      return null;
+    }
+    const tag = rawTag.trim().toLowerCase();
+    const columnId = rawColumnId.trim();
+    const columnTitle = rawColumnTitle.trim();
+    if (!EMAIL_SYSTEM_TAG_PATTERN.test(tag)) continue;
+    if (!/^[a-zA-Z0-9_]+$/.test(columnId)) continue;
+    const key = `${tag}:${columnId}`;
+    deduped.set(key, {
+      tag,
+      columnId,
+      columnTitle: columnTitle.length > 0 ? columnTitle : columnId,
+    });
+  }
+  return Array.from(deduped.values()).sort((a, b) => a.tag.localeCompare(b.tag));
+};
+
 export const GET = async (request: Request) => {
   try {
     await requireVerifiedMondaySession(request);
@@ -99,6 +136,7 @@ export const POST = async (request: Request) => {
   const adminUserIds = parseStringArray(body.adminUserIds);
   const employeeUserIds = parseStringArray(body.employeeUserIds);
   const replyToEmailsRaw = parseStringArray(body.replyToEmails);
+  const emailSystemTags = parseEmailSystemTags(body.emailSystemTags);
   const monthlyBoardMappings = parseMonthlyBoardMappings(
     body.monthlyBoardMappings,
   );
@@ -107,13 +145,14 @@ export const POST = async (request: Request) => {
     !adminUserIds ||
     !employeeUserIds ||
     !replyToEmailsRaw ||
+    !emailSystemTags ||
     !monthlyBoardMappings
   ) {
     return toJson(
       {
         ok: false,
         error:
-          "adminUserIds, employeeUserIds, replyToEmails, and monthlyBoardMappings must be valid arrays",
+          "adminUserIds, employeeUserIds, replyToEmails, emailSystemTags, and monthlyBoardMappings must be valid arrays",
       },
       400,
     );
@@ -146,6 +185,7 @@ export const POST = async (request: Request) => {
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        emailSystemTags,
         monthlyBoardMappings,
         updatedByMondayUserId: identity.userId,
       },

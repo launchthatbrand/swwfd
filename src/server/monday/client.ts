@@ -47,6 +47,7 @@ export interface MondayRecord {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt: string | null;
   contactDetails: Array<{
     label: string;
     value: string;
@@ -134,6 +135,7 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
 
 const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
 const SUBITEM_DATE_COLUMN_ID = "date0";
+const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
 const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
@@ -910,6 +912,9 @@ export const listMondayBoardRecords = async (args?: {
     const pulseUpdatedColumn = columns.find(
       (column) => column.id === API_BOARD_UPDATED_AT_COLUMN_ID,
     );
+    const lastTouchpointColumn = columns.find(
+      (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+    );
     const createdAtFromDateColumn = parseTimestampFromColumn(
       dateColumn?.value,
       dateColumn?.text,
@@ -933,6 +938,10 @@ export const listMondayBoardRecords = async (args?: {
     const updatedAtFromPulseColumn = parseTimestampFromColumn(
       pulseUpdatedColumn?.value,
       pulseUpdatedColumn?.text,
+    );
+    const lastTouchpointAtFromColumn = parseTimestampFromColumn(
+      lastTouchpointColumn?.value,
+      lastTouchpointColumn?.text,
     );
     const addressParts = [addressLine1, addressLine2, city, state, zip]
       .map((value) => value?.trim())
@@ -1043,6 +1052,7 @@ export const listMondayBoardRecords = async (args?: {
       batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAtFromDateColumn ?? null,
       updatedAt: updatedAtFromPulseColumn ?? null,
+      lastTouchpointAt: lastTouchpointAtFromColumn ?? null,
       contactDetails,
       resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
     };
@@ -1519,6 +1529,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       batteryRawValue: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
+      lastTouchpointAt: touchDateIso ?? item.updated_at ?? null,
       contactDetails: detailEntries,
       resumeFiles: [],
     } satisfies MondayRecord;
@@ -2209,6 +2220,7 @@ interface UpdateMondayRecordFieldsArgs {
   referredToContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
+  lastInteractionDate?: string | null;
   retentionPeriod?: string | null;
   tags?: string[] | null;
   status?: string | null;
@@ -2241,7 +2253,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   const columnValues: Record<string, unknown> = {};
   const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
 
-  if ("referredToContractors" in args) {
+  if (args.referredToContractors !== undefined) {
     const valuesRaw = Array.isArray(args.referredToContractors)
       ? args.referredToContractors
       : splitCsvValues(args.referredToContractors);
@@ -2252,31 +2264,37 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
       ? { labels }
       : null;
   }
-  if ("hiredWithContractor" in args) {
+  if (args.hiredWithContractor !== undefined) {
     const value = args.hiredWithContractor?.trim() ?? "";
     columnValues[RETENTION_HIRED_WITH_COLUMN_ID] = value
       ? { labels: [value] }
       : null;
   }
-  if ("hireDate" in args) {
+  if (args.hireDate !== undefined) {
     const dateOnly = normalizeDateOnlyValue(args.hireDate);
     columnValues[RETENTION_HIRE_DATE_COLUMN_ID] = dateOnly
       ? { date: dateOnly }
       : null;
   }
-  if ("retentionPeriod" in args) {
+  if (args.lastInteractionDate !== undefined) {
+    const dateOnly = normalizeDateOnlyValue(args.lastInteractionDate);
+    columnValues[LAST_INTERACTION_DATE_COLUMN_ID] = dateOnly
+      ? { date: dateOnly }
+      : null;
+  }
+  if (args.retentionPeriod !== undefined) {
     const value = args.retentionPeriod?.trim() ?? "";
     columnValues[RETENTION_PERIOD_COLUMN_ID] = value
       ? { labels: [value] }
       : null;
   }
-  if ("tags" in args) {
+  if (args.tags !== undefined) {
     const labels = (args.tags ?? [])
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     columnValues[TAGS_COLUMN_ID] = labels.length > 0 ? { labels } : null;
   }
-  if ("status" in args) {
+  if (args.status !== undefined) {
     const statusColumnId = boardColumnIds.statusColumnId;
     if (!statusColumnId) {
       throw new Error("Status column not found on Monday board");
@@ -2284,7 +2302,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
     const value = args.status?.trim() ?? "";
     columnValues[statusColumnId] = value ? { label: value } : null;
   }
-  if ("ownerId" in args) {
+  if (args.ownerId !== undefined) {
     const peopleColumnId = boardColumnIds.peopleColumnId;
     if (!peopleColumnId) {
       throw new Error("Owner people column not found on Monday board");
@@ -2304,7 +2322,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
       };
     }
   }
-  if ("districtLabel" in args) {
+  if (args.districtLabel !== undefined) {
     const label = args.districtLabel?.trim() ?? "";
     columnValues[ROUTING_DISTRICT_COLUMN_ID] = label ? { label } : null;
   }
@@ -3138,6 +3156,47 @@ export const listMondayRecordUpdates = async (args: {
 };
 
 // ---------------------------------------------------------------------------
+// List main board columns
+// ---------------------------------------------------------------------------
+
+export const listMondayBoardColumns = async () => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+
+  const boardData = await callMondayGraphQL<BoardColumnsData>(
+    `query ListBoardColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns { id title type }
+      }
+    }`,
+    { boardId: mondayBoard.boardId },
+  );
+
+  return (boardData.boards?.[0]?.columns ?? [])
+    .filter((column): column is { id: string; title: string; type: string } =>
+      Boolean(column.id && column.title && column.type),
+    )
+    .map((column) => ({
+      id: column.id,
+      title: column.title,
+      type: column.type,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+};
+
+// ---------------------------------------------------------------------------
 // Fetch all column values for an item
 // ---------------------------------------------------------------------------
 
@@ -3822,6 +3881,9 @@ export const createMondayRecordUpdate = async (args: {
   const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
   const fallbackNow = new Date();
   const normalizedDate = args.date?.trim();
+  const interactionDateOnly = hasValidDateTime
+    ? parsedDateTime.toISOString().slice(0, 10)
+    : normalizeDateOnlyValue(normalizedDate) || fallbackNow.toISOString().slice(0, 10);
   const normalizedActorMondayUserId =
     args.actorMondayUserId == null ? "" : String(args.actorMondayUserId).trim();
   const normalizedInternalExternalStatus = args.internalExternalStatus?.trim();
@@ -3884,7 +3946,21 @@ export const createMondayRecordUpdate = async (args: {
     throw new Error("Failed to create subitem for update");
   }
 
+  let lastInteractionWarning: string | null = null;
+  try {
+    await updateMondayRecordFields({
+      itemId,
+      lastInteractionDate: interactionDateOnly,
+    });
+  } catch (error) {
+    lastInteractionWarning =
+      error instanceof Error ? error.message : "Failed to sync last interaction date";
+  }
+
   const approvalStepResult = await markApprovalStepCompleteForUpdateType();
+  const warning = [approvalStepResult.warning, lastInteractionWarning]
+    .filter((value): value is string => !!value && value.trim().length > 0)
+    .join(" | ") || null;
 
   return {
     id: targetSubitemId,
@@ -3895,7 +3971,419 @@ export const createMondayRecordUpdate = async (args: {
     subitemName,
     approvalStepColumnId: approvalStepResult.stepColumnId,
     approvalStepMarked: approvalStepResult.stepMarked,
-    warning: approvalStepResult.warning,
+    warning,
+  };
+};
+
+const parseMonthRange = (monthKeyRaw: string) => {
+  const monthKey = monthKeyRaw.trim();
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    throw new Error("monthKey must be in YYYY-MM format");
+  }
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("monthKey must be in YYYY-MM format");
+  }
+  const monthStartMs = Date.UTC(year, month - 1, 1, 0, 0, 0, 0);
+  const monthEndExclusiveMs = Date.UTC(year, month, 1, 0, 0, 0, 0);
+  return {
+    monthKey,
+    dateFrom: new Date(monthStartMs).toISOString().slice(0, 10),
+    dateTo: new Date(monthEndExclusiveMs - 1).toISOString().slice(0, 10),
+    monthStartMs,
+    monthEndExclusiveMs,
+  };
+};
+
+const parseDateTimeToEpochMs = (rawValue: string | null | undefined) => {
+  const trimmed = rawValue?.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return Date.parse(`${trimmed}T00:00:00Z`);
+  }
+  const parsed = Date.parse(trimmed.replace(" UTC", "Z"));
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const toUtcDateTimeParts = (epochMs: number) => {
+  const iso = new Date(epochMs).toISOString();
+  return {
+    dateOnly: iso.slice(0, 10),
+    timeOnly: iso.slice(11, 19),
+  };
+};
+
+const parseSubitemInteractionDate = (args: {
+  value?: string | null;
+  text?: string | null;
+  createdAt?: string | null;
+}) => {
+  const value = args.value?.trim();
+  if (value) {
+    try {
+      const parsed = JSON.parse(value) as {
+        date?: unknown;
+        time?: unknown;
+        created_at?: unknown;
+        updated_at?: unknown;
+      };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        const dateTimeValue = typeof parsed.time === "string" && parsed.time.trim().length > 0
+          ? `${parsed.date}T${parsed.time.trim()}Z`
+          : `${parsed.date}T00:00:00Z`;
+        const epochMs = parseDateTimeToEpochMs(dateTimeValue);
+        if (epochMs != null) {
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
+        }
+      }
+      const fallbackFromValue =
+        typeof parsed.updated_at === "string"
+          ? parsed.updated_at
+          : typeof parsed.created_at === "string"
+            ? parsed.created_at
+            : null;
+      const fallbackEpochMs = parseDateTimeToEpochMs(fallbackFromValue);
+      if (fallbackEpochMs != null) {
+        return {
+          epochMs: fallbackEpochMs,
+          ...toUtcDateTimeParts(fallbackEpochMs),
+        };
+      }
+    } catch {
+      // ignore parse errors and continue with text/created_at fallback
+    }
+  }
+
+  const fromTextMs = parseDateTimeToEpochMs(args.text);
+  if (fromTextMs != null) {
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
+  }
+  const fromCreatedAtMs = parseDateTimeToEpochMs(args.createdAt);
+  if (fromCreatedAtMs != null) {
+    return {
+      epochMs: fromCreatedAtMs,
+      ...toUtcDateTimeParts(fromCreatedAtMs),
+    };
+  }
+  return null;
+};
+
+const readDateOnlyFromTopLevelDateColumn = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  const trimmedValue = value?.trim();
+  if (trimmedValue) {
+    try {
+      const parsed = JSON.parse(trimmedValue) as { date?: unknown };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        return parsed.date;
+      }
+    } catch {
+      // fall through to text parsing
+    }
+  }
+  return normalizeDateOnlyValue(text);
+};
+
+const readDateTimeFromTopLevelDateColumn = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  const trimmedValue = value?.trim();
+  if (trimmedValue) {
+    try {
+      const parsed = JSON.parse(trimmedValue) as { date?: unknown; time?: unknown };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        const parsedTime =
+          typeof parsed.time === "string" && /^\d{2}:\d{2}:\d{2}$/.test(parsed.time.trim())
+            ? parsed.time.trim()
+            : "00:00:00";
+        const epochMs = parseDateTimeToEpochMs(`${parsed.date}T${parsedTime}Z`);
+        if (epochMs != null) {
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
+        }
+      }
+    } catch {
+      // fall through to text parsing
+    }
+  }
+  const fromTextMs = parseDateTimeToEpochMs(text);
+  if (fromTextMs != null) {
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
+  }
+  return null;
+};
+
+export const backfillMondayLastInteractionDateByMonth = async (args: {
+  monthKey: string;
+  dryRun?: boolean;
+  pageSize?: number;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const range = parseMonthRange(args.monthKey);
+  const dryRun = args.dryRun ?? true;
+  const pageSizeRaw = Number(args.pageSize ?? 100);
+  const pageSize = Number.isFinite(pageSizeRaw)
+    ? Math.min(Math.max(Math.floor(pageSizeRaw), 10), 200)
+    : 100;
+
+  interface BackfillItem {
+    id?: string | null;
+    name?: string | null;
+    column_values?: Array<{ id?: string | null; value?: string | null; text?: string | null }>;
+    subitems?: Array<{
+      id?: string | null;
+      created_at?: string | null;
+      column_values?: Array<{ id?: string | null; value?: string | null; text?: string | null }>;
+    }>;
+  }
+  interface BackfillData {
+    boards?: Array<{
+      items_page?: {
+        cursor?: string | null;
+        items?: BackfillItem[];
+      };
+    }>;
+  }
+  interface UpdateData {
+    change_multiple_column_values?: { id?: string | null } | null;
+  }
+  const CONTACT_REGISTRATION_DATE_COLUMN_ID = "date1__1";
+  const safeRegistrationDateColumnId = /^[a-zA-Z0-9_]+$/.test(
+    CONTACT_REGISTRATION_DATE_COLUMN_ID,
+  )
+    ? CONTACT_REGISTRATION_DATE_COLUMN_ID
+    : "date1__1";
+  const registrationDateRule = `{
+    column_id: "${safeRegistrationDateColumnId}"
+    compare_value: ["${range.dateFrom}", "${range.dateTo}"]
+    operator: between
+  }`;
+  const buildListQuery = (includeCursor: boolean) => `
+    query BackfillLastInteractionPage($boardId: ID!, $limit: Int!${
+      includeCursor ? ", $cursor: String" : ""
+    }) {
+      boards(ids: [$boardId]) {
+        items_page(
+          limit: $limit
+          ${includeCursor ? "cursor: $cursor" : ""}
+          ${includeCursor ? "" : `query_params: { rules: [${registrationDateRule}] }`}
+        ) {
+          cursor
+          items {
+            id
+            name
+            column_values(ids: ["${LAST_INTERACTION_DATE_COLUMN_ID}", "${CONTACT_REGISTRATION_DATE_COLUMN_ID}"]) {
+              id
+              text
+              value
+            }
+            subitems {
+              id
+              created_at
+              column_values(ids: ["${SUBITEM_DATE_COLUMN_ID}"]) {
+                id
+                text
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const firstPageQuery = buildListQuery(false);
+  const cursorPageQuery = buildListQuery(true);
+
+  const updateMutation = `
+    mutation SetLastInteractionDate(
+      $boardId: ID!
+      $itemId: ID!
+      $columnValues: JSON!
+    ) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+        create_labels_if_missing: true
+      ) { id }
+    }
+  `;
+
+  let cursor: string | null = null;
+  let processedContacts = 0;
+  let registeredContacts = 0;
+  let registeredWithInteraction = 0;
+  let registeredWithoutInteraction = 0;
+  let contactsAlreadyCurrent = 0;
+  let contactsWouldUpdate = 0;
+  let contactsUpdated = 0;
+  let errorsCount = 0;
+  const errorSamples: string[] = [];
+  let pageCount = 0;
+  console.info("[MondayLastInteractionBackfill] started", {
+    monthKey: range.monthKey,
+    rangeFrom: range.dateFrom,
+    rangeTo: range.dateTo,
+    dryRun,
+    pageSize,
+  });
+
+  while (true) {
+    pageCount += 1;
+    if (pageCount > 10000) {
+      throw new Error("Aborted: exceeded page safety limit while backfilling");
+    }
+    const data = await callMondayGraphQL<BackfillData>(
+      cursor ? cursorPageQuery : firstPageQuery,
+      {
+        boardId: mondayBoard.boardId,
+        limit: pageSize,
+        ...(cursor ? { cursor } : {}),
+      },
+    );
+    const itemsPage = data.boards?.[0]?.items_page;
+    const items = itemsPage?.items ?? [];
+    if (pageCount === 1 || pageCount % 10 === 0) {
+      console.info("[MondayLastInteractionBackfill] page processed", {
+        pageCount,
+        pageItems: items.length,
+        cursorPresent: !!cursor,
+        processedContacts,
+        registeredContacts,
+        contactsWouldUpdate,
+        contactsUpdated,
+        errorsCount,
+      });
+    }
+
+    for (const item of items) {
+      const itemId = item.id?.trim() ?? "";
+      if (!itemId) continue;
+      processedContacts += 1;
+
+      const registrationColumn = (item.column_values ?? []).find(
+        (column) => column.id === CONTACT_REGISTRATION_DATE_COLUMN_ID,
+      );
+      const registrationDate = readDateOnlyFromTopLevelDateColumn(
+        registrationColumn?.value,
+        registrationColumn?.text,
+      );
+      if (!registrationDate) {
+        continue;
+      }
+      const registrationMs = parseDateTimeToEpochMs(`${registrationDate}T00:00:00Z`);
+      if (
+        registrationMs == null ||
+        registrationMs < range.monthStartMs ||
+        registrationMs >= range.monthEndExclusiveMs
+      ) {
+        continue;
+      }
+      registeredContacts += 1;
+
+      let latestInteraction:
+        | { epochMs: number; dateOnly: string; timeOnly: string }
+        | null = null;
+      for (const subitem of item.subitems ?? []) {
+        const dateColumn = subitem.column_values?.[0];
+        const parsedDate = parseSubitemInteractionDate({
+          value: dateColumn?.value,
+          text: dateColumn?.text,
+          createdAt: subitem.created_at ?? null,
+        });
+        if (!parsedDate) continue;
+        if (!latestInteraction || parsedDate.epochMs > latestInteraction.epochMs) {
+          latestInteraction = parsedDate;
+        }
+      }
+
+      if (!latestInteraction) {
+        registeredWithoutInteraction += 1;
+        continue;
+      }
+      registeredWithInteraction += 1;
+
+      const lastInteractionColumn = (item.column_values ?? []).find(
+        (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+      );
+      const currentDateTime = readDateTimeFromTopLevelDateColumn(
+        lastInteractionColumn?.value,
+        lastInteractionColumn?.text,
+      );
+      if (
+        currentDateTime &&
+        Math.floor(currentDateTime.epochMs / 1000) === Math.floor(latestInteraction.epochMs / 1000)
+      ) {
+        contactsAlreadyCurrent += 1;
+        continue;
+      }
+
+      contactsWouldUpdate += 1;
+      if (dryRun) {
+        continue;
+      }
+
+      try {
+        await callMondayGraphQL<UpdateData>(updateMutation, {
+          boardId: mondayBoard.boardId,
+          itemId,
+          columnValues: JSON.stringify({
+            [LAST_INTERACTION_DATE_COLUMN_ID]: {
+              date: latestInteraction.dateOnly,
+              time: latestInteraction.timeOnly,
+            },
+          }),
+        });
+        contactsUpdated += 1;
+      } catch (error) {
+        errorsCount += 1;
+        if (errorSamples.length < 10) {
+          const message =
+            error instanceof Error ? error.message : "Failed to update contact";
+          errorSamples.push(`${itemId}: ${message}`);
+        }
+      }
+    }
+
+    const nextCursor = itemsPage?.cursor?.trim() ?? "";
+    if (!nextCursor) break;
+    cursor = nextCursor;
+  }
+
+  console.info("[MondayLastInteractionBackfill] completed", {
+    monthKey: range.monthKey,
+    processedContacts,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
+    contactsAlreadyCurrent,
+    contactsWouldUpdate,
+    contactsUpdated,
+    errorsCount,
+  });
+
+  return {
+    monthKey: range.monthKey,
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    dryRun,
+    pageSize,
+    processedContacts,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
+    contactsAlreadyCurrent,
+    contactsWouldUpdate,
+    contactsUpdated,
+    errorsCount,
+    errorSamples,
   };
 };
 

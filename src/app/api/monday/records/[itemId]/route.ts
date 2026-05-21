@@ -44,6 +44,7 @@ interface UpdateRecordBody {
   referredToContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
+  lastInteractionDate?: string | null;
   retentionPeriod?: string | null;
   tags?: string[] | null;
   status?: string | null;
@@ -174,16 +175,33 @@ export const PATCH = async (
   }
 
   try {
-    await updateMondayRecordFields({
-      itemId,
-      referredToContractors: body.referredToContractors,
-      hiredWithContractor: body.hiredWithContractor,
-      hireDate: body.hireDate,
-      retentionPeriod: body.retentionPeriod,
-      tags: body.tags,
-      status: body.status,
-      ownerId: body.ownerId,
-    });
+    const updateArgs: Parameters<typeof updateMondayRecordFields>[0] = { itemId };
+    if (Object.prototype.hasOwnProperty.call(body, "referredToContractors")) {
+      updateArgs.referredToContractors = body.referredToContractors;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "hiredWithContractor")) {
+      updateArgs.hiredWithContractor = body.hiredWithContractor;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "hireDate")) {
+      updateArgs.hireDate = body.hireDate;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "lastInteractionDate")) {
+      updateArgs.lastInteractionDate = body.lastInteractionDate;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "retentionPeriod")) {
+      updateArgs.retentionPeriod = body.retentionPeriod;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "tags")) {
+      updateArgs.tags = body.tags;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "status")) {
+      updateArgs.status = body.status;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "ownerId")) {
+      updateArgs.ownerId = body.ownerId;
+    }
+
+    await updateMondayRecordFields(updateArgs);
     const previous = beforeSnapshot ?? {
       itemName: null,
       statusText: "",

@@ -83,6 +83,7 @@ import type {
   MondayCreateContactResponse,
   MondayCreateRecordUpdateResponse,
   MondayEmailTemplate,
+  MondayEmailSystemTag,
   MondayEmailTemplatesResponse,
   MondayFeatureFlags,
   MondayFeatureFlagsResponse,
@@ -131,6 +132,7 @@ import {
   isUserBoardRecordSource,
   isUserBoardTableDensity,
   KANBAN_STEP_CONFIG,
+  LAST_INTERACTION_DATE_COLUMN_ID,
   MONDAY_DEV_BYPASS_TOKEN,
   QUESTIONNAIRE_UPDATE_ACTION,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
@@ -168,6 +170,8 @@ import {
   formatUpdatedAt,
   getContactTooltipDetails,
   getDistrictChipClassName,
+  getLastTouchpointBadgeClassName,
+  getLastTouchpointRecency,
   getMonthBounds,
   getNameInitials,
   getRecordStepIndex,
@@ -283,8 +287,10 @@ const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
   adminUserIds: [MASTER_ADMIN_USER_ID],
   employeeUserIds: [],
   replyToEmails: [],
+  emailSystemTags: [],
   monthlyBoardMappings: [],
 };
+const EMAIL_TEMPLATE_TAG_KEY_PATTERN = /^[a-z][a-z0-9_.-]*$/;
 
 export function MondayBoardView({
   viewMode = "all",
@@ -398,7 +404,6 @@ export function MondayBoardView({
   });
   const [resumeReferralDialogState, setResumeReferralDialogState] = useState<{
     targetRecordId: string;
-    body: string;
     selectedContractors: string[];
   } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
@@ -440,6 +445,8 @@ export function MondayBoardView({
   const [platformSettingsDraft, setPlatformSettingsDraft] = useState<MondayPlatformSettings>({
     ...DEFAULT_PLATFORM_SETTINGS,
   });
+  const [newEmailSystemTagKey, setNewEmailSystemTagKey] = useState("");
+  const [newEmailSystemTagColumnId, setNewEmailSystemTagColumnId] = useState("");
   const [isSavingPlatformSettings, setIsSavingPlatformSettings] = useState(false);
   const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
@@ -583,6 +590,23 @@ export function MondayBoardView({
         .filter((value) => value.length > 0),
     );
   }, []);
+  const normalizeEmailSystemTags = useCallback((values: MondayEmailSystemTag[]) => {
+    const deduped = new Map<string, MondayEmailSystemTag>();
+    for (const entry of values) {
+      const tag = entry.tag.trim().toLowerCase();
+      const columnId = entry.columnId.trim();
+      const columnTitle = entry.columnTitle.trim();
+      if (!EMAIL_TEMPLATE_TAG_KEY_PATTERN.test(tag)) continue;
+      if (!/^[a-zA-Z0-9_]+$/.test(columnId)) continue;
+      const key = `${tag}:${columnId}`;
+      deduped.set(key, {
+        tag,
+        columnId,
+        columnTitle: columnTitle.length > 0 ? columnTitle : columnId,
+      });
+    }
+    return Array.from(deduped.values()).sort((a, b) => a.tag.localeCompare(b.tag));
+  }, []);
   const normalizeMonthlyBoardMappings = useCallback(
     (values: MondayPlatformSettings["monthlyBoardMappings"]) => {
       const deduped = new Map<string, { monthKey: string; boardId: string }>();
@@ -604,12 +628,14 @@ export function MondayBoardView({
       adminUserIds: normalizeUserIdList(platformSettings.adminUserIds),
       employeeUserIds: normalizeUserIdList(platformSettings.employeeUserIds),
       replyToEmails: normalizeReplyToEmailList(platformSettings.replyToEmails),
+      emailSystemTags: normalizeEmailSystemTags(platformSettings.emailSystemTags),
       monthlyBoardMappings: normalizeMonthlyBoardMappings(
         platformSettings.monthlyBoardMappings,
       ),
     }),
     [
       normalizeMonthlyBoardMappings,
+      normalizeEmailSystemTags,
       normalizeReplyToEmailList,
       normalizeUserIdList,
       platformSettings,
@@ -621,12 +647,14 @@ export function MondayBoardView({
       adminUserIds: normalizeUserIdList(platformSettingsDraft.adminUserIds),
       employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
       replyToEmails: normalizeReplyToEmailList(platformSettingsDraft.replyToEmails),
+      emailSystemTags: normalizeEmailSystemTags(platformSettingsDraft.emailSystemTags),
       monthlyBoardMappings: normalizeMonthlyBoardMappings(
         platformSettingsDraft.monthlyBoardMappings,
       ),
     }),
     [
       normalizeMonthlyBoardMappings,
+      normalizeEmailSystemTags,
       normalizeReplyToEmailList,
       normalizeUserIdList,
       platformSettingsDraft,
@@ -634,6 +662,10 @@ export function MondayBoardView({
   );
   const platformMappingsSignature = (mappings: MondayPlatformSettings["monthlyBoardMappings"]) =>
     mappings.map((entry) => `${entry.monthKey}:${entry.boardId}`).join(",");
+  const emailSystemTagsSignature = (tags: MondayEmailSystemTag[]) =>
+    tags
+      .map((entry) => `${entry.tag}:${entry.columnId}:${entry.columnTitle}`)
+      .join(",");
   const formatMonthMappingLabel = useCallback((monthKey: string) => {
     const [yearPart, monthPart] = monthKey.split("-");
     const year = Number(yearPart);
@@ -670,6 +702,8 @@ export function MondayBoardView({
       platformSettingsDraftNormalized.employeeUserIds.join(",") ||
     platformSettingsNormalized.replyToEmails.join(",") !==
       platformSettingsDraftNormalized.replyToEmails.join(",") ||
+    emailSystemTagsSignature(platformSettingsNormalized.emailSystemTags) !==
+      emailSystemTagsSignature(platformSettingsDraftNormalized.emailSystemTags) ||
     platformMappingsSignature(platformSettingsNormalized.monthlyBoardMappings) !==
       platformMappingsSignature(platformSettingsDraftNormalized.monthlyBoardMappings);
   const canOverrideUserScopeOwner =
@@ -829,6 +863,32 @@ export function MondayBoardView({
     },
     staleTime: 30_000,
   });
+
+  const platformBoardColumnsQuery = useQuery({
+    queryKey: ["monday-platform-board-columns", sessionToken],
+    enabled: !!sessionToken && !staticMode && settingsOpen && isMasterAdmin,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/platform/columns", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as PlatformBoardColumnsResponse;
+      if (!response.ok || !data.ok || !Array.isArray(data.columns)) {
+        throw new Error(data.error ?? "Failed to load platform board columns");
+      }
+      return data.columns;
+    },
+    staleTime: 5 * 60_000,
+  });
+  const platformBoardColumnOptions = useMemo(
+    () =>
+      (platformBoardColumnsQuery.data ?? []).map((column) => ({
+        ...column,
+        label: `${column.title} (${column.id})`,
+      })),
+    [platformBoardColumnsQuery.data],
+  );
 
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
@@ -1020,6 +1080,16 @@ export function MondayBoardView({
     itemId?: string;
     itemName?: string | null;
     columns?: ContactColumnEntry[];
+  }
+
+  interface PlatformBoardColumnsResponse {
+    ok: boolean;
+    error?: string;
+    columns?: Array<{
+      id: string;
+      title: string;
+      type: string;
+    }>;
   }
 
   const contactColumnsQuery = useQuery({
@@ -1525,6 +1595,9 @@ export function MondayBoardView({
         updatedAt: new Date(
           Date.UTC(2026, 1, (index % 28) + 1, 13, index % 60, 0),
         ).toISOString(),
+        lastTouchpointAt: new Date(
+          Date.UTC(2026, 1, (index % 28) + 1, 14, index % 60, 0),
+        ).toISOString(),
         contactDetails: [
           { label: "Name", value: `Static Lead ${id}` },
           { label: "Email", value: `lead${id}@example.com` },
@@ -1823,6 +1896,23 @@ export function MondayBoardView({
       toast.error(`Invalid reply-to emails: ${invalidReplyToEmails.join(", ")}`);
       return;
     }
+    const normalizedEmailSystemTags = normalizeEmailSystemTags(
+      platformSettingsDraft.emailSystemTags,
+    );
+    const invalidEmailSystemTags = platformSettingsDraft.emailSystemTags.filter((entry) => {
+      const tag = entry.tag.trim().toLowerCase();
+      const columnId = entry.columnId.trim();
+      return (
+        tag.length > 0 &&
+        (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag) || !/^[a-zA-Z0-9_]+$/.test(columnId))
+      );
+    });
+    if (invalidEmailSystemTags.length > 0) {
+      toast.error(
+        "Each email template tag needs a valid key (letters/numbers/._-) and a column.",
+      );
+      return;
+    }
     const normalizedMonthlyBoardMappings = normalizeMonthlyBoardMappings(
       platformSettingsDraft.monthlyBoardMappings,
     );
@@ -1847,6 +1937,7 @@ export function MondayBoardView({
       ]),
       employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
       replyToEmails: normalizedReplyToEmails,
+      emailSystemTags: normalizedEmailSystemTags,
       monthlyBoardMappings: normalizedMonthlyBoardMappings,
     };
 
@@ -1863,6 +1954,7 @@ export function MondayBoardView({
           adminUserIds: nextPayload.adminUserIds,
           employeeUserIds: nextPayload.employeeUserIds,
           replyToEmails: nextPayload.replyToEmails,
+          emailSystemTags: nextPayload.emailSystemTags,
           monthlyBoardMappings: nextPayload.monthlyBoardMappings,
         }),
       });
@@ -2087,6 +2179,30 @@ export function MondayBoardView({
     setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   };
+  const sendEmailTargetRecordId =
+    sendEmailRecord?.contactId?.trim() || sendEmailRecord?.id?.trim() || "";
+  const sendEmailContactColumnsQuery = useQuery({
+    queryKey: ["monday-send-email-columns", sessionToken, sendEmailTargetRecordId],
+    enabled: !!sessionToken && !!sendEmailRecord && !staticMode && sendEmailTargetRecordId.length > 0,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(sendEmailTargetRecordId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken
+            ? { "x-monday-session-token": sessionToken }
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as ContactColumnsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact template values");
+      }
+      return data;
+    },
+    staleTime: 60_000,
+  });
   const sendEmailOwnerVars = useMemo(() => {
     const primaryOwner = sendEmailRecord?.ownerProfiles[0] ?? null;
     const ownerName =
@@ -2096,6 +2212,55 @@ export function MondayBoardView({
     const ownerEmail = primaryOwner?.email?.trim() ?? "";
     return { ownerName, ownerEmail };
   }, [sendEmailRecord]);
+  const sendEmailTemplateVariables = useMemo(() => {
+    const vars: Record<string, string> = {
+      "owner.name": sendEmailOwnerVars.ownerName,
+      "owner.email": sendEmailOwnerVars.ownerEmail,
+      "contact.name": sendEmailRecord?.name?.trim() ?? "",
+      "contact.email": sendEmailRecord?.email?.trim() ?? "",
+    };
+    const columnValues = new Map(
+      (sendEmailContactColumnsQuery.data?.columns ?? []).map((column) => {
+        const fallbackFromValue =
+          typeof column.value === "string" &&
+          column.value.trim().startsWith("{") &&
+          column.value.trim().endsWith("}")
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(column.value) as {
+                    label?: { text?: unknown };
+                    labels?: unknown;
+                    text?: unknown;
+                  };
+                  if (typeof parsed.label?.text === "string") return parsed.label.text;
+                  if (Array.isArray(parsed.labels)) {
+                    const labels = parsed.labels.filter(
+                      (value): value is string => typeof value === "string",
+                    );
+                    if (labels.length > 0) return labels.join(", ");
+                  }
+                  if (typeof parsed.text === "string") return parsed.text;
+                } catch {
+                  // ignore parse errors
+                }
+                return "";
+              })()
+            : "";
+        return [column.id, (column.text?.trim() || fallbackFromValue || "").trim()];
+      }),
+    );
+    for (const entry of platformSettings.emailSystemTags) {
+      vars[entry.tag] = columnValues.get(entry.columnId) ?? "";
+    }
+    return vars;
+  }, [
+    platformSettings.emailSystemTags,
+    sendEmailContactColumnsQuery.data?.columns,
+    sendEmailOwnerVars.ownerEmail,
+    sendEmailOwnerVars.ownerName,
+    sendEmailRecord?.email,
+    sendEmailRecord?.name,
+  ]);
   useEffect(() => {
     if (!sendEmailRecord) return;
     if (sendEmailStep !== 2) return;
@@ -2119,24 +2284,21 @@ export function MondayBoardView({
   ]);
   const sendEmailResolvedTemplate = useMemo(() => {
     if (!sendEmailTemplate) return null;
-    const subject = interpolateTemplateVariables(sendEmailTemplate.name, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
+    const subject = interpolateTemplateVariables(
+      sendEmailTemplate.name,
+      sendEmailTemplateVariables,
+    );
     const htmlSource =
       sendEmailTemplate.renderedHtml.trim().length > 0
         ? sendEmailTemplate.renderedHtml
         : sendEmailTemplate.content;
-    const html = interpolateTemplateVariables(htmlSource, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
-    const text = interpolateTemplateVariables(sendEmailTemplate.content, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
+    const html = interpolateTemplateVariables(htmlSource, sendEmailTemplateVariables);
+    const text = interpolateTemplateVariables(
+      sendEmailTemplate.content,
+      sendEmailTemplateVariables,
+    );
     return { subject, html, text };
-  }, [sendEmailOwnerVars.ownerEmail, sendEmailOwnerVars.ownerName, sendEmailTemplate]);
+  }, [sendEmailTemplate, sendEmailTemplateVariables]);
   useEffect(() => {
     if (featureFlags.emailMarketingEnabled) return;
     if (!sendEmailRecord) return;
@@ -3523,6 +3685,7 @@ export function MondayBoardView({
     dateTime?: string;
     methodOfCommunication?: string;
     internalExternalStatus?: "Internal" | "External";
+    subitemNameOverride?: string;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -3531,8 +3694,10 @@ export function MondayBoardView({
     }
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-    const baseSubitemName =
-      updateType === "general"
+    const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
+    const baseSubitemName = normalizedSubitemNameOverride && normalizedSubitemNameOverride.length > 0
+      ? normalizedSubitemNameOverride
+      : updateType === "general"
         ? body
         : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
     const desiredSubitemName = buildSubitemName(baseSubitemName, "General Update");
@@ -3559,18 +3724,23 @@ export function MondayBoardView({
     const parsedDateTime = normalizedDateTime
       ? new Date(normalizedDateTime)
       : null;
-    if (parsedDateTime && !Number.isNaN(parsedDateTime.getTime())) {
+    const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+    const fallbackNow = new Date();
+    const normalizedDate = args.date?.trim();
+    const interactionDateOnly = hasValidDateTime
+      ? parsedDateTime.toISOString().slice(0, 10)
+      : normalizedDate || fallbackNow.toISOString().slice(0, 10);
+    if (hasValidDateTime) {
       columnValues["date0"] = {
         date: parsedDateTime.toISOString().slice(0, 10),
         time: parsedDateTime.toISOString().slice(11, 19),
       };
-    } else if (args.date) {
-      columnValues["date0"] = { date: args.date };
+    } else if (normalizedDate) {
+      columnValues["date0"] = { date: normalizedDate };
     } else {
-      const now = new Date();
       columnValues["date0"] = {
-        date: now.toISOString().slice(0, 10),
-        time: now.toISOString().slice(11, 19),
+        date: fallbackNow.toISOString().slice(0, 10),
+        time: fallbackNow.toISOString().slice(11, 19),
       };
     }
 
@@ -3628,14 +3798,96 @@ export function MondayBoardView({
       }
     };
 
+    const markLastInteractionDateViaServer = async (dateOnly: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token for last interaction sync");
+      }
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(itemId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            lastInteractionDate: dateOnly,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to set last interaction date");
+      }
+    };
+
     let warning: string | null = null;
+    const appendWarning = (nextWarning: string | null) => {
+      const normalizedWarning = nextWarning?.trim() ?? "";
+      if (!normalizedWarning) return;
+      warning = warning ? `${warning} | ${normalizedWarning}` : normalizedWarning;
+    };
+
+    const boardId = await resolveMondayContextBoardId();
+    try {
+      if (boardId) {
+        await callMondayContextApi<{
+          change_multiple_column_values?: { id?: string | number | null } | null;
+        }>(
+          `
+            mutation SyncLastInteractionDate(
+              $boardId: ID!
+              $itemId: ID!
+              $columnValues: JSON!
+            ) {
+              change_multiple_column_values(
+                board_id: $boardId
+                item_id: $itemId
+                column_values: $columnValues
+                create_labels_if_missing: true
+              ) { id }
+            }
+          `,
+          {
+            boardId,
+            itemId,
+            columnValues: JSON.stringify({
+              [LAST_INTERACTION_DATE_COLUMN_ID]: { date: interactionDateOnly },
+            }),
+          },
+        );
+      } else {
+        await markLastInteractionDateViaServer(interactionDateOnly);
+      }
+    } catch (error) {
+      if (boardId) {
+        try {
+          await markLastInteractionDateViaServer(interactionDateOnly);
+        } catch (fallbackError) {
+          const primaryMessage =
+            error instanceof Error
+              ? error.message
+              : "Failed to sync last interaction date via monday context";
+          const fallbackMessage =
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : "Failed to sync last interaction date via server fallback";
+          appendWarning(`${primaryMessage} | ${fallbackMessage}`);
+        }
+      } else {
+        appendWarning(
+          error instanceof Error ? error.message : "Failed to sync last interaction date",
+        );
+      }
+    }
+
     let approvalStepMarked = false;
     if (updateType !== "general") {
       const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
       if (!approvalStepColumnId) {
-        warning = "No onboarding step mapping exists for this update type";
+        appendWarning("No onboarding step mapping exists for this update type");
       } else {
-        const boardId = await resolveMondayContextBoardId();
         try {
           if (boardId) {
             await callMondayContextApi<{
@@ -3672,7 +3924,6 @@ export function MondayBoardView({
             try {
               await markApprovalStepDoneViaServer(approvalStepColumnId);
               approvalStepMarked = true;
-              warning = null;
             } catch (fallbackError) {
               const primaryMessage =
                 error instanceof Error
@@ -3682,13 +3933,14 @@ export function MondayBoardView({
                 fallbackError instanceof Error
                   ? fallbackError.message
                   : "Failed to mark onboarding step done via server fallback";
-              warning = `${primaryMessage} | ${fallbackMessage}`;
+              appendWarning(`${primaryMessage} | ${fallbackMessage}`);
             }
           } else {
-            warning =
+            appendWarning(
               error instanceof Error
                 ? error.message
-                : "Failed to mark onboarding step done";
+                : "Failed to mark onboarding step done",
+            );
           }
         }
       }
@@ -3714,18 +3966,49 @@ export function MondayBoardView({
       dateTime?: string;
       methodOfCommunication?: string;
       internalExternalStatus?: "Internal" | "External";
+      subitemNameOverride?: string;
+      referredToContractors?: string[];
+      targetRecordId?: string;
     },
   ) => {
     if (staticMode) {
       toast.error("Updates are unavailable in static mode");
       return;
     }
-    if (!sessionToken || !contactHistoryDialogRecord) {
+    if (!sessionToken) {
       toast.error("Missing monday session context");
       return;
     }
+    const targetRecordId =
+      options?.targetRecordId?.trim() ??
+      (contactHistoryDialogRecord
+        ? resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+        : "");
+    if (!targetRecordId) {
+      toast.error("Missing monday update target");
+      return;
+    }
     const updateType = options?.updateType ?? contactUpdateType;
-    const body = (options?.body ?? contactUpdateDraft).trim();
+    const normalizedReferredToContractors = (options?.referredToContractors ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    if (updateType === "resume" && normalizedReferredToContractors.length === 0) {
+      setResumeReferralDialogState({
+        targetRecordId,
+        selectedContractors: splitCsvValues(
+          contactHistoryDialogRecord?.referredToContractors ?? null,
+        ),
+      });
+      return;
+    }
+    const resumeSummary =
+      updateType === "resume"
+        ? `Resume Sent To Contractors - ${normalizedReferredToContractors.join(", ")}`
+        : null;
+    const body = (resumeSummary ?? options?.body ?? contactUpdateDraft).trim();
+    const resolvedMethodOfCommunication =
+      options?.methodOfCommunication ?? (updateType === "resume" ? "Email" : undefined);
+    const resolvedSubitemNameOverride = resumeSummary ?? options?.subitemNameOverride;
     const resolvedInternalExternalStatus =
       options?.internalExternalStatus ??
       (updateType === "welcome_email" || updateType === "followup"
@@ -3737,12 +4020,31 @@ export function MondayBoardView({
     }
 
     setIsCreatingContactUpdate(true);
-    const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
     let data: MondayCreateRecordUpdateResponse;
     const writePath = canCreateUpdatesAsLoggedInMondayUser
       ? "monday-context-user"
       : "server-fallback";
     try {
+      if (updateType === "resume") {
+        const patchResponse = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+          {
+            method: "PATCH",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              referredToContractors: normalizedReferredToContractors,
+            }),
+          },
+        );
+        const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+        if (!patchResponse.ok || !patchData.ok) {
+          throw new Error(patchData.error ?? "Failed to save referred contractor values");
+        }
+      }
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
           itemId: targetRecordId,
@@ -3750,8 +4052,9 @@ export function MondayBoardView({
           updateType,
           date: options?.date,
           dateTime: options?.dateTime,
-          methodOfCommunication: options?.methodOfCommunication,
+          methodOfCommunication: resolvedMethodOfCommunication,
           internalExternalStatus: resolvedInternalExternalStatus,
+          subitemNameOverride: resolvedSubitemNameOverride,
         });
         data = { ok: true, update };
       } else {
@@ -3769,8 +4072,9 @@ export function MondayBoardView({
               updateType,
               date: options?.date,
               dateTime: options?.dateTime,
-              methodOfCommunication: options?.methodOfCommunication,
+              methodOfCommunication: resolvedMethodOfCommunication,
               internalExternalStatus: resolvedInternalExternalStatus,
+              subitemNameOverride: resolvedSubitemNameOverride,
             }),
           },
         );
@@ -3899,6 +4203,12 @@ export function MondayBoardView({
       toast.error("Select at least one record");
       return;
     }
+    if (action.type === "resume") {
+      toast.error(
+        "Resume Submitted requires contractor selection per contact. Use contact dialog or Kanban move to complete this step.",
+      );
+      return;
+    }
 
     const targetsByRecordId = new Map<string, MondayRecord>();
     for (const record of selectedItems) {
@@ -4017,6 +4327,13 @@ export function MondayBoardView({
         const stepConfig = KANBAN_STEP_CONFIG[move.toStepIndex - 1];
         if (!stepConfig) {
           toast.error("Invalid target step");
+          return;
+        }
+        if (stepConfig.updateType === "resume") {
+          setResumeReferralDialogState({
+            targetRecordId,
+            selectedContractors: splitCsvValues(move.record.referredToContractors),
+          });
           return;
         }
 
@@ -4230,28 +4547,10 @@ export function MondayBoardView({
 
     setIsSavingResumeReferralStep(true);
     try {
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(resumeReferralDialogState.targetRecordId)}`,
-        {
-          method: "PATCH",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            referredToContractors: resumeReferralDialogState.selectedContractors,
-          }),
-        },
-      );
-      const data = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to save referred contractor values");
-      }
-
       await handleCreateContactUpdate({
         updateType: "resume",
-        body: resumeReferralDialogState.body,
+        targetRecordId: resumeReferralDialogState.targetRecordId,
+        referredToContractors: resumeReferralDialogState.selectedContractors,
         keepSelectedType: true,
       });
 
@@ -4684,6 +4983,32 @@ export function MondayBoardView({
             <span className="text-xs">{item.peopleText ?? "—"}</span>
           )}
         </button>
+        );
+      },
+    },
+    {
+      id: "lastTouchpointAt",
+      header: "Last Touchpoint",
+      accessorKey: "lastTouchpointAt",
+      sortable: true,
+      cell: (item: MondayRecord) => {
+        const recency = getLastTouchpointRecency(item.lastTouchpointAt ?? null);
+        const formatted = formatDateTimeParts(recency.parsedAt);
+        return (
+          <div className="flex min-w-[140px] flex-col gap-1 px-2 py-1.5">
+            <div className="leading-tight">
+              <div>{formatted.date}</div>
+              {formatted.time ? (
+                <div className="text-muted-foreground text-xs">{formatted.time}</div>
+              ) : null}
+            </div>
+            <Badge
+              variant="outline"
+              className={`w-fit text-[10px] ${getLastTouchpointBadgeClassName(recency.tone)}`}
+            >
+              {recency.label}
+            </Badge>
+          </div>
         );
       },
     },
@@ -6596,6 +6921,187 @@ export function MondayBoardView({
                               />
                             </div>
                           </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">Email Template System Tags</p>
+                              <p className="text-muted-foreground text-xs">
+                                Built-ins always available:{" "}
+                                <code>{"{{owner.name}}"}</code>,{" "}
+                                <code>{"{{owner.email}}"}</code>,{" "}
+                                <code>{"{{contact.name}}"}</code>,{" "}
+                                <code>{"{{contact.email}}"}</code>.
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                Add custom tags mapped to any top-level API board column.
+                              </p>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]">
+                              <Input
+                                value={newEmailSystemTagKey}
+                                onChange={(event) => setNewEmailSystemTagKey(event.target.value)}
+                                placeholder="contact.city"
+                              />
+                              <Select
+                                value={newEmailSystemTagColumnId || "__none__"}
+                                onValueChange={(value) =>
+                                  setNewEmailSystemTagColumnId(
+                                    value === "__none__" ? "" : value,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select contact column" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">Select contact column</SelectItem>
+                                  {platformBoardColumnOptions.map((column) => (
+                                    <SelectItem key={column.id} value={column.id}>
+                                      {column.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  const tag = newEmailSystemTagKey.trim().toLowerCase();
+                                  const columnId = newEmailSystemTagColumnId.trim();
+                                  const selectedColumn = platformBoardColumnOptions.find(
+                                    (column) => column.id === columnId,
+                                  );
+                                  if (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag)) {
+                                    toast.error(
+                                      "Tag key must start with a letter and use letters, numbers, dots, dashes, or underscores.",
+                                    );
+                                    return;
+                                  }
+                                  if (!columnId) {
+                                    toast.error("Select a contact column for this tag.");
+                                    return;
+                                  }
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    emailSystemTags: normalizeEmailSystemTags([
+                                      ...prev.emailSystemTags,
+                                      {
+                                        tag,
+                                        columnId,
+                                        columnTitle: selectedColumn?.title ?? columnId,
+                                      },
+                                    ]),
+                                  }));
+                                  setNewEmailSystemTagKey("");
+                                  setNewEmailSystemTagColumnId("");
+                                }}
+                                disabled={platformBoardColumnsQuery.isLoading}
+                              >
+                                Add Tag
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              {platformSettingsDraft.emailSystemTags.length === 0 ? (
+                                <p className="text-muted-foreground text-xs">
+                                  No custom tags configured yet.
+                                </p>
+                              ) : (
+                                platformSettingsDraft.emailSystemTags.map((entry, index) => {
+                                  const selectedColumn = platformBoardColumnOptions.find(
+                                    (column) => column.id === entry.columnId,
+                                  );
+                                  return (
+                                    <div
+                                      key={`${entry.tag}:${entry.columnId}:${index}`}
+                                      className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]"
+                                    >
+                                      <Input
+                                        value={entry.tag}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.map(
+                                              (tagEntry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...tagEntry, tag: value }
+                                                  : tagEntry,
+                                            ),
+                                          }));
+                                        }}
+                                      />
+                                      <Select
+                                        value={entry.columnId}
+                                        onValueChange={(value) => {
+                                          const selected = platformBoardColumnOptions.find(
+                                            (column) => column.id === value,
+                                          );
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.map(
+                                              (tagEntry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? {
+                                                      ...tagEntry,
+                                                      columnId: value,
+                                                      columnTitle:
+                                                        selected?.title ??
+                                                        tagEntry.columnTitle,
+                                                    }
+                                                  : tagEntry,
+                                            ),
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select contact column" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {platformBoardColumnOptions.map((column) => (
+                                            <SelectItem key={column.id} value={column.id}>
+                                              {column.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.filter(
+                                              (_, entryIndex) => entryIndex !== index,
+                                            ),
+                                          }));
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                      <p className="text-muted-foreground text-xs md:col-span-3">
+                                        Token:{" "}
+                                        <code>{`{{${entry.tag.trim().toLowerCase()}}}`}</code>
+                                        {" · "}
+                                        Column: {selectedColumn?.title ?? entry.columnTitle} (
+                                        {entry.columnId})
+                                      </p>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                            {platformBoardColumnsQuery.isLoading ? (
+                              <p className="text-muted-foreground text-xs">
+                                Loading API board columns...
+                              </p>
+                            ) : null}
+                            {platformBoardColumnsQuery.error ? (
+                              <p className="text-destructive text-xs">
+                                {platformBoardColumnsQuery.error instanceof Error
+                                  ? platformBoardColumnsQuery.error.message
+                                  : "Failed to load API board columns"}
+                              </p>
+                            ) : null}
+                          </div>
                           <div className="rounded-md border border-amber-300 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-100">
                             Master admin ({masterAdminUserId}) is always included in admin IDs.
                           </div>
@@ -7293,7 +7799,6 @@ export function MondayBoardView({
                         if (updateType === "resume") {
                           setResumeReferralDialogState({
                             targetRecordId,
-                            body,
                             selectedContractors: splitCsvValues(
                               contactHistoryDialogRecord.referredToContractors,
                             ),
@@ -8339,24 +8844,15 @@ export function MondayBoardView({
                         const isActive = template.id === sendEmailTemplateId;
                         const resolvedTemplateName = interpolateTemplateVariables(
                           template.name,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
+                          sendEmailTemplateVariables,
                         );
                         const resolvedRenderedHtml = interpolateTemplateVariables(
                           template.renderedHtml,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
+                          sendEmailTemplateVariables,
                         );
                         const resolvedContent = interpolateTemplateVariables(
                           template.content,
-                          {
-                            ownerName: sendEmailOwnerVars.ownerName,
-                            ownerEmail: sendEmailOwnerVars.ownerEmail,
-                          },
+                          sendEmailTemplateVariables,
                         );
                         const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
                         const hasPlainContent = resolvedContent.trim().length > 0;

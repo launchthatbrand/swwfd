@@ -421,6 +421,11 @@ export declare const api: {
       {},
       {
         adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
         employeeUserIds: Array<string>;
         masterAdminUserId: string;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
@@ -438,6 +443,11 @@ export declare const api: {
       "public",
       {
         adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
         employeeUserIds: Array<string>;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
@@ -445,6 +455,11 @@ export declare const api: {
       },
       {
         adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
         employeeUserIds: Array<string>;
         masterAdminUserId: string;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;

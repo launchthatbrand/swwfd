@@ -58,6 +58,7 @@ interface CreateUpdateBody {
   dateTime?: string;
   methodOfCommunication?: string;
   internalExternalStatus?: "Internal" | "External";
+  subitemNameOverride?: string;
 }
 
 export const POST = async (
@@ -102,6 +103,7 @@ export const POST = async (
       methodOfCommunication: payload.methodOfCommunication,
       actorMondayUserId: sessionIdentity?.userId ?? null,
       internalExternalStatus: payload.internalExternalStatus,
+      subitemNameOverride: payload.subitemNameOverride,
     });
     return toJson({
       ok: true,

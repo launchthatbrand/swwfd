@@ -262,6 +262,75 @@ export const formatDateTimeParts = (value: string | null) => {
   };
 };
 
+export type LastTouchpointBadgeTone = "none" | "fresh" | "yellow" | "orange" | "red";
+
+export const getLastTouchpointRecency = (
+  value: string | null | undefined,
+  nowMs = Date.now(),
+): {
+  hasTouchpoint: boolean;
+  parsedAt: string | null;
+  daysSince: number | null;
+  tone: LastTouchpointBadgeTone;
+  label: string;
+} => {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return {
+      hasTouchpoint: false,
+      parsedAt: null,
+      daysSince: null,
+      tone: "none",
+      label: "No touchpoint",
+    };
+  }
+  const parsedMs = Date.parse(trimmed.replace(" UTC", "Z"));
+  if (Number.isNaN(parsedMs)) {
+    return {
+      hasTouchpoint: false,
+      parsedAt: null,
+      daysSince: null,
+      tone: "none",
+      label: "No touchpoint",
+    };
+  }
+
+  const elapsedMs = Math.max(0, nowMs - parsedMs);
+  const daysSince = Math.floor(elapsedMs / 86_400_000);
+  const tone: LastTouchpointBadgeTone =
+    daysSince >= 30
+      ? "red"
+      : daysSince >= 15
+        ? "orange"
+        : daysSince >= 7
+          ? "yellow"
+          : "fresh";
+
+  return {
+    hasTouchpoint: true,
+    parsedAt: new Date(parsedMs).toISOString(),
+    daysSince,
+    tone,
+    label: `${daysSince}d`,
+  };
+};
+
+export const getLastTouchpointBadgeClassName = (tone: LastTouchpointBadgeTone) => {
+  switch (tone) {
+    case "red":
+      return "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300";
+    case "orange":
+      return "border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-900/50 dark:bg-orange-950/30 dark:text-orange-300";
+    case "yellow":
+      return "border-yellow-200 bg-yellow-50 text-yellow-700 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-300";
+    case "fresh":
+      return "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300";
+    case "none":
+    default:
+      return "border-border bg-muted/60 text-muted-foreground";
+  }
+};
+
 export const toDateOnly = (value: Date) => {
   const year = value.getUTCFullYear();
   const month = String(value.getUTCMonth() + 1).padStart(2, "0");
@@ -296,11 +365,15 @@ export const uniqueSorted = (values: (string | null)[]) => {
 
 export const interpolateTemplateVariables = (
   source: string,
-  vars: { ownerName: string; ownerEmail: string },
+  vars: Record<string, string>,
 ) => {
-  return source
-    .replace(/\{\{\s*owner\.name\s*\}\}/gi, vars.ownerName)
-    .replace(/\{\{\s*owner\.email\s*\}\}/gi, vars.ownerEmail);
+  const normalizedVars = new Map(
+    Object.entries(vars).map(([key, value]) => [key.trim().toLowerCase(), value]),
+  );
+  return source.replace(/\{\{\s*([a-z0-9_.-]+)\s*\}\}/gi, (match, key: string) => {
+    const resolved = normalizedVars.get(key.trim().toLowerCase());
+    return resolved === undefined ? match : resolved;
+  });
 };
 
 export const splitCsvValues = (value: string | null | undefined) => {

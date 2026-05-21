@@ -102,6 +102,7 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
 export const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
 export const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
 export const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
+export const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
 
 export const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<ContactUpdateType, string> = {
   general: "General",
