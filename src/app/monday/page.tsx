@@ -3711,9 +3711,12 @@ export function MondayBoardView({
     }
 
     setIsCreatingContactUpdate(true);
+    const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+    let data: MondayCreateRecordUpdateResponse;
+    const writePath = canCreateUpdatesAsLoggedInMondayUser
+      ? "monday-context-user"
+      : "server-fallback";
     try {
-      const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-      let data: MondayCreateRecordUpdateResponse;
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
           itemId: targetRecordId,
@@ -3748,29 +3751,43 @@ export function MondayBoardView({
           throw new Error(data.error ?? "Failed to post Monday update");
         }
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      console.error("[monday][contact-update] write failed", {
+        targetRecordId,
+        updateType,
+        writePath,
+        error: message,
+      });
+      toast.error(`Failed to post update (${writePath}): ${message}`);
+      setIsCreatingContactUpdate(false);
+      return;
+    }
 
-      setContactUpdateDraft("");
-      if (!options?.keepSelectedType) {
-        setContactUpdateType("general");
-      }
+    setContactUpdateDraft("");
+    if (!options?.keepSelectedType) {
+      setContactUpdateType("general");
+    }
 
-      if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
-        const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-        fetch("/api/monday/touches", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            contactItemId: contactId,
-            contactName: contactHistoryDialogRecord.name ?? "",
-            ownerId: identity.userId,
-            source: "update",
-          }),
-        }).catch(() => {});
-      }
+    if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
+      const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+      fetch("/api/monday/touches", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          contactItemId: contactId,
+          contactName: contactHistoryDialogRecord.name ?? "",
+          ownerId: identity.userId,
+          source: "update",
+        }),
+      }).catch(() => {});
+    }
 
+    try {
       const [, refreshedRecordsResult] = await Promise.all([
         contactUpdatesQuery.refetch(),
         recordsQuery.refetch(),
@@ -3779,6 +3796,16 @@ export function MondayBoardView({
         (page) => page.records ?? [],
       );
       syncContactHistoryDialogFromRecords(refreshedRecords);
+    } catch (error) {
+      const syncMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to refresh contact data after posting update";
+      console.error("[monday][contact-update] update posted but sync failed", {
+        targetRecordId,
+        updateType,
+        error: syncMessage,
+      });
       if (data.update?.warning) {
         toast.success("Update posted to monday.com");
         toast.error(`Onboarding step sync warning: ${data.update.warning}`);
@@ -3787,13 +3814,23 @@ export function MondayBoardView({
       } else {
         toast.success("Update posted to monday.com");
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to post Monday update";
-      toast.error(message);
-    } finally {
+      toast.error(
+        `Update posted, but refreshing contact history failed: ${syncMessage}`,
+      );
       setIsCreatingContactUpdate(false);
+      return;
     }
+
+    if (data.update?.warning) {
+      toast.success("Update posted to monday.com");
+      toast.error(`Onboarding step sync warning: ${data.update.warning}`);
+    } else if (data.update?.approvalStepMarked) {
+      toast.success("Update posted and onboarding step marked complete");
+    } else {
+      toast.success("Update posted to monday.com");
+    }
+
+    setIsCreatingContactUpdate(false);
   };
 
   const handleSubmitCommunicationQuickAction = async (values: {
