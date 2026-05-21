@@ -57,14 +57,18 @@ interface CreateUpdateBody {
   date?: string;
   dateTime?: string;
   methodOfCommunication?: string;
+  internalExternalStatus?: "Internal" | "External";
 }
 
 export const POST = async (
   request: Request,
   context: { params: Promise<{ itemId: string }> },
 ) => {
+  let sessionIdentity:
+    | Awaited<ReturnType<typeof requireVerifiedMondaySession>>
+    | null = null;
   try {
-    await requireVerifiedMondaySession(request);
+    sessionIdentity = await requireVerifiedMondaySession(request);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unauthorized Monday session";
@@ -96,6 +100,8 @@ export const POST = async (
       date: payload.date,
       dateTime: payload.dateTime,
       methodOfCommunication: payload.methodOfCommunication,
+      actorMondayUserId: sessionIdentity?.userId ?? null,
+      internalExternalStatus: payload.internalExternalStatus,
     });
     return toJson({
       ok: true,

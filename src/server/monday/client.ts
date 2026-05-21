@@ -136,6 +136,7 @@ const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
 const SUBITEM_DATE_COLUMN_ID = "date0";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
+const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
 export const MONDAY_HIRE_EVENT_TYPE_LABEL = "Hire Event";
 const MONDAY_HIRE_EVENT_TOKEN_PREFIX = "hk";
 
@@ -3694,6 +3695,8 @@ export const createMondayRecordUpdate = async (args: {
   dateTime?: string;
   methodOfCommunication?: string;
   subitemNameOverride?: string;
+  actorMondayUserId?: string | number | null;
+  internalExternalStatus?: "Internal" | "External";
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -3788,6 +3791,9 @@ export const createMondayRecordUpdate = async (args: {
   const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
   const fallbackNow = new Date();
   const normalizedDate = args.date?.trim();
+  const normalizedActorMondayUserId =
+    args.actorMondayUserId == null ? "" : String(args.actorMondayUserId).trim();
+  const normalizedInternalExternalStatus = args.internalExternalStatus?.trim();
   const columnValues: Record<string, unknown> = {
     [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
     ...(hasValidDateTime
@@ -3807,6 +3813,16 @@ export const createMondayRecordUpdate = async (args: {
           }),
     ...(methodOfCommunication
       ? { [SUBITEM_METHOD_COLUMN_ID]: { label: methodOfCommunication } }
+      : {}),
+    ...(normalizedInternalExternalStatus
+      ? { [SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID]: { label: normalizedInternalExternalStatus } }
+      : {}),
+    ...(/^\d+$/.test(normalizedActorMondayUserId)
+      ? {
+          [SUBITEM_PERSON_COLUMN_ID]: {
+            personsAndTeams: [{ id: Number(normalizedActorMondayUserId), kind: "person" }],
+          },
+        }
       : {}),
   };
 

@@ -133,6 +133,7 @@ import {
   KANBAN_STEP_CONFIG,
   MONDAY_DEV_BYPASS_TOKEN,
   QUESTIONNAIRE_UPDATE_ACTION,
+  SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
   STEP_ACTION_CONFIG,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -410,6 +411,7 @@ export function MondayBoardView({
   const [sendEmailProgressUpdate, setSendEmailProgressUpdate] = useState<{
     updateType: Exclude<ContactUpdateType, "general">;
     body: string;
+    internalExternalStatus?: "Internal" | "External";
   } | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [pendingOnboardingActionsByTargetId, setPendingOnboardingActionsByTargetId] =
@@ -2027,6 +2029,7 @@ export function MondayBoardView({
       progressUpdate?: {
         updateType: Exclude<ContactUpdateType, "general">;
         body: string;
+        internalExternalStatus?: "Internal" | "External";
       } | null;
       autoAdvanceToPreview?: boolean;
       preferredTemplateType?: Exclude<ContactUpdateType, "general"> | null;
@@ -2245,6 +2248,8 @@ export function MondayBoardView({
                   body: sendEmailProgressUpdate.body,
                   updateType: sendEmailProgressUpdate.updateType,
                   dateTime: sendProgressDateTime,
+                  internalExternalStatus:
+                    sendEmailProgressUpdate.internalExternalStatus ?? "External",
                 }),
               },
             );
@@ -2267,6 +2272,8 @@ export function MondayBoardView({
                 body: sendEmailProgressUpdate.body,
                 updateType: sendEmailProgressUpdate.updateType,
                 dateTime: sendProgressDateTime,
+                internalExternalStatus:
+                  sendEmailProgressUpdate.internalExternalStatus ?? "External",
               });
               updateData = { ok: true, update };
             } catch (contextError) {
@@ -3500,6 +3507,7 @@ export function MondayBoardView({
     date?: string;
     dateTime?: string;
     methodOfCommunication?: string;
+    internalExternalStatus?: "Internal" | "External";
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -3515,9 +3523,19 @@ export function MondayBoardView({
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
     };
+    const actorMondayUserId = identity?.userId?.trim() ?? "";
+    if (/^\d+$/.test(actorMondayUserId)) {
+      columnValues.person = {
+        personsAndTeams: [{ id: Number(actorMondayUserId), kind: "person" }],
+      };
+    }
     const methodOfCommunication = args.methodOfCommunication?.trim();
     if (methodOfCommunication) {
       columnValues["method_of_communication__1"] = { label: methodOfCommunication };
+    }
+    const internalExternalStatus = args.internalExternalStatus?.trim();
+    if (internalExternalStatus) {
+      columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
@@ -3677,6 +3695,7 @@ export function MondayBoardView({
       date?: string;
       dateTime?: string;
       methodOfCommunication?: string;
+      internalExternalStatus?: "Internal" | "External";
     },
   ) => {
     if (staticMode) {
@@ -3689,6 +3708,11 @@ export function MondayBoardView({
     }
     const updateType = options?.updateType ?? contactUpdateType;
     const body = (options?.body ?? contactUpdateDraft).trim();
+    const resolvedInternalExternalStatus =
+      options?.internalExternalStatus ??
+      (updateType === "welcome_email" || updateType === "followup"
+        ? "Internal"
+        : undefined);
     if (!body) {
       toast.error("Enter an update before posting");
       return;
@@ -3709,6 +3733,7 @@ export function MondayBoardView({
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: options?.methodOfCommunication,
+          internalExternalStatus: resolvedInternalExternalStatus,
         });
         data = { ok: true, update };
       } else {
@@ -3727,6 +3752,7 @@ export function MondayBoardView({
               date: options?.date,
               dateTime: options?.dateTime,
               methodOfCommunication: options?.methodOfCommunication,
+              internalExternalStatus: resolvedInternalExternalStatus,
             }),
           },
         );
@@ -7131,7 +7157,11 @@ export function MondayBoardView({
                           method === "platform"
                         ) {
                           openSendEmailDialog(contactHistoryDialogRecord, {
-                            progressUpdate: { updateType, body },
+                            progressUpdate: {
+                              updateType,
+                              body,
+                              internalExternalStatus: "External",
+                            },
                             autoAdvanceToPreview: true,
                             preferredTemplateType: "welcome_email",
                           });
@@ -7139,10 +7169,17 @@ export function MondayBoardView({
                         }
                         void (async () => {
                           try {
+                            const internalExternalStatus =
+                              method === "platform"
+                                ? "External"
+                                : updateType === "welcome_email" || updateType === "followup"
+                                  ? "Internal"
+                                  : undefined;
                             await handleCreateContactUpdate({
                               updateType,
                               body,
                               keepSelectedType: true,
+                              internalExternalStatus,
                             });
                           } finally {
                             setOnboardingActionPending(targetRecordId, false);
