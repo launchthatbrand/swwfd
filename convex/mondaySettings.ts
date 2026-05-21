@@ -43,6 +43,28 @@ const normalizeMonthlyBoardMappings = (
   );
 };
 
+const EMAIL_SYSTEM_TAG_PATTERN = /^[a-z][a-z0-9_.-]*$/;
+
+const normalizeEmailSystemTags = (
+  values: Array<{ tag: string; columnId: string; columnTitle: string }>,
+) => {
+  const deduped = new Map<string, { tag: string; columnId: string; columnTitle: string }>();
+  for (const entry of values) {
+    const tag = entry.tag.trim().toLowerCase();
+    const columnId = entry.columnId.trim();
+    const columnTitle = entry.columnTitle.trim();
+    if (!EMAIL_SYSTEM_TAG_PATTERN.test(tag)) continue;
+    if (!/^[a-zA-Z0-9_]+$/.test(columnId)) continue;
+    const key = `${tag}:${columnId}`;
+    deduped.set(key, {
+      tag,
+      columnId,
+      columnTitle: columnTitle.length > 0 ? columnTitle : columnId,
+    });
+  }
+  return Array.from(deduped.values()).sort((a, b) => a.tag.localeCompare(b.tag));
+};
+
 export const getFeatureFlags = query({
   args: {},
   returns: v.object({
@@ -68,6 +90,13 @@ export const getPlatformSettings = query({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    emailSystemTags: v.array(
+      v.object({
+        tag: v.string(),
+        columnId: v.string(),
+        columnTitle: v.string(),
+      }),
+    ),
     monthlyBoardMappings: v.array(
       v.object({
         monthKey: v.string(),
@@ -86,6 +115,7 @@ export const getPlatformSettings = query({
       adminUserIds: normalizeUserIds(settings?.adminUserIds ?? DEFAULT_ADMIN_USER_IDS),
       employeeUserIds: normalizeUserIds(settings?.employeeUserIds ?? []),
       replyToEmails: normalizeEmails(settings?.replyToEmails ?? []),
+      emailSystemTags: normalizeEmailSystemTags(settings?.emailSystemTags ?? []),
       monthlyBoardMappings: normalizeMonthlyBoardMappings(
         settings?.monthlyBoardMappings ?? [],
       ),
@@ -134,6 +164,13 @@ export const setPlatformSettings = mutation({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    emailSystemTags: v.array(
+      v.object({
+        tag: v.string(),
+        columnId: v.string(),
+        columnTitle: v.string(),
+      }),
+    ),
     monthlyBoardMappings: v.array(
       v.object({
         monthKey: v.string(),
@@ -147,6 +184,13 @@ export const setPlatformSettings = mutation({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    emailSystemTags: v.array(
+      v.object({
+        tag: v.string(),
+        columnId: v.string(),
+        columnTitle: v.string(),
+      }),
+    ),
     monthlyBoardMappings: v.array(
       v.object({
         monthKey: v.string(),
@@ -167,6 +211,7 @@ export const setPlatformSettings = mutation({
     ]);
     const employeeUserIds = normalizeUserIds(args.employeeUserIds);
     const replyToEmails = normalizeEmails(args.replyToEmails);
+    const emailSystemTags = normalizeEmailSystemTags(args.emailSystemTags);
     const monthlyBoardMappings = normalizeMonthlyBoardMappings(
       args.monthlyBoardMappings,
     );
@@ -176,6 +221,7 @@ export const setPlatformSettings = mutation({
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        emailSystemTags,
         monthlyBoardMappings,
         updatedAt: now,
         updatedByMondayUserId: args.updatedByMondayUserId,
@@ -187,6 +233,7 @@ export const setPlatformSettings = mutation({
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        emailSystemTags,
         monthlyBoardMappings,
         updatedAt: now,
         updatedByMondayUserId: args.updatedByMondayUserId,
@@ -198,6 +245,7 @@ export const setPlatformSettings = mutation({
       adminUserIds,
       employeeUserIds,
       replyToEmails,
+      emailSystemTags,
       monthlyBoardMappings,
     };
   },

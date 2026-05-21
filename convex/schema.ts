@@ -195,6 +195,15 @@ export default defineSchema({
     adminUserIds: v.optional(v.array(v.string())),
     employeeUserIds: v.optional(v.array(v.string())),
     replyToEmails: v.optional(v.array(v.string())),
+    emailSystemTags: v.optional(
+      v.array(
+        v.object({
+          tag: v.string(),
+          columnId: v.string(),
+          columnTitle: v.string(),
+        }),
+      ),
+    ),
     monthlyBoardMappings: v.optional(
       v.array(
         v.object({

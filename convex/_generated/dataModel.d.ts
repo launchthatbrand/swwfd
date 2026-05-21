@@ -325,6 +325,11 @@ export type DataModel = {
     document: {
       adminUserIds?: Array<string>;
       emailMarketingEnabled: boolean;
+      emailSystemTags?: Array<{
+        columnId: string;
+        columnTitle: string;
+        tag: string;
+      }>;
       employeeUserIds?: Array<string>;
       key: string;
       monthlyBoardMappings?: Array<{ boardId: string; monthKey: string }>;
@@ -339,6 +344,7 @@ export type DataModel = {
       | "_id"
       | "adminUserIds"
       | "emailMarketingEnabled"
+      | "emailSystemTags"
       | "employeeUserIds"
       | "key"
       | "monthlyBoardMappings"
