@@ -40,7 +40,7 @@ import {
   CONTACT_UPDATE_TYPE_OPTIONS,
   type ContactUpdateType,
 } from "../constants";
-import { formatUpdatedAt, hasHtmlLikeMarkup } from "../helpers";
+import { formatUpdatedAt } from "../helpers";
 
 const TYPE_CONFIG: Record<
   string,
@@ -81,22 +81,6 @@ const TYPE_CONFIG: Record<
 const getTypeConfig = (updateType: string) =>
   TYPE_CONFIG[updateType] ?? TYPE_CONFIG.general!;
 
-const METHOD_BADGE_COLORS: Record<string, string> = {
-  email: "bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-950 dark:text-sky-300 dark:border-sky-800",
-  "phone call": "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800",
-  phone: "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800",
-  text: "bg-green-100 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800",
-  sms: "bg-green-100 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800",
-  "in person": "bg-pink-100 text-pink-700 border-pink-200 dark:bg-pink-950 dark:text-pink-300 dark:border-pink-800",
-  other: "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700",
-};
-
-const getMethodBadgeColor = (method: string | null): string => {
-  if (!method) return "";
-  const key = method.toLowerCase().trim();
-  return METHOD_BADGE_COLORS[key] ?? METHOD_BADGE_COLORS.other!;
-};
-
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isWithin7Days = (dateStr: string | null): boolean => {
@@ -135,7 +119,6 @@ const MessageBubble = ({
   const config = getTypeConfig(subitem.updateType);
   const Icon = config.icon;
   const creator = subitem.creatorProfile;
-  const methodBadgeColor = getMethodBadgeColor(subitem.methodOfCommunication);
 
   const avatar = creator?.photoThumb ? (
     <img
@@ -148,39 +131,6 @@ const MessageBubble = ({
       <Icon className="text-muted-foreground h-4 w-4" />
     </div>
   );
-
-  const renderBody = () => {
-    const parts: React.ReactNode[] = [];
-
-    parts.push(
-      <span key="name" className="text-[13px] leading-relaxed">
-        {subitem.name}
-      </span>,
-    );
-
-    for (const update of subitem.updates) {
-      if (update.body.trim().length === 0) continue;
-      if (hasHtmlLikeMarkup(update.body)) {
-        parts.push(
-          <div
-            key={update.id}
-            className="prose prose-sm dark:prose-invert max-w-none text-[13px] leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: update.body }}
-          />,
-        );
-      } else {
-        parts.push(
-          <span
-            key={update.id}
-            className="whitespace-pre-wrap text-[13px] leading-relaxed"
-          >
-            {update.body}
-          </span>,
-        );
-      }
-    }
-    return parts;
-  };
 
   return (
     <div className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
@@ -195,7 +145,7 @@ const MessageBubble = ({
             className={`flex items-center gap-1.5 px-1 ${isMine ? "flex-row-reverse" : ""}`}
           >
             <span className="text-muted-foreground text-[11px] font-medium">
-              {creator?.name ?? config.label}
+              {creator?.name ?? "System"}
             </span>
             <span className="text-[11px] text-black dark:text-white">
               {subitem.createdAt ? formatUpdatedAt(subitem.createdAt) : ""}
@@ -210,7 +160,9 @@ const MessageBubble = ({
                 : "bg-muted rounded-tl-sm"
             }`}
           >
-            <div className="space-y-1">{renderBody()}</div>
+            <div className="text-[13px] leading-relaxed">
+              {subitem.name.trim() || config.label}
+            </div>
           </div>
 
           {/* Tags + actions row */}
@@ -223,14 +175,6 @@ const MessageBubble = ({
             >
               {config.label}
             </Badge>
-            {subitem.methodOfCommunication ? (
-              <Badge
-                variant="outline"
-                className={`px-1.5 py-0 text-[10px] font-normal ${methodBadgeColor}`}
-              >
-                {subitem.methodOfCommunication}
-              </Badge>
-            ) : null}
 
             <div className="flex items-center gap-0 opacity-0 transition-opacity group-hover:opacity-100">
               <Button
