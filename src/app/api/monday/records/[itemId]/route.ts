@@ -42,6 +42,7 @@ export const GET = async (
 
 interface UpdateRecordBody {
   referredToContractors?: string[] | string | null;
+  interviewingWithContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
   lastInteractionDate?: string | null;
@@ -178,6 +179,9 @@ export const PATCH = async (
     const updateArgs: Parameters<typeof updateMondayRecordFields>[0] = { itemId };
     if (Object.prototype.hasOwnProperty.call(body, "referredToContractors")) {
       updateArgs.referredToContractors = body.referredToContractors;
+    }
+    if (Object.prototype.hasOwnProperty.call(body, "interviewingWithContractors")) {
+      updateArgs.interviewingWithContractors = body.interviewingWithContractors;
     }
     if (Object.prototype.hasOwnProperty.call(body, "hiredWithContractor")) {
       updateArgs.hiredWithContractor = body.hiredWithContractor;

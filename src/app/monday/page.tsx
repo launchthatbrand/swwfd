@@ -291,6 +291,8 @@ const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
   monthlyBoardMappings: [],
 };
 const EMAIL_TEMPLATE_TAG_KEY_PATTERN = /^[a-z][a-z0-9_.-]*$/;
+const INTERVIEWING_STEP_COLUMN_ID = "color_mm1dgeqy";
+const HIRED_STEP_COLUMN_ID = "color_mm1d80yc";
 
 export function MondayBoardView({
   viewMode = "all",
@@ -406,11 +408,25 @@ export function MondayBoardView({
     targetRecordId: string;
     selectedContractors: string[];
   } | null>(null);
+  const [interviewingContractorDialogState, setInterviewingContractorDialogState] = useState<{
+    targetRecordId: string;
+    stepColumnId: string;
+    selectedContractors: string[];
+    availableContractors: string[];
+  } | null>(null);
+  const [hiredContractorDialogState, setHiredContractorDialogState] = useState<{
+    targetRecordId: string;
+    stepColumnId: string;
+    selectedContractor: string;
+    availableContractors: string[];
+  } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
   const [statusDraft, setStatusDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
   const [isSavingRetention, setIsSavingRetention] = useState(false);
   const [isSavingResumeReferralStep, setIsSavingResumeReferralStep] = useState(false);
+  const [isSavingInterviewingStep, setIsSavingInterviewingStep] = useState(false);
+  const [isSavingHiredStep, setIsSavingHiredStep] = useState(false);
   const [retentionHireDatePopoverOpen, setRetentionHireDatePopoverOpen] =
     useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -1583,6 +1599,7 @@ export function MondayBoardView({
         phone: `(555) 010-${String(index).padStart(2, "0")}`,
         address: `${100 + index} Test Ave, Test City`,
         referredToContractors: index % 2 === 0 ? "Contractor A" : "Contractor B",
+        interviewingWithContractors: index % 4 === 0 ? "Contractor A" : null,
         hiredWithContractor: index % 3 === 0 ? "Contractor C" : "—",
         hireDate: new Date(
           Date.UTC(2026, 1, (index % 28) + 1, 0, 0, 0),
@@ -4554,6 +4571,67 @@ export function MondayBoardView({
     setIsSavingResumeReferralStep(false);
   };
 
+  const completeGenericOnboardingStep = async (args: {
+    targetRecordId: string;
+    body: string;
+    stepColumnId: string;
+    recordPatch?: Record<string, unknown>;
+    successMessage?: string;
+  }) => {
+    if (!sessionToken) {
+      throw new Error("Missing monday session context");
+    }
+
+    await handleCreateContactUpdate({
+      updateType: "general",
+      body: args.body,
+      keepSelectedType: true,
+      targetRecordId: args.targetRecordId,
+    });
+
+    if (args.recordPatch) {
+      const patchResponse = await fetch(
+        `/api/monday/records/${encodeURIComponent(args.targetRecordId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify(args.recordPatch),
+        },
+      );
+      const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+      if (!patchResponse.ok || !patchData.ok) {
+        throw new Error(patchData.error ?? "Failed to update contractor values");
+      }
+    }
+
+    const resetStepResponse = await fetch(
+      `/api/monday/records/${encodeURIComponent(args.targetRecordId)}/reset-step`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ stepColumnId: args.stepColumnId, action: "done" }),
+      },
+    );
+    const resetStepData = (await resetStepResponse.json()) as { ok?: boolean; error?: string };
+    if (!resetStepResponse.ok || !resetStepData.ok) {
+      throw new Error(resetStepData.error ?? "Failed to mark onboarding step done");
+    }
+
+    await recordsQuery.refetch();
+    const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
+      (page) => page.records ?? [],
+    );
+    syncContactHistoryDialogFromRecords(refreshedRecords);
+    toast.success(args.successMessage ?? "Onboarding step marked complete");
+  };
+
   const handleConfirmResumeReferralStep = async () => {
     if (!sessionToken || !resumeReferralDialogState) {
       toast.error("Missing monday session context");
@@ -4582,6 +4660,87 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsSavingResumeReferralStep(false);
+    }
+  };
+
+  const closeInterviewingContractorDialog = () => {
+    const targetRecordId = interviewingContractorDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setInterviewingContractorDialogState(null);
+    setIsSavingInterviewingStep(false);
+  };
+
+  const handleConfirmInterviewingStep = async () => {
+    if (!sessionToken || !interviewingContractorDialogState) {
+      toast.error("Missing monday session context");
+      closeInterviewingContractorDialog();
+      return;
+    }
+    if (interviewingContractorDialogState.selectedContractors.length === 0) {
+      toast.error("Select at least one contractor before continuing");
+      return;
+    }
+
+    setIsSavingInterviewingStep(true);
+    try {
+      await completeGenericOnboardingStep({
+        targetRecordId: interviewingContractorDialogState.targetRecordId,
+        body: "Interviewing",
+        stepColumnId: interviewingContractorDialogState.stepColumnId,
+        recordPatch: {
+          interviewingWithContractors: interviewingContractorDialogState.selectedContractors,
+        },
+      });
+      closeInterviewingContractorDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete interviewing step";
+      toast.error(message);
+    } finally {
+      setIsSavingInterviewingStep(false);
+    }
+  };
+
+  const closeHiredContractorDialog = () => {
+    const targetRecordId = hiredContractorDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setHiredContractorDialogState(null);
+    setIsSavingHiredStep(false);
+  };
+
+  const handleConfirmHiredStep = async () => {
+    if (!sessionToken || !hiredContractorDialogState) {
+      toast.error("Missing monday session context");
+      closeHiredContractorDialog();
+      return;
+    }
+    const selectedContractor = hiredContractorDialogState.selectedContractor.trim();
+    if (!selectedContractor) {
+      toast.error("Select a contractor before continuing");
+      return;
+    }
+
+    setIsSavingHiredStep(true);
+    try {
+      await completeGenericOnboardingStep({
+        targetRecordId: hiredContractorDialogState.targetRecordId,
+        body: "Hired",
+        stepColumnId: hiredContractorDialogState.stepColumnId,
+        recordPatch: {
+          hiredWithContractor: selectedContractor,
+        },
+      });
+      closeHiredContractorDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete hired step";
+      toast.error(message);
+    } finally {
+      setIsSavingHiredStep(false);
     }
   };
 
@@ -7322,6 +7481,130 @@ export function MondayBoardView({
       </Dialog>
 
       <Dialog
+        open={!!interviewingContractorDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeInterviewingContractorDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mark Interviewing</DialogTitle>
+            <DialogDescription>
+              Select the contractor(s) this contact is interviewing with. Options are limited to
+              contractors from Referred to Contractor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Interviewing With Contractor(s)</label>
+              <MultiSelect
+                key={`${interviewingContractorDialogState?.targetRecordId ?? "no-item"}-${interviewingContractorDialogState?.selectedContractors.join("|") ?? ""}`}
+                options={(interviewingContractorDialogState?.availableContractors ?? [])
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={interviewingContractorDialogState?.selectedContractors ?? []}
+                onValueChange={(values) => {
+                  setInterviewingContractorDialogState((prev) =>
+                    prev ? { ...prev, selectedContractors: values } : prev,
+                  );
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeInterviewingContractorDialog}
+                disabled={isSavingInterviewingStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmInterviewingStep();
+                }}
+                disabled={
+                  isSavingInterviewingStep ||
+                  (interviewingContractorDialogState?.selectedContractors.length ?? 0) === 0
+                }
+              >
+                {isSavingInterviewingStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!hiredContractorDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeHiredContractorDialog();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mark as Hired</DialogTitle>
+            <DialogDescription>
+              Select the contractor this contact was hired with. Options come from Interviewing
+              With Contractor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hired With Contractor</label>
+              <Select
+                value={hiredContractorDialogState?.selectedContractor || "__none__"}
+                onValueChange={(value) => {
+                  setHiredContractorDialogState((prev) =>
+                    prev
+                      ? { ...prev, selectedContractor: value === "__none__" ? "" : value }
+                      : prev,
+                  );
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select contractor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {(hiredContractorDialogState?.availableContractors ?? [])
+                    .filter((value) => value.trim().length > 0)
+                    .map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeHiredContractorDialog}
+                disabled={isSavingHiredStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmHiredStep();
+                }}
+                disabled={
+                  isSavingHiredStep ||
+                  !hiredContractorDialogState?.selectedContractor.trim()
+                }
+              >
+                {isSavingHiredStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={!!retentionDialogRecord}
         onOpenChange={(open) => {
           if (!open) setRetentionDialogRecord(null);
@@ -7870,31 +8153,71 @@ export function MondayBoardView({
                           const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
                           if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
                           setOnboardingActionPending(targetRecordId, true);
-                          await handleCreateContactUpdate({
-                            updateType: "general",
-                            body,
-                            keepSelectedType: true,
-                          });
+
+                          if (stepColumnId === INTERVIEWING_STEP_COLUMN_ID) {
+                            const referredContractors = splitCsvValues(
+                              contactHistoryDialogRecord.referredToContractors,
+                            );
+                            if (referredContractors.length === 0) {
+                              toast.error(
+                                "No referred contractors found. Complete Resume Submitted first.",
+                              );
+                              setOnboardingActionPending(targetRecordId, false);
+                              return;
+                            }
+
+                            const selectedInterviewingContractors = splitCsvValues(
+                              contactHistoryDialogRecord.interviewingWithContractors,
+                            ).filter((value) => referredContractors.includes(value));
+
+                            setInterviewingContractorDialogState({
+                              targetRecordId,
+                              stepColumnId,
+                              selectedContractors: selectedInterviewingContractors,
+                              availableContractors: referredContractors,
+                            });
+                            return;
+                          }
+
+                          if (stepColumnId === HIRED_STEP_COLUMN_ID) {
+                            const interviewingContractors = splitCsvValues(
+                              contactHistoryDialogRecord.interviewingWithContractors,
+                            );
+                            if (interviewingContractors.length === 0) {
+                              toast.error(
+                                "No interviewing contractors found. Mark Interviewing first.",
+                              );
+                              setOnboardingActionPending(targetRecordId, false);
+                              return;
+                            }
+
+                            const currentHiredContractor =
+                              contactHistoryDialogRecord.hiredWithContractor?.trim() ?? "";
+                            const selectedContractor = interviewingContractors.includes(
+                              currentHiredContractor,
+                            )
+                              ? currentHiredContractor
+                              : interviewingContractors[0] ?? "";
+
+                            setHiredContractorDialogState({
+                              targetRecordId,
+                              stepColumnId,
+                              selectedContractor,
+                              availableContractors: interviewingContractors,
+                            });
+                            return;
+                          }
+
                           try {
-                            await fetch(
-                              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-                              {
-                                method: "POST",
-                                headers: {
-                                  "content-type": "application/json",
-                                  "x-monday-session-token": sessionToken,
-                                },
-                                body: JSON.stringify({ stepColumnId, action: "done" }),
-                              },
-                            );
-                            await recordsQuery.refetch();
-                            const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
-                              (page) => page.records ?? [],
-                            );
-                            syncContactHistoryDialogFromRecords(refreshedRecords);
-                            toast.success("Onboarding step marked complete");
-                          } catch {
-                            toast.error("Failed to mark step complete");
+                            await completeGenericOnboardingStep({
+                              targetRecordId,
+                              body,
+                              stepColumnId,
+                            });
+                          } catch (error) {
+                            const message =
+                              error instanceof Error ? error.message : "Failed to mark step complete";
+                            toast.error(message);
                           } finally {
                             setOnboardingActionPending(targetRecordId, false);
                           }

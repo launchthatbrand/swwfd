@@ -21,6 +21,7 @@ export interface MondayRecord extends Record<string, unknown> {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
