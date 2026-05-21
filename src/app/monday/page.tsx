@@ -21,6 +21,7 @@ import {
   Settings,
   Upload,
   X,
+  UserCheck,
   UserPlus,
 } from "lucide-react";
 import type {
@@ -218,9 +219,9 @@ import {
 
 const MASTER_ADMIN_USER_ID = "53441186";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call";
+type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call" | "In Person";
 interface CommunicationQuickActionDefinition {
-  id: "email" | "text" | "phone";
+  id: "email" | "text" | "phone" | "in_person";
   label: string;
   defaultBody: string;
   method: CommunicationQuickActionMethod;
@@ -247,6 +248,13 @@ const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
     defaultBody: "General Phone Call Update",
     method: "Phone Call",
     icon: Phone,
+  },
+  {
+    id: "in_person",
+    label: "In Person Update",
+    defaultBody: "General In Person Update",
+    method: "In Person",
+    icon: UserCheck,
   },
 ];
 
