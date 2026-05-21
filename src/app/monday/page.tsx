@@ -3501,7 +3501,7 @@ export function MondayBoardView({
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const desiredSubitemName = updateType === "general"
-      ? "General Update"
+      ? body
       : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
 
     const columnValues: Record<string, unknown> = {
@@ -3557,30 +3557,6 @@ export function MondayBoardView({
         : String(createdSubitemIdRaw).trim();
     if (!targetSubitemId) {
       throw new Error("Failed to create subitem for update");
-    }
-
-    // Post the update body on the subitem
-    interface CreateUpdateData {
-      create_update?: {
-        id?: string | number | null;
-        body?: string | null;
-      } | null;
-    }
-    const createUpdateData = await callMondayContextApi<CreateUpdateData>(
-      `
-        mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-          create_update(item_id: $itemId, body: $body) { id body }
-        }
-      `,
-      { itemId: targetSubitemId, body },
-    );
-    const createdUpdateIdRaw = createUpdateData.create_update?.id;
-    const createdUpdateId =
-      createdUpdateIdRaw === null || createdUpdateIdRaw === undefined
-        ? ""
-        : String(createdUpdateIdRaw).trim();
-    if (!createdUpdateId) {
-      throw new Error("Monday did not return a new update id");
     }
 
     const markApprovalStepDoneViaServer = async (stepColumnId: string) => {
@@ -3675,8 +3651,8 @@ export function MondayBoardView({
     }
 
     return {
-      id: createdUpdateId,
-      body: createUpdateData.create_update?.body ?? body,
+      id: targetSubitemId,
+      body,
       updateType,
       source: "subitem" as const,
       subitemName: desiredSubitemName,

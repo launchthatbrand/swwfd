@@ -13,7 +13,7 @@ import type {
 
 export const CONTACT_UPDATE_TYPE_OPTIONS = [
   { value: "general", label: "General Update" },
-  { value: "welcome_email", label: "Welcome Email Update" },
+  { value: "welcome_email", label: "Welcome Email" },
   { value: "followup", label: "Questionnaire Sent Update" },
   { value: "questionnaire", label: "Questionaire Update" },
   { value: "resume", label: "Resume Update" },
@@ -92,7 +92,7 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   Exclude<ContactUpdateType, "general">,
   string
 > = {
-  welcome_email: "Welcome Email Update",
+  welcome_email: "Welcome Email Sent",
   followup: "Questionnaire Sent Update",
   questionnaire: "Questionaire Update",
   resume: "Resume Update",

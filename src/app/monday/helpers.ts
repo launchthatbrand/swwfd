@@ -149,7 +149,7 @@ export const buildMockBusinessInfo = (name: string): MockBusinessInfo => {
 export const contactUpdateTypeLabel = (value: string) => {
   const options = [
     { value: "general", label: "General Update" },
-    { value: "welcome_email", label: "Welcome Email Update" },
+    { value: "welcome_email", label: "Welcome Email" },
     { value: "followup", label: "Questionnaire Sent Update" },
     { value: "questionnaire", label: "Questionaire Update" },
     { value: "resume", label: "Resume Update" },
