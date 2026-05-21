@@ -278,7 +278,11 @@ const ContractorReferralsChart = ({
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={contractorReferralChartConfig} className="w-full">
+        <ChartContainer
+          config={contractorReferralChartConfig}
+          className="w-full"
+          style={{ height: `${chartHeight}px` }}
+        >
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart
               data={rows}
