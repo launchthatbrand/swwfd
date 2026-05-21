@@ -2155,6 +2155,13 @@ export function MondayBoardView({
         );
         if (matchedWelcomeTemplate) return matchedWelcomeTemplate.id;
       }
+      if (preferredType === "followup") {
+        const matchedQuestionnaireTemplate = templates.find((template) => {
+          const name = template.name.toLowerCase();
+          return name.includes("questionnaire") || name.includes("questionaire");
+        });
+        if (matchedQuestionnaireTemplate) return matchedQuestionnaireTemplate.id;
+      }
       return templates[0]?.id ?? null;
     };
 
@@ -2273,6 +2280,11 @@ export function MondayBoardView({
         ? emailTemplates.find((template) =>
             template.name.toLowerCase().includes("welcome"),
           )?.id
+        : preferredType === "followup"
+          ? emailTemplates.find((template) => {
+              const name = template.name.toLowerCase();
+              return name.includes("questionnaire") || name.includes("questionaire");
+            })?.id
         : null;
     setSendEmailTemplateId(matchedTemplateId ?? emailTemplates[0]?.id ?? null);
   }, [
@@ -2401,6 +2413,12 @@ export function MondayBoardView({
         throw new Error(data.error ?? "Failed to send email");
       }
       let progressSyncError: string | null = null;
+      const progressStepLabel =
+        sendEmailProgressUpdate?.updateType === "followup"
+          ? "questionnaire step"
+          : sendEmailProgressUpdate?.updateType === "welcome_email"
+            ? "welcome step"
+            : "email progress";
       if (sendEmailProgressUpdate) {
         try {
           const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
@@ -2495,7 +2513,10 @@ export function MondayBoardView({
             progressSyncError = updateData.update.warning;
           }
         } catch (error) {
-          const msg = error instanceof Error ? error.message : "Failed to sync welcome email progress";
+          const msg =
+            error instanceof Error
+              ? error.message
+              : `Failed to sync ${progressStepLabel}`;
           console.error("[sendEmail] progress sync failed (all paths)", {
             error: msg,
             userId: identity?.userId,
@@ -2507,9 +2528,9 @@ export function MondayBoardView({
 
       if (progressSyncError) {
         toast.success(`Email sent to ${recipient}`);
-        toast.error(`Email sent, but welcome step sync failed: ${progressSyncError}`);
+        toast.error(`Email sent, but ${progressStepLabel} sync failed: ${progressSyncError}`);
       } else if (sendEmailProgressUpdate) {
-        toast.success(`Email sent to ${recipient} and welcome step marked complete`);
+        toast.success(`Email sent to ${recipient} and ${progressStepLabel} marked complete`);
       } else {
         toast.success(`Email sent to ${recipient}`);
       }
@@ -7806,7 +7827,7 @@ export function MondayBoardView({
                           return;
                         }
                         if (
-                          updateType === "welcome_email" &&
+                          (updateType === "welcome_email" || updateType === "followup") &&
                           featureFlags.emailMarketingEnabled &&
                           method === "platform"
                         ) {
@@ -7817,7 +7838,7 @@ export function MondayBoardView({
                               internalExternalStatus: "External",
                             },
                             autoAdvanceToPreview: true,
-                            preferredTemplateType: "welcome_email",
+                            preferredTemplateType: updateType,
                           });
                           return;
                         }
@@ -8821,7 +8842,13 @@ export function MondayBoardView({
       >
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
           <DialogHeader>
-            <DialogTitle>Send Email</DialogTitle>
+            <DialogTitle>
+              {sendEmailProgressUpdate?.updateType === "followup"
+                ? "Send Questionnaire Email"
+                : sendEmailProgressUpdate?.updateType === "welcome_email"
+                  ? "Send Welcome Email"
+                  : "Send Email"}
+            </DialogTitle>
           </DialogHeader>
           {sendEmailRecord ? (
             <div className="space-y-4">
