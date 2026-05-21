@@ -13,6 +13,7 @@ const CONTACT_CHUNK_RETRY_LIMIT = 2;
 const CONTACT_CHUNK_RETRY_BASE_DELAY_MS = 250;
 const API_BOARD_CREATED_AT_COLUMN_ID = "date1__1";
 const API_BOARD_UPDATED_AT_COLUMN_ID = "pulse_updated_mm3av0c5";
+const API_BOARD_LAST_TOUCHPOINT_COLUMN_ID = "date_mm3jfsd1";
 
 type MondayColumnValue = {
   id?: string | null;
@@ -67,6 +68,7 @@ type MergedRecord = {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
   resumeFiles: Array<{
     assetId: string | null;
@@ -1215,6 +1217,7 @@ const fetchContactRecordsByIds = async (args: {
     const tagsColumn = byId("dropdown_mkvw578t");
     const dateColumn = byId(API_BOARD_CREATED_AT_COLUMN_ID);
     const pulseUpdatedColumn = byId(API_BOARD_UPDATED_AT_COLUMN_ID);
+    const lastTouchpointColumn = byId(API_BOARD_LAST_TOUCHPOINT_COLUMN_ID);
 
     const addressParts = [
       byId("text6__1")?.text,
@@ -1239,6 +1242,7 @@ const fetchContactRecordsByIds = async (args: {
 
     const createdAt = parseDateValue(dateColumn);
     const updatedAt = parseDateValue(pulseUpdatedColumn);
+    const lastTouchpointAt = parseDateValue(lastTouchpointColumn);
 
     const details: Array<{ label: string; value: string }> = [];
     if ((item.name ?? "").trim()) details.push({ label: "Name", value: item.name ?? "" });
@@ -1272,6 +1276,7 @@ const fetchContactRecordsByIds = async (args: {
       batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAt ?? null,
       updatedAt: updatedAt ?? null,
+      lastTouchpointAt: lastTouchpointAt ?? null,
       contactDetails: details,
       resumeFiles: parseResumeFiles(columns),
     };

@@ -129,8 +129,9 @@ interface LastInteractionBackfillResult {
   dryRun: boolean;
   pageSize: number;
   processedContacts: number;
-  contactsWithMonthInteraction: number;
-  contactsWithoutMonthInteraction: number;
+  registeredContacts: number;
+  registeredWithInteraction: number;
+  registeredWithoutInteraction: number;
   contactsAlreadyCurrent: number;
   contactsWouldUpdate: number;
   contactsUpdated: number;
@@ -1459,8 +1460,10 @@ export default function MondayToolsPage() {
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">
             Backfills <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code> on
-            parent contacts by scanning subitems in the selected month and using each
-            contact&apos;s latest in-month subitem interaction date.
+            parent contacts for records whose{" "}
+            <code className="bg-muted rounded px-1 text-xs">date1__1</code> registration date is
+            in the selected month, then uses each matching contact&apos;s latest subitem date as
+            the last interaction date.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
@@ -1504,6 +1507,11 @@ export default function MondayToolsPage() {
                   : "Run Backfill"}
             </Button>
           </div>
+          {runningLastInteractionBackfill ? (
+            <p className="text-muted-foreground text-sm">
+              Backfill is running... this can take up to a minute on larger months.
+            </p>
+          ) : null}
           {lastInteractionResult ? (
             <div className="space-y-1 rounded border p-3 text-sm">
               <div className="flex items-center gap-2">
@@ -1518,14 +1526,16 @@ export default function MondayToolsPage() {
                 {lastInteractionResult.dateTo}
               </p>
               <p>
-                <span className="font-medium">Processed Contacts:</span>{" "}
+                <span className="font-medium">Scanned Contacts:</span>{" "}
                 {lastInteractionResult.processedContacts.toLocaleString()} ·{" "}
-                <span className="font-medium">With In-Month Interaction:</span>{" "}
-                {lastInteractionResult.contactsWithMonthInteraction.toLocaleString()}
+                <span className="font-medium">Registered In Month:</span>{" "}
+                {lastInteractionResult.registeredContacts.toLocaleString()}
               </p>
               <p>
-                <span className="font-medium">No In-Month Interaction:</span>{" "}
-                {lastInteractionResult.contactsWithoutMonthInteraction.toLocaleString()} ·{" "}
+                <span className="font-medium">Registered + Has Subitems:</span>{" "}
+                {lastInteractionResult.registeredWithInteraction.toLocaleString()} ·{" "}
+                <span className="font-medium">Registered + No Subitems:</span>{" "}
+                {lastInteractionResult.registeredWithoutInteraction.toLocaleString()} ·{" "}
                 <span className="font-medium">Already Current:</span>{" "}
                 {lastInteractionResult.contactsAlreadyCurrent.toLocaleString()}
               </p>

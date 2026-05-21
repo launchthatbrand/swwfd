@@ -29,6 +29,7 @@ export interface MondayRecord extends Record<string, unknown> {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt?: string | null;
   contactDetails: {
     label: string;
     value: string;
@@ -265,11 +266,18 @@ export interface MondayFeatureFlags {
   emailMarketingEnabled: boolean;
 }
 
+export interface MondayEmailSystemTag {
+  tag: string;
+  columnId: string;
+  columnTitle: string;
+}
+
 export interface MondayPlatformSettings {
   masterAdminUserId: string;
   adminUserIds: string[];
   employeeUserIds: string[];
   replyToEmails: string[];
+  emailSystemTags: MondayEmailSystemTag[];
   monthlyBoardMappings: Array<{
     monthKey: string;
     boardId: string;

@@ -47,6 +47,7 @@ export interface MondayRecord {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt: string | null;
   contactDetails: Array<{
     label: string;
     value: string;
@@ -911,6 +912,9 @@ export const listMondayBoardRecords = async (args?: {
     const pulseUpdatedColumn = columns.find(
       (column) => column.id === API_BOARD_UPDATED_AT_COLUMN_ID,
     );
+    const lastTouchpointColumn = columns.find(
+      (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+    );
     const createdAtFromDateColumn = parseTimestampFromColumn(
       dateColumn?.value,
       dateColumn?.text,
@@ -934,6 +938,10 @@ export const listMondayBoardRecords = async (args?: {
     const updatedAtFromPulseColumn = parseTimestampFromColumn(
       pulseUpdatedColumn?.value,
       pulseUpdatedColumn?.text,
+    );
+    const lastTouchpointAtFromColumn = parseTimestampFromColumn(
+      lastTouchpointColumn?.value,
+      lastTouchpointColumn?.text,
     );
     const addressParts = [addressLine1, addressLine2, city, state, zip]
       .map((value) => value?.trim())
@@ -1044,6 +1052,7 @@ export const listMondayBoardRecords = async (args?: {
       batteryRawValue: batteryColumn?.value ?? null,
       createdAt: createdAtFromDateColumn ?? null,
       updatedAt: updatedAtFromPulseColumn ?? null,
+      lastTouchpointAt: lastTouchpointAtFromColumn ?? null,
       contactDetails,
       resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
     };
@@ -1520,6 +1529,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       batteryRawValue: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
+      lastTouchpointAt: touchDateIso ?? item.updated_at ?? null,
       contactDetails: detailEntries,
       resumeFiles: [],
     } satisfies MondayRecord;
@@ -3146,6 +3156,47 @@ export const listMondayRecordUpdates = async (args: {
 };
 
 // ---------------------------------------------------------------------------
+// List main board columns
+// ---------------------------------------------------------------------------
+
+export const listMondayBoardColumns = async () => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+
+  const boardData = await callMondayGraphQL<BoardColumnsData>(
+    `query ListBoardColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns { id title type }
+      }
+    }`,
+    { boardId: mondayBoard.boardId },
+  );
+
+  return (boardData.boards?.[0]?.columns ?? [])
+    .filter((column): column is { id: string; title: string; type: string } =>
+      Boolean(column.id && column.title && column.type),
+    )
+    .map((column) => ({
+      id: column.id,
+      title: column.title,
+      type: column.type,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+};
+
+// ---------------------------------------------------------------------------
 // Fetch all column values for an item
 // ---------------------------------------------------------------------------
 
@@ -3955,6 +4006,14 @@ const parseDateTimeToEpochMs = (rawValue: string | null | undefined) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const toUtcDateTimeParts = (epochMs: number) => {
+  const iso = new Date(epochMs).toISOString();
+  return {
+    dateOnly: iso.slice(0, 10),
+    timeOnly: iso.slice(11, 19),
+  };
+};
+
 const parseSubitemInteractionDate = (args: {
   value?: string | null;
   text?: string | null;
@@ -3975,7 +4034,7 @@ const parseSubitemInteractionDate = (args: {
           : `${parsed.date}T00:00:00Z`;
         const epochMs = parseDateTimeToEpochMs(dateTimeValue);
         if (epochMs != null) {
-          return { epochMs, dateOnly: new Date(epochMs).toISOString().slice(0, 10) };
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
         }
       }
       const fallbackFromValue =
@@ -3988,7 +4047,7 @@ const parseSubitemInteractionDate = (args: {
       if (fallbackEpochMs != null) {
         return {
           epochMs: fallbackEpochMs,
-          dateOnly: new Date(fallbackEpochMs).toISOString().slice(0, 10),
+          ...toUtcDateTimeParts(fallbackEpochMs),
         };
       }
     } catch {
@@ -3998,13 +4057,13 @@ const parseSubitemInteractionDate = (args: {
 
   const fromTextMs = parseDateTimeToEpochMs(args.text);
   if (fromTextMs != null) {
-    return { epochMs: fromTextMs, dateOnly: new Date(fromTextMs).toISOString().slice(0, 10) };
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
   }
   const fromCreatedAtMs = parseDateTimeToEpochMs(args.createdAt);
   if (fromCreatedAtMs != null) {
     return {
       epochMs: fromCreatedAtMs,
-      dateOnly: new Date(fromCreatedAtMs).toISOString().slice(0, 10),
+      ...toUtcDateTimeParts(fromCreatedAtMs),
     };
   }
   return null;
@@ -4026,6 +4085,35 @@ const readDateOnlyFromTopLevelDateColumn = (
     }
   }
   return normalizeDateOnlyValue(text);
+};
+
+const readDateTimeFromTopLevelDateColumn = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  const trimmedValue = value?.trim();
+  if (trimmedValue) {
+    try {
+      const parsed = JSON.parse(trimmedValue) as { date?: unknown; time?: unknown };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        const parsedTime =
+          typeof parsed.time === "string" && /^\d{2}:\d{2}:\d{2}$/.test(parsed.time.trim())
+            ? parsed.time.trim()
+            : "00:00:00";
+        const epochMs = parseDateTimeToEpochMs(`${parsed.date}T${parsedTime}Z`);
+        if (epochMs != null) {
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
+        }
+      }
+    } catch {
+      // fall through to text parsing
+    }
+  }
+  const fromTextMs = parseDateTimeToEpochMs(text);
+  if (fromTextMs != null) {
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
+  }
+  return null;
 };
 
 export const backfillMondayLastInteractionDateByMonth = async (args: {
@@ -4066,16 +4154,32 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
   interface UpdateData {
     change_multiple_column_values?: { id?: string | null } | null;
   }
-
-  const listQuery = `
-    query BackfillLastInteractionPage($boardId: ID!, $cursor: String, $limit: Int!) {
+  const CONTACT_REGISTRATION_DATE_COLUMN_ID = "date1__1";
+  const safeRegistrationDateColumnId = /^[a-zA-Z0-9_]+$/.test(
+    CONTACT_REGISTRATION_DATE_COLUMN_ID,
+  )
+    ? CONTACT_REGISTRATION_DATE_COLUMN_ID
+    : "date1__1";
+  const registrationDateRule = `{
+    column_id: "${safeRegistrationDateColumnId}"
+    compare_value: ["${range.dateFrom}", "${range.dateTo}"]
+    operator: between
+  }`;
+  const buildListQuery = (includeCursor: boolean) => `
+    query BackfillLastInteractionPage($boardId: ID!, $limit: Int!${
+      includeCursor ? ", $cursor: String" : ""
+    }) {
       boards(ids: [$boardId]) {
-        items_page(limit: $limit, cursor: $cursor) {
+        items_page(
+          limit: $limit
+          ${includeCursor ? "cursor: $cursor" : ""}
+          ${includeCursor ? "" : `query_params: { rules: [${registrationDateRule}] }`}
+        ) {
           cursor
           items {
             id
             name
-            column_values(ids: ["${LAST_INTERACTION_DATE_COLUMN_ID}"]) {
+            column_values(ids: ["${LAST_INTERACTION_DATE_COLUMN_ID}", "${CONTACT_REGISTRATION_DATE_COLUMN_ID}"]) {
               id
               text
               value
@@ -4094,6 +4198,8 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
       }
     }
   `;
+  const firstPageQuery = buildListQuery(false);
+  const cursorPageQuery = buildListQuery(true);
 
   const updateMutation = `
     mutation SetLastInteractionDate(
@@ -4112,35 +4218,78 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
 
   let cursor: string | null = null;
   let processedContacts = 0;
-  let contactsWithMonthInteraction = 0;
-  let contactsWithoutMonthInteraction = 0;
+  let registeredContacts = 0;
+  let registeredWithInteraction = 0;
+  let registeredWithoutInteraction = 0;
   let contactsAlreadyCurrent = 0;
   let contactsWouldUpdate = 0;
   let contactsUpdated = 0;
   let errorsCount = 0;
   const errorSamples: string[] = [];
   let pageCount = 0;
+  console.info("[MondayLastInteractionBackfill] started", {
+    monthKey: range.monthKey,
+    rangeFrom: range.dateFrom,
+    rangeTo: range.dateTo,
+    dryRun,
+    pageSize,
+  });
 
   while (true) {
     pageCount += 1;
     if (pageCount > 10000) {
       throw new Error("Aborted: exceeded page safety limit while backfilling");
     }
-    const data = await callMondayGraphQL<BackfillData>(listQuery, {
-      boardId: mondayBoard.boardId,
-      cursor,
-      limit: pageSize,
-    });
+    const data = await callMondayGraphQL<BackfillData>(
+      cursor ? cursorPageQuery : firstPageQuery,
+      {
+        boardId: mondayBoard.boardId,
+        limit: pageSize,
+        ...(cursor ? { cursor } : {}),
+      },
+    );
     const itemsPage = data.boards?.[0]?.items_page;
     const items = itemsPage?.items ?? [];
+    if (pageCount === 1 || pageCount % 10 === 0) {
+      console.info("[MondayLastInteractionBackfill] page processed", {
+        pageCount,
+        pageItems: items.length,
+        cursorPresent: !!cursor,
+        processedContacts,
+        registeredContacts,
+        contactsWouldUpdate,
+        contactsUpdated,
+        errorsCount,
+      });
+    }
 
     for (const item of items) {
       const itemId = item.id?.trim() ?? "";
       if (!itemId) continue;
       processedContacts += 1;
 
+      const registrationColumn = (item.column_values ?? []).find(
+        (column) => column.id === CONTACT_REGISTRATION_DATE_COLUMN_ID,
+      );
+      const registrationDate = readDateOnlyFromTopLevelDateColumn(
+        registrationColumn?.value,
+        registrationColumn?.text,
+      );
+      if (!registrationDate) {
+        continue;
+      }
+      const registrationMs = parseDateTimeToEpochMs(`${registrationDate}T00:00:00Z`);
+      if (
+        registrationMs == null ||
+        registrationMs < range.monthStartMs ||
+        registrationMs >= range.monthEndExclusiveMs
+      ) {
+        continue;
+      }
+      registeredContacts += 1;
+
       let latestInteraction:
-        | { epochMs: number; dateOnly: string }
+        | { epochMs: number; dateOnly: string; timeOnly: string }
         | null = null;
       for (const subitem of item.subitems ?? []) {
         const dateColumn = subitem.column_values?.[0];
@@ -4150,28 +4299,28 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
           createdAt: subitem.created_at ?? null,
         });
         if (!parsedDate) continue;
-        if (
-          parsedDate.epochMs < range.monthStartMs ||
-          parsedDate.epochMs >= range.monthEndExclusiveMs
-        ) {
-          continue;
-        }
         if (!latestInteraction || parsedDate.epochMs > latestInteraction.epochMs) {
           latestInteraction = parsedDate;
         }
       }
 
       if (!latestInteraction) {
-        contactsWithoutMonthInteraction += 1;
+        registeredWithoutInteraction += 1;
         continue;
       }
-      contactsWithMonthInteraction += 1;
+      registeredWithInteraction += 1;
 
-      const currentDate = readDateOnlyFromTopLevelDateColumn(
-        item.column_values?.[0]?.value,
-        item.column_values?.[0]?.text,
+      const lastInteractionColumn = (item.column_values ?? []).find(
+        (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
       );
-      if (currentDate === latestInteraction.dateOnly) {
+      const currentDateTime = readDateTimeFromTopLevelDateColumn(
+        lastInteractionColumn?.value,
+        lastInteractionColumn?.text,
+      );
+      if (
+        currentDateTime &&
+        Math.floor(currentDateTime.epochMs / 1000) === Math.floor(latestInteraction.epochMs / 1000)
+      ) {
         contactsAlreadyCurrent += 1;
         continue;
       }
@@ -4186,7 +4335,10 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
           boardId: mondayBoard.boardId,
           itemId,
           columnValues: JSON.stringify({
-            [LAST_INTERACTION_DATE_COLUMN_ID]: { date: latestInteraction.dateOnly },
+            [LAST_INTERACTION_DATE_COLUMN_ID]: {
+              date: latestInteraction.dateOnly,
+              time: latestInteraction.timeOnly,
+            },
           }),
         });
         contactsUpdated += 1;
@@ -4205,6 +4357,18 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
     cursor = nextCursor;
   }
 
+  console.info("[MondayLastInteractionBackfill] completed", {
+    monthKey: range.monthKey,
+    processedContacts,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
+    contactsAlreadyCurrent,
+    contactsWouldUpdate,
+    contactsUpdated,
+    errorsCount,
+  });
+
   return {
     monthKey: range.monthKey,
     dateFrom: range.dateFrom,
@@ -4212,8 +4376,9 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
     dryRun,
     pageSize,
     processedContacts,
-    contactsWithMonthInteraction,
-    contactsWithoutMonthInteraction,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
     contactsAlreadyCurrent,
     contactsWouldUpdate,
     contactsUpdated,

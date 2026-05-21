@@ -27,10 +27,24 @@ export const POST = async (request: Request) => {
   }
 
   try {
+    console.info("[MondayLastInteractionBackfillRoute] request received", {
+      monthKey,
+      dryRun: body.dryRun ?? true,
+      pageSize: body.pageSize ?? null,
+    });
     const result = await backfillMondayLastInteractionDateByMonth({
       monthKey,
       dryRun: body.dryRun ?? true,
       pageSize: body.pageSize,
+    });
+    console.info("[MondayLastInteractionBackfillRoute] request completed", {
+      monthKey,
+      dryRun: result.dryRun,
+      processedContacts: result.processedContacts,
+      registeredContacts: result.registeredContacts,
+      contactsWouldUpdate: result.contactsWouldUpdate,
+      contactsUpdated: result.contactsUpdated,
+      errorsCount: result.errorsCount,
     });
     return toJson({ ok: true, result });
   } catch (error) {
@@ -38,6 +52,10 @@ export const POST = async (request: Request) => {
       error instanceof Error
         ? error.message
         : "Failed to backfill last interaction dates";
+    console.error("[MondayLastInteractionBackfillRoute] request failed", {
+      monthKey,
+      error: message,
+    });
     return toJson({ ok: false, error: message }, 500);
   }
 };
