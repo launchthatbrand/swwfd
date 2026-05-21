@@ -154,17 +154,46 @@ export const BoardTable = ({
     const col = columns.find((c) => c.id === sort.id);
     if (!col?.accessorKey) return data;
     const key = col.accessorKey as keyof MondayRecord;
+    const toComparableValue = (value: unknown): number | string | null => {
+      if (value == null) return null;
+      if (Array.isArray(value)) {
+        if (value.length === 0) return "";
+        const [first] = value;
+        if (typeof first === "string" || typeof first === "number") return first;
+        if (
+          typeof first === "object" &&
+          first &&
+          "name" in first &&
+          typeof (first as { name?: unknown }).name === "string"
+        ) {
+          return (first as { name: string }).name;
+        }
+        return JSON.stringify(first);
+      }
+      if (typeof value === "number") return value;
+      if (typeof value === "boolean") return value ? 1 : 0;
+      if (typeof value === "string") return value;
+      if (value instanceof Date) return value.getTime();
+      return String(value);
+    };
     return [...data].sort((a, b) => {
-      const av = a[key];
-      const bv = b[key];
+      const av = toComparableValue(a[key]);
+      const bv = toComparableValue(b[key]);
       if (av === bv) return 0;
       const cmp =
         av == null
           ? -1
           : bv == null
             ? 1
-            : typeof av === "string"
-              ? av.localeCompare(String(bv))
+            : typeof av === "string" && typeof bv === "string"
+              ? (() => {
+                  const parsedAv = Date.parse(av);
+                  const parsedBv = Date.parse(bv);
+                  if (!Number.isNaN(parsedAv) && !Number.isNaN(parsedBv)) {
+                    return parsedAv - parsedBv;
+                  }
+                  return av.localeCompare(bv, undefined, { sensitivity: "base" });
+                })()
               : Number(av) - Number(bv);
       return sort.direction === "asc" ? cmp : -cmp;
     });

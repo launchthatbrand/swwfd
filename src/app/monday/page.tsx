@@ -249,6 +249,17 @@ const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
     icon: Phone,
   },
 ];
+
+type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
+
+const GRID_SORT_OPTIONS: Array<{ value: GridSortField; label: string }> = [
+  { value: "name", label: "Contact Name" },
+  { value: "resume", label: "Resume" },
+  { value: "tags", label: "Tags" },
+  { value: "createdAt", label: "Created" },
+  { value: "updatedAt", label: "Updated" },
+];
+
 const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
   masterAdminUserId: MASTER_ADMIN_USER_ID,
   adminUserIds: [MASTER_ADMIN_USER_ID],
@@ -264,6 +275,10 @@ export function MondayBoardView({
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
   const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<UserBoardDisplayMode>("table");
+  const [gridSort, setGridSort] = useState<{
+    field: GridSortField;
+    direction: "asc" | "desc";
+  }>({ field: "createdAt", direction: "desc" });
   const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
   const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
@@ -2444,6 +2459,51 @@ export function MondayBoardView({
       ),
     );
   }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+  const sortedGridRecords = useMemo(() => {
+    if (!(isTouchScopedView && userScopedDisplayMode === "grid")) {
+      return filteredRecords;
+    }
+    const getSortValue = (record: MondayRecord): string | number | null => {
+      switch (gridSort.field) {
+        case "name":
+          return record.name?.trim() ?? "";
+        case "resume":
+          return record.resumeFiles[0]?.name?.trim() ?? "";
+        case "tags":
+          return splitCsvValues(record.tags).join(", ").trim();
+        case "createdAt": {
+          const timestamp = Date.parse(record.createdAt ?? "");
+          return Number.isNaN(timestamp) ? null : timestamp;
+        }
+        case "updatedAt": {
+          const timestamp = Date.parse(record.updatedAt ?? "");
+          return Number.isNaN(timestamp) ? null : timestamp;
+        }
+        default:
+          return "";
+      }
+    };
+    const directionFactor = gridSort.direction === "asc" ? 1 : -1;
+    return [...filteredRecords].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+      const isEmptyA =
+        valueA === null || (typeof valueA === "string" && valueA.trim().length === 0);
+      const isEmptyB =
+        valueB === null || (typeof valueB === "string" && valueB.trim().length === 0);
+      if (isEmptyA && isEmptyB) return 0;
+      if (isEmptyA) return 1;
+      if (isEmptyB) return -1;
+      const compareResult =
+        typeof valueA === "number" && typeof valueB === "number"
+          ? valueA - valueB
+          : String(valueA).localeCompare(String(valueB), undefined, {
+              numeric: true,
+              sensitivity: "base",
+            });
+      return compareResult * directionFactor;
+    });
+  }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
   const filteredRecordCountLabel = `${filteredRecords.length} total contact${
     filteredRecords.length === 1 ? "" : "s"
   }`;
@@ -4404,6 +4464,7 @@ export function MondayBoardView({
       id: "name",
       header: "Item",
       accessorKey: "name",
+      sortable: true,
       cell: (item: MondayRecord) => (
         <NameCellContent
           item={item}
@@ -4620,6 +4681,7 @@ export function MondayBoardView({
       id: "tags",
       header: "Tags",
       accessorKey: "tags",
+      sortable: true,
       cell: (item: MondayRecord) => {
         const tagValues = splitCsvValues(item.tags);
         const isCompactTags = tableDensity === "compact";
@@ -4654,6 +4716,7 @@ export function MondayBoardView({
       id: "resume",
       header: "Resume",
       accessorKey: "resumeFiles",
+      sortable: true,
       cell: (item: MondayRecord) => {
         const firstFile = item.resumeFiles[0] ?? null;
         const isUploading = uploadingResumeByRecordId[item.id] === true;
@@ -7640,6 +7703,41 @@ export function MondayBoardView({
           {filteredRecordCountLabel}
         </p>
 
+        {isTouchScopedView && userScopedDisplayMode === "grid" ? (
+          <div className="flex items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
+            <span className="text-muted-foreground shrink-0 text-[11px] font-medium tracking-wide uppercase">
+              Grid Sort
+            </span>
+            <select
+              value={gridSort.field}
+              onChange={(event) => {
+                const selectedField = event.target.value as GridSortField;
+                setGridSort((prev) => ({ ...prev, field: selectedField }));
+              }}
+              className="bg-background border-input h-7 rounded-md border px-2 text-xs shadow-sm"
+            >
+              {GRID_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="bg-background border-input hover:bg-accent h-7 rounded-md border px-2 text-xs font-medium transition-colors"
+              onClick={() => {
+                setGridSort((prev) => ({
+                  ...prev,
+                  direction: prev.direction === "asc" ? "desc" : "asc",
+                }));
+              }}
+              title="Toggle sort direction"
+            >
+              {gridSort.direction === "asc" ? "Asc" : "Desc"}
+            </button>
+          </div>
+        ) : null}
+
         {userScopedDisplayMode === "kanban" ? (
           <KanbanBoard
             records={filteredRecords}
@@ -7658,7 +7756,7 @@ export function MondayBoardView({
               ? Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
               ))
-              : filteredRecords.map((record) => (
+              : sortedGridRecords.map((record) => (
                 <ContactCard
                   key={record.id}
                   record={record}
