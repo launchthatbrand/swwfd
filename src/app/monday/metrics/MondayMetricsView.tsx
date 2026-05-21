@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import mondaySdkInitialize from "monday-sdk-js";
 import type { MondayClientSdk } from "monday-sdk-js";
@@ -11,6 +12,7 @@ import { EntityList, type ColumnDefinition } from "@launchthatapp/ui/entity-list
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@launchthatapp/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Skeleton } from "~/components/ui/skeleton";
 import { toast } from "@launchthatapp/ui/toast";
 
@@ -255,6 +257,8 @@ const ContractorReferralsChart = ({
   fiscalYear: string;
   rows: MondayMetricsContractorReferralBreakdown[];
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   if (rows.length === 0) {
     return (
       <Card>
@@ -271,45 +275,64 @@ const ContractorReferralsChart = ({
   const chartHeight = Math.max(260, rows.length * 34);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">
-          {fiscalYear} - Referred to Contractor ({numberFormatter.format(rows.length)})
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer config={contractorReferralChartConfig} className="w-full">
-          <ResponsiveContainer width="100%" height={chartHeight}>
-            <BarChart
-              data={rows}
-              layout="vertical"
-              margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+          <div className="min-w-0">
+            <CardTitle className="text-base">
+              {fiscalYear} - Referred to Contractor ({numberFormatter.format(rows.length)})
+            </CardTitle>
+            <p className="text-muted-foreground mt-1 text-xs">
+              Expand to view contractor referral counts.
+            </p>
+          </div>
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
+              {isExpanded ? "Collapse" : "Expand"}
+              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </Button>
+          </CollapsibleTrigger>
+        </CardHeader>
+        <CollapsibleContent>
+          <CardContent>
+            <ChartContainer
+              config={contractorReferralChartConfig}
+              className="w-full"
+              style={{ height: `${chartHeight}px` }}
             >
-              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" allowDecimals={false} />
-              <YAxis
-                type="category"
-                dataKey="contractorName"
-                width={220}
-                tickLine={false}
-                axisLine={false}
-              />
-              <ChartTooltip
-                cursor={false}
-                content={
-                  <ChartTooltipContent
-                    label="Contractor"
-                    hideLabel
-                    valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+              <ResponsiveContainer width="100%" height={chartHeight}>
+                <BarChart
+                  data={rows}
+                  layout="vertical"
+                  margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                  <XAxis type="number" allowDecimals={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="contractorName"
+                    width={220}
+                    tickLine={false}
+                    axisLine={false}
                   />
-                }
-              />
-              <Bar dataKey="referredCount" fill="var(--color-referredCount)" radius={[0, 4, 4, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartContainer>
-      </CardContent>
-    </Card>
+                  <ChartTooltip
+                    cursor={false}
+                    content={
+                      <ChartTooltipContent
+                        label="Contractor"
+                        hideLabel
+                        valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                      />
+                    }
+                  />
+                  <Bar dataKey="referredCount" fill="var(--color-referredCount)" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
+          </CardContent>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
   );
 };
 
@@ -318,6 +341,7 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isHiredContactsExpanded, setIsHiredContactsExpanded] = useState(false);
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
     ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
@@ -827,39 +851,58 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
             <OwnerBreakdownChart rows={summary.ownerBreakdown} />
           ) : null}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                {summary.fiscalYear} - Hired Contacts ({numberFormatter.format(summary.hiredContacts.length)})
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground mb-2 text-xs">
-                {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
-                {numberFormatter.format(summary.totals.hiredTotal)} individual hires
-              </p>
-              <EntityList
-                data={hiredContactRows}
-                columns={hiredContactsColumns}
-                viewModes={["list"]}
-                defaultViewMode="list"
-                enableSearch
-                enableFooter={false}
-                showRowCount={false}
-                hideFilters
-                getRowId={(item) => String(item.contactId)}
-                emptyState={
-                  <div className="text-muted-foreground py-6 text-sm">
-                    No hired contacts found for this period.
-                  </div>
-                }
-              />
-              <p className="text-muted-foreground mt-2 text-xs">
-                {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
-                {numberFormatter.format(summary.totals.hiredTotal)} individual hires
-              </p>
-            </CardContent>
-          </Card>
+          <Collapsible open={isHiredContactsExpanded} onOpenChange={setIsHiredContactsExpanded}>
+            <Card>
+              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                <div className="min-w-0">
+                  <CardTitle className="text-base">
+                    {summary.fiscalYear} - Hired Contacts ({numberFormatter.format(summary.hiredContacts.length)})
+                  </CardTitle>
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Expand to view the hired contacts table.
+                  </p>
+                </div>
+                <CollapsibleTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
+                    {isHiredContactsExpanded ? "Collapse" : "Expand"}
+                    {isHiredContactsExpanded ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <p className="text-muted-foreground mb-2 text-xs">
+                    {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
+                    {numberFormatter.format(summary.totals.hiredTotal)} individual hires
+                  </p>
+                  <EntityList
+                    data={hiredContactRows}
+                    columns={hiredContactsColumns}
+                    viewModes={["list"]}
+                    defaultViewMode="list"
+                    enableSearch
+                    enableFooter={false}
+                    showRowCount={false}
+                    hideFilters
+                    getRowId={(item) => String(item.contactId)}
+                    emptyState={
+                      <div className="text-muted-foreground py-6 text-sm">
+                        No hired contacts found for this period.
+                      </div>
+                    }
+                  />
+                  <p className="text-muted-foreground mt-2 text-xs">
+                    {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
+                    {numberFormatter.format(summary.totals.hiredTotal)} individual hires
+                  </p>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
         </>
       ) : metricsQuery.isError ? (
         <Card>
