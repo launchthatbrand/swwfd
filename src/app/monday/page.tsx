@@ -131,6 +131,7 @@ import {
   isUserBoardRecordSource,
   isUserBoardTableDensity,
   KANBAN_STEP_CONFIG,
+  LAST_INTERACTION_DATE_COLUMN_ID,
   MONDAY_DEV_BYPASS_TOKEN,
   QUESTIONNAIRE_UPDATE_ACTION,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
@@ -398,7 +399,6 @@ export function MondayBoardView({
   });
   const [resumeReferralDialogState, setResumeReferralDialogState] = useState<{
     targetRecordId: string;
-    body: string;
     selectedContractors: string[];
   } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
@@ -3523,6 +3523,7 @@ export function MondayBoardView({
     dateTime?: string;
     methodOfCommunication?: string;
     internalExternalStatus?: "Internal" | "External";
+    subitemNameOverride?: string;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -3531,8 +3532,10 @@ export function MondayBoardView({
     }
     const updateType = args.updateType ?? "general";
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-    const baseSubitemName =
-      updateType === "general"
+    const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
+    const baseSubitemName = normalizedSubitemNameOverride && normalizedSubitemNameOverride.length > 0
+      ? normalizedSubitemNameOverride
+      : updateType === "general"
         ? body
         : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
     const desiredSubitemName = buildSubitemName(baseSubitemName, "General Update");
@@ -3559,18 +3562,23 @@ export function MondayBoardView({
     const parsedDateTime = normalizedDateTime
       ? new Date(normalizedDateTime)
       : null;
-    if (parsedDateTime && !Number.isNaN(parsedDateTime.getTime())) {
+    const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+    const fallbackNow = new Date();
+    const normalizedDate = args.date?.trim();
+    const interactionDateOnly = hasValidDateTime
+      ? parsedDateTime.toISOString().slice(0, 10)
+      : normalizedDate || fallbackNow.toISOString().slice(0, 10);
+    if (hasValidDateTime) {
       columnValues["date0"] = {
         date: parsedDateTime.toISOString().slice(0, 10),
         time: parsedDateTime.toISOString().slice(11, 19),
       };
-    } else if (args.date) {
-      columnValues["date0"] = { date: args.date };
+    } else if (normalizedDate) {
+      columnValues["date0"] = { date: normalizedDate };
     } else {
-      const now = new Date();
       columnValues["date0"] = {
-        date: now.toISOString().slice(0, 10),
-        time: now.toISOString().slice(11, 19),
+        date: fallbackNow.toISOString().slice(0, 10),
+        time: fallbackNow.toISOString().slice(11, 19),
       };
     }
 
@@ -3628,14 +3636,96 @@ export function MondayBoardView({
       }
     };
 
+    const markLastInteractionDateViaServer = async (dateOnly: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token for last interaction sync");
+      }
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(itemId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            lastInteractionDate: dateOnly,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to set last interaction date");
+      }
+    };
+
     let warning: string | null = null;
+    const appendWarning = (nextWarning: string | null) => {
+      const normalizedWarning = nextWarning?.trim() ?? "";
+      if (!normalizedWarning) return;
+      warning = warning ? `${warning} | ${normalizedWarning}` : normalizedWarning;
+    };
+
+    const boardId = await resolveMondayContextBoardId();
+    try {
+      if (boardId) {
+        await callMondayContextApi<{
+          change_multiple_column_values?: { id?: string | number | null } | null;
+        }>(
+          `
+            mutation SyncLastInteractionDate(
+              $boardId: ID!
+              $itemId: ID!
+              $columnValues: JSON!
+            ) {
+              change_multiple_column_values(
+                board_id: $boardId
+                item_id: $itemId
+                column_values: $columnValues
+                create_labels_if_missing: true
+              ) { id }
+            }
+          `,
+          {
+            boardId,
+            itemId,
+            columnValues: JSON.stringify({
+              [LAST_INTERACTION_DATE_COLUMN_ID]: { date: interactionDateOnly },
+            }),
+          },
+        );
+      } else {
+        await markLastInteractionDateViaServer(interactionDateOnly);
+      }
+    } catch (error) {
+      if (boardId) {
+        try {
+          await markLastInteractionDateViaServer(interactionDateOnly);
+        } catch (fallbackError) {
+          const primaryMessage =
+            error instanceof Error
+              ? error.message
+              : "Failed to sync last interaction date via monday context";
+          const fallbackMessage =
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : "Failed to sync last interaction date via server fallback";
+          appendWarning(`${primaryMessage} | ${fallbackMessage}`);
+        }
+      } else {
+        appendWarning(
+          error instanceof Error ? error.message : "Failed to sync last interaction date",
+        );
+      }
+    }
+
     let approvalStepMarked = false;
     if (updateType !== "general") {
       const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
       if (!approvalStepColumnId) {
-        warning = "No onboarding step mapping exists for this update type";
+        appendWarning("No onboarding step mapping exists for this update type");
       } else {
-        const boardId = await resolveMondayContextBoardId();
         try {
           if (boardId) {
             await callMondayContextApi<{
@@ -3672,7 +3762,6 @@ export function MondayBoardView({
             try {
               await markApprovalStepDoneViaServer(approvalStepColumnId);
               approvalStepMarked = true;
-              warning = null;
             } catch (fallbackError) {
               const primaryMessage =
                 error instanceof Error
@@ -3682,13 +3771,14 @@ export function MondayBoardView({
                 fallbackError instanceof Error
                   ? fallbackError.message
                   : "Failed to mark onboarding step done via server fallback";
-              warning = `${primaryMessage} | ${fallbackMessage}`;
+              appendWarning(`${primaryMessage} | ${fallbackMessage}`);
             }
           } else {
-            warning =
+            appendWarning(
               error instanceof Error
                 ? error.message
-                : "Failed to mark onboarding step done";
+                : "Failed to mark onboarding step done",
+            );
           }
         }
       }
@@ -3714,18 +3804,49 @@ export function MondayBoardView({
       dateTime?: string;
       methodOfCommunication?: string;
       internalExternalStatus?: "Internal" | "External";
+      subitemNameOverride?: string;
+      referredToContractors?: string[];
+      targetRecordId?: string;
     },
   ) => {
     if (staticMode) {
       toast.error("Updates are unavailable in static mode");
       return;
     }
-    if (!sessionToken || !contactHistoryDialogRecord) {
+    if (!sessionToken) {
       toast.error("Missing monday session context");
       return;
     }
+    const targetRecordId =
+      options?.targetRecordId?.trim() ??
+      (contactHistoryDialogRecord
+        ? resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+        : "");
+    if (!targetRecordId) {
+      toast.error("Missing monday update target");
+      return;
+    }
     const updateType = options?.updateType ?? contactUpdateType;
-    const body = (options?.body ?? contactUpdateDraft).trim();
+    const normalizedReferredToContractors = (options?.referredToContractors ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    if (updateType === "resume" && normalizedReferredToContractors.length === 0) {
+      setResumeReferralDialogState({
+        targetRecordId,
+        selectedContractors: splitCsvValues(
+          contactHistoryDialogRecord?.referredToContractors ?? null,
+        ),
+      });
+      return;
+    }
+    const resumeSummary =
+      updateType === "resume"
+        ? `Resume Sent To Contractors - ${normalizedReferredToContractors.join(", ")}`
+        : null;
+    const body = (resumeSummary ?? options?.body ?? contactUpdateDraft).trim();
+    const resolvedMethodOfCommunication =
+      options?.methodOfCommunication ?? (updateType === "resume" ? "Email" : undefined);
+    const resolvedSubitemNameOverride = resumeSummary ?? options?.subitemNameOverride;
     const resolvedInternalExternalStatus =
       options?.internalExternalStatus ??
       (updateType === "welcome_email" || updateType === "followup"
@@ -3737,12 +3858,31 @@ export function MondayBoardView({
     }
 
     setIsCreatingContactUpdate(true);
-    const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
     let data: MondayCreateRecordUpdateResponse;
     const writePath = canCreateUpdatesAsLoggedInMondayUser
       ? "monday-context-user"
       : "server-fallback";
     try {
+      if (updateType === "resume") {
+        const patchResponse = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+          {
+            method: "PATCH",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              referredToContractors: normalizedReferredToContractors,
+            }),
+          },
+        );
+        const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+        if (!patchResponse.ok || !patchData.ok) {
+          throw new Error(patchData.error ?? "Failed to save referred contractor values");
+        }
+      }
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
           itemId: targetRecordId,
@@ -3750,8 +3890,9 @@ export function MondayBoardView({
           updateType,
           date: options?.date,
           dateTime: options?.dateTime,
-          methodOfCommunication: options?.methodOfCommunication,
+          methodOfCommunication: resolvedMethodOfCommunication,
           internalExternalStatus: resolvedInternalExternalStatus,
+          subitemNameOverride: resolvedSubitemNameOverride,
         });
         data = { ok: true, update };
       } else {
@@ -3769,8 +3910,9 @@ export function MondayBoardView({
               updateType,
               date: options?.date,
               dateTime: options?.dateTime,
-              methodOfCommunication: options?.methodOfCommunication,
+              methodOfCommunication: resolvedMethodOfCommunication,
               internalExternalStatus: resolvedInternalExternalStatus,
+              subitemNameOverride: resolvedSubitemNameOverride,
             }),
           },
         );
@@ -3899,6 +4041,12 @@ export function MondayBoardView({
       toast.error("Select at least one record");
       return;
     }
+    if (action.type === "resume") {
+      toast.error(
+        "Resume Submitted requires contractor selection per contact. Use contact dialog or Kanban move to complete this step.",
+      );
+      return;
+    }
 
     const targetsByRecordId = new Map<string, MondayRecord>();
     for (const record of selectedItems) {
@@ -4017,6 +4165,13 @@ export function MondayBoardView({
         const stepConfig = KANBAN_STEP_CONFIG[move.toStepIndex - 1];
         if (!stepConfig) {
           toast.error("Invalid target step");
+          return;
+        }
+        if (stepConfig.updateType === "resume") {
+          setResumeReferralDialogState({
+            targetRecordId,
+            selectedContractors: splitCsvValues(move.record.referredToContractors),
+          });
           return;
         }
 
@@ -4230,28 +4385,10 @@ export function MondayBoardView({
 
     setIsSavingResumeReferralStep(true);
     try {
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(resumeReferralDialogState.targetRecordId)}`,
-        {
-          method: "PATCH",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            referredToContractors: resumeReferralDialogState.selectedContractors,
-          }),
-        },
-      );
-      const data = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to save referred contractor values");
-      }
-
       await handleCreateContactUpdate({
         updateType: "resume",
-        body: resumeReferralDialogState.body,
+        targetRecordId: resumeReferralDialogState.targetRecordId,
+        referredToContractors: resumeReferralDialogState.selectedContractors,
         keepSelectedType: true,
       });
 
@@ -7293,7 +7430,6 @@ export function MondayBoardView({
                         if (updateType === "resume") {
                           setResumeReferralDialogState({
                             targetRecordId,
-                            body,
                             selectedContractors: splitCsvValues(
                               contactHistoryDialogRecord.referredToContractors,
                             ),

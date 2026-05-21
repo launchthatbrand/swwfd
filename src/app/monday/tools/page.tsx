@@ -122,6 +122,22 @@ interface HireEventBackfillJob {
   lastError?: string | null;
 }
 
+interface LastInteractionBackfillResult {
+  monthKey: string;
+  dateFrom: string;
+  dateTo: string;
+  dryRun: boolean;
+  pageSize: number;
+  processedContacts: number;
+  contactsWithMonthInteraction: number;
+  contactsWithoutMonthInteraction: number;
+  contactsAlreadyCurrent: number;
+  contactsWouldUpdate: number;
+  contactsUpdated: number;
+  errorsCount: number;
+  errorSamples: string[];
+}
+
 export default function MondayToolsPage() {
   const [job, setJob] = useState<BackfillJob | null>(null);
   const [csvJob, setCsvJob] = useState<CsvExportJob | null>(null);
@@ -171,6 +187,14 @@ export default function MondayToolsPage() {
   const [hireEventDryRun, setHireEventDryRun] = useState(true);
   const [startingHireEventBackfill, setStartingHireEventBackfill] = useState(false);
   const [cancellingHireEventBackfill, setCancellingHireEventBackfill] = useState(false);
+  const [lastInteractionMonthKey, setLastInteractionMonthKey] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
+  const [lastInteractionPageSize, setLastInteractionPageSize] = useState("100");
+  const [lastInteractionDryRun, setLastInteractionDryRun] = useState(true);
+  const [runningLastInteractionBackfill, setRunningLastInteractionBackfill] = useState(false);
+  const [lastInteractionResult, setLastInteractionResult] =
+    useState<LastInteractionBackfillResult | null>(null);
 
   const refreshTouchRangeStatus = async () => {
     try {
@@ -304,6 +328,43 @@ export default function MondayToolsPage() {
       );
     } finally {
       setCancellingHireEventBackfill(false);
+    }
+  };
+
+  const runLastInteractionBackfill = async () => {
+    setRunningLastInteractionBackfill(true);
+    try {
+      const parsedPageSize = Number(lastInteractionPageSize);
+      const response = await fetch("/api/monday/tools/last-interaction-backfill-month", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          monthKey: lastInteractionMonthKey.trim(),
+          dryRun: lastInteractionDryRun,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        result?: LastInteractionBackfillResult;
+      };
+      if (!response.ok || !data.ok || !data.result) {
+        throw new Error(data.error ?? "Failed to run last interaction backfill");
+      }
+      setLastInteractionResult(data.result);
+      toast.success(
+        data.result.dryRun
+          ? "Last interaction dry-run complete"
+          : "Last interaction backfill complete",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to run last interaction backfill",
+      );
+    } finally {
+      setRunningLastInteractionBackfill(false);
     }
   };
 
@@ -1386,6 +1447,114 @@ export default function MondayToolsPage() {
           ) : (
             <p className="text-muted-foreground text-sm">
               No hire event backfill job found.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Last Interaction Date Backfill (By Month)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Backfills <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code> on
+            parent contacts by scanning subitems in the selected month and using each
+            contact&apos;s latest in-month subitem interaction date.
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Month:</span>
+              <input
+                type="month"
+                className="rounded border px-2 py-1 text-sm"
+                value={lastInteractionMonthKey}
+                onChange={(event) => setLastInteractionMonthKey(event.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
+                value={lastInteractionPageSize}
+                min={10}
+                max={200}
+                onChange={(event) => setLastInteractionPageSize(event.target.value)}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lastInteractionDryRun}
+                onChange={(event) => setLastInteractionDryRun(event.target.checked)}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void runLastInteractionBackfill()}
+              disabled={runningLastInteractionBackfill}
+            >
+              {runningLastInteractionBackfill
+                ? "Running..."
+                : lastInteractionDryRun
+                  ? "Run Dry Run"
+                  : "Run Backfill"}
+            </Button>
+          </div>
+          {lastInteractionResult ? (
+            <div className="space-y-1 rounded border p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Run Mode:</span>
+                <Badge variant={lastInteractionResult.dryRun ? "outline" : "secondary"}>
+                  {lastInteractionResult.dryRun ? "Dry Run" : "Write Mode"}
+                </Badge>
+              </div>
+              <p>
+                <span className="font-medium">Month:</span> {lastInteractionResult.monthKey} ·{" "}
+                <span className="font-medium">Range:</span> {lastInteractionResult.dateFrom} →{" "}
+                {lastInteractionResult.dateTo}
+              </p>
+              <p>
+                <span className="font-medium">Processed Contacts:</span>{" "}
+                {lastInteractionResult.processedContacts.toLocaleString()} ·{" "}
+                <span className="font-medium">With In-Month Interaction:</span>{" "}
+                {lastInteractionResult.contactsWithMonthInteraction.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">No In-Month Interaction:</span>{" "}
+                {lastInteractionResult.contactsWithoutMonthInteraction.toLocaleString()} ·{" "}
+                <span className="font-medium">Already Current:</span>{" "}
+                {lastInteractionResult.contactsAlreadyCurrent.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">
+                  {lastInteractionResult.dryRun ? "Would Update:" : "Updated:"}
+                </span>{" "}
+                {(
+                  lastInteractionResult.dryRun
+                    ? lastInteractionResult.contactsWouldUpdate
+                    : lastInteractionResult.contactsUpdated
+                ).toLocaleString()} ·{" "}
+                <span className="font-medium">Errors:</span>{" "}
+                {lastInteractionResult.errorsCount.toLocaleString()}
+              </p>
+              {lastInteractionResult.errorSamples.length > 0 ? (
+                <div className="space-y-1">
+                  <p className="font-medium text-destructive">Sample Errors</p>
+                  {lastInteractionResult.errorSamples.map((sampleError) => (
+                    <p key={sampleError} className="text-destructive">
+                      {sampleError}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No last interaction backfill run yet.
             </p>
           )}
         </CardContent>
