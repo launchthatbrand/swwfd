@@ -4682,12 +4682,13 @@ export function MondayBoardView({
       toast.error("Select at least one contractor before continuing");
       return;
     }
+    const interviewingSummary = `Interviewing - ${interviewingContractorDialogState.selectedContractors.join(", ")}`;
 
     setIsSavingInterviewingStep(true);
     try {
       await completeGenericOnboardingStep({
         targetRecordId: interviewingContractorDialogState.targetRecordId,
-        body: "Interviewing",
+        body: interviewingSummary,
         stepColumnId: interviewingContractorDialogState.stepColumnId,
         recordPatch: {
           interviewingWithContractors: interviewingContractorDialogState.selectedContractors,
@@ -4723,12 +4724,13 @@ export function MondayBoardView({
       toast.error("Select a contractor before continuing");
       return;
     }
+    const hiredSummary = `Hired - ${selectedContractor}`;
 
     setIsSavingHiredStep(true);
     try {
       await completeGenericOnboardingStep({
         targetRecordId: hiredContractorDialogState.targetRecordId,
-        body: "Hired",
+        body: hiredSummary,
         stepColumnId: hiredContractorDialogState.stepColumnId,
         recordPatch: {
           hiredWithContractor: selectedContractor,
