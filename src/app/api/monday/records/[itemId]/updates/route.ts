@@ -59,6 +59,7 @@ interface CreateUpdateBody {
   methodOfCommunication?: string;
   internalExternalStatus?: "Internal" | "External";
   subitemNameOverride?: string;
+  suppressApprovalStepMarking?: boolean;
 }
 
 export const POST = async (
@@ -104,6 +105,7 @@ export const POST = async (
       actorMondayUserId: sessionIdentity?.userId ?? null,
       internalExternalStatus: payload.internalExternalStatus,
       subitemNameOverride: payload.subitemNameOverride,
+      suppressApprovalStepMarking: payload.suppressApprovalStepMarking === true,
     });
     return toJson({
       ok: true,

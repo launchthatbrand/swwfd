@@ -373,6 +373,7 @@ export function MondayBoardView({
   const [communicationQuickAction, setCommunicationQuickAction] =
     useState<CommunicationQuickActionDefinition | null>(null);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
+  const [contactDialogSelectedResumeKey, setContactDialogSelectedResumeKey] = useState<string | null>(null);
   const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
   const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
   const [isSavingContactColumn, setIsSavingContactColumn] = useState(false);
@@ -2436,120 +2437,154 @@ export function MondayBoardView({
           : sendEmailProgressUpdate?.updateType === "welcome_email"
             ? "welcome step"
             : "email progress";
-      if (sendEmailProgressUpdate) {
-        try {
-          const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
-          const sendProgressDateTime = new Date().toISOString();
-          let updateData: MondayCreateRecordUpdateResponse;
-
-          const syncViaServer = async () => {
-            console.log("[sendEmail] falling back to server-side progress sync", {
-              targetRecordId,
-              updateType: sendEmailProgressUpdate.updateType,
-            });
-            const updateResponse = await fetch(
-              `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-              {
-                method: "POST",
-                cache: "no-store",
-                headers: {
-                  "content-type": "application/json",
-                  "x-monday-session-token": sessionToken,
-                },
-                body: JSON.stringify({
-                  body: sendEmailProgressUpdate.body,
-                  updateType: sendEmailProgressUpdate.updateType,
-                  dateTime: sendProgressDateTime,
-                  internalExternalStatus:
-                    sendEmailProgressUpdate.internalExternalStatus ?? "External",
-                }),
-              },
-            );
-            const serverData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
-            if (!updateResponse.ok || !serverData.ok) {
-              throw new Error(serverData.error ?? "Failed to track onboarding progress");
+      const deriveGeneralEmailUpdateType = (): ContactUpdateType => {
+        const normalizedTemplateName = sendEmailTemplate.name.toLowerCase();
+        if (normalizedTemplateName.includes("welcome")) return "welcome_email";
+        if (
+          normalizedTemplateName.includes("questionnaire") ||
+          normalizedTemplateName.includes("questionaire") ||
+          normalizedTemplateName.includes("followup")
+        ) {
+          return "followup";
+        }
+        return "general";
+      };
+      const derivedGeneralEmailUpdateType = deriveGeneralEmailUpdateType();
+      const emailUpdateSummary = sendEmailResolvedTemplate.subject.trim().length > 0
+        ? `Email Sent - ${sendEmailResolvedTemplate.subject.trim()}`
+        : "General Email Update";
+      const syncLabel = sendEmailProgressUpdate ? progressStepLabel : "email update";
+      try {
+        const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
+        const sendProgressDateTime = new Date().toISOString();
+        const updatePayload = sendEmailProgressUpdate
+          ? {
+              body: sendEmailProgressUpdate.body,
+              updateType: sendEmailProgressUpdate.updateType as ContactUpdateType,
+              internalExternalStatus: sendEmailProgressUpdate.internalExternalStatus ?? "External",
+              methodOfCommunication: undefined as string | undefined,
+              suppressApprovalStepMarking: false,
+              fallbackErrorMessage: "Failed to track onboarding progress",
             }
-            return serverData;
-          };
+          : {
+              body: emailUpdateSummary,
+              updateType: derivedGeneralEmailUpdateType,
+              internalExternalStatus: "External" as "Internal" | "External",
+              methodOfCommunication: "Email",
+              suppressApprovalStepMarking: derivedGeneralEmailUpdateType !== "general",
+              fallbackErrorMessage: "Failed to log email update",
+            };
+        let updateData: MondayCreateRecordUpdateResponse;
 
-          if (canCreateUpdatesAsLoggedInMondayUser) {
-            try {
-              console.log("[sendEmail] attempting context-user progress sync", {
-                targetRecordId,
-                updateType: sendEmailProgressUpdate.updateType,
-                userId: identity?.userId,
-              });
-              const update = await createMondayRecordUpdateAsContextUser({
-                itemId: targetRecordId,
-                body: sendEmailProgressUpdate.body,
-                updateType: sendEmailProgressUpdate.updateType,
-                dateTime: sendProgressDateTime,
-                internalExternalStatus:
-                  sendEmailProgressUpdate.internalExternalStatus ?? "External",
-              });
-              updateData = { ok: true, update };
-            } catch (contextError) {
-              const contextMsg =
-                contextError instanceof Error ? contextError.message : String(contextError);
-              console.warn(
-                "[sendEmail] context-user progress sync failed, falling back to server",
-                { error: contextMsg, targetRecordId, userId: identity?.userId },
-              );
-              updateData = await syncViaServer();
-            }
-          } else {
-            updateData = await syncViaServer();
-          }
-
-          if (identity?.userId) {
-            fetch("/api/monday/touches", {
+        const syncViaServer = async () => {
+          console.log("[sendEmail] falling back to server-side update sync", {
+            targetRecordId,
+            updateType: updatePayload.updateType,
+          });
+          const updateResponse = await fetch(
+            `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+            {
               method: "POST",
+              cache: "no-store",
               headers: {
                 "content-type": "application/json",
                 "x-monday-session-token": sessionToken,
               },
               body: JSON.stringify({
-                contactItemId: targetRecordId,
-                contactName: sendEmailRecord.name ?? "",
-                ownerId: identity.userId,
-                source: "update",
+                body: updatePayload.body,
+                updateType: updatePayload.updateType,
+                dateTime: sendProgressDateTime,
+                internalExternalStatus: updatePayload.internalExternalStatus,
+                methodOfCommunication: updatePayload.methodOfCommunication,
+                suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
               }),
-            }).catch(() => {});
-          }
-
-          const [, refreshedRecordsResult] = await Promise.all([
-            contactUpdatesQuery.refetch(),
-            recordsQuery.refetch(),
-          ]);
-          const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
-            (page) => page.records ?? [],
+            },
           );
-          syncContactHistoryDialogFromRecords(refreshedRecords);
-
-          if (updateData.update?.warning) {
-            progressSyncError = updateData.update.warning;
+          const serverData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+          if (!updateResponse.ok || !serverData.ok) {
+            throw new Error(serverData.error ?? updatePayload.fallbackErrorMessage);
           }
-        } catch (error) {
-          const msg =
-            error instanceof Error
-              ? error.message
-              : `Failed to sync ${progressStepLabel}`;
-          console.error("[sendEmail] progress sync failed (all paths)", {
-            error: msg,
-            userId: identity?.userId,
-            canCreateUpdatesAsLoggedInMondayUser,
-          });
-          progressSyncError = msg;
+          return serverData;
+        };
+
+        if (canCreateUpdatesAsLoggedInMondayUser) {
+          try {
+            console.log("[sendEmail] attempting context-user update sync", {
+              targetRecordId,
+              updateType: updatePayload.updateType,
+              userId: identity?.userId,
+            });
+            const update = await createMondayRecordUpdateAsContextUser({
+              itemId: targetRecordId,
+              body: updatePayload.body,
+              updateType: updatePayload.updateType,
+              dateTime: sendProgressDateTime,
+              internalExternalStatus: updatePayload.internalExternalStatus,
+              methodOfCommunication: updatePayload.methodOfCommunication,
+              suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
+            });
+            updateData = { ok: true, update };
+          } catch (contextError) {
+            const contextMsg =
+              contextError instanceof Error ? contextError.message : String(contextError);
+            console.warn(
+              "[sendEmail] context-user update sync failed, falling back to server",
+              { error: contextMsg, targetRecordId, userId: identity?.userId },
+            );
+            updateData = await syncViaServer();
+          }
+        } else {
+          updateData = await syncViaServer();
         }
+
+        if (identity?.userId) {
+          fetch("/api/monday/touches", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              contactItemId: targetRecordId,
+              contactName: sendEmailRecord.name ?? "",
+              ownerId: identity.userId,
+              source: "update",
+            }),
+          }).catch(() => {});
+        }
+
+        const [, refreshedRecordsResult] = await Promise.all([
+          contactUpdatesQuery.refetch(),
+          recordsQuery.refetch(),
+        ]);
+        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+          (page) => page.records ?? [],
+        );
+        syncContactHistoryDialogFromRecords(refreshedRecords);
+
+        if (updateData.update?.warning) {
+          progressSyncError = updateData.update.warning;
+        }
+      } catch (error) {
+        const msg =
+          error instanceof Error
+            ? error.message
+            : `Failed to sync ${syncLabel}`;
+        console.error("[sendEmail] post-send sync failed", {
+          error: msg,
+          userId: identity?.userId,
+          canCreateUpdatesAsLoggedInMondayUser,
+        });
+        progressSyncError = msg;
       }
 
       if (progressSyncError) {
         toast.success(`Email sent to ${recipient}`);
-        toast.error(`Email sent, but ${progressStepLabel} sync failed: ${progressSyncError}`);
+        toast.error(`Email sent, but ${syncLabel} sync failed: ${progressSyncError}`);
       } else if (sendEmailProgressUpdate) {
         toast.success(`Email sent to ${recipient} and ${progressStepLabel} marked complete`);
       } else {
-        toast.success(`Email sent to ${recipient}`);
+        toast.success(`Email sent to ${recipient} and logged in updates`);
       }
       closeSendEmailDialog();
     } catch (error) {
@@ -3021,13 +3056,43 @@ export function MondayBoardView({
     setContactUpdateDraft("");
     setContactUpdateType("general");
     setContactDialogTab("updates");
+    setContactDialogSelectedResumeKey(null);
   };
 
   const contactDialogIndex = useMemo(() => {
     if (!contactHistoryDialogRecord) return -1;
     return filteredRecords.findIndex((r) => r.id === contactHistoryDialogRecord.id);
   }, [contactHistoryDialogRecord, filteredRecords]);
-  const contactDialogResumeFile = contactHistoryDialogRecord?.resumeFiles[0] ?? null;
+  const contactDialogResumeFiles = useMemo(
+    () => contactHistoryDialogRecord?.resumeFiles ?? [],
+    [contactHistoryDialogRecord?.resumeFiles],
+  );
+  const getResumeFileKey = useCallback(
+    (
+      file: {
+        assetId: string | null;
+        name: string;
+        url: string | null;
+      },
+      index: number,
+    ) =>
+      file.assetId?.trim() ||
+      file.url?.trim() ||
+      `${file.name.trim().toLowerCase() || "resume"}-${index}`,
+    [],
+  );
+  const contactDialogSelectedResumeIndex = useMemo(() => {
+    if (contactDialogResumeFiles.length === 0) return -1;
+    if (!contactDialogSelectedResumeKey) return 0;
+    const matchedIndex = contactDialogResumeFiles.findIndex(
+      (file, index) => getResumeFileKey(file, index) === contactDialogSelectedResumeKey,
+    );
+    return matchedIndex >= 0 ? matchedIndex : 0;
+  }, [contactDialogResumeFiles, contactDialogSelectedResumeKey, getResumeFileKey]);
+  const contactDialogResumeFile =
+    contactDialogSelectedResumeIndex >= 0
+      ? (contactDialogResumeFiles[contactDialogSelectedResumeIndex] ?? null)
+      : null;
   const contactDialogResumeFileName =
     contactDialogResumeFile?.name?.trim() && contactDialogResumeFile.name.trim().length > 0
       ? contactDialogResumeFile.name.trim()
@@ -3041,6 +3106,32 @@ export function MondayBoardView({
   const contactDialogResumeInputId = contactHistoryDialogRecord
     ? `contact-dialog-resume-upload-${contactHistoryDialogRecord.id}`
     : "";
+  useEffect(() => {
+    if (contactDialogResumeFiles.length === 0) {
+      if (contactDialogSelectedResumeKey !== null) {
+        setContactDialogSelectedResumeKey(null);
+      }
+      return;
+    }
+    if (!contactDialogSelectedResumeKey) {
+      setContactDialogSelectedResumeKey(
+        getResumeFileKey(contactDialogResumeFiles[0]!, 0),
+      );
+      return;
+    }
+    const keyExists = contactDialogResumeFiles.some(
+      (file, index) => getResumeFileKey(file, index) === contactDialogSelectedResumeKey,
+    );
+    if (!keyExists) {
+      setContactDialogSelectedResumeKey(
+        getResumeFileKey(contactDialogResumeFiles[0]!, 0),
+      );
+    }
+  }, [
+    contactDialogResumeFiles,
+    contactDialogSelectedResumeKey,
+    getResumeFileKey,
+  ]);
   const renderResumePreviewContent = (
     fileName: string,
     href: string,
@@ -3724,6 +3815,7 @@ export function MondayBoardView({
     methodOfCommunication?: string;
     internalExternalStatus?: "Internal" | "External";
     subitemNameOverride?: string;
+    suppressApprovalStepMarking?: boolean;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -3731,6 +3823,7 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
+    const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
     const baseSubitemName = normalizedSubitemNameOverride && normalizedSubitemNameOverride.length > 0
@@ -3921,7 +4014,7 @@ export function MondayBoardView({
     }
 
     let approvalStepMarked = false;
-    if (updateType !== "general") {
+    if (updateType !== "general" && !suppressApprovalStepMarking) {
       const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
       if (!approvalStepColumnId) {
         appendWarning("No onboarding step mapping exists for this update type");
@@ -4888,6 +4981,7 @@ export function MondayBoardView({
     try {
       let lastErrorMessage = "Failed to upload resume";
       let uploaded = false;
+      let uploadedTargetRecordId: string | null = null;
 
       for (let index = 0; index < targetRecordIds.length; index += 1) {
         const targetRecordId = targetRecordIds[index]!;
@@ -4907,6 +5001,7 @@ export function MondayBoardView({
         const data = (await response.json()) as MondayResumeUploadResponse;
         if (response.ok && data.ok) {
           uploaded = true;
+          uploadedTargetRecordId = targetRecordId;
           break;
         }
 
@@ -4923,8 +5018,67 @@ export function MondayBoardView({
       if (!uploaded) {
         throw new Error(lastErrorMessage);
       }
-      toast.success("Resume uploaded");
-      await recordsQuery.refetch();
+
+      let updateSyncError: string | null = null;
+      const updateTargetRecordId = uploadedTargetRecordId ?? targetRecordIds[0] ?? "";
+      if (updateTargetRecordId) {
+        const resumeAddedDateTime = new Date().toISOString();
+        try {
+          if (canCreateUpdatesAsLoggedInMondayUser) {
+            await createMondayRecordUpdateAsContextUser({
+              itemId: updateTargetRecordId,
+              body: "Resume Added",
+              updateType: "resume",
+              dateTime: resumeAddedDateTime,
+              subitemNameOverride: "Resume Added",
+              suppressApprovalStepMarking: true,
+            });
+          } else {
+            const updateResponse = await fetch(
+              `/api/monday/records/${encodeURIComponent(updateTargetRecordId)}/updates`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  body: "Resume Added",
+                  updateType: "resume",
+                  dateTime: resumeAddedDateTime,
+                  subitemNameOverride: "Resume Added",
+                  suppressApprovalStepMarking: true,
+                }),
+              },
+            );
+            const updateData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+            if (!updateResponse.ok || !updateData.ok) {
+              throw new Error(updateData.error ?? "Failed to log resume update");
+            }
+          }
+        } catch (error) {
+          updateSyncError =
+            error instanceof Error ? error.message : "Failed to log resume update";
+        }
+      } else {
+        updateSyncError = "Missing record id for resume update log";
+      }
+
+      const refreshedRecordsResult = await recordsQuery.refetch();
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+      if (updateSyncError) {
+        toast.success("Resume uploaded");
+        toast.error(`Resume uploaded, but failed to log update: ${updateSyncError}`);
+      } else {
+        toast.success("Resume uploaded and logged as Resume Added");
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to upload resume";
@@ -8346,7 +8500,7 @@ export function MondayBoardView({
                             {isContactDialogUploadingResume
                               ? "Uploading..."
                               : contactDialogResumeFile
-                                ? "Replace Resume"
+                                ? "Add Resume"
                                 : "Upload Resume"}
                           </Button>
                         </div>
@@ -8628,12 +8782,111 @@ export function MondayBoardView({
                     )}
                   </TabsContent>
                   <TabsContent value="resume" className="mt-3 min-h-0 flex-1">
-                    {contactDialogResumeHref ? (
-                      renderResumePreviewContent(
-                        contactDialogResumeFileName,
-                        contactDialogResumeHref,
-                        "h-[60vh]",
-                      )
+                    {contactDialogResumeFiles.length > 0 ? (
+                      <div className="flex h-full min-h-0 flex-col gap-3">
+                        <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                          <p className="text-muted-foreground text-xs">
+                            Resume {contactDialogSelectedResumeIndex + 1} of {contactDialogResumeFiles.length}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              disabled={contactDialogSelectedResumeIndex <= 0}
+                              onClick={() => {
+                                const previousIndex = contactDialogSelectedResumeIndex - 1;
+                                const previousFile = contactDialogResumeFiles[previousIndex];
+                                if (!previousFile) return;
+                                setContactDialogSelectedResumeKey(
+                                  getResumeFileKey(previousFile, previousIndex),
+                                );
+                              }}
+                            >
+                              <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
+                              Previous
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              disabled={
+                                contactDialogSelectedResumeIndex < 0 ||
+                                contactDialogSelectedResumeIndex >= contactDialogResumeFiles.length - 1
+                              }
+                              onClick={() => {
+                                const nextIndex = contactDialogSelectedResumeIndex + 1;
+                                const nextFile = contactDialogResumeFiles[nextIndex];
+                                if (!nextFile) return;
+                                setContactDialogSelectedResumeKey(
+                                  getResumeFileKey(nextFile, nextIndex),
+                                );
+                              }}
+                            >
+                              Next
+                              <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                            </Button>
+                            {!staticMode ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8"
+                                disabled={isContactDialogUploadingResume || !sessionToken}
+                                onClick={() => {
+                                  const input = document.getElementById(contactDialogResumeInputId);
+                                  if (input instanceof HTMLInputElement) {
+                                    input.click();
+                                  }
+                                }}
+                              >
+                                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                {isContactDialogUploadingResume ? "Uploading..." : "Add Resume"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
+                          {contactDialogResumeFiles.map((file, index) => {
+                            const optionLabel =
+                              file.name?.trim().length > 0 ? file.name.trim() : `Resume ${index + 1}`;
+                            const isSelected = index === contactDialogSelectedResumeIndex;
+                            return (
+                              <Button
+                                key={getResumeFileKey(file, index)}
+                                type="button"
+                                variant={isSelected ? "secondary" : "ghost"}
+                                size="sm"
+                                className="max-w-[240px] justify-start truncate"
+                                title={optionLabel}
+                                onClick={() => {
+                                  setContactDialogSelectedResumeKey(getResumeFileKey(file, index));
+                                }}
+                              >
+                                <span className="truncate">{optionLabel}</span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        {contactDialogResumeHref ? (
+                          renderResumePreviewContent(
+                            contactDialogResumeFileName,
+                            contactDialogResumeHref,
+                            "h-[60vh]",
+                          )
+                        ) : (
+                          <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                            <p className="text-sm font-medium">
+                              This resume is attached but could not be previewed.
+                            </p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              Try opening it in a new tab from the selected resume card.
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
                         <p className="text-sm font-medium">No resume attached yet.</p>
