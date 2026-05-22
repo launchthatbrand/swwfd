@@ -3028,11 +3028,67 @@ export function MondayBoardView({
     };
   }, [editOptionsQuery.data, records]);
 
+  const contractorOptionCatalog = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...retentionOptions.referredToContractors, ...retentionOptions.hiredWithContractor]
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      ),
+    [retentionOptions.hiredWithContractor, retentionOptions.referredToContractors],
+  );
+
+  const parseContractorValues = useCallback(
+    (
+      rawValue: string | null | undefined,
+      preferredOptions: string[] = [],
+    ) => {
+      const source = rawValue?.trim();
+      if (!source) return [] as string[];
+      const candidateOptions = Array.from(
+        new Set(
+          [...preferredOptions, ...contractorOptionCatalog]
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
+      if (candidateOptions.length === 0) {
+        return splitCsvValues(source);
+      }
+      const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matches = candidateOptions
+        .slice()
+        .sort((a, b) => b.length - a.length)
+        .map((option) => {
+          const pattern = new RegExp(
+            `(?:^|,\\s*)(${escapeRegex(option)})(?=\\s*(?:,|$))`,
+            "i",
+          );
+          const matched = pattern.exec(source);
+          if (!matched) return null;
+          return {
+            option,
+            index: matched.index,
+          };
+        })
+        .filter((entry): entry is { option: string; index: number } => entry !== null)
+        .sort((a, b) => a.index - b.index)
+        .map((entry) => entry.option);
+      if (matches.length > 0) {
+        return matches;
+      }
+      return splitCsvValues(source);
+    },
+    [contractorOptionCatalog],
+  );
+
   const openRetentionDialog = (record: MondayRecord) => {
     setRetentionDialogRecord(record);
     setRetentionHireDatePopoverOpen(false);
     setRetentionDraft({
-      referredToContractors: splitCsvValues(record.referredToContractors),
+      referredToContractors: parseContractorValues(record.referredToContractors),
       hiredWithContractor: record.hiredWithContractor ?? "",
       hireDate: normalizeDateOnlyFromRecord(record.hireDate),
       retentionPeriod: record.retentionPeriod ?? "",
@@ -4126,8 +4182,9 @@ export function MondayBoardView({
     if (updateType === "resume" && normalizedReferredToContractors.length === 0) {
       setResumeReferralDialogState({
         targetRecordId,
-        selectedContractors: splitCsvValues(
+        selectedContractors: parseContractorValues(
           contactHistoryDialogRecord?.referredToContractors ?? null,
+          retentionOptions.referredToContractors,
         ),
       });
       return;
@@ -8259,8 +8316,9 @@ export function MondayBoardView({
                         if (updateType === "resume") {
                           setResumeReferralDialogState({
                             targetRecordId,
-                            selectedContractors: splitCsvValues(
+                            selectedContractors: parseContractorValues(
                               contactHistoryDialogRecord.referredToContractors,
+                              retentionOptions.referredToContractors,
                             ),
                           });
                           return;
@@ -8311,8 +8369,9 @@ export function MondayBoardView({
                           setOnboardingActionPending(targetRecordId, true);
 
                           if (stepColumnId === INTERVIEWING_STEP_COLUMN_ID) {
-                            const referredContractors = splitCsvValues(
+                            const referredContractors = parseContractorValues(
                               contactHistoryDialogRecord.referredToContractors,
+                              retentionOptions.referredToContractors,
                             );
                             if (referredContractors.length === 0) {
                               toast.error(
@@ -8322,8 +8381,9 @@ export function MondayBoardView({
                               return;
                             }
 
-                            const selectedInterviewingContractors = splitCsvValues(
+                            const selectedInterviewingContractors = parseContractorValues(
                               contactHistoryDialogRecord.interviewingWithContractors,
+                              referredContractors,
                             ).filter((value) => referredContractors.includes(value));
 
                             setInterviewingContractorDialogState({
@@ -8336,8 +8396,9 @@ export function MondayBoardView({
                           }
 
                           if (stepColumnId === HIRED_STEP_COLUMN_ID) {
-                            const interviewingContractors = splitCsvValues(
+                            const interviewingContractors = parseContractorValues(
                               contactHistoryDialogRecord.interviewingWithContractors,
+                              retentionOptions.referredToContractors,
                             );
                             if (interviewingContractors.length === 0) {
                               toast.error(
