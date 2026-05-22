@@ -3809,6 +3809,7 @@ export const createMondayRecordUpdate = async (args: {
   subitemNameOverride?: string;
   actorMondayUserId?: string | number | null;
   internalExternalStatus?: "Internal" | "External";
+  suppressApprovalStepMarking?: boolean;
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -3827,7 +3828,15 @@ export const createMondayRecordUpdate = async (args: {
   const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
     ? requestedUpdateType
     : "general";
+  const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
   const markApprovalStepCompleteForUpdateType = async () => {
+    if (suppressApprovalStepMarking) {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
     if (updateType === "general") {
       return {
         stepColumnId: null as string | null,
