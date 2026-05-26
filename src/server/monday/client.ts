@@ -118,6 +118,7 @@ export const MONDAY_UPDATE_TYPES = [
   "questionnaire",
   "resume",
   "resume_referral",
+  "merge",
 ] as const;
 
 export type MondayUpdateType = (typeof MONDAY_UPDATE_TYPES)[number];
@@ -133,6 +134,7 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
+  merge: "Contact Merged",
 };
 
 const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
@@ -153,6 +155,7 @@ const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+  merge: "Merge",
 };
 
 const buildSubitemName = (rawValue: string, fallbackName: string) => {
@@ -2945,6 +2948,7 @@ export const listMondayRecordUpdates = async (args: {
     subitemName: string | null | undefined,
   ): MondayUpdateType => {
     const normalized = normalizeForSubitemTypeMatch(subitemName ?? "");
+    if (normalized.includes("merge") || normalized.includes("dedup")) return "merge";
     if (normalized.includes("resume referral")) return "resume_referral";
     if (normalized.includes("question")) return "questionnaire";
     if (normalized.includes("welcome")) return "welcome_email";

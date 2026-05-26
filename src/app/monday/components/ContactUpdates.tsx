@@ -71,6 +71,11 @@ const TYPE_CONFIG: Record<
     label: "Resume Referral",
     bgColor: "bg-teal-50 dark:bg-teal-950/40",
   },
+  merge: {
+    icon: UserCheck,
+    label: "Merge",
+    bgColor: "bg-indigo-50 dark:bg-indigo-950/40",
+  },
   general: {
     icon: MessageSquare,
     label: "General",
