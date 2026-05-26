@@ -293,6 +293,25 @@ const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
 const EMAIL_TEMPLATE_TAG_KEY_PATTERN = /^[a-z][a-z0-9_.-]*$/;
 const INTERVIEWING_STEP_COLUMN_ID = "color_mm1dgeqy";
 const HIRED_STEP_COLUMN_ID = "color_mm1d80yc";
+type MergeFieldKey =
+  | "ownerId"
+  | "status"
+  | "tags"
+  | "referredToContractors"
+  | "interviewingWithContractors"
+  | "hiredWithContractor"
+  | "hireDate"
+  | "retentionPeriod";
+const MERGE_FIELD_CONFIG: Array<{ key: MergeFieldKey; label: string }> = [
+  { key: "ownerId", label: "Owner" },
+  { key: "status", label: "District / Status" },
+  { key: "tags", label: "Tags" },
+  { key: "referredToContractors", label: "Referred To Contractor" },
+  { key: "interviewingWithContractors", label: "Interviewing With Contractor" },
+  { key: "hiredWithContractor", label: "Hired With Contractor" },
+  { key: "hireDate", label: "Hire Date" },
+  { key: "retentionPeriod", label: "Retention Period" },
+];
 
 export function MondayBoardView({
   viewMode = "all",
@@ -392,10 +411,17 @@ export function MondayBoardView({
     action: QuickContactActionButton;
     selectedItems: MondayRecord[];
   } | null>(null);
+  const [mergeDialogState, setMergeDialogState] = useState<{
+    records: MondayRecord[];
+    masterRecordId: string;
+    fieldSourceByKey: Record<MergeFieldKey, string>;
+  } | null>(null);
+  const [isMergingRecords, setIsMergingRecords] = useState(false);
   const [questionnaireDialogRecords, setQuestionnaireDialogRecords] = useState<
     MondayRecord[]
   >([]);
   const bulkClearSelectionRef = useRef<(() => void) | null>(null);
+  const mergeClearSelectionRef = useRef<(() => void) | null>(null);
   const [kanbanMoveConfirmation, setKanbanMoveConfirmation] =
     useState<KanbanMoveConfirmation | null>(null);
   const [isExecutingKanbanMove, setIsExecutingKanbanMove] = useState(false);
@@ -3084,6 +3110,90 @@ export function MondayBoardView({
     [contractorOptionCatalog],
   );
 
+  const getMergeTargetRecordId = useCallback((record: MondayRecord) => {
+    const contactId = record.contactId?.trim();
+    if (contactId && contactId.length > 0) return contactId;
+    return record.id.trim();
+  }, []);
+
+  const getMergeFieldValueFromRecord = useCallback(
+    (record: MondayRecord, key: MergeFieldKey) => {
+      switch (key) {
+        case "ownerId":
+          return record.ownerIds[0]?.trim() ?? null;
+        case "status":
+          return record.statusText?.trim() || null;
+        case "tags":
+          return splitCsvValues(record.tags ?? null);
+        case "referredToContractors":
+          return parseContractorValues(
+            record.referredToContractors,
+            retentionOptions.referredToContractors,
+          );
+        case "interviewingWithContractors":
+          return parseContractorValues(
+            record.interviewingWithContractors,
+            retentionOptions.referredToContractors,
+          );
+        case "hiredWithContractor":
+          return record.hiredWithContractor?.trim() || null;
+        case "hireDate": {
+          const dateOnly = normalizeDateOnlyFromRecord(record.hireDate);
+          return dateOnly.length > 0 ? dateOnly : null;
+        }
+        case "retentionPeriod":
+          return record.retentionPeriod?.trim() || null;
+        default:
+          return null;
+      }
+    },
+    [parseContractorValues, retentionOptions.referredToContractors],
+  );
+
+  const getMergeFieldDisplayValue = useCallback(
+    (record: MondayRecord, key: MergeFieldKey) => {
+      if (key === "ownerId") {
+        return record.peopleText?.trim() || record.ownerIds[0]?.trim() || "—";
+      }
+      const value = getMergeFieldValueFromRecord(record, key);
+      if (Array.isArray(value)) {
+        return value.length > 0 ? value.join(", ") : "—";
+      }
+      return value && String(value).trim().length > 0 ? String(value) : "—";
+    },
+    [getMergeFieldValueFromRecord],
+  );
+
+  const openMergeDialogForRecords = useCallback((selectedItems: MondayRecord[]) => {
+    const dedupedRecordsById = new Map<string, MondayRecord>();
+    for (const record of selectedItems) {
+      const targetRecordId = getMergeTargetRecordId(record);
+      if (!targetRecordId) continue;
+      if (!dedupedRecordsById.has(targetRecordId)) {
+        dedupedRecordsById.set(targetRecordId, record);
+      }
+    }
+    const records = Array.from(dedupedRecordsById.values());
+    if (records.length < 2 || records.length > 4) {
+      toast.error("Select between 2 and 4 contacts to merge.");
+      return;
+    }
+    const masterRecord = records[0]!;
+    const masterRecordId = getMergeTargetRecordId(masterRecord);
+    const fieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
+      (acc, field) => {
+        acc[field.key] = masterRecordId;
+        return acc;
+      },
+      {} as Record<MergeFieldKey, string>,
+    );
+    setMergeDialogState({
+      records,
+      masterRecordId,
+      fieldSourceByKey,
+    });
+  }, [getMergeTargetRecordId]);
+
   const openRetentionDialog = (record: MondayRecord) => {
     setRetentionDialogRecord(record);
     setRetentionHireDatePopoverOpen(false);
@@ -4494,6 +4604,128 @@ export function MondayBoardView({
       }
     } finally {
       setBulkQuickActionType(null);
+    }
+  };
+
+  const handleConfirmMergeRecords = async () => {
+    if (staticMode) {
+      toast.error("Merge is unavailable in static mode");
+      return;
+    }
+    if (!sessionToken || !mergeDialogState) {
+      toast.error("Missing monday session context");
+      return;
+    }
+
+    const recordsByTargetId = new Map<string, MondayRecord>();
+    for (const record of mergeDialogState.records) {
+      const targetRecordId = getMergeTargetRecordId(record);
+      if (!targetRecordId) continue;
+      if (!recordsByTargetId.has(targetRecordId)) {
+        recordsByTargetId.set(targetRecordId, record);
+      }
+    }
+
+    const masterRecordId = mergeDialogState.masterRecordId.trim();
+    const masterRecord = recordsByTargetId.get(masterRecordId) ?? null;
+    if (!masterRecordId || !masterRecord) {
+      toast.error("Choose a valid master contact to continue");
+      return;
+    }
+
+    const sourceItemIds = Array.from(recordsByTargetId.keys()).filter(
+      (targetRecordId) => targetRecordId !== masterRecordId,
+    );
+    if (sourceItemIds.length === 0) {
+      toast.error("Select at least one duplicate contact to merge");
+      return;
+    }
+    if (sourceItemIds.length > 3) {
+      toast.error("You can merge up to 4 contacts at once");
+      return;
+    }
+
+    const fieldOverrides: {
+      ownerId?: string | null;
+      status?: string | null;
+      tags?: string[] | null;
+      referredToContractors?: string[] | null;
+      interviewingWithContractors?: string[] | null;
+      hiredWithContractor?: string | null;
+      hireDate?: string | null;
+      retentionPeriod?: string | null;
+    } = {};
+
+    for (const field of MERGE_FIELD_CONFIG) {
+      const sourceRecordId =
+        mergeDialogState.fieldSourceByKey[field.key]?.trim() || masterRecordId;
+      const sourceRecord = recordsByTargetId.get(sourceRecordId) ?? masterRecord;
+      const value = getMergeFieldValueFromRecord(sourceRecord, field.key);
+      if (field.key === "tags") {
+        fieldOverrides.tags = Array.isArray(value) ? value : null;
+      } else if (field.key === "referredToContractors") {
+        fieldOverrides.referredToContractors = Array.isArray(value) ? value : null;
+      } else if (field.key === "interviewingWithContractors") {
+        fieldOverrides.interviewingWithContractors = Array.isArray(value) ? value : null;
+      } else if (field.key === "ownerId") {
+        fieldOverrides.ownerId = typeof value === "string" ? value : null;
+      } else if (field.key === "status") {
+        fieldOverrides.status = typeof value === "string" ? value : null;
+      } else if (field.key === "hiredWithContractor") {
+        fieldOverrides.hiredWithContractor = typeof value === "string" ? value : null;
+      } else if (field.key === "hireDate") {
+        fieldOverrides.hireDate = typeof value === "string" ? value : null;
+      } else if (field.key === "retentionPeriod") {
+        fieldOverrides.retentionPeriod = typeof value === "string" ? value : null;
+      }
+    }
+
+    setIsMergingRecords(true);
+    try {
+      const response = await fetch("/api/monday/records/merge", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          masterItemId: masterRecordId,
+          sourceItemIds,
+          fieldOverrides,
+          deleteSources: true,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        createdSubitems?: number;
+        skippedDuplicates?: number;
+        deletedSourceCount?: number;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to merge selected contacts");
+      }
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      mergeClearSelectionRef.current?.();
+      setMergeDialogState(null);
+      toast.success(
+        `Merged ${sourceItemIds.length} duplicate contact${sourceItemIds.length === 1 ? "" : "s"} into master (${data.createdSubitems ?? 0} updates copied, ${data.skippedDuplicates ?? 0} duplicates skipped).`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to merge selected contacts";
+      toast.error(message);
+    } finally {
+      setIsMergingRecords(false);
     }
   };
 
@@ -9176,6 +9408,17 @@ export function MondayBoardView({
                 const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
                 return currentStep === questionnaireStepIndex;
               });
+              const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
+              for (const item of selectedItems) {
+                const targetRecordId = getMergeTargetRecordId(item);
+                if (!targetRecordId) continue;
+                if (!mergeCandidatesByTargetId.has(targetRecordId)) {
+                  mergeCandidatesByTargetId.set(targetRecordId, item);
+                }
+              }
+              const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
+              const canMergeSelection =
+                mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
               const bulkSyncProgressPercent =
                 latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
                   ? Math.round(
@@ -9238,6 +9481,26 @@ export function MondayBoardView({
                       }}
                     >
                       {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                      disabled={!!bulkQuickActionType || isMergingRecords || !canMergeSelection}
+                      onClick={() => {
+                        mergeClearSelectionRef.current = clearSelection;
+                        openMergeDialogForRecords(mergeEligibleRecords);
+                        if (mergeEligibleRecords.length < selectedItems.length) {
+                          toast(
+                            `${selectedItems.length - mergeEligibleRecords.length} contact${selectedItems.length - mergeEligibleRecords.length === 1 ? "" : "s"} skipped (duplicate contact ids in selection)`,
+                          );
+                        }
+                      }}
+                    >
+                      {isMergingRecords
+                        ? "Merging..."
+                        : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
                     </Button>
                     {isMondaySettingsAdmin && (
                       <Button
@@ -9406,6 +9669,128 @@ export function MondayBoardView({
                 disabled={!!bulkQuickActionType}
               >
                 {bulkQuickActionType ? "Applying..." : "Confirm"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={!!mergeDialogState}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (isMergingRecords) return;
+            setMergeDialogState(null);
+          }}
+        >
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Merge / De-duplicate Contacts</DialogTitle>
+              <DialogDescription>
+                Choose a master contact, pick field sources, then merge updates from duplicate
+                contacts. Exact same action on the same day is kept once.
+              </DialogDescription>
+            </DialogHeader>
+            {mergeDialogState ? (
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <p className="text-xs font-medium">Master contact</p>
+                  <Select
+                    value={mergeDialogState.masterRecordId}
+                    onValueChange={(value) => {
+                      setMergeDialogState((prev) => {
+                        if (!prev) return prev;
+                        const nextFieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
+                          (acc, field) => {
+                            acc[field.key] = value;
+                            return acc;
+                          },
+                          {} as Record<MergeFieldKey, string>,
+                        );
+                        return {
+                          ...prev,
+                          masterRecordId: value,
+                          fieldSourceByKey: nextFieldSourceByKey,
+                        };
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select master contact" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mergeDialogState.records.map((record) => {
+                        const targetRecordId = getMergeTargetRecordId(record);
+                        return (
+                          <SelectItem key={targetRecordId} value={targetRecordId}>
+                            {record.name} · {record.email ?? "No email"}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="rounded-md border bg-amber-50/40 p-3 text-xs text-amber-900">
+                  Source contacts will be deleted after merge. Name and email stay from the selected
+                  master contact.
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium">Choose source record for each mergeable field</p>
+                  <div className="max-h-[42vh] space-y-3 overflow-y-auto rounded-md border p-3">
+                    {MERGE_FIELD_CONFIG.map((field) => (
+                      <div
+                        key={field.key}
+                        className="grid gap-2 rounded-md border p-2 md:grid-cols-[220px_1fr]"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{field.label}</p>
+                        </div>
+                        <Select
+                          value={mergeDialogState.fieldSourceByKey[field.key]}
+                          onValueChange={(value) => {
+                            setMergeDialogState((prev) => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                fieldSourceByKey: {
+                                  ...prev.fieldSourceByKey,
+                                  [field.key]: value,
+                                },
+                              };
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {mergeDialogState.records.map((record) => {
+                              const targetRecordId = getMergeTargetRecordId(record);
+                              return (
+                                <SelectItem key={targetRecordId} value={targetRecordId}>
+                                  {record.name} · {getMergeFieldDisplayValue(record, field.key)}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setMergeDialogState(null)}
+                disabled={isMergingRecords}
+              >
+                Cancel
+              </Button>
+              <Button onClick={() => void handleConfirmMergeRecords()} disabled={isMergingRecords}>
+                {isMergingRecords ? "Merging..." : "Merge Contacts"}
               </Button>
             </div>
           </DialogContent>

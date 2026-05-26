@@ -164,7 +164,8 @@ export interface MondayRecordUpdate {
   | "followup"
   | "questionnaire"
   | "resume"
-  | "resume_referral";
+  | "resume_referral"
+  | "merge";
   source: "item" | "subitem";
   subitemId: string | null;
   subitemName: string | null;
@@ -184,7 +185,8 @@ export interface MondaySubitemEntry {
   | "followup"
   | "questionnaire"
   | "resume"
-  | "resume_referral";
+  | "resume_referral"
+  | "merge";
   methodOfCommunication: string | null;
   createdAt: string | null;
   creatorProfile: {
@@ -223,7 +225,8 @@ export interface MondayCreateRecordUpdateResponse {
     | "followup"
     | "questionnaire"
     | "resume"
-    | "resume_referral";
+    | "resume_referral"
+    | "merge";
     source: "item" | "subitem";
     subitemName?: string | null;
     approvalStepColumnId?: string | null;
