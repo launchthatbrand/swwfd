@@ -20,6 +20,7 @@ export const env = createEnv({
     MONDAY_SIGNING_SECRET: z.string().min(1).optional(),
     MONDAY_API_KEY: z.string().optional(),
     MONDAY_BOARD_ID: z.string().optional(),
+    MONDAY_JOBS_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_COUNTY_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_DISTRICT_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_COUNTY_NAME_COLUMN_ID: z.string().optional(),

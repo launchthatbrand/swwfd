@@ -18,6 +18,7 @@ export const CONTACT_UPDATE_TYPE_OPTIONS = [
   { value: "questionnaire", label: "Questionaire Update" },
   { value: "resume", label: "Resume Update" },
   { value: "resume_referral", label: "Resume Referral Update" },
+  { value: "job_referral", label: "Job Referral Update" },
 ] as const;
 
 export type ContactUpdateType = (typeof CONTACT_UPDATE_TYPE_OPTIONS)[number]["value"];
@@ -97,6 +98,7 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
+  job_referral: "Job Referral Update",
 };
 
 export const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
@@ -111,6 +113,7 @@ export const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<ContactUpdateType, string
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+  job_referral: "Referral",
 };
 
 export const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<

@@ -118,6 +118,7 @@ export const MONDAY_UPDATE_TYPES = [
   "questionnaire",
   "resume",
   "resume_referral",
+  "job_referral",
   "merge",
 ] as const;
 
@@ -134,6 +135,7 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
+  job_referral: "Job Referral Update",
   merge: "Contact Merged",
 };
 
@@ -155,6 +157,7 @@ const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+  job_referral: "Referral",
   merge: "Merge",
 };
 
@@ -2949,6 +2952,7 @@ export const listMondayRecordUpdates = async (args: {
   ): MondayUpdateType => {
     const normalized = normalizeForSubitemTypeMatch(subitemName ?? "");
     if (normalized.includes("merge") || normalized.includes("dedup")) return "merge";
+    if (normalized.includes("job referral") || normalized.startsWith("referral -")) return "job_referral";
     if (normalized.includes("resume referral")) return "resume_referral";
     if (normalized.includes("question")) return "questionnaire";
     if (normalized.includes("welcome")) return "welcome_email";

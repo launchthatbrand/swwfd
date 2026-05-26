@@ -154,6 +154,7 @@ export const contactUpdateTypeLabel = (value: string) => {
     { value: "questionnaire", label: "Questionaire Update" },
     { value: "resume", label: "Resume Update" },
     { value: "resume_referral", label: "Resume Referral Update" },
+    { value: "job_referral", label: "Job Referral Update" },
   ];
   return options.find((option) => option.value === value)?.label ?? "General Update";
 };
@@ -919,6 +920,8 @@ export const doesSubitemMatchUpdateType = (subitemName: string, type: string) =>
       return normalized.includes("resume") && !normalized.includes("referral");
     case "resume_referral":
       return normalized.includes("resume referral");
+    case "job_referral":
+      return normalized.includes("job referral") || normalized.startsWith("referral -");
     default:
       return false;
   }

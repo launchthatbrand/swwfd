@@ -165,6 +165,7 @@ export interface MondayRecordUpdate {
   | "questionnaire"
   | "resume"
   | "resume_referral"
+  | "job_referral"
   | "merge";
   source: "item" | "subitem";
   subitemId: string | null;
@@ -186,6 +187,7 @@ export interface MondaySubitemEntry {
   | "questionnaire"
   | "resume"
   | "resume_referral"
+  | "job_referral"
   | "merge";
   methodOfCommunication: string | null;
   createdAt: string | null;
@@ -226,6 +228,7 @@ export interface MondayCreateRecordUpdateResponse {
     | "questionnaire"
     | "resume"
     | "resume_referral"
+    | "job_referral"
     | "merge";
     source: "item" | "subitem";
     subitemName?: string | null;
@@ -238,6 +241,35 @@ export interface MondayCreateRecordUpdateResponse {
 export interface MondayResumeUploadResponse {
   ok: boolean;
   error?: string;
+}
+
+export interface MondayJobListing {
+  id: string;
+  title: string;
+  status: string | null;
+  district: string | null;
+  location: string | null;
+  locationSecondary: string | null;
+  description: string | null;
+  categories: string[];
+  contractor: string | null;
+  contractorEmail: string | null;
+  applyEmail: string | null;
+  applyPhone: string | null;
+  salaryAmount: string | null;
+  salaryType: string | null;
+  websiteUrl: string | null;
+  postedDate: string | null;
+  updatedAt: string | null;
+  isAvailable: boolean;
+}
+
+export interface MondayJobsResponse {
+  ok: boolean;
+  error?: string;
+  boardId?: string;
+  boardName?: string | null;
+  jobs?: MondayJobListing[];
 }
 
 export interface ResumePreviewState {

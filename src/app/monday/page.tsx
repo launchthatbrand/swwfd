@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
+  BriefcaseBusiness,
   Columns3,
   ExternalLink,
   Filter,
@@ -28,6 +29,7 @@ import type {
   ColumnDefinition,
   EntityAction,
 } from "@launchthatapp/ui/entity-list";
+import { EntityList } from "@launchthatapp/ui/entity-list";
 import {
   Dialog,
   DialogContent,
@@ -88,6 +90,8 @@ import type {
   MondayFeatureFlags,
   MondayFeatureFlagsResponse,
   MondayIdentity,
+  MondayJobListing,
+  MondayJobsResponse,
   MondayPlatformSettings,
   MondayPlatformSettingsResponse,
   MondayRecord,
@@ -313,6 +317,45 @@ const MERGE_FIELD_CONFIG: Array<{ key: MergeFieldKey; label: string }> = [
   { key: "retentionPeriod", label: "Retention Period" },
 ];
 
+interface ContactJobRow extends Record<string, unknown> {
+  id: string;
+  title: string;
+  district: string;
+  location: string;
+  contractor: string;
+  categoriesText: string;
+  postedDate: string;
+  websiteUrl: string | null;
+  applyEmail: string | null;
+  applyPhone: string | null;
+  isAlreadyReferred: boolean;
+  rawJob: MondayJobListing;
+}
+
+interface ReferredJobHistoryRow extends Record<string, unknown> {
+  id: string;
+  jobId: string | null;
+  title: string;
+  referredAt: string | null;
+  subitemId: string;
+}
+
+const parseJobReferralHistoryFromText = (text: string | null | undefined) => {
+  const normalized = (text ?? "").trim();
+  if (!normalized) {
+    return {
+      jobId: null as string | null,
+      title: "Unknown Job",
+    };
+  }
+  const jobIdMatch = normalized.match(/job id:\s*([0-9]+)/i);
+  const titleMatch = normalized.match(/referred to job:\s*(.+)/i);
+  return {
+    jobId: jobIdMatch?.[1]?.trim() ?? null,
+    title: titleMatch?.[1]?.trim() || "Unknown Job",
+  };
+};
+
 export function MondayBoardView({
   viewMode = "all",
   initialOwnerFilter,
@@ -392,6 +435,7 @@ export function MondayBoardView({
   const [communicationQuickAction, setCommunicationQuickAction] =
     useState<CommunicationQuickActionDefinition | null>(null);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
+  const [referringJobId, setReferringJobId] = useState<string | null>(null);
   const [contactDialogSelectedResumeKey, setContactDialogSelectedResumeKey] = useState<string | null>(null);
   const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
   const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
@@ -1105,6 +1149,30 @@ export function MondayBoardView({
       return data;
     },
     staleTime: 30_000,
+  });
+
+  const jobsQuery = useQuery({
+    queryKey: ["monday-jobs-board", sessionToken],
+    enabled:
+      !!sessionToken &&
+      !!contactHistoryDialogRecord &&
+      !staticMode &&
+      contactDialogTab === "jobs",
+    queryFn: async () => {
+      const response = await fetch("/api/monday/jobs?limit=300&onlyAvailable=true", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken
+          ? { "x-monday-session-token": sessionToken }
+          : undefined,
+      });
+      const data = (await response.json()) as MondayJobsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load jobs board");
+      }
+      return data;
+    },
+    staleTime: 60_000,
   });
 
   interface ContactColumnEntry {
@@ -3272,6 +3340,152 @@ export function MondayBoardView({
   const contactDialogResumeInputId = contactHistoryDialogRecord
     ? `contact-dialog-resume-upload-${contactHistoryDialogRecord.id}`
     : "";
+  const jobsForContactDialog = useMemo(() => {
+    const jobs = jobsQuery.data?.jobs ?? [];
+    if (!contactHistoryDialogRecord || jobs.length === 0) return jobs;
+    const contactDistrict = (contactHistoryDialogRecord.statusText ?? "").trim().toLowerCase();
+    if (!contactDistrict) return jobs;
+    const matching: MondayJobListing[] = [];
+    const remaining: MondayJobListing[] = [];
+    for (const job of jobs) {
+      const districtText = (job.district ?? "").trim().toLowerCase();
+      if (districtText.length > 0 && districtText.includes(contactDistrict)) {
+        matching.push(job);
+      } else {
+        remaining.push(job);
+      }
+    }
+    return [...matching, ...remaining];
+  }, [jobsQuery.data?.jobs, contactHistoryDialogRecord]);
+  const referredJobsHistory = useMemo(() => {
+    const subitems = contactUpdatesQuery.data?.subitems ?? [];
+    const deduped = new Map<string, ReferredJobHistoryRow>();
+    for (const subitem of subitems) {
+      if (subitem.updateType !== "job_referral") continue;
+      const parsed = parseJobReferralHistoryFromText(subitem.name);
+      const dedupeKey =
+        parsed.jobId?.trim().length
+          ? `job:${parsed.jobId.trim()}`
+          : `title:${parsed.title.trim().toLowerCase()}`;
+      if (!dedupeKey || deduped.has(dedupeKey)) continue;
+      deduped.set(dedupeKey, {
+        id: dedupeKey,
+        jobId: parsed.jobId,
+        title: parsed.title,
+        referredAt: subitem.createdAt,
+        subitemId: subitem.id,
+      });
+    }
+    return Array.from(deduped.values());
+  }, [contactUpdatesQuery.data?.subitems]);
+  const referredJobIds = useMemo(
+    () =>
+      new Set(
+        referredJobsHistory
+          .map((entry) => entry.jobId?.trim())
+          .filter((entry): entry is string => !!entry && entry.length > 0),
+      ),
+    [referredJobsHistory],
+  );
+  const referredJobTitleKeys = useMemo(
+    () =>
+      new Set(
+        referredJobsHistory
+          .map((entry) => entry.title.trim().toLowerCase())
+          .filter((entry) => entry.length > 0),
+      ),
+    [referredJobsHistory],
+  );
+  const contactJobRows = useMemo<ContactJobRow[]>(
+    () =>
+      jobsForContactDialog.map((job) => ({
+        id: job.id,
+        title: job.title,
+        district: job.district ?? "",
+        location: job.locationSecondary || job.location || "",
+        contractor: job.contractor ?? "",
+        categoriesText: job.categories.join(", "),
+        postedDate: job.postedDate ?? "",
+        websiteUrl: job.websiteUrl,
+        applyEmail: job.applyEmail,
+        applyPhone: job.applyPhone,
+        isAlreadyReferred:
+          referredJobIds.has(job.id) ||
+          referredJobTitleKeys.has(job.title.trim().toLowerCase()),
+        rawJob: job,
+      })),
+    [jobsForContactDialog, referredJobIds, referredJobTitleKeys],
+  );
+  const contactJobColumns = useMemo<ColumnDefinition<ContactJobRow>[]>(
+    () => [
+      {
+        id: "title",
+        header: "Job",
+        accessorKey: "title",
+        sortable: true,
+        cell: (item) => (
+          <div className="px-2 py-2">
+            <p className="truncate font-medium">{item.title}</p>
+            <p className="text-muted-foreground truncate text-xs">
+              {item.location || "Location unavailable"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "district",
+        header: "District",
+        accessorKey: "district",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.district || "—"}</span>
+        ),
+      },
+      {
+        id: "contractor",
+        header: "Contractor",
+        accessorKey: "contractor",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.contractor || "—"}</span>
+        ),
+      },
+      {
+        id: "categoriesText",
+        header: "Categories",
+        accessorKey: "categoriesText",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.categoriesText || "—"}</span>
+        ),
+      },
+      {
+        id: "postedDate",
+        header: "Posted",
+        accessorKey: "postedDate",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.postedDate || "—"}</span>
+        ),
+      },
+    ],
+    [],
+  );
+  const contactJobActions: EntityAction<ContactJobRow>[] = [
+    {
+      id: "refer",
+      label: (item) => (item.isAlreadyReferred ? "Referred" : "Refer"),
+      icon: <BriefcaseBusiness className="h-3.5 w-3.5" />,
+      variant: "outline",
+      isDisabled: (item) =>
+        item.isAlreadyReferred ||
+        isCreatingContactUpdate ||
+        referringJobId === item.id,
+      onClick: (item) => {
+        void handleReferContactToJob(item.rawJob);
+      },
+    },
+  ];
   useEffect(() => {
     if (contactDialogResumeFiles.length === 0) {
       if (contactDialogSelectedResumeKey !== null) {
@@ -4482,6 +4696,51 @@ export function MondayBoardView({
       methodOfCommunication: values.methodOfCommunication,
     });
     setCommunicationQuickAction(null);
+  };
+
+  const handleReferContactToJob = async (job: MondayJobListing) => {
+    if (!contactHistoryDialogRecord) {
+      toast.error("Open a contact before creating a referral");
+      return;
+    }
+    const targetRecordId =
+      contactHistoryDialogRecord.contactId?.trim() ||
+      contactHistoryDialogRecord.id.trim();
+    if (!targetRecordId) {
+      toast.error("Missing contact id for referral");
+      return;
+    }
+    const normalizedJobTitle = job.title.trim().toLowerCase();
+    if (
+      referredJobIds.has(job.id) ||
+      (normalizedJobTitle.length > 0 && referredJobTitleKeys.has(normalizedJobTitle))
+    ) {
+      toast("This contact is already referred to that job.");
+      return;
+    }
+
+    const details = [
+      `Job ID: ${job.id}`,
+      job.district ? `District: ${job.district}` : null,
+      job.location ? `Location: ${job.location}` : null,
+      job.contractor ? `Contractor: ${job.contractor}` : null,
+      job.applyEmail ? `Apply Email: ${job.applyEmail}` : null,
+      job.applyPhone ? `Apply Phone: ${job.applyPhone}` : null,
+      job.websiteUrl ? `URL: ${job.websiteUrl}` : null,
+    ].filter((value): value is string => !!value);
+
+    setReferringJobId(job.id);
+    try {
+      await handleCreateContactUpdate({
+        targetRecordId,
+        updateType: "job_referral",
+        body: [`Referred to Job: ${job.title}`, ...details].join("\n"),
+        subitemNameOverride: `Referral - ${job.title}`,
+        keepSelectedType: true,
+      });
+    } finally {
+      setReferringJobId(null);
+    }
   };
 
   const handleBulkQuickActionUpdates = async (
@@ -8838,6 +9097,7 @@ export function MondayBoardView({
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
                     <TabsTrigger value="resume">Resume</TabsTrigger>
+                    <TabsTrigger value="jobs">Jobs</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
@@ -9203,6 +9463,103 @@ export function MondayBoardView({
                         ) : null}
                       </div>
                     )}
+                  </TabsContent>
+                  <TabsContent value="jobs" className="mt-3 min-h-0 flex-1">
+                    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+                      <div className="rounded-md border p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">
+                            Referred Jobs ({referredJobsHistory.length})
+                          </p>
+                        </div>
+                        {contactUpdatesQuery.isLoading ? (
+                          <div className="space-y-2">
+                            {Array.from({ length: 2 }).map((_, index) => (
+                              <Skeleton key={index} className="h-8 w-full" />
+                            ))}
+                          </div>
+                        ) : referredJobsHistory.length === 0 ? (
+                          <p className="text-muted-foreground text-xs">
+                            No job referrals logged for this contact yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {referredJobsHistory.slice(0, 6).map((entry) => (
+                              <div
+                                key={entry.id}
+                                className="bg-muted/20 flex items-center justify-between gap-2 rounded-md px-2 py-1.5"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-medium">{entry.title}</p>
+                                  <p className="text-muted-foreground text-[11px]">
+                                    {entry.jobId ? `Job ID ${entry.jobId}` : "Job ID unavailable"}
+                                  </p>
+                                </div>
+                                <span className="text-muted-foreground shrink-0 text-[11px]">
+                                  {entry.referredAt ? formatUpdatedAt(entry.referredAt) : "—"}
+                                </span>
+                              </div>
+                            ))}
+                            {referredJobsHistory.length > 6 ? (
+                              <p className="text-muted-foreground text-[11px]">
+                                +{referredJobsHistory.length - 6} more referrals
+                              </p>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                      <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                        <div>
+                          <p className="text-sm font-medium">Available Jobs</p>
+                          <p className="text-muted-foreground text-xs">
+                            Search and switch list/grid view. Referred jobs are automatically
+                            disabled.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={jobsQuery.isFetching}
+                          onClick={() => {
+                            void jobsQuery.refetch();
+                          }}
+                        >
+                          <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                        {jobsQuery.error ? (
+                          <div className="rounded-md border p-3">
+                            <p className="text-destructive text-sm">
+                              {jobsQuery.error instanceof Error
+                                ? jobsQuery.error.message
+                                : "Failed to load jobs"}
+                            </p>
+                          </div>
+                        ) : (
+                          <EntityList
+                            data={contactJobRows}
+                            columns={contactJobColumns}
+                            entityActions={contactJobActions}
+                            getRowId={(item) => item.id}
+                            isLoading={jobsQuery.isLoading}
+                            enableSearch
+                            viewModes={["list", "grid"]}
+                            defaultViewMode="list"
+                            enableFooter={false}
+                            showRowCount={false}
+                            hideFilters
+                            emptyState={
+                              <div className="text-muted-foreground py-6 text-sm">
+                                No available jobs found.
+                              </div>
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
                   </TabsContent>
                 </Tabs>
               </div>

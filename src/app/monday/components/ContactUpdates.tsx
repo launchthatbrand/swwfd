@@ -71,6 +71,11 @@ const TYPE_CONFIG: Record<
     label: "Resume Referral",
     bgColor: "bg-teal-50 dark:bg-teal-950/40",
   },
+  job_referral: {
+    icon: UserCheck,
+    label: "Referral",
+    bgColor: "bg-cyan-50 dark:bg-cyan-950/40",
+  },
   merge: {
     icon: UserCheck,
     label: "Merge",
