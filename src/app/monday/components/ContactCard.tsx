@@ -1,9 +1,17 @@
 "use client";
 
 import { CircleHelp } from "lucide-react";
+import { Badge } from "@launchthatapp/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import type { ApprovalStepConfig, MondayRecord } from "../types";
-import { getAddressDisplayParts, getDistrictChipClassName, getNameInitials } from "../helpers";
+import {
+  formatDateTimeParts,
+  getAddressDisplayParts,
+  getDistrictChipClassName,
+  getLastTouchpointBadgeClassName,
+  getLastTouchpointRecency,
+  getNameInitials,
+} from "../helpers";
 import { ApprovalProgressIndicator } from "./ApprovalProgressIndicator";
 
 export const ContactCard = ({
@@ -19,6 +27,9 @@ export const ContactCard = ({
 }) => {
   const addressDisplay = getAddressDisplayParts(record.address);
   const owner = record.ownerProfiles[0];
+  const hasResumeAttached = record.resumeFiles.length > 0;
+  const lastTouchpointRecency = getLastTouchpointRecency(record.lastTouchpointAt ?? null);
+  const lastTouchpointParts = formatDateTimeParts(lastTouchpointRecency.parsedAt);
   return (
     <button
       type="button"
@@ -41,27 +52,33 @@ export const ContactCard = ({
             <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {onHelpDesk && (
-            <span
-              role="button"
-              tabIndex={0}
-              title="Submit support ticket"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-primary group-hover:opacity-100"
-              onClick={(e) => {
+        {onHelpDesk && (
+          <span
+            role="button"
+            tabIndex={0}
+            title="Submit support ticket"
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-muted hover:text-primary group-hover:opacity-100"
+            onClick={(e) => {
+              e.stopPropagation();
+              onHelpDesk(record);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
                 e.stopPropagation();
                 onHelpDesk(record);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.stopPropagation();
-                  onHelpDesk(record);
-                }
-              }}
-            >
-              <CircleHelp className="h-3.5 w-3.5" />
+              }
+            }}
+          >
+            <CircleHelp className="h-3.5 w-3.5" />
+          </span>
+        )}
+      </div>
+      <div className="flex min-h-6 flex-wrap items-center justify-end gap-1">
+          {hasResumeAttached ? (
+            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300">
+              Resume Attached
             </span>
-          )}
+          ) : null}
           {record.statusText ? (
             <span
               className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getDistrictChipClassName(record.statusText)}`}
@@ -69,8 +86,18 @@ export const ContactCard = ({
               {record.statusText}
             </span>
           ) : null}
+          <Badge
+            variant="outline"
+            className={getLastTouchpointBadgeClassName(lastTouchpointRecency.tone)}
+            title={
+              lastTouchpointRecency.hasTouchpoint
+                ? `Last touchpoint: ${lastTouchpointParts.date}${lastTouchpointParts.time ? ` ${lastTouchpointParts.time}` : ""}`
+                : "No last touchpoint recorded"
+            }
+          >
+            Last Touch {lastTouchpointRecency.label}
+          </Badge>
         </div>
-      </div>
 
       <ApprovalProgressIndicator
         progressValue={record.batteryProgress}

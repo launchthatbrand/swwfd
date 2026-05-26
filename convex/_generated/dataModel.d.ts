@@ -224,10 +224,116 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayBulkSyncJobResults: {
+    document: {
+      attemptedAt: number;
+      contactItemId: string;
+      createdParentUpdates: number;
+      createdSubitemUpdates: number;
+      createdSubitems: number;
+      error: string | null;
+      jobId: Id<"mondayBulkSyncJobs">;
+      linkedItemCount: number;
+      skippedSubitems: number;
+      status: "success" | "failed";
+      updatedProgressColumns: number;
+      warnings: Array<string>;
+      _id: Id<"mondayBulkSyncJobResults">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "attemptedAt"
+      | "contactItemId"
+      | "createdParentUpdates"
+      | "createdSubitems"
+      | "createdSubitemUpdates"
+      | "error"
+      | "jobId"
+      | "linkedItemCount"
+      | "skippedSubitems"
+      | "status"
+      | "updatedProgressColumns"
+      | "warnings";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_jobId: ["jobId", "_creationTime"];
+      by_jobId_and_contactItemId: ["jobId", "contactItemId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayBulkSyncJobs: {
+    document: {
+      contactItemIds: Array<string>;
+      failedContacts: number;
+      finishedAt?: number | null;
+      lastError?: string | null;
+      mondayAccountId: string;
+      monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+      nextIndex: number;
+      ownerId: string;
+      processedContacts: number;
+      requestedByMondayAppClientId: string | null;
+      requestedByMondayUserId: string;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      succeededContacts: number;
+      totalContacts: number;
+      updatedAt: number;
+      warningsCount: number;
+      _id: Id<"mondayBulkSyncJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactItemIds"
+      | "failedContacts"
+      | "finishedAt"
+      | "lastError"
+      | "mondayAccountId"
+      | "monthlyBoardMappings"
+      | "nextIndex"
+      | "ownerId"
+      | "processedContacts"
+      | "requestedByMondayAppClientId"
+      | "requestedByMondayUserId"
+      | "startedAt"
+      | "status"
+      | "succeededContacts"
+      | "totalContacts"
+      | "updatedAt"
+      | "warningsCount";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_startedAt: [
+        "mondayAccountId",
+        "startedAt",
+        "_creationTime",
+      ];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayGlobalSettings: {
     document: {
+      adminUserIds?: Array<string>;
       emailMarketingEnabled: boolean;
+      emailSystemTags?: Array<{
+        columnId: string;
+        columnTitle: string;
+        tag: string;
+      }>;
+      employeeUserIds?: Array<string>;
       key: string;
+      monthlyBoardMappings?: Array<{ boardId: string; monthKey: string }>;
+      replyToEmails?: Array<string>;
       updatedAt: number;
       updatedByMondayUserId: string;
       _id: Id<"mondayGlobalSettings">;
@@ -236,14 +342,74 @@ export type DataModel = {
     fieldPaths:
       | "_creationTime"
       | "_id"
+      | "adminUserIds"
       | "emailMarketingEnabled"
+      | "emailSystemTags"
+      | "employeeUserIds"
       | "key"
+      | "monthlyBoardMappings"
+      | "replyToEmails"
       | "updatedAt"
       | "updatedByMondayUserId";
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
       by_key: ["key", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayHireEventBackfillJobs: {
+    document: {
+      contactBoardId: string;
+      createdEvents: number;
+      currentCursor?: string | null;
+      dateFrom: string;
+      dateTo: string;
+      dryRun: boolean;
+      errorsCount: number;
+      finishedAt?: number | null;
+      inRangeContacts: number;
+      lastError?: string | null;
+      monthKey: string;
+      pageSize: number;
+      processedContacts: number;
+      skippedEvents: number;
+      startedAt: number;
+      status: "running" | "done" | "failed" | "cancelled";
+      subitemBoardId?: string | null;
+      updatedAt: number;
+      workflowId?: string;
+      _id: Id<"mondayHireEventBackfillJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactBoardId"
+      | "createdEvents"
+      | "currentCursor"
+      | "dateFrom"
+      | "dateTo"
+      | "dryRun"
+      | "errorsCount"
+      | "finishedAt"
+      | "inRangeContacts"
+      | "lastError"
+      | "monthKey"
+      | "pageSize"
+      | "processedContacts"
+      | "skippedEvents"
+      | "startedAt"
+      | "status"
+      | "subitemBoardId"
+      | "updatedAt"
+      | "workflowId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_startedAt: ["startedAt", "_creationTime"];
+      by_status: ["status", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};
@@ -540,10 +706,12 @@ export type DataModel = {
   mondayUserBoardSettings: {
     document: {
       accountId: string;
-      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+      colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose" | "custom";
       createdAt: number;
+      customTheme?: { alpha: number; colorHex: string };
       displayMode?: "table" | "grid";
       fontSize: "default" | "medium" | "large";
+      hoverPopoversEnabled?: boolean;
       ownerMondayUserId: string;
       pageSize?: number;
       recordSource?: "created_in_month" | "touched_in_month";
@@ -559,8 +727,12 @@ export type DataModel = {
       | "accountId"
       | "colorTheme"
       | "createdAt"
+      | "customTheme"
+      | "customTheme.alpha"
+      | "customTheme.colorHex"
       | "displayMode"
       | "fontSize"
+      | "hoverPopoversEnabled"
       | "ownerMondayUserId"
       | "pageSize"
       | "recordSource"
@@ -642,6 +814,45 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayUsers: {
+    document: {
+      email: string | null;
+      firstSeenAt: number;
+      lastSeenAt: number;
+      lastSeenSource: string;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      name: string | null;
+      _id: Id<"mondayUsers">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "email"
+      | "firstSeenAt"
+      | "lastSeenAt"
+      | "lastSeenSource"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "name";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account: ["mondayAccountId", "_creationTime"];
+      by_account_and_user: ["mondayAccountId", "mondayUserId", "_creationTime"];
+      by_account_and_user_and_app_client: [
+        "mondayAccountId",
+        "mondayUserId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   outlookConnections: {
     document: {
       accessTokenExpiresAt: number;
@@ -686,6 +897,191 @@ export type DataModel = {
         "_creationTime",
       ];
       by_monday_user: ["mondayAccountId", "mondayUserId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookGraphSubscriptions: {
+    document: {
+      changeType: string;
+      clientState: string;
+      connectionEmail: string | null;
+      createdAt: number;
+      expirationDateTime: string;
+      expirationTimestamp: number;
+      lastError: string | null;
+      lastRenewedAt: number | null;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      notificationUrl: string;
+      resource: string;
+      status: "active" | "expired" | "deleted" | "error";
+      subscriptionId: string;
+      updatedAt: number;
+      _id: Id<"outlookGraphSubscriptions">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "changeType"
+      | "clientState"
+      | "connectionEmail"
+      | "createdAt"
+      | "expirationDateTime"
+      | "expirationTimestamp"
+      | "lastError"
+      | "lastRenewedAt"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "notificationUrl"
+      | "resource"
+      | "status"
+      | "subscriptionId"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_monday_identity: [
+        "mondayAccountId",
+        "mondayUserId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+      by_status_and_expirationTimestamp: [
+        "status",
+        "expirationTimestamp",
+        "_creationTime",
+      ];
+      by_subscriptionId: ["subscriptionId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookInboundMessages: {
+    document: {
+      contactItemId: string | null;
+      conversationId: string | null;
+      correlationConfidence: "high" | "medium" | "low" | null;
+      correlationMethod:
+        | "inReplyTo"
+        | "conversationId"
+        | "senderEmail"
+        | "none"
+        | null;
+      createdAt: number;
+      dedupeKey: string;
+      errorMessage: string | null;
+      fromEmail: string;
+      graphMessageId: string;
+      inReplyTo: string | null;
+      internetMessageId: string | null;
+      matchedContactEmail: string | null;
+      mirrorMondaySubitemId: string | null;
+      mirrorMondayUpdateId: string | null;
+      mirrorTouchId: string | null;
+      outboundMessageId?: Id<"outlookOutboundMessages">;
+      parsedBody: string | null;
+      rawBodyPreview: string | null;
+      receivedAt: number;
+      status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      subject: string;
+      updatedAt: number;
+      _id: Id<"outlookInboundMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "contactItemId"
+      | "conversationId"
+      | "correlationConfidence"
+      | "correlationMethod"
+      | "createdAt"
+      | "dedupeKey"
+      | "errorMessage"
+      | "fromEmail"
+      | "graphMessageId"
+      | "inReplyTo"
+      | "internetMessageId"
+      | "matchedContactEmail"
+      | "mirrorMondaySubitemId"
+      | "mirrorMondayUpdateId"
+      | "mirrorTouchId"
+      | "outboundMessageId"
+      | "parsedBody"
+      | "rawBodyPreview"
+      | "receivedAt"
+      | "status"
+      | "subject"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_contactItemId: ["contactItemId", "_creationTime"];
+      by_conversationId: ["conversationId", "_creationTime"];
+      by_dedupeKey: ["dedupeKey", "_creationTime"];
+      by_internetMessageId: ["internetMessageId", "_creationTime"];
+      by_status_and_updatedAt: ["status", "updatedAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  outlookOutboundMessages: {
+    document: {
+      actingMondayUserId?: string;
+      connectionEmail: string | null;
+      contactItemId: string | null;
+      conversationId: string | null;
+      correlationToken: string | null;
+      createdAt: number;
+      graphMessageId: string | null;
+      internetMessageId: string | null;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      mondayUserId: string;
+      recipientEmail: string;
+      sentAt: number;
+      status: "pending_lookup" | "identified";
+      subject: string;
+      updatedAt: number;
+      _id: Id<"outlookOutboundMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "actingMondayUserId"
+      | "connectionEmail"
+      | "contactItemId"
+      | "conversationId"
+      | "correlationToken"
+      | "createdAt"
+      | "graphMessageId"
+      | "internetMessageId"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "mondayUserId"
+      | "recipientEmail"
+      | "sentAt"
+      | "status"
+      | "subject"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_contactItemId: ["contactItemId", "_creationTime"];
+      by_conversationId: ["conversationId", "_creationTime"];
+      by_correlationToken: ["correlationToken", "_creationTime"];
+      by_identity_and_sentAt: [
+        "mondayAccountId",
+        "mondayUserId",
+        "sentAt",
+        "_creationTime",
+      ];
+      by_internetMessageId: ["internetMessageId", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};

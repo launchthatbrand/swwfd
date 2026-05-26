@@ -99,6 +99,46 @@ interface TouchRangeBackfillJob {
   lastError?: string | null;
 }
 
+interface HireEventBackfillJob {
+  jobId: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  workflowId?: string;
+  monthKey: string;
+  dateFrom: string;
+  dateTo: string;
+  dryRun: boolean;
+  contactBoardId: string;
+  subitemBoardId?: string | null;
+  pageSize: number;
+  currentCursor?: string | null;
+  processedContacts: number;
+  inRangeContacts: number;
+  createdEvents: number;
+  skippedEvents: number;
+  errorsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  lastError?: string | null;
+}
+
+interface LastInteractionBackfillResult {
+  monthKey: string;
+  dateFrom: string;
+  dateTo: string;
+  dryRun: boolean;
+  pageSize: number;
+  processedContacts: number;
+  registeredContacts: number;
+  registeredWithInteraction: number;
+  registeredWithoutInteraction: number;
+  contactsAlreadyCurrent: number;
+  contactsWouldUpdate: number;
+  contactsUpdated: number;
+  errorsCount: number;
+  errorSamples: string[];
+}
+
 export default function MondayToolsPage() {
   const [job, setJob] = useState<BackfillJob | null>(null);
   const [csvJob, setCsvJob] = useState<CsvExportJob | null>(null);
@@ -140,6 +180,22 @@ export default function MondayToolsPage() {
   const [touchRangeDryRun, setTouchRangeDryRun] = useState(true);
   const [startingTouchRange, setStartingTouchRange] = useState(false);
   const [cancellingTouchRange, setCancellingTouchRange] = useState(false);
+  const [hireEventJob, setHireEventJob] = useState<HireEventBackfillJob | null>(null);
+  const [hireEventMonthKey, setHireEventMonthKey] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
+  const [hireEventPageSize, setHireEventPageSize] = useState("50");
+  const [hireEventDryRun, setHireEventDryRun] = useState(true);
+  const [startingHireEventBackfill, setStartingHireEventBackfill] = useState(false);
+  const [cancellingHireEventBackfill, setCancellingHireEventBackfill] = useState(false);
+  const [lastInteractionMonthKey, setLastInteractionMonthKey] = useState(
+    () => new Date().toISOString().slice(0, 7),
+  );
+  const [lastInteractionPageSize, setLastInteractionPageSize] = useState("100");
+  const [lastInteractionDryRun, setLastInteractionDryRun] = useState(true);
+  const [runningLastInteractionBackfill, setRunningLastInteractionBackfill] = useState(false);
+  const [lastInteractionResult, setLastInteractionResult] =
+    useState<LastInteractionBackfillResult | null>(null);
 
   const refreshTouchRangeStatus = async () => {
     try {
@@ -156,6 +212,28 @@ export default function MondayToolsPage() {
       setTouchRangeJob(data.job ?? null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to load touch range status");
+    }
+  };
+
+  const refreshHireEventBackfillStatus = async () => {
+    try {
+      const response = await fetch("/api/monday/tools/hire-events-backfill/status", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        job?: HireEventBackfillJob | null;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load hire event backfill status");
+      }
+      setHireEventJob(data.job ?? null);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to load hire event backfill status",
+      );
     }
   };
 
@@ -200,6 +278,94 @@ export default function MondayToolsPage() {
       toast.error(error instanceof Error ? error.message : "Failed to cancel");
     } finally {
       setCancellingTouchRange(false);
+    }
+  };
+
+  const startHireEventBackfill = async () => {
+    setStartingHireEventBackfill(true);
+    try {
+      const parsedPageSize = Number(hireEventPageSize);
+      const response = await fetch("/api/monday/tools/hire-events-backfill/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          monthKey: hireEventMonthKey.trim(),
+          dryRun: hireEventDryRun,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to start hire event backfill");
+      }
+      toast.success("Hire event backfill started");
+      await refreshHireEventBackfillStatus();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to start hire event backfill",
+      );
+    } finally {
+      setStartingHireEventBackfill(false);
+    }
+  };
+
+  const cancelHireEventBackfill = async () => {
+    setCancellingHireEventBackfill(true);
+    try {
+      const response = await fetch("/api/monday/tools/hire-events-backfill/cancel", {
+        method: "POST",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as { ok: boolean; error?: string };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to cancel hire event backfill");
+      }
+      toast.success("Hire event backfill cancelled");
+      await refreshHireEventBackfillStatus();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to cancel hire event backfill",
+      );
+    } finally {
+      setCancellingHireEventBackfill(false);
+    }
+  };
+
+  const runLastInteractionBackfill = async () => {
+    setRunningLastInteractionBackfill(true);
+    try {
+      const parsedPageSize = Number(lastInteractionPageSize);
+      const response = await fetch("/api/monday/tools/last-interaction-backfill-month", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          monthKey: lastInteractionMonthKey.trim(),
+          dryRun: lastInteractionDryRun,
+          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        result?: LastInteractionBackfillResult;
+      };
+      if (!response.ok || !data.ok || !data.result) {
+        throw new Error(data.error ?? "Failed to run last interaction backfill");
+      }
+      setLastInteractionResult(data.result);
+      toast.success(
+        data.result.dryRun
+          ? "Last interaction dry-run complete"
+          : "Last interaction backfill complete",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to run last interaction backfill",
+      );
+    } finally {
+      setRunningLastInteractionBackfill(false);
     }
   };
 
@@ -279,6 +445,7 @@ export default function MondayToolsPage() {
     void refreshCsvStatus();
     void refreshMonthlyMigrationStatus();
     void refreshTouchRangeStatus();
+    void refreshHireEventBackfillStatus();
   }, []);
 
   useEffect(() => {
@@ -286,11 +453,13 @@ export default function MondayToolsPage() {
     const csvStatus = csvJob?.status;
     const monthlyStatus = monthlyJob?.status;
     const touchRangeStatus = touchRangeJob?.status;
+    const hireEventStatus = hireEventJob?.status;
     if (
       status !== "running" &&
       csvStatus !== "running" &&
       monthlyStatus !== "running" &&
-      touchRangeStatus !== "running"
+      touchRangeStatus !== "running" &&
+      hireEventStatus !== "running"
     ) {
       return;
     }
@@ -299,9 +468,16 @@ export default function MondayToolsPage() {
       void refreshCsvStatus();
       void refreshMonthlyMigrationStatus();
       void refreshTouchRangeStatus();
+      void refreshHireEventBackfillStatus();
     }, 5000);
     return () => clearInterval(timer);
-  }, [job?.status, csvJob?.status, monthlyJob?.status, touchRangeJob?.status]);
+  }, [
+    job?.status,
+    csvJob?.status,
+    monthlyJob?.status,
+    touchRangeJob?.status,
+    hireEventJob?.status,
+  ]);
 
   const startBackfill = async () => {
     setStarting(true);
@@ -1141,6 +1317,255 @@ export default function MondayToolsPage() {
             </div>
           ) : (
             <p className="text-muted-foreground text-sm">No touch range backfill job found.</p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Hire Event Backfill (By Month)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Creates missing <code className="bg-muted rounded px-1 text-xs">Hire Event</code>{" "}
+            subitems from contacts whose Hire Date falls in the selected month. Run manually
+            month-by-month as needed.
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Month:</span>
+              <input
+                type="month"
+                className="rounded border px-2 py-1 text-sm"
+                value={hireEventMonthKey}
+                onChange={(event) => setHireEventMonthKey(event.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
+                value={hireEventPageSize}
+                min={25}
+                max={200}
+                onChange={(event) => setHireEventPageSize(event.target.value)}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={hireEventDryRun}
+                onChange={(event) => setHireEventDryRun(event.target.checked)}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void startHireEventBackfill()}
+              disabled={startingHireEventBackfill}
+            >
+              {startingHireEventBackfill
+                ? "Starting..."
+                : hireEventDryRun
+                  ? "Start Dry Run"
+                  : "Start Backfill"}
+            </Button>
+            <Button variant="outline" onClick={() => void refreshHireEventBackfillStatus()}>
+              Refresh Status
+            </Button>
+            {hireEventJob?.status === "running" ? (
+              <Button
+                variant="destructive"
+                onClick={() => void cancelHireEventBackfill()}
+                disabled={cancellingHireEventBackfill}
+              >
+                {cancellingHireEventBackfill ? "Cancelling..." : "Cancel"}
+              </Button>
+            ) : null}
+          </div>
+          {hireEventJob ? (
+            <div className="space-y-1 rounded border p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Status:</span>
+                <Badge variant={getStatusBadgeVariant(hireEventJob.status)}>
+                  {hireEventJob.status}
+                </Badge>
+                {hireEventJob.dryRun ? (
+                  <Badge variant="outline" className="text-muted-foreground">
+                    dry run
+                  </Badge>
+                ) : null}
+              </div>
+              <p>
+                <span className="font-medium">Month:</span> {hireEventJob.monthKey} ·{" "}
+                <span className="font-medium">Range:</span> {hireEventJob.dateFrom} →{" "}
+                {hireEventJob.dateTo}
+              </p>
+              <p>
+                <span className="font-medium">Scanned:</span>{" "}
+                {hireEventJob.processedContacts.toLocaleString()} contacts ·{" "}
+                <span className="font-medium">In Range:</span>{" "}
+                {hireEventJob.inRangeContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">
+                  {hireEventJob.dryRun ? "Would Create:" : "Created:"}
+                </span>{" "}
+                {hireEventJob.createdEvents.toLocaleString()} ·{" "}
+                <span className="font-medium">Skipped:</span>{" "}
+                {hireEventJob.skippedEvents.toLocaleString()} ·{" "}
+                <span className="font-medium">Errors:</span>{" "}
+                {hireEventJob.errorsCount.toLocaleString()}
+              </p>
+              {hireEventJob.subitemBoardId ? (
+                <p>
+                  <span className="font-medium">Subitem Board ID:</span>{" "}
+                  {hireEventJob.subitemBoardId}
+                </p>
+              ) : null}
+              <p>
+                <span className="font-medium">Started:</span>{" "}
+                {new Date(hireEventJob.startedAt).toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Updated:</span>{" "}
+                {new Date(hireEventJob.updatedAt).toLocaleString()}
+              </p>
+              {hireEventJob.finishedAt ? (
+                <p>
+                  <span className="font-medium">Finished:</span>{" "}
+                  {new Date(hireEventJob.finishedAt).toLocaleString()}
+                </p>
+              ) : null}
+              {hireEventJob.lastError ? (
+                <p className="text-destructive">
+                  <span className="font-medium">Last Error:</span> {hireEventJob.lastError}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No hire event backfill job found.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Last Interaction Date Backfill (By Month)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-muted-foreground text-sm">
+            Backfills <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code> on
+            parent contacts for records whose{" "}
+            <code className="bg-muted rounded px-1 text-xs">date1__1</code> registration date is
+            in the selected month, then uses each matching contact&apos;s latest subitem date as
+            the last interaction date.
+          </p>
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Month:</span>
+              <input
+                type="month"
+                className="rounded border px-2 py-1 text-sm"
+                value={lastInteractionMonthKey}
+                onChange={(event) => setLastInteractionMonthKey(event.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
+                value={lastInteractionPageSize}
+                min={10}
+                max={200}
+                onChange={(event) => setLastInteractionPageSize(event.target.value)}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={lastInteractionDryRun}
+                onChange={(event) => setLastInteractionDryRun(event.target.checked)}
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void runLastInteractionBackfill()}
+              disabled={runningLastInteractionBackfill}
+            >
+              {runningLastInteractionBackfill
+                ? "Running..."
+                : lastInteractionDryRun
+                  ? "Run Dry Run"
+                  : "Run Backfill"}
+            </Button>
+          </div>
+          {runningLastInteractionBackfill ? (
+            <p className="text-muted-foreground text-sm">
+              Backfill is running... this can take up to a minute on larger months.
+            </p>
+          ) : null}
+          {lastInteractionResult ? (
+            <div className="space-y-1 rounded border p-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Run Mode:</span>
+                <Badge variant={lastInteractionResult.dryRun ? "outline" : "secondary"}>
+                  {lastInteractionResult.dryRun ? "Dry Run" : "Write Mode"}
+                </Badge>
+              </div>
+              <p>
+                <span className="font-medium">Month:</span> {lastInteractionResult.monthKey} ·{" "}
+                <span className="font-medium">Range:</span> {lastInteractionResult.dateFrom} →{" "}
+                {lastInteractionResult.dateTo}
+              </p>
+              <p>
+                <span className="font-medium">Scanned Contacts:</span>{" "}
+                {lastInteractionResult.processedContacts.toLocaleString()} ·{" "}
+                <span className="font-medium">Registered In Month:</span>{" "}
+                {lastInteractionResult.registeredContacts.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">Registered + Has Subitems:</span>{" "}
+                {lastInteractionResult.registeredWithInteraction.toLocaleString()} ·{" "}
+                <span className="font-medium">Registered + No Subitems:</span>{" "}
+                {lastInteractionResult.registeredWithoutInteraction.toLocaleString()} ·{" "}
+                <span className="font-medium">Already Current:</span>{" "}
+                {lastInteractionResult.contactsAlreadyCurrent.toLocaleString()}
+              </p>
+              <p>
+                <span className="font-medium">
+                  {lastInteractionResult.dryRun ? "Would Update:" : "Updated:"}
+                </span>{" "}
+                {(
+                  lastInteractionResult.dryRun
+                    ? lastInteractionResult.contactsWouldUpdate
+                    : lastInteractionResult.contactsUpdated
+                ).toLocaleString()} ·{" "}
+                <span className="font-medium">Errors:</span>{" "}
+                {lastInteractionResult.errorsCount.toLocaleString()}
+              </p>
+              {lastInteractionResult.errorSamples.length > 0 ? (
+                <div className="space-y-1">
+                  <p className="font-medium text-destructive">Sample Errors</p>
+                  {lastInteractionResult.errorSamples.map((sampleError) => (
+                    <p key={sampleError} className="text-destructive">
+                      {sampleError}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No last interaction backfill run yet.
+            </p>
           )}
         </CardContent>
       </Card>

@@ -1,10 +1,26 @@
 import "server-only";
 
 import { env } from "~/env";
-import { callMondayGraphQL, upsertMondayTouchRecord } from "./client";
+import {
+  callMondayGraphQL,
+  upsertMondayHireEventSubitem,
+  upsertMondayTouchRecord,
+} from "./client";
 
 const MONTHLY_BOARD_RELATION_COLUMN_ID = "board_relation__1";
-const DEFAULT_MONTHLY_BOARD_ID = "18406885282";
+const MONTH_KEY_PATTERN = /^\d{4}-\d{2}$/;
+const LINKED_ITEM_CHUNK_SIZE = 25;
+const LINKED_ITEM_CHUNK_CONCURRENCY = 3;
+const LINKED_ITEM_CHUNK_RETRY_LIMIT = 2;
+const LINKED_ITEM_CHUNK_RETRY_BASE_DELAY_MS = 300;
+const CONTACT_HIRE_DATE_COLUMN_ID = "date_mkty234p";
+const CONTACT_TAGS_COLUMN_ID = "dropdown_mkvw578t";
+const HIRED_PROGRESS_COLUMN_ID = "color_mm1djwjj";
+
+export interface MonthlyBoardMapping {
+  monthKey: string;
+  boardId: string;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +62,16 @@ interface SourceItem {
   boardName: string | null;
   updates: SourceUpdate[];
   subitems: SourceSubitem[];
+}
+
+interface SyncPhaseTimings {
+  resolveContactMs: number;
+  monthlyLookupMs: number;
+  dedupeLoadMs: number;
+  linkedDetailLoadMs: number;
+  targetMetadataMs: number;
+  syncReplayMs: number;
+  totalMs: number;
 }
 
 export interface SyncResult {
@@ -149,6 +175,79 @@ const parseSubitemBoardIdFromSubtasksColumn = (column: MondayColumn | null) => {
   return id.length > 0 ? id : null;
 };
 
+const resolveMonthKeyFromIso = (value: string | null | undefined) => {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return null;
+  return new Date(parsed).toISOString().slice(0, 7);
+};
+
+const splitTags = (value: string | null | undefined) =>
+  (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+
+const includesTag = (tags: string[], needle: string) =>
+  tags.some((entry) => entry.includes(needle));
+
+const detectHireSegments = (statusText: string, hireDate: string | null, tagsText: string) => {
+  const tags = splitTags(tagsText);
+  const normalizedStatus = statusText.trim().toLowerCase();
+  const isCandidatesGroup =
+    includesTag(tags, "candidate") &&
+    (includesTag(tags, "group") || includesTag(tags, "train"));
+  const isReentry = includesTag(tags, "reentry");
+  const isVeteran = includesTag(tags, "veteran");
+  const isHired =
+    normalizedStatus.includes("hired") || !!hireDate || includesTag(tags, "hired");
+  return {
+    isCandidatesGroup,
+    isReentry,
+    isVeteran,
+    isHired,
+  };
+};
+
+const normalizeMonthlyBoardMappings = (values: MonthlyBoardMapping[]) => {
+  const deduped = new Map<string, MonthlyBoardMapping>();
+  for (const entry of values) {
+    const monthKey = entry.monthKey.trim();
+    const boardId = entry.boardId.trim();
+    if (!MONTH_KEY_PATTERN.test(monthKey) || boardId.length === 0) continue;
+    deduped.set(monthKey, { monthKey, boardId });
+  }
+  return Array.from(deduped.values()).sort((a, b) =>
+    a.monthKey.localeCompare(b.monthKey),
+  );
+};
+
+const sleep = async (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
+const mapWithConcurrency = async <TValue, TResult>(
+  items: TValue[],
+  concurrency: number,
+  worker: (item: TValue, index: number) => Promise<TResult>,
+) => {
+  if (items.length === 0) return [] as TResult[];
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await worker(items[index] as TValue, index);
+      }
+    }),
+  );
+  return results;
+};
+
 // ---------------------------------------------------------------------------
 // Migration body builder
 // ---------------------------------------------------------------------------
@@ -234,13 +333,12 @@ const mapColumnValueForTarget = (sourceColumn: SourceColumnValue, targetType: st
 
 const ONBOARDING_STEP_COLUMN_MAP: Array<{ patterns: string[]; columnId: string }> = [
   { patterns: ["welcome email"], columnId: "color_mm1db321" },
-  { patterns: ["follow-up", "followup", "follow up", "program lead", "pl contact"], columnId: "color_mm1dwtvd" },
-  { patterns: ["questionnaire", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
-  { patterns: ["resume referral", "referred"], columnId: "color_mm1dgeqy" },
-  { patterns: ["resume received", "resume"], columnId: "color_mm1dnr11" },
-  { patterns: ["interview"], columnId: "color_mm1d80yc" },
-  { patterns: ["hired"], columnId: "color_mm1djwjj" },
-  { patterns: ["retained", "30-60-90"], columnId: "color_mm1d4e3y" },
+  { patterns: ["questionnaire sent", "send questionnaire"], columnId: "color_mm3ggf4t" },
+  { patterns: ["screening complete", "questionnaire update", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
+  { patterns: ["resume submitted", "resume received", "resume referral", "referred", "resume"], columnId: "color_mm1dnr11" },
+  { patterns: ["interview"], columnId: "color_mm1dgeqy" },
+  { patterns: ["hired"], columnId: "color_mm1d80yc" },
+  { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },
 ];
 
 const classifySubitemForProgressColumn = (name: string): string | null => {
@@ -259,7 +357,10 @@ const classifySubitemForProgressColumn = (name: string): string | null => {
  * Search the monthly board for items whose board_relation__1 column links
  * back to the given API board item ID.
  */
-const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBoardId: string) => {
+const findMonthlyBoardItemsForContact = async (
+  apiBoardItemId: string,
+  monthlyBoardId: string,
+) => {
   interface Data {
     boards?: Array<{
       items_page?: {
@@ -281,6 +382,53 @@ const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBo
   let cursor: string | null = null;
   let page = 0;
   const maxPages = 10;
+  let usedFallbackScan = false;
+  let relationQueryError: string | null = null;
+
+  const queryWithRelationRule = `query ($boardId: ID!, $limit: Int!, $apiItemId: String!) {
+    boards(ids: [$boardId]) {
+      items_page(
+        limit: $limit
+        query_params: {
+          rules: [{
+            column_id: "${colId}"
+            compare_value: [$apiItemId]
+            operator: any_of
+          }]
+        }
+      ) {
+        cursor
+        items { id }
+      }
+    }
+  }`;
+
+  try {
+    const relationData = await callMondayGraphQL<Data>(
+      queryWithRelationRule,
+      {
+        boardId: monthlyBoardId,
+        limit: 500,
+        apiItemId: apiBoardItemId,
+      },
+    );
+    const relationItems = relationData.boards?.[0]?.items_page?.items ?? [];
+    for (const item of relationItems) {
+      if (item.id?.trim()) matchedIds.push(item.id.trim());
+    }
+    if (matchedIds.length > 0) {
+      return {
+        matchedIds: Array.from(new Set(matchedIds)),
+        usedFallbackScan,
+        relationQueryError,
+      };
+    }
+    // If filter succeeds but returns no rows, still run fallback scan for compatibility.
+    usedFallbackScan = true;
+  } catch (error) {
+    usedFallbackScan = true;
+    relationQueryError = error instanceof Error ? error.message : String(error);
+  }
 
   const queryWithCursor = `query ($boardId: ID!, $limit: Int!, $cursor: String!) {
     boards(ids: [$boardId]) {
@@ -331,7 +479,11 @@ const findMonthlyBoardItemsForContact = async (apiBoardItemId: string, monthlyBo
     if (!cursor || items.length === 0) break;
   }
 
-  return matchedIds;
+  return {
+    matchedIds: Array.from(new Set(matchedIds)),
+    usedFallbackScan,
+    relationQueryError,
+  };
 };
 
 const fetchContactItem = async (_boardId: string, itemId: string) => {
@@ -339,6 +491,7 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
     items?: Array<{
       id?: string;
       name?: string;
+      created_at?: string;
       column_values?: Array<{
         id?: string;
         value?: string;
@@ -354,6 +507,7 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
       items(ids: $itemIds) {
         id
         name
+        created_at
         column_values {
           id
           value
@@ -365,10 +519,18 @@ const fetchContactItem = async (_boardId: string, itemId: string) => {
     }`,
     { itemIds: [itemId] },
   );
-  return data.items?.[0] ?? null;
+  const item = data.items?.[0];
+  if (!item) return null;
+  return {
+    id: item.id ?? "",
+    name: item.name ?? "",
+    createdAt: item.created_at ?? null,
+    columnValues: item.column_values ?? [],
+    subitems: item.subitems ?? [],
+  };
 };
 
-const fetchLinkedItemWithDetails = async (itemId: string) => {
+const fetchLinkedItemsWithDetails = async (itemIds: string[]) => {
   interface Data {
     items?: Array<{
       id?: string;
@@ -394,59 +556,100 @@ const fetchLinkedItemWithDetails = async (itemId: string) => {
       }>;
     }>;
   }
-  const data = await callMondayGraphQL<Data>(
-    `query GetLinkedItemDetails($itemIds: [ID!]!) {
-      items(ids: $itemIds) {
-        id
-        name
-        board { id name }
-        updates(limit: 200) {
-          id body created_at
-          creator { name }
-        }
-        subitems {
-          id name created_at
-          updates(limit: 200) {
-            id body created_at
-            creator { name }
-          }
-          column_values { id type text value }
-        }
-      }
-    }`,
-    { itemIds: [itemId] },
-  );
-  const item = data.items?.[0];
-  if (!item?.id) return null;
 
-  const mapUpdate = (u: NonNullable<typeof item.updates>[number]): SourceUpdate => ({
+  const mapUpdate = (u: {
+    id?: string;
+    body?: string;
+    created_at?: string;
+    creator?: { name?: string } | null;
+  }): SourceUpdate => ({
     id: String(u.id ?? ""),
     body: u.body ?? "",
     createdAt: u.created_at ?? null,
     creatorName: u.creator?.name ?? null,
   });
 
-  const subitems: SourceSubitem[] = (item.subitems ?? []).map((si) => ({
-    id: String(si.id ?? ""),
-    name: (si.name ?? "").trim(),
-    createdAt: si.created_at ?? null,
-    columnValues: (si.column_values ?? []).map((cv) => ({
-      id: cv.id ?? "",
-      type: cv.type ?? "",
-      text: cv.text ?? null,
-      value: cv.value ?? null,
-    })),
-    updates: (si.updates ?? []).map(mapUpdate),
-  }));
+  const queryText = `query GetLinkedItemDetails($itemIds: [ID!]!) {
+    items(ids: $itemIds) {
+      id
+      name
+      board { id name }
+      updates(limit: 200) {
+        id body created_at
+        creator { name }
+      }
+      subitems {
+        id name created_at
+        updates(limit: 200) {
+          id body created_at
+          creator { name }
+        }
+        column_values { id type text value }
+      }
+    }
+  }`;
+
+  const chunks: string[][] = [];
+  for (let index = 0; index < itemIds.length; index += LINKED_ITEM_CHUNK_SIZE) {
+    chunks.push(itemIds.slice(index, index + LINKED_ITEM_CHUNK_SIZE));
+  }
+  let retryCount = 0;
+
+  const chunkResults = await mapWithConcurrency(
+    chunks,
+    LINKED_ITEM_CHUNK_CONCURRENCY,
+    async (chunk) => {
+      let attempt = 0;
+      while (true) {
+        try {
+          const data = await callMondayGraphQL<Data>(queryText, { itemIds: chunk });
+          return data.items ?? [];
+        } catch (error) {
+          if (attempt >= LINKED_ITEM_CHUNK_RETRY_LIMIT) {
+            throw error;
+          }
+          const delay = LINKED_ITEM_CHUNK_RETRY_BASE_DELAY_MS * 2 ** attempt;
+          attempt += 1;
+          retryCount += 1;
+          await sleep(delay);
+        }
+      }
+    },
+  );
+  const rawItems = chunkResults.flatMap((chunk) => chunk);
+
+  const mappedItems: SourceItem[] = [];
+  for (const item of rawItems) {
+    if (!item.id?.trim()) continue;
+    const subitems: SourceSubitem[] = (item.subitems ?? [])
+      .map((si) => ({
+        id: String(si.id ?? ""),
+        name: (si.name ?? "").trim(),
+        createdAt: si.created_at ?? null,
+        columnValues: (si.column_values ?? []).map((cv) => ({
+          id: cv.id ?? "",
+          type: cv.type ?? "",
+          text: cv.text ?? null,
+          value: cv.value ?? null,
+        })),
+        updates: (si.updates ?? []).map(mapUpdate),
+      }))
+      .filter((subitem) => subitem.id.trim().length > 0);
+    mappedItems.push({
+      id: String(item.id),
+      name: (item.name ?? "").trim(),
+      boardId: String(item.board?.id ?? ""),
+      boardName: item.board?.name?.trim() ?? null,
+      updates: (item.updates ?? []).map(mapUpdate),
+      subitems,
+    });
+  }
 
   return {
-    id: String(item.id),
-    name: (item.name ?? "").trim(),
-    boardId: String(item.board?.id ?? ""),
-    boardName: item.board?.name?.trim() ?? null,
-    updates: (item.updates ?? []).map(mapUpdate),
-    subitems,
-  } satisfies SourceItem;
+    items: mappedItems,
+    retryCount,
+    chunkCount: chunks.length,
+  };
 };
 
 const fetchBoardColumns = async (boardId: string) => {
@@ -512,22 +715,158 @@ const updateProgressColumn = async (boardId: string, itemId: string, columnId: s
 
 export const syncContactFromConnectedBoards = async (
   itemId: string,
-  options?: { dryRun?: boolean; ownerId?: string; monthlyBoardId?: string },
+  options?: {
+    dryRun?: boolean;
+    ownerId?: string;
+    monthlyBoardId?: string;
+    monthlyBoardMappings?: MonthlyBoardMapping[];
+  },
 ): Promise<SyncResult> => {
+  const syncStartedAt = Date.now();
   const boardId = env.MONDAY_BOARD_ID?.trim() ?? "";
   if (!boardId) throw new Error("Missing MONDAY_BOARD_ID");
 
   const warnings: string[] = [];
-  const monthlyBoardId = options?.monthlyBoardId?.trim() || DEFAULT_MONTHLY_BOARD_ID;
+  const timings: SyncPhaseTimings = {
+    resolveContactMs: 0,
+    monthlyLookupMs: 0,
+    dedupeLoadMs: 0,
+    linkedDetailLoadMs: 0,
+    targetMetadataMs: 0,
+    syncReplayMs: 0,
+    totalMs: 0,
+  };
+
+  const boardColumnsCache = new Map<string, MondayColumn[]>();
+  const boardSubitemBoardIdCache = new Map<string, string | null>();
+  const boardColumnsByTitleCache = new Map<string, Map<string, MondayColumn[]>>();
+  const boardColumnsByIdCache = new Map<string, Map<string, MondayColumn>>();
+
+  const getCachedBoardColumns = async (targetBoardId: string) => {
+    const normalizedBoardId = targetBoardId.trim();
+    if (!normalizedBoardId) return [] as MondayColumn[];
+    const cached = boardColumnsCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const fetched = await fetchBoardColumns(normalizedBoardId);
+    boardColumnsCache.set(normalizedBoardId, fetched);
+    return fetched;
+  };
+
+  const getCachedSubitemBoardId = async (targetBoardId: string) => {
+    const normalizedBoardId = targetBoardId.trim();
+    if (!normalizedBoardId) return null;
+    if (boardSubitemBoardIdCache.has(normalizedBoardId)) {
+      return boardSubitemBoardIdCache.get(normalizedBoardId) ?? null;
+    }
+    const parentColumns = await getCachedBoardColumns(normalizedBoardId);
+    const subtasksColumn =
+      parentColumns.find((column) => normalizeText(column.type) === "subtasks") ?? null;
+    const resolvedSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(subtasksColumn);
+    boardSubitemBoardIdCache.set(normalizedBoardId, resolvedSubitemBoardId);
+    return resolvedSubitemBoardId;
+  };
+
+  const getCachedColumnsByTitle = (targetBoardId: string, columns: MondayColumn[]) => {
+    const normalizedBoardId = targetBoardId.trim();
+    const cached = boardColumnsByTitleCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const mappedByTitle = new Map<string, MondayColumn[]>();
+    for (const column of columns) {
+      const title = normalizeText(column.title);
+      if (!title) continue;
+      const list = mappedByTitle.get(title) ?? [];
+      list.push(column);
+      mappedByTitle.set(title, list);
+    }
+    boardColumnsByTitleCache.set(normalizedBoardId, mappedByTitle);
+    return mappedByTitle;
+  };
+
+  const getCachedColumnsById = (targetBoardId: string, columns: MondayColumn[]) => {
+    const normalizedBoardId = targetBoardId.trim();
+    const cached = boardColumnsByIdCache.get(normalizedBoardId);
+    if (cached) return cached;
+    const mappedById = new Map<string, MondayColumn>();
+    for (const column of columns) {
+      const id = column.id?.trim() ?? "";
+      if (!id) continue;
+      mappedById.set(id, column);
+    }
+    boardColumnsByIdCache.set(normalizedBoardId, mappedById);
+    return mappedById;
+  };
 
   // 1. Fetch contact item from the API board
+  const resolveContactStart = Date.now();
   const contactItem = await fetchContactItem(boardId, itemId);
+  timings.resolveContactMs = Date.now() - resolveContactStart;
   if (!contactItem) throw new Error(`Contact item ${itemId} not found`);
+  const contactColumns = contactItem.columnValues ?? [];
+  const contactOwnerIdFromColumns = contactColumns
+    .map((column) => {
+      const ids = parsePeopleColumnValue(column.value);
+      return ids.length > 0 ? String(ids[0] ?? "").trim() : "";
+    })
+    .find((ownerId) => ownerId.length > 0);
+  const resolvedPrimaryOwnerId =
+    options?.ownerId?.trim() || contactOwnerIdFromColumns || "";
+  const contactHireDateColumn = contactColumns.find(
+    (column) => column.id === CONTACT_HIRE_DATE_COLUMN_ID,
+  );
+  const contactHireDate = parseDateFromColumnValue(
+    contactHireDateColumn?.value,
+    contactHireDateColumn?.text ?? null,
+  );
+  const contactTagsText =
+    contactColumns.find((column) => column.id === CONTACT_TAGS_COLUMN_ID)?.text ?? "";
+  const contactStatusText = "";
+  const contactHireSegments = detectHireSegments(
+    contactStatusText,
+    contactHireDate,
+    contactTagsText,
+  );
+
+  const normalizedMappings = normalizeMonthlyBoardMappings(
+    options?.monthlyBoardMappings ?? [],
+  );
+  const contactMonthKey = resolveMonthKeyFromIso(contactItem.createdAt);
+  const mappedMonthlyBoardId = contactMonthKey
+    ? normalizedMappings.find((entry) => entry.monthKey === contactMonthKey)?.boardId ??
+      ""
+    : "";
+  const monthlyBoardId = options?.monthlyBoardId?.trim() || mappedMonthlyBoardId;
+  if (!monthlyBoardId) {
+    return {
+      ok: true,
+      linkedItemCount: 0,
+      createdParentUpdates: 0,
+      createdSubitems: 0,
+      createdSubitemUpdates: 0,
+      updatedProgressColumns: 0,
+      skippedSubitems: 0,
+      warnings: [
+        contactMonthKey
+          ? `No monthly board mapping found for ${contactMonthKey}`
+          : "Contact created date missing; unable to resolve monthly board mapping",
+      ],
+    };
+  }
 
   // 2. Reverse lookup: find items on the monthly board whose board_relation__1
   //    links back to this API board item
+  const monthlyLookupStart = Date.now();
   console.log("[Sync] Searching monthly board", monthlyBoardId, "for item", itemId, contactItem.name);
-  const linkedIds = await findMonthlyBoardItemsForContact(itemId, monthlyBoardId);
+  const monthlyLookup = await findMonthlyBoardItemsForContact(itemId, monthlyBoardId);
+  const linkedIds = monthlyLookup.matchedIds;
+  timings.monthlyLookupMs = Date.now() - monthlyLookupStart;
+  if (monthlyLookup.usedFallbackScan) {
+    warnings.push("Monthly relation query fallback scan was used");
+    if (monthlyLookup.relationQueryError) {
+      warnings.push(
+        `Monthly relation query failed: ${monthlyLookup.relationQueryError}`,
+      );
+    }
+  }
   console.log("[Sync] Found", linkedIds.length, "monthly board items");
 
   if (linkedIds.length === 0) {
@@ -554,6 +893,7 @@ export const syncContactFromConnectedBoards = async (
 
   // Fetch existing updates on the target item to dedup parent and subitem
   // updates. Synced updates contain "source_entity_id=XYZ" in the body.
+  const dedupeLoadStart = Date.now();
   const existingSyncedEntityIds = new Set<string>();
   {
     interface UpdatesData {
@@ -588,17 +928,33 @@ export const syncContactFromConnectedBoards = async (
     }
     console.log("[Sync] Found", existingSyncedEntityIds.size, "already-synced entity IDs");
   }
+  timings.dedupeLoadMs = Date.now() - dedupeLoadStart;
 
   // 3. Fetch each linked item with full details
-  const sourceItems: SourceItem[] = [];
-  for (const linkedId of linkedIds) {
-    try {
-      const item = await fetchLinkedItemWithDetails(linkedId);
-      if (item) sourceItems.push(item);
-    } catch (err) {
-      warnings.push(`Failed to fetch linked item ${linkedId}: ${err instanceof Error ? err.message : String(err)}`);
+  const linkedDetailsStart = Date.now();
+  let sourceItems: SourceItem[] = [];
+  let linkedDetailRetryCount = 0;
+  let linkedDetailChunkCount = 0;
+  try {
+    const linkedDetailResult = await fetchLinkedItemsWithDetails(linkedIds);
+    sourceItems = linkedDetailResult.items;
+    linkedDetailRetryCount = linkedDetailResult.retryCount;
+    linkedDetailChunkCount = linkedDetailResult.chunkCount;
+  } catch (err) {
+    warnings.push(
+      `Failed to fetch linked items details: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  if (sourceItems.length > 0) {
+    const foundSourceItemIds = new Set(sourceItems.map((sourceItem) => sourceItem.id.trim()));
+    const missingLinkedIds = linkedIds.filter((linkedId) => !foundSourceItemIds.has(linkedId));
+    for (const missingId of missingLinkedIds) {
+      warnings.push(`Linked item ${missingId} was not returned by Monday detail query`);
     }
   }
+  timings.linkedDetailLoadMs = Date.now() - linkedDetailsStart;
 
   if (sourceItems.length === 0) {
     return {
@@ -614,39 +970,42 @@ export const syncContactFromConnectedBoards = async (
   }
 
   // 3. Resolve target subitem board columns for column mapping
-  const targetColumns = await fetchBoardColumns(boardId);
-  const targetSubtasksCol = targetColumns.find((c) => normalizeText(c.type) === "subtasks") ?? null;
-  const targetSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(targetSubtasksCol);
+  const targetMetadataStart = Date.now();
+  const targetColumns = await getCachedBoardColumns(boardId);
+  const targetSubitemBoardId = await getCachedSubitemBoardId(boardId);
   let targetSubitemColumns: MondayColumn[] = [];
   if (targetSubitemBoardId) {
-    targetSubitemColumns = await fetchBoardColumns(targetSubitemBoardId);
+    targetSubitemColumns = await getCachedBoardColumns(targetSubitemBoardId);
   }
-  const targetSubitemByTitle = new Map<string, MondayColumn[]>();
-  for (const col of targetSubitemColumns) {
-    const title = normalizeText(col.title);
-    if (!title) continue;
-    const list = targetSubitemByTitle.get(title) ?? [];
-    list.push(col);
-    targetSubitemByTitle.set(title, list);
-  }
-  const targetSubitemById = new Map(targetSubitemColumns.map((c) => [c.id?.trim() ?? "", c]));
+  const targetSubitemByTitle = getCachedColumnsByTitle(
+    targetSubitemBoardId ?? boardId,
+    targetSubitemColumns,
+  );
+  const targetSubitemById = getCachedColumnsById(
+    targetSubitemBoardId ?? boardId,
+    targetSubitemColumns,
+  );
+  timings.targetMetadataMs = Date.now() - targetMetadataStart;
 
   let createdParentUpdates = 0;
   let createdSubitems = 0;
   let createdSubitemUpdates = 0;
   let skippedSubitems = 0;
+  let createdHireEvents = 0;
+  let skippedHireEvents = 0;
   const progressColumnsToUpdate = new Set<string>();
+  const hireEventDatesToUpsert = new Set<string>();
+  let hasHiredSignalFromSyncedSubitems = false;
   const dryRun = options?.dryRun ?? false;
+  const syncReplayStart = Date.now();
 
   for (const source of sourceItems) {
     // Resolve source subitem board columns
     let sourceSubitemColumnTitleById: Record<string, string> = {};
     if (source.subitems.length > 0) {
-      const sourceBoardColumns = await fetchBoardColumns(source.boardId);
-      const sourceSubtasksCol = sourceBoardColumns.find((c) => normalizeText(c.type) === "subtasks") ?? null;
-      const sourceSubitemBoardId = parseSubitemBoardIdFromSubtasksColumn(sourceSubtasksCol);
+      const sourceSubitemBoardId = await getCachedSubitemBoardId(source.boardId);
       if (sourceSubitemBoardId) {
-        const sourceSubitemCols = await fetchBoardColumns(sourceSubitemBoardId);
+        const sourceSubitemCols = await getCachedBoardColumns(sourceSubitemBoardId);
         sourceSubitemColumnTitleById = Object.fromEntries(
           sourceSubitemCols
             .filter((c) => c.id && c.title)
@@ -690,6 +1049,19 @@ export const syncContactFromConnectedBoards = async (
       // was already synced — re-syncs should fix any missing progress steps.
       const progressColId = classifySubitemForProgressColumn(subitem.name);
       if (progressColId) {
+        if (progressColId === HIRED_PROGRESS_COLUMN_ID) {
+          hasHiredSignalFromSyncedSubitems = true;
+          const dateColumn =
+            subitem.columnValues.find(
+              (column) =>
+                normalizeText(column.id) === "date0" ||
+                normalizeText(column.type) === "date",
+            ) ?? null;
+          const parsedDate =
+            parseDateFromColumnValue(dateColumn?.value, dateColumn?.text ?? null) ??
+            (subitem.createdAt ? new Date(subitem.createdAt).toISOString().slice(0, 10) : null);
+          if (parsedDate) hireEventDatesToUpsert.add(parsedDate);
+        }
         const statusCol = subitem.columnValues.find(
           (c) => c.id === "status9" || normalizeText(c.type) === "color",
         );
@@ -809,6 +1181,7 @@ export const syncContactFromConnectedBoards = async (
       }
     }
   }
+  timings.syncReplayMs = Date.now() - syncReplayStart;
 
   // 4. Set progress columns
   let updatedProgressColumns = 0;
@@ -823,13 +1196,49 @@ export const syncContactFromConnectedBoards = async (
     }
   }
 
-  // 5. Upsert touch record
-  if (!dryRun && options?.ownerId) {
+  // 5. Upsert canonical hire events for metrics compatibility.
+  if (!dryRun && resolvedPrimaryOwnerId) {
+    const shouldUpsertHireEvents =
+      hasHiredSignalFromSyncedSubitems || contactHireSegments.isHired;
+    if (shouldUpsertHireEvents) {
+      if (contactHireDate) {
+        hireEventDatesToUpsert.add(contactHireDate);
+      }
+      if (hireEventDatesToUpsert.size === 0) {
+        hireEventDatesToUpsert.add(new Date().toISOString().slice(0, 10));
+      }
+      for (const hireDate of hireEventDatesToUpsert) {
+        try {
+          const result = await upsertMondayHireEventSubitem({
+            contactItemId: itemId,
+            contactName: contactItem.name ?? "",
+            ownerId: resolvedPrimaryOwnerId,
+            hireDate,
+            source: "sync_user",
+            segments: {
+              isCandidatesGroup: contactHireSegments.isCandidatesGroup,
+              isReentry: contactHireSegments.isReentry,
+              isVeteran: contactHireSegments.isVeteran,
+            },
+          });
+          if (result.upserted === "created") createdHireEvents += 1;
+          else skippedHireEvents += 1;
+        } catch (err) {
+          warnings.push(
+            `Failed to upsert canonical hire event (${hireDate}): ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+  }
+
+  // 6. Upsert touch record
+  if (!dryRun && resolvedPrimaryOwnerId) {
     try {
       await upsertMondayTouchRecord({
         contactItemId: itemId,
         contactName: contactItem.name ?? "",
-        ownerId: options.ownerId,
+        ownerId: resolvedPrimaryOwnerId,
         source: "sync",
       });
     } catch {
@@ -837,7 +1246,22 @@ export const syncContactFromConnectedBoards = async (
     }
   }
 
-  console.log("[Sync] Complete for", itemId, { linkedItems: sourceItems.length, createdParentUpdates, createdSubitems, createdSubitemUpdates, updatedProgressColumns, skippedSubitems, warnings: warnings.length });
+  timings.totalMs = Date.now() - syncStartedAt;
+  console.log("[Sync] Complete for", itemId, {
+    linkedItems: sourceItems.length,
+    createdParentUpdates,
+    createdSubitems,
+    createdSubitemUpdates,
+    createdHireEvents,
+    skippedHireEvents,
+    updatedProgressColumns,
+    skippedSubitems,
+    warnings: warnings.length,
+    usedMonthlyLookupFallback: monthlyLookup.usedFallbackScan,
+    linkedDetailChunkCount,
+    linkedDetailRetryCount,
+    phaseTimingsMs: timings,
+  });
 
   return {
     ok: true,

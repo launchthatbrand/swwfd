@@ -8,7 +8,12 @@ const colorThemeValidator = v.union(
   v.literal("emerald"),
   v.literal("violet"),
   v.literal("rose"),
+  v.literal("custom"),
 );
+const customThemeValidator = v.object({
+  colorHex: v.string(),
+  alpha: v.number(),
+});
 const fontSizeValidator = v.union(
   v.literal("default"),
   v.literal("medium"),
@@ -24,8 +29,10 @@ const recordSourceValidator = v.union(
 const settingsValidator = v.object({
   ownerMondayUserId: v.string(),
   colorTheme: colorThemeValidator,
+  customTheme: v.optional(customThemeValidator),
   fontSize: fontSizeValidator,
   tableDensity: v.optional(tableDensityValidator),
+  hoverPopoversEnabled: v.optional(v.boolean()),
   pageSize: v.optional(v.number()),
   displayMode: v.optional(displayModeValidator),
   recordSource: v.optional(recordSourceValidator),
@@ -51,8 +58,10 @@ export const getForOwnerBoard = query({
     return {
       ownerMondayUserId: ownerMondayUserId || "",
       colorTheme: DEFAULT_COLOR_THEME,
+      customTheme: undefined,
       fontSize: DEFAULT_FONT_SIZE,
       tableDensity: undefined,
+      hoverPopoversEnabled: undefined,
       pageSize: undefined,
       displayMode: undefined,
       recordSource: undefined,
@@ -72,8 +81,10 @@ export const getForOwnerBoard = query({
     return {
       ownerMondayUserId,
       colorTheme: DEFAULT_COLOR_THEME,
+      customTheme: undefined,
       fontSize: DEFAULT_FONT_SIZE,
       tableDensity: undefined,
+      hoverPopoversEnabled: undefined,
       pageSize: undefined,
       displayMode: undefined,
       recordSource: undefined,
@@ -85,8 +96,10 @@ export const getForOwnerBoard = query({
   return {
     ownerMondayUserId: existing.ownerMondayUserId,
     colorTheme: existing.colorTheme,
+    customTheme: existing.customTheme,
     fontSize: existing.fontSize,
     tableDensity: existing.tableDensity,
+    hoverPopoversEnabled: existing.hoverPopoversEnabled,
     pageSize: existing.pageSize,
     displayMode: existing.displayMode,
     recordSource: existing.recordSource,
@@ -102,8 +115,10 @@ export const upsertForOwnerBoard = mutation({
     ownerMondayUserId: v.string(),
     viewerMondayUserId: v.string(),
     colorTheme: colorThemeValidator,
+    customTheme: v.optional(customThemeValidator),
     fontSize: fontSizeValidator,
     tableDensity: v.optional(tableDensityValidator),
+    hoverPopoversEnabled: v.optional(v.boolean()),
     pageSize: v.optional(v.number()),
     displayMode: v.optional(displayModeValidator),
     recordSource: v.optional(recordSourceValidator),
@@ -128,8 +143,10 @@ export const upsertForOwnerBoard = mutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         colorTheme: args.colorTheme,
+        customTheme: args.customTheme,
         fontSize: args.fontSize,
         tableDensity: args.tableDensity,
+        hoverPopoversEnabled: args.hoverPopoversEnabled,
         pageSize: args.pageSize,
         displayMode: args.displayMode,
         recordSource: args.recordSource,
@@ -139,8 +156,10 @@ export const upsertForOwnerBoard = mutation({
       return {
         ownerMondayUserId,
         colorTheme: args.colorTheme,
+        customTheme: args.customTheme,
         fontSize: args.fontSize,
         tableDensity: args.tableDensity,
+        hoverPopoversEnabled: args.hoverPopoversEnabled,
         pageSize: args.pageSize,
         displayMode: args.displayMode,
         recordSource: args.recordSource,
@@ -153,8 +172,10 @@ export const upsertForOwnerBoard = mutation({
       accountId,
       ownerMondayUserId,
       colorTheme: args.colorTheme,
+      customTheme: args.customTheme,
       fontSize: args.fontSize,
       tableDensity: args.tableDensity,
+      hoverPopoversEnabled: args.hoverPopoversEnabled,
       pageSize: args.pageSize,
       displayMode: args.displayMode,
       recordSource: args.recordSource,
@@ -165,8 +186,10 @@ export const upsertForOwnerBoard = mutation({
     return {
       ownerMondayUserId,
       colorTheme: args.colorTheme,
+      customTheme: args.customTheme,
       fontSize: args.fontSize,
       tableDensity: args.tableDensity,
+      hoverPopoversEnabled: args.hoverPopoversEnabled,
       pageSize: args.pageSize,
       displayMode: args.displayMode,
       recordSource: args.recordSource,

@@ -282,6 +282,11 @@
     border-color: color-mix(in oklab, var(--color-border) 85%, #c7cbd1 15%) !important;
   }
 
+  .dark .monday-like-page [data-slot="card"] {
+    background-color: color-mix(in oklab, var(--color-card) 92%, black 8%) !important;
+    border-color: color-mix(in oklab, var(--color-border) 78%, white 22%) !important;
+  }
+
   .monday-like-page button,
   .monday-like-page select,
   .monday-like-page input {

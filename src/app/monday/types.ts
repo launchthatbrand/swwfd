@@ -21,6 +21,7 @@ export interface MondayRecord extends Record<string, unknown> {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
@@ -29,6 +30,7 @@ export interface MondayRecord extends Record<string, unknown> {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt?: string | null;
   contactDetails: {
     label: string;
     value: string;
@@ -100,6 +102,26 @@ export interface OutlookConnectionStatusResponse {
   } | null;
 }
 
+export interface OutlookTeamMailbox {
+  mondayUserId: string;
+  name: string | null;
+  userEmail: string | null;
+  connected: boolean;
+  mailboxEmail: string | null;
+  mailboxDisplayName: string | null;
+  accessTokenExpiresAt: number | null;
+  updatedAt: number | null;
+  isCurrentUser: boolean;
+  isContactOwner: boolean;
+}
+
+export interface OutlookTeamMailboxesResponse {
+  ok: boolean;
+  error?: string;
+  mailboxes?: OutlookTeamMailbox[];
+  defaultSenderUserId?: string | null;
+}
+
 export interface MondayRecordEditOptionsResponse {
   ok: boolean;
   error?: string;
@@ -142,7 +164,9 @@ export interface MondayRecordUpdate {
   | "followup"
   | "questionnaire"
   | "resume"
-  | "resume_referral";
+  | "resume_referral"
+  | "job_referral"
+  | "merge";
   source: "item" | "subitem";
   subitemId: string | null;
   subitemName: string | null;
@@ -162,7 +186,9 @@ export interface MondaySubitemEntry {
   | "followup"
   | "questionnaire"
   | "resume"
-  | "resume_referral";
+  | "resume_referral"
+  | "job_referral"
+  | "merge";
   methodOfCommunication: string | null;
   createdAt: string | null;
   creatorProfile: {
@@ -201,7 +227,9 @@ export interface MondayCreateRecordUpdateResponse {
     | "followup"
     | "questionnaire"
     | "resume"
-    | "resume_referral";
+    | "resume_referral"
+    | "job_referral"
+    | "merge";
     source: "item" | "subitem";
     subitemName?: string | null;
     approvalStepColumnId?: string | null;
@@ -213,6 +241,35 @@ export interface MondayCreateRecordUpdateResponse {
 export interface MondayResumeUploadResponse {
   ok: boolean;
   error?: string;
+}
+
+export interface MondayJobListing {
+  id: string;
+  title: string;
+  status: string | null;
+  district: string | null;
+  location: string | null;
+  locationSecondary: string | null;
+  description: string | null;
+  categories: string[];
+  contractor: string | null;
+  contractorEmail: string | null;
+  applyEmail: string | null;
+  applyPhone: string | null;
+  salaryAmount: string | null;
+  salaryType: string | null;
+  websiteUrl: string | null;
+  postedDate: string | null;
+  updatedAt: string | null;
+  isAvailable: boolean;
+}
+
+export interface MondayJobsResponse {
+  ok: boolean;
+  error?: string;
+  boardId?: string;
+  boardName?: string | null;
+  jobs?: MondayJobListing[];
 }
 
 export interface ResumePreviewState {
@@ -245,10 +302,65 @@ export interface MondayFeatureFlags {
   emailMarketingEnabled: boolean;
 }
 
+export interface MondayEmailSystemTag {
+  tag: string;
+  columnId: string;
+  columnTitle: string;
+}
+
+export interface MondayPlatformSettings {
+  masterAdminUserId: string;
+  adminUserIds: string[];
+  employeeUserIds: string[];
+  replyToEmails: string[];
+  emailSystemTags: MondayEmailSystemTag[];
+  monthlyBoardMappings: Array<{
+    monthKey: string;
+    boardId: string;
+  }>;
+}
+
 export interface MondayFeatureFlagsResponse {
   ok: boolean;
   error?: string;
   featureFlags?: MondayFeatureFlags;
+}
+
+export interface MondayPlatformSettingsResponse {
+  ok: boolean;
+  error?: string;
+  platformSettings?: MondayPlatformSettings;
+}
+
+export type MondayBulkSyncJobStatus = "running" | "done" | "failed" | "cancelled";
+
+export interface MondayBulkSyncJob {
+  jobId: string;
+  status: MondayBulkSyncJobStatus;
+  mondayAccountId: string;
+  requestedByMondayUserId: string;
+  requestedByMondayAppClientId: string | null;
+  ownerId: string;
+  totalContacts: number;
+  nextIndex: number;
+  processedContacts: number;
+  succeededContacts: number;
+  failedContacts: number;
+  warningsCount: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt: number | null;
+  lastError: string | null;
+}
+
+export interface MondayBulkSyncStatusResponse {
+  ok: boolean;
+  error?: string;
+  job?: MondayBulkSyncJob | null;
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  retriedContacts?: number;
 }
 
 export interface MondayUserFilterPresetsResponse {
@@ -308,6 +420,69 @@ export interface MondayRoutingAssignResponse {
   result?: MondayRoutingAssignResult;
 }
 
+export interface MondayMetricsSummaryTotals {
+  allContacts: number;
+  candidatesGroup: number;
+  reentry: number;
+  veterans: number;
+  hiredTotal: number;
+  hiredCandidatesGroup: number;
+  hiredReentry: number;
+  hiredVeterans: number;
+}
+
+export interface MondayMetricsCommunicationTotals {
+  emailCommunications: number;
+  textCommunications: number;
+  phoneCallCommunications: number;
+}
+
+export interface MondayMetricsMonthlyPoint extends MondayMetricsSummaryTotals {
+  monthKey: string;
+  monthLabel: string;
+  emailCommunications: number;
+  textCommunications: number;
+  phoneCallCommunications: number;
+}
+
+export interface MondayMetricsOwnerBreakdown extends MondayMetricsSummaryTotals {
+  ownerId: string;
+  ownerLabel: string;
+}
+
+export interface MondayMetricsHiredContact {
+  contactId: string;
+  name: string;
+  email: string | null;
+  url: string | null;
+  hireCount: number;
+  latestHireDate: string | null;
+}
+
+export interface MondayMetricsContractorReferralBreakdown {
+  contractorName: string;
+  referredCount: number;
+}
+
+export interface MondayMetricsSummary {
+  fiscalYear: string;
+  ownerId: string | null;
+  boardName: string | null;
+  totals: MondayMetricsSummaryTotals;
+  communicationTotals: MondayMetricsCommunicationTotals;
+  monthly: MondayMetricsMonthlyPoint[];
+  ownerBreakdown: MondayMetricsOwnerBreakdown[];
+  hiredContacts: MondayMetricsHiredContact[];
+  contractorReferrals: MondayMetricsContractorReferralBreakdown[];
+  generatedAt: string;
+}
+
+export interface MondayMetricsResponse {
+  ok: boolean;
+  error?: string;
+  summary?: MondayMetricsSummary;
+}
+
 export interface AddNewContactValues {
   firstName: string;
   lastName: string;
@@ -361,7 +536,13 @@ export interface SavedAdvancedFilterPreset {
   ownerMondayUserId?: string;
 }
 
-export type UserBoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
+export type UserBoardColorTheme =
+  | "neutral"
+  | "sky"
+  | "emerald"
+  | "violet"
+  | "rose"
+  | "custom";
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
 export type UserBoardDisplayMode = "table" | "grid" | "kanban";
@@ -369,11 +550,18 @@ export type UserBoardRecordSource = "created_in_month" | "touched_in_month";
 /** 0 = infinite scroll */
 export type UserBoardPageSize = 20 | 40 | 100 | 0;
 
+export interface UserBoardCustomTheme {
+  colorHex: string;
+  alpha: number;
+}
+
 export interface UserBoardGeneralSettings {
   ownerMondayUserId?: string;
   colorTheme: UserBoardColorTheme;
+  customTheme?: UserBoardCustomTheme;
   fontSize: UserBoardFontSize;
   tableDensity: UserBoardTableDensity;
+  hoverPopoversEnabled: boolean;
   pageSize: UserBoardPageSize;
   displayMode: UserBoardDisplayMode;
   recordSource: UserBoardRecordSource;

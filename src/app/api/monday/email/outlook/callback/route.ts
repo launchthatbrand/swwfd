@@ -1,8 +1,14 @@
 import { getRequestOrigin } from "~/server/http/requestOrigin";
+import { api as apiGenerated } from "@convex-config/_generated/api";
+import { getConvexHttpClient } from "~/server/convexHttp";
 import { encryptToken } from "~/server/outlook/crypto";
 import { verifyOutlookOAuthState } from "~/server/outlook/state";
 import { getOutlookOAuthConfig } from "~/server/outlook/config";
-import { upsertOutlookConnection } from "~/server/outlook/store";
+import { getOutlookConnection, upsertOutlookConnection } from "~/server/outlook/store";
+import {
+  createAndStoreOutlookSubscription,
+  deleteAndMarkOutlookSubscription,
+} from "~/server/outlook/subscriptions";
 
 export const runtime = "nodejs";
 const isOutlookDebugLoggingEnabled = process.env.NODE_ENV !== "production";
@@ -305,6 +311,57 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
       accessTokenExpiresAt,
       scopes,
     });
+    try {
+      const connection = await getOutlookConnection({
+        mondayAccountId: state.mondayAccountId,
+        mondayUserId: state.mondayUserId,
+        mondayAppClientId: state.mondayAppClientId,
+      });
+      if (connection) {
+        const convex = getConvexHttpClient();
+        const existingSubscriptions = await convex.query(
+          apiGenerated.outlookInbound.listGraphSubscriptionsByIdentity,
+          {
+            mondayAccountId: state.mondayAccountId,
+            mondayUserId: state.mondayUserId,
+            mondayAppClientId: state.mondayAppClientId,
+          },
+        );
+        for (const existingSubscription of existingSubscriptions) {
+          if (existingSubscription.status === "deleted") continue;
+          try {
+            await deleteAndMarkOutlookSubscription({
+              accessToken,
+              subscriptionId: existingSubscription.subscriptionId,
+            });
+          } catch (deleteError) {
+            await convex.mutation(
+              apiGenerated.outlookInbound.markGraphSubscriptionStatus,
+              {
+                subscriptionId: existingSubscription.subscriptionId,
+                status: "error",
+                lastError:
+                  deleteError instanceof Error
+                    ? deleteError.message
+                    : String(deleteError),
+              },
+            );
+          }
+        }
+        await createAndStoreOutlookSubscription({
+          connection,
+          accessToken,
+          requestOrigin: baseOrigin,
+        });
+      }
+    } catch (subscriptionError) {
+      console.warn("[OutlookOAuth][callback] subscription provisioning failed", {
+        message:
+          subscriptionError instanceof Error
+            ? subscriptionError.message
+            : String(subscriptionError),
+      });
+    }
     if (isOutlookDebugLoggingEnabled) {
       console.info("[OutlookOAuth][callback][debug] outlook connection stored", {
         mondayAccountId: state.mondayAccountId,

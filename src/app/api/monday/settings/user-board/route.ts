@@ -7,24 +7,38 @@ import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
 
-type BoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose";
+type BoardColorTheme = "neutral" | "sky" | "emerald" | "violet" | "rose" | "custom";
 type BoardFontSize = "default" | "medium" | "large";
 type BoardTableDensity = "expanded" | "compact";
 type BoardDisplayMode = "table" | "grid";
 type BoardRecordSource = "created_in_month" | "touched_in_month";
 const VALID_PAGE_SIZES = [20, 40, 100, 0] as const;
 
+interface BoardCustomTheme {
+  colorHex?: string;
+  alpha?: number;
+}
+
 interface UpsertBoardSettingsBody {
   ownerId?: string;
   colorTheme?: BoardColorTheme;
+  customTheme?: BoardCustomTheme;
   fontSize?: BoardFontSize;
   tableDensity?: BoardTableDensity;
+  hoverPopoversEnabled?: boolean;
   pageSize?: number;
   displayMode?: BoardDisplayMode;
   recordSource?: BoardRecordSource;
 }
 
-const COLOR_THEMES: BoardColorTheme[] = ["neutral", "sky", "emerald", "violet", "rose"];
+const COLOR_THEMES: BoardColorTheme[] = [
+  "neutral",
+  "sky",
+  "emerald",
+  "violet",
+  "rose",
+  "custom",
+];
 const FONT_SIZES: BoardFontSize[] = ["default", "medium", "large"];
 const TABLE_DENSITIES: BoardTableDensity[] = ["expanded", "compact"];
 const DISPLAY_MODES: BoardDisplayMode[] = ["table", "grid"];
@@ -65,6 +79,23 @@ const isBoardRecordSource = (value: unknown): value is BoardRecordSource => {
 const isValidPageSize = (value: unknown): value is number => {
   return typeof value === "number" && (VALID_PAGE_SIZES as readonly number[]).includes(value);
 };
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
+
+const isHexColor = (value: string) => /^#[0-9a-fA-F]{6}$/.test(value);
+
+const parseCustomTheme = (input: unknown) => {
+  if (!input || typeof input !== "object") return undefined;
+  const customTheme = input as BoardCustomTheme;
+  const colorHex =
+    typeof customTheme.colorHex === "string" ? customTheme.colorHex.trim().toLowerCase() : "";
+  if (!isHexColor(colorHex)) return undefined;
+  const alphaRaw = customTheme.alpha;
+  const alpha = typeof alphaRaw === "number" && Number.isFinite(alphaRaw) ? alphaRaw : 0.22;
+  return {
+    colorHex,
+    alpha: Math.max(0, Math.min(1, alpha)),
+  };
+};
 
 export const GET = async (request: Request) => {
   try {
@@ -84,7 +115,14 @@ export const GET = async (request: Request) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to load board settings";
-    return toJson({ ok: false, error: message }, 500);
+    const isUnauthorized =
+      message === "Missing Monday session token" ||
+      message === "signature verification failed" ||
+      message === "Invalid Monday session token payload";
+    return toJson(
+      { ok: false, error: isUnauthorized ? "Unauthorized Monday session" : message },
+      isUnauthorized ? 401 : 500,
+    );
   }
 };
 
@@ -103,11 +141,18 @@ export const POST = async (request: Request) => {
   if (!isBoardColorTheme(body.colorTheme)) {
     return toJson({ ok: false, error: "colorTheme is invalid" }, 400);
   }
+  const parsedCustomTheme = parseCustomTheme(body.customTheme);
+  if (body.colorTheme === "custom" && !parsedCustomTheme) {
+    return toJson({ ok: false, error: "customTheme is invalid" }, 400);
+  }
   if (!isBoardFontSize(body.fontSize)) {
     return toJson({ ok: false, error: "fontSize is invalid" }, 400);
   }
   if (body.tableDensity !== undefined && !isBoardTableDensity(body.tableDensity)) {
     return toJson({ ok: false, error: "tableDensity is invalid" }, 400);
+  }
+  if (body.hoverPopoversEnabled !== undefined && !isBoolean(body.hoverPopoversEnabled)) {
+    return toJson({ ok: false, error: "hoverPopoversEnabled is invalid" }, 400);
   }
 
   try {
@@ -120,8 +165,12 @@ export const POST = async (request: Request) => {
         ownerMondayUserId: ownerId,
         viewerMondayUserId: identity.userId,
         colorTheme: body.colorTheme,
+        customTheme: body.colorTheme === "custom" ? parsedCustomTheme : undefined,
         fontSize: body.fontSize,
         tableDensity: isBoardTableDensity(body.tableDensity) ? body.tableDensity : undefined,
+        hoverPopoversEnabled: isBoolean(body.hoverPopoversEnabled)
+          ? body.hoverPopoversEnabled
+          : undefined,
         pageSize: isValidPageSize(body.pageSize) ? body.pageSize : undefined,
         displayMode: isBoardDisplayMode(body.displayMode) ? body.displayMode : undefined,
         recordSource: isBoardRecordSource(body.recordSource)
@@ -133,6 +182,13 @@ export const POST = async (request: Request) => {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to save board settings";
-    return toJson({ ok: false, error: message }, 500);
+    const isUnauthorized =
+      message === "Missing Monday session token" ||
+      message === "signature verification failed" ||
+      message === "Invalid Monday session token payload";
+    return toJson(
+      { ok: false, error: isUnauthorized ? "Unauthorized Monday session" : message },
+      isUnauthorized ? 401 : 500,
+    );
   }
 };

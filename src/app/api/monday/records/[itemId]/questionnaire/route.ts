@@ -117,8 +117,11 @@ export const POST = async (
   request: Request,
   context: { params: Promise<{ itemId: string }> },
 ) => {
+  let sessionIdentity:
+    | Awaited<ReturnType<typeof requireVerifiedMondaySession>>
+    | null = null;
   try {
-    await requireVerifiedMondaySession(request);
+    sessionIdentity = await requireVerifiedMondaySession(request);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unauthorized Monday session";
@@ -201,8 +204,9 @@ export const POST = async (
 
     await createMondayRecordUpdate({
       itemId: itemId.trim(),
-      body: "Questionnaire Update",
+      body: "Screening Complete",
       updateType: "questionnaire",
+      actorMondayUserId: sessionIdentity?.userId ?? null,
     });
 
     return toJson({ ok: true });

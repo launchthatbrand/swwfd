@@ -128,6 +128,225 @@ export declare const api: {
       }>
     >;
   };
+  mondayBulkSync: {
+    cancelJob: FunctionReference<
+      "mutation",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    claimNextBatch: FunctionReference<
+      "mutation",
+      "public",
+      { batchSize?: number; jobId: Id<"mondayBulkSyncJobs"> },
+      {
+        contactItemIds: Array<string>;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        ownerId: string;
+        status: "running" | "done" | "failed" | "cancelled";
+      }
+    >;
+    createJob: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactItemIds: Array<string>;
+        mondayAccountId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        ownerId: string;
+        requestedByMondayAppClientId?: string;
+        requestedByMondayUserId: string;
+      },
+      {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    getJob: FunctionReference<
+      "query",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    getLatestJobForAccount: FunctionReference<
+      "query",
+      "public",
+      { mondayAccountId: string },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    listFailedContactIds: FunctionReference<
+      "query",
+      "public",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      Array<string>
+    >;
+    markJobFailed: FunctionReference<
+      "mutation",
+      "public",
+      { error: string; jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+    recordBatchResults: FunctionReference<
+      "mutation",
+      "public",
+      {
+        jobId: Id<"mondayBulkSyncJobs">;
+        results: Array<{
+          contactItemId: string;
+          createdParentUpdates: number;
+          createdSubitemUpdates: number;
+          createdSubitems: number;
+          error: string | null;
+          linkedItemCount: number;
+          skippedSubitems: number;
+          status: "success" | "failed";
+          updatedProgressColumns: number;
+          warnings: Array<string>;
+        }>;
+      },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+      }
+    >;
+  };
+  mondayHireEventBackfill: {
+    cancelBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { jobId?: Id<"mondayHireEventBackfillJobs"> },
+      { jobId: Id<"mondayHireEventBackfillJobs">; status: string }
+    >;
+    getLatestJob: FunctionReference<
+      "query",
+      "public",
+      {},
+      null | {
+        contactBoardId: string;
+        createdEvents: number;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        errorsCount: number;
+        finishedAt?: number | null;
+        inRangeContacts: number;
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        lastError?: string | null;
+        monthKey: string;
+        pageSize: number;
+        processedContacts: number;
+        skippedEvents: number;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        subitemBoardId?: string | null;
+        updatedAt: number;
+        workflowId?: string;
+      }
+    >;
+    startBackfill: FunctionReference<
+      "mutation",
+      "public",
+      { dryRun?: boolean; monthKey: string; pageSize?: number },
+      { jobId: Id<"mondayHireEventBackfillJobs">; workflowId: string }
+    >;
+  };
   mondayMonthlyMigration: {
     cancelMigration: FunctionReference<
       "mutation",
@@ -196,11 +415,56 @@ export declare const api: {
       {},
       { emailMarketingEnabled: boolean }
     >;
+    getPlatformSettings: FunctionReference<
+      "query",
+      "public",
+      {},
+      {
+        adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
+        employeeUserIds: Array<string>;
+        masterAdminUserId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        replyToEmails: Array<string>;
+      }
+    >;
     setFeatureFlags: FunctionReference<
       "mutation",
       "public",
       { emailMarketingEnabled: boolean; updatedByMondayUserId: string },
       { emailMarketingEnabled: boolean }
+    >;
+    setPlatformSettings: FunctionReference<
+      "mutation",
+      "public",
+      {
+        adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
+        employeeUserIds: Array<string>;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        replyToEmails: Array<string>;
+        updatedByMondayUserId: string;
+      },
+      {
+        adminUserIds: Array<string>;
+        emailSystemTags: Array<{
+          columnId: string;
+          columnTitle: string;
+          tag: string;
+        }>;
+        employeeUserIds: Array<string>;
+        masterAdminUserId: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        replyToEmails: Array<string>;
+      }
     >;
   };
   mondayTouchBackfill: {
@@ -333,10 +597,18 @@ export declare const api: {
       "public",
       { accountId: string; ownerMondayUserId: string },
       {
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
         createdAt: number;
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
+        hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
         pageSize?: number;
         recordSource?: "created_in_month" | "touched_in_month";
@@ -349,9 +621,17 @@ export declare const api: {
       "public",
       {
         accountId: string;
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
+        hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
         pageSize?: number;
         recordSource?: "created_in_month" | "touched_in_month";
@@ -359,10 +639,18 @@ export declare const api: {
         viewerMondayUserId: string;
       },
       {
-        colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose";
+        colorTheme:
+          | "neutral"
+          | "sky"
+          | "emerald"
+          | "violet"
+          | "rose"
+          | "custom";
         createdAt: number;
+        customTheme?: { alpha: number; colorHex: string };
         displayMode?: "table" | "grid";
         fontSize: "default" | "medium" | "large";
+        hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
         pageSize?: number;
         recordSource?: "created_in_month" | "touched_in_month";
@@ -496,6 +784,61 @@ export declare const api: {
       }
     >;
   };
+  mondayUsers: {
+    getByAccountAndUser: FunctionReference<
+      "query",
+      "public",
+      { mondayAccountId: string; mondayUserId: string },
+      {
+        _creationTime: number;
+        _id: Id<"mondayUsers">;
+        email: string | null;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        name: string | null;
+      } | null
+    >;
+    listByAccount: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; mondayAccountId: string },
+      Array<{
+        _creationTime: number;
+        _id: Id<"mondayUsers">;
+        email: string | null;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        name: string | null;
+      }>
+    >;
+    upsertFromSession: FunctionReference<
+      "mutation",
+      "public",
+      {
+        email?: string;
+        lastSeenAt?: number;
+        lastSeenSource: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        name?: string;
+      },
+      {
+        created: boolean;
+        firstSeenAt: number;
+        lastSeenAt: number;
+        mondayUserRecordId: Id<"mondayUsers">;
+      }
+    >;
+  };
   outlookConnections: {
     getByMondayIdentity: FunctionReference<
       "query",
@@ -578,6 +921,339 @@ export declare const api: {
         tenantId: string;
       },
       { connectionId: Id<"outlookConnections"> }
+    >;
+  };
+  outlookInbound: {
+    getGraphSubscriptionBySubscriptionId: FunctionReference<
+      "query",
+      "public",
+      { subscriptionId: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      } | null
+    >;
+    getInboundMessageByDedupeKey: FunctionReference<
+      "query",
+      "public",
+      { dedupeKey: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookInboundMessages">;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationConfidence: "high" | "medium" | "low" | null;
+        correlationMethod:
+          | "inReplyTo"
+          | "conversationId"
+          | "senderEmail"
+          | "none"
+          | null;
+        createdAt: number;
+        dedupeKey: string;
+        errorMessage: string | null;
+        fromEmail: string;
+        graphMessageId: string;
+        inReplyTo: string | null;
+        internetMessageId: string | null;
+        matchedContactEmail: string | null;
+        mirrorMondaySubitemId: string | null;
+        mirrorMondayUpdateId: string | null;
+        mirrorTouchId: string | null;
+        outboundMessageId?: Id<"outlookOutboundMessages">;
+        parsedBody: string | null;
+        rawBodyPreview: string | null;
+        receivedAt: number;
+        status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+        subject: string;
+        updatedAt: number;
+      } | null
+    >;
+    getOutboundByInternetMessageId: FunctionReference<
+      "query",
+      "public",
+      { internetMessageId: string },
+      {
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId?: string;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      } | null
+    >;
+    identifyOutboundMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        conversationId?: string;
+        graphMessageId?: string;
+        internetMessageId?: string;
+        outboundMessageId: Id<"outlookOutboundMessages">;
+      },
+      { updated: boolean }
+    >;
+    listExpiringGraphSubscriptions: FunctionReference<
+      "query",
+      "public",
+      { expiresBefore: number; limit?: number },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      }>
+    >;
+    listGraphSubscriptionsByIdentity: FunctionReference<
+      "query",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookGraphSubscriptions">;
+        changeType: string;
+        clientState: string;
+        connectionEmail: string | null;
+        createdAt: number;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError: string | null;
+        lastRenewedAt: number | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+        updatedAt: number;
+      }>
+    >;
+    listOutboundByConversationId: FunctionReference<
+      "query",
+      "public",
+      { conversationId: string; limit?: number },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId?: string;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      }>
+    >;
+    listRecentOutboundByRecipient: FunctionReference<
+      "query",
+      "public",
+      {
+        limit?: number;
+        mondayAccountId: string;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAtMin: number;
+      },
+      Array<{
+        _creationTime: number;
+        _id: Id<"outlookOutboundMessages">;
+        actingMondayUserId?: string;
+        connectionEmail: string | null;
+        contactItemId: string | null;
+        conversationId: string | null;
+        correlationToken: string | null;
+        createdAt: number;
+        graphMessageId: string | null;
+        internetMessageId: string | null;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status: "pending_lookup" | "identified";
+        subject: string;
+        updatedAt: number;
+      }>
+    >;
+    markGraphSubscriptionStatus: FunctionReference<
+      "mutation",
+      "public",
+      {
+        expirationDateTime?: string;
+        expirationTimestamp?: number;
+        lastError?: string;
+        status: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageFailed: FunctionReference<
+      "mutation",
+      "public",
+      {
+        errorMessage: string;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        status?: "failed" | "ignored";
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageMirrored: FunctionReference<
+      "mutation",
+      "public",
+      {
+        inboundMessageId: Id<"outlookInboundMessages">;
+        mirrorMondaySubitemId?: string;
+        mirrorMondayUpdateId: string;
+        mirrorTouchId?: string;
+      },
+      { updated: boolean }
+    >;
+    markInboundMessageParsed: FunctionReference<
+      "mutation",
+      "public",
+      {
+        contactItemId?: string;
+        correlationConfidence: "high" | "medium" | "low" | null;
+        correlationMethod:
+          | "inReplyTo"
+          | "conversationId"
+          | "senderEmail"
+          | "none"
+          | null;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        matchedContactEmail?: string;
+        outboundMessageId?: Id<"outlookOutboundMessages">;
+        parsedBody: string;
+        status?: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      },
+      { updated: boolean }
+    >;
+    recordInboundMessageReceipt: FunctionReference<
+      "mutation",
+      "public",
+      {
+        conversationId?: string;
+        dedupeKey: string;
+        fromEmail: string;
+        graphMessageId: string;
+        inReplyTo?: string;
+        internetMessageId?: string;
+        rawBodyPreview?: string;
+        receivedAt: number;
+        subject: string;
+      },
+      {
+        alreadyMirrored: boolean;
+        inboundMessageId: Id<"outlookInboundMessages">;
+        status: "received" | "parsed" | "mirrored" | "failed" | "ignored";
+      }
+    >;
+    removeGraphSubscriptionsByIdentity: FunctionReference<
+      "mutation",
+      "public",
+      {
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+      },
+      { updatedCount: number }
+    >;
+    upsertGraphSubscription: FunctionReference<
+      "mutation",
+      "public",
+      {
+        changeType: string;
+        clientState: string;
+        connectionEmail?: string;
+        expirationDateTime: string;
+        expirationTimestamp: number;
+        lastError?: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        notificationUrl: string;
+        resource: string;
+        status?: "active" | "expired" | "deleted" | "error";
+        subscriptionId: string;
+      },
+      { created: boolean; graphSubscriptionId: Id<"outlookGraphSubscriptions"> }
+    >;
+    upsertOutboundMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actingMondayUserId: string;
+        connectionEmail?: string;
+        contactItemId?: string;
+        conversationId?: string;
+        correlationToken?: string;
+        graphMessageId?: string;
+        internetMessageId?: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        mondayUserId: string;
+        recipientEmail: string;
+        sentAt: number;
+        status?: "pending_lookup" | "identified";
+        subject: string;
+      },
+      { created: boolean; outboundMessageId: Id<"outlookOutboundMessages"> }
     >;
   };
   viewer: {
@@ -670,6 +1346,74 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayHireEventBackfill: {
+    finishJob: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayHireEventBackfillJobs"> },
+      null | {
+        _id: Id<"mondayHireEventBackfillJobs">;
+        contactBoardId: string;
+        currentCursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun: boolean;
+        monthKey: string;
+        pageSize: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        subitemBoardId?: string | null;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+    updateJobProgress: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        createdEventsDelta: number;
+        errorsDelta: number;
+        inRangeContactsDelta: number;
+        jobId: Id<"mondayHireEventBackfillJobs">;
+        nextCursor: string | null;
+        processedContactsDelta: number;
+        skippedEventsDelta: number;
+        subitemBoardId?: string | null;
+      },
+      null
+    >;
+  };
+  mondayHireEventBackfillNode: {
+    fetchAndUpsertHireEventPageAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        boardId: string;
+        cursor?: string | null;
+        dateFrom: string;
+        dateTo: string;
+        dryRun?: boolean;
+        pageSize: number;
+      },
+      {
+        createdEvents: number;
+        errors: number;
+        inRangeContacts: number;
+        nextCursor: string | null;
+        processedContacts: number;
+        skippedEvents: number;
+        subitemBoardId: string | null;
+      }
     >;
   };
   mondayMonthlyMigration: {
@@ -1132,6 +1876,14 @@ export declare const internal: {
         skippedTouches: number;
         updatedTouches: number;
       }
+    >;
+  };
+  outlookInboundCron: {
+    renewOutlookSubscriptions: FunctionReference<
+      "action",
+      "internal",
+      {},
+      { message: string; ok: boolean; status: number }
     >;
   };
 };

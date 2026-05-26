@@ -9,13 +9,12 @@ const MONDAY_API_URL = "https://api.monday.com/v2";
 
 const VALID_STEP_COLUMN_IDS = new Set([
   "color_mm1db321",
-  "color_mm1dwtvd",
+  "color_mm3ggf4t",
   "color_mm1dwr4k",
   "color_mm1dnr11",
   "color_mm1dgeqy",
   "color_mm1d80yc",
   "color_mm1djwjj",
-  "color_mm1d4e3y",
 ]);
 
 const toJson = (body: unknown, status = 200) => {

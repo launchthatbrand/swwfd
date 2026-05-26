@@ -5,21 +5,31 @@ import { Skeleton } from "~/components/ui/skeleton";
 import {
   ChevronLeft,
   ChevronRight,
+  Check,
+  BriefcaseBusiness,
   Columns3,
   ExternalLink,
   Filter,
   LayoutGrid,
+  Pencil,
   CircleHelp,
   List,
   Mail,
+  MessageSquare,
+  MoreHorizontal,
+  Phone,
   RefreshCcw,
   Settings,
+  Upload,
+  X,
+  UserCheck,
   UserPlus,
 } from "lucide-react";
 import type {
   ColumnDefinition,
   EntityAction,
 } from "@launchthatapp/ui/entity-list";
+import { EntityList } from "@launchthatapp/ui/entity-list";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +48,12 @@ import {
 } from "@launchthatapp/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@launchthatapp/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
@@ -61,16 +77,23 @@ import type {
   ApprovalStepConfig,
   KanbanMoveConfirmation,
   MondayBoardViewMode,
+  MondayBulkSyncJob,
+  MondayBulkSyncStatusResponse,
   MondayBoardViewProps,
   MondayContactCandidate,
   MondayContactsLookupResponse,
   MondayCreateContactResponse,
   MondayCreateRecordUpdateResponse,
   MondayEmailTemplate,
+  MondayEmailSystemTag,
   MondayEmailTemplatesResponse,
   MondayFeatureFlags,
   MondayFeatureFlagsResponse,
   MondayIdentity,
+  MondayJobListing,
+  MondayJobsResponse,
+  MondayPlatformSettings,
+  MondayPlatformSettingsResponse,
   MondayRecord,
   MondayRecordEditOptionsResponse,
   MondayRecordUpdate,
@@ -87,6 +110,7 @@ import type {
   MondayUserFilterPresetsResponse,
   MondayUserProfileResponse,
   OutlookConnectionStatusResponse,
+  OutlookTeamMailboxesResponse,
   ResumePreviewState,
   SavedAdvancedFilterPreset,
   UserBoardColorTheme,
@@ -100,6 +124,7 @@ export type { MondayBoardViewMode } from "./types";
 import {
   APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE,
   APPROVAL_STEPS,
+  buildUserBoardThemeInlineStyles,
   CONTACT_UPDATE_ACTION_BUTTONS,
   DEFAULT_MONDAY_FEATURE_FLAGS,
   DEFAULT_USER_BOARD_GENERAL_SETTINGS,
@@ -111,9 +136,11 @@ import {
   isUserBoardRecordSource,
   isUserBoardTableDensity,
   KANBAN_STEP_CONFIG,
+  LAST_INTERACTION_DATE_COLUMN_ID,
   MONDAY_DEV_BYPASS_TOKEN,
-  MONDAY_OWNER_SCOPE_ADMIN_USER_IDS,
   QUESTIONNAIRE_UPDATE_ACTION,
+  SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+  SUBITEM_NOTES_COLUMN_ID,
   STEP_ACTION_CONFIG,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -121,6 +148,7 @@ import {
   USER_BOARD_ACTION_BUTTON_SIZE_CLASS,
   USER_BOARD_COLOR_THEME_OPTIONS,
   USER_BOARD_COLOR_THEME_STYLES,
+  parseUserBoardCustomTheme,
   USER_BOARD_FONT_SIZE_OPTIONS,
   USER_BOARD_FONT_SIZE_SCALE,
   USER_BOARD_PAGE_SIZE_OPTIONS,
@@ -144,9 +172,10 @@ import {
   extractThemeFromContextPayload,
   formatDateTimeParts,
   formatUpdatedAt,
-  getAddressDisplayParts,
   getContactTooltipDetails,
   getDistrictChipClassName,
+  getLastTouchpointBadgeClassName,
+  getLastTouchpointRecency,
   getMonthBounds,
   getNameInitials,
   getRecordStepIndex,
@@ -182,20 +211,150 @@ import {
 
 import {
   AddNewContactForm,
-  ApprovalProgressIndicator,
   BoardTable,
   BusinessInfoHoverCard,
+  CommunicationQuickActionDialog,
   ContactCard,
   ContactUpdates,
+  DocxResumePreview,
   GuidedTourProvider,
-  isTourLockingDialog,
   HelpDeskDialog,
   KanbanBoard,
   NameCellContent,
   OnboardingStepper,
+  PdfResumePreview,
   QuestionnaireFormDialog,
   UserSettingsProvider,
 } from "./components";
+
+const MASTER_ADMIN_USER_ID = "53441186";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+type CommunicationQuickActionMethod = "Email" | "Text" | "Phone Call" | "In Person";
+interface CommunicationQuickActionDefinition {
+  id: "email" | "text" | "phone" | "in_person";
+  label: string;
+  defaultBody: string;
+  method: CommunicationQuickActionMethod;
+  icon: typeof Mail;
+}
+const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
+  {
+    id: "email",
+    label: "Email Update",
+    defaultBody: "General Email Update",
+    method: "Email",
+    icon: Mail,
+  },
+  {
+    id: "text",
+    label: "Text Update",
+    defaultBody: "General Text Update",
+    method: "Text",
+    icon: MessageSquare,
+  },
+  {
+    id: "phone",
+    label: "Phone Call Update",
+    defaultBody: "General Phone Call Update",
+    method: "Phone Call",
+    icon: Phone,
+  },
+  {
+    id: "in_person",
+    label: "In Person Update",
+    defaultBody: "General In Person Update",
+    method: "In Person",
+    icon: UserCheck,
+  },
+];
+
+const SUBITEM_NAME_MAX_LENGTH = 120;
+const buildSubitemName = (rawValue: string, fallbackName: string) => {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const candidate = normalized.length > 0 ? normalized : fallbackName.trim();
+  if (candidate.length <= SUBITEM_NAME_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, SUBITEM_NAME_MAX_LENGTH - 3).trimEnd()}...`;
+};
+
+type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
+
+const GRID_SORT_OPTIONS: Array<{ value: GridSortField; label: string }> = [
+  { value: "name", label: "Contact Name" },
+  { value: "resume", label: "Resume" },
+  { value: "tags", label: "Tags" },
+  { value: "createdAt", label: "Created" },
+  { value: "updatedAt", label: "Updated" },
+];
+
+const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
+  masterAdminUserId: MASTER_ADMIN_USER_ID,
+  adminUserIds: [MASTER_ADMIN_USER_ID],
+  employeeUserIds: [],
+  replyToEmails: [],
+  emailSystemTags: [],
+  monthlyBoardMappings: [],
+};
+const EMAIL_TEMPLATE_TAG_KEY_PATTERN = /^[a-z][a-z0-9_.-]*$/;
+const INTERVIEWING_STEP_COLUMN_ID = "color_mm1dgeqy";
+const HIRED_STEP_COLUMN_ID = "color_mm1d80yc";
+type MergeFieldKey =
+  | "ownerId"
+  | "status"
+  | "tags"
+  | "referredToContractors"
+  | "interviewingWithContractors"
+  | "hiredWithContractor"
+  | "hireDate"
+  | "retentionPeriod";
+const MERGE_FIELD_CONFIG: Array<{ key: MergeFieldKey; label: string }> = [
+  { key: "ownerId", label: "Owner" },
+  { key: "status", label: "District / Status" },
+  { key: "tags", label: "Tags" },
+  { key: "referredToContractors", label: "Referred To Contractor" },
+  { key: "interviewingWithContractors", label: "Interviewing With Contractor" },
+  { key: "hiredWithContractor", label: "Hired With Contractor" },
+  { key: "hireDate", label: "Hire Date" },
+  { key: "retentionPeriod", label: "Retention Period" },
+];
+
+interface ContactJobRow extends Record<string, unknown> {
+  id: string;
+  title: string;
+  district: string;
+  location: string;
+  contractor: string;
+  categoriesText: string;
+  postedDate: string;
+  websiteUrl: string | null;
+  applyEmail: string | null;
+  applyPhone: string | null;
+  isAlreadyReferred: boolean;
+  rawJob: MondayJobListing;
+}
+
+interface ReferredJobHistoryRow extends Record<string, unknown> {
+  id: string;
+  jobId: string | null;
+  title: string;
+  referredAt: string | null;
+  subitemId: string;
+}
+
+const parseJobReferralHistoryFromText = (text: string | null | undefined) => {
+  const normalized = (text ?? "").trim();
+  if (!normalized) {
+    return {
+      jobId: null as string | null,
+      title: "Unknown Job",
+    };
+  }
+  const jobIdMatch = normalized.match(/job id:\s*([0-9]+)/i);
+  const titleMatch = normalized.match(/referred to job:\s*(.+)/i);
+  return {
+    jobId: jobIdMatch?.[1]?.trim() ?? null,
+    title: titleMatch?.[1]?.trim() || "Unknown Job",
+  };
+};
 
 export function MondayBoardView({
   viewMode = "all",
@@ -204,6 +363,10 @@ export function MondayBoardView({
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
   const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<UserBoardDisplayMode>("table");
+  const [gridSort, setGridSort] = useState<{
+    field: GridSortField;
+    direction: "asc" | "desc";
+  }>({ field: "createdAt", direction: "desc" });
   const forcedOwnerId = forcedOwnerIdProp?.trim() ?? "";
   const hasForcedOwnerScope = forcedOwnerId.length > 0;
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
@@ -240,6 +403,7 @@ export function MondayBoardView({
     useState<UserBoardGeneralSettings>({
       ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
     });
+  const [boardSettingsReadyOwnerId, setBoardSettingsReadyOwnerId] = useState("");
   const tableDensity = boardGeneralSettings.tableDensity;
   const [isSavingBoardGeneralSettings, setIsSavingBoardGeneralSettings] = useState(false);
   const [addContactOpen, setAddContactOpen] = useState(false);
@@ -268,8 +432,22 @@ export function MondayBoardView({
   const [contactUpdateType, setContactUpdateType] =
     useState<ContactUpdateType>("general");
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
+  const [communicationQuickAction, setCommunicationQuickAction] =
+    useState<CommunicationQuickActionDefinition | null>(null);
   const [contactDialogTab, setContactDialogTab] = useState("updates");
+  const [referringJobId, setReferringJobId] = useState<string | null>(null);
+  const [contactDialogSelectedResumeKey, setContactDialogSelectedResumeKey] = useState<string | null>(null);
+  const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
+  const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
+  const [isSavingContactColumn, setIsSavingContactColumn] = useState(false);
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
+  const [syncContactBoardPickerRecord, setSyncContactBoardPickerRecord] =
+    useState<MondayRecord | null>(null);
+  const [syncContactBoardSelection, setSyncContactBoardSelection] = useState("");
+  const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
+  const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
+  const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
+  const hasHydratedInitialQueryParamsRef = useRef(false);
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
   >(null);
@@ -277,10 +455,17 @@ export function MondayBoardView({
     action: QuickContactActionButton;
     selectedItems: MondayRecord[];
   } | null>(null);
+  const [mergeDialogState, setMergeDialogState] = useState<{
+    records: MondayRecord[];
+    masterRecordId: string;
+    fieldSourceByKey: Record<MergeFieldKey, string>;
+  } | null>(null);
+  const [isMergingRecords, setIsMergingRecords] = useState(false);
   const [questionnaireDialogRecords, setQuestionnaireDialogRecords] = useState<
     MondayRecord[]
   >([]);
   const bulkClearSelectionRef = useRef<(() => void) | null>(null);
+  const mergeClearSelectionRef = useRef<(() => void) | null>(null);
   const [kanbanMoveConfirmation, setKanbanMoveConfirmation] =
     useState<KanbanMoveConfirmation | null>(null);
   const [isExecutingKanbanMove, setIsExecutingKanbanMove] = useState(false);
@@ -290,10 +475,29 @@ export function MondayBoardView({
     hireDate: "",
     retentionPeriod: "",
   });
+  const [resumeReferralDialogState, setResumeReferralDialogState] = useState<{
+    targetRecordId: string;
+    selectedContractors: string[];
+  } | null>(null);
+  const [interviewingContractorDialogState, setInterviewingContractorDialogState] = useState<{
+    targetRecordId: string;
+    stepColumnId: string;
+    selectedContractors: string[];
+    availableContractors: string[];
+  } | null>(null);
+  const [hiredContractorDialogState, setHiredContractorDialogState] = useState<{
+    targetRecordId: string;
+    stepColumnId: string;
+    selectedContractor: string;
+    availableContractors: string[];
+  } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
   const [statusDraft, setStatusDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
   const [isSavingRetention, setIsSavingRetention] = useState(false);
+  const [isSavingResumeReferralStep, setIsSavingResumeReferralStep] = useState(false);
+  const [isSavingInterviewingStep, setIsSavingInterviewingStep] = useState(false);
+  const [isSavingHiredStep, setIsSavingHiredStep] = useState(false);
   const [retentionHireDatePopoverOpen, setRetentionHireDatePopoverOpen] =
     useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
@@ -310,10 +514,27 @@ export function MondayBoardView({
   const [sendEmailRecord, setSendEmailRecord] = useState<MondayRecord | null>(null);
   const [sendEmailStep, setSendEmailStep] = useState<1 | 2 | 3>(1);
   const [sendEmailTemplateId, setSendEmailTemplateId] = useState<string | null>(null);
+  const [sendEmailOwnerUserId, setSendEmailOwnerUserId] = useState("");
+  const [sendEmailProgressUpdate, setSendEmailProgressUpdate] = useState<{
+    updateType: Exclude<ContactUpdateType, "general">;
+    body: string;
+    internalExternalStatus?: "Internal" | "External";
+  } | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [pendingOnboardingActionsByTargetId, setPendingOnboardingActionsByTargetId] =
+    useState<Record<string, boolean>>({});
   const [featureFlags, setFeatureFlags] = useState<MondayFeatureFlags>(
     DEFAULT_MONDAY_FEATURE_FLAGS,
   );
+  const [platformSettings, setPlatformSettings] = useState<MondayPlatformSettings>({
+    ...DEFAULT_PLATFORM_SETTINGS,
+  });
+  const [platformSettingsDraft, setPlatformSettingsDraft] = useState<MondayPlatformSettings>({
+    ...DEFAULT_PLATFORM_SETTINGS,
+  });
+  const [newEmailSystemTagKey, setNewEmailSystemTagKey] = useState("");
+  const [newEmailSystemTagColumnId, setNewEmailSystemTagColumnId] = useState("");
+  const [isSavingPlatformSettings, setIsSavingPlatformSettings] = useState(false);
   const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
@@ -330,6 +551,24 @@ export function MondayBoardView({
     console.info("[MondayThemeSync] Initialized monday-sdk-js instance");
     return sdk;
   }, []);
+
+  const setOnboardingActionPending = useCallback(
+    (targetRecordId: string, pending: boolean) => {
+      const normalizedTargetRecordId = targetRecordId.trim();
+      if (!normalizedTargetRecordId) return;
+      setPendingOnboardingActionsByTargetId((prev) => {
+        if (pending) {
+          if (prev[normalizedTargetRecordId]) return prev;
+          return { ...prev, [normalizedTargetRecordId]: true };
+        }
+        if (!prev[normalizedTargetRecordId]) return prev;
+        const next = { ...prev };
+        delete next[normalizedTargetRecordId];
+        return next;
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -414,17 +653,151 @@ export function MondayBoardView({
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
-  const isMondaySettingsAdmin = !!identity?.userId && MONDAY_OWNER_SCOPE_ADMIN_USER_IDS.includes(identity.userId);
+  const normalizedIdentityUserId = identity?.userId?.trim() ?? "";
+  const masterAdminUserId = platformSettings.masterAdminUserId || MASTER_ADMIN_USER_ID;
+  const configuredAdminUserIds = useMemo(
+    () =>
+      uniqueSorted(platformSettings.adminUserIds.map((userId) => userId.trim())),
+    [platformSettings.adminUserIds],
+  );
+  const isMasterAdmin =
+    normalizedIdentityUserId.length > 0 && normalizedIdentityUserId === masterAdminUserId;
+  const isMondaySettingsAdmin =
+    normalizedIdentityUserId.length > 0 &&
+    (isMasterAdmin || configuredAdminUserIds.includes(normalizedIdentityUserId));
+  const normalizeUserIdList = useCallback((values: string[]) => {
+    return uniqueSorted(
+      values.map((value) => value.trim()).filter((value) => value.length > 0),
+    );
+  }, []);
+  const normalizeReplyToEmailList = useCallback((values: string[]) => {
+    return uniqueSorted(
+      values
+        .map((value) => value.trim().toLowerCase())
+        .filter((value) => value.length > 0),
+    );
+  }, []);
+  const normalizeEmailSystemTags = useCallback((values: MondayEmailSystemTag[]) => {
+    const deduped = new Map<string, MondayEmailSystemTag>();
+    for (const entry of values) {
+      const tag = entry.tag.trim().toLowerCase();
+      const columnId = entry.columnId.trim();
+      const columnTitle = entry.columnTitle.trim();
+      if (!EMAIL_TEMPLATE_TAG_KEY_PATTERN.test(tag)) continue;
+      if (!/^[a-zA-Z0-9_]+$/.test(columnId)) continue;
+      const key = `${tag}:${columnId}`;
+      deduped.set(key, {
+        tag,
+        columnId,
+        columnTitle: columnTitle.length > 0 ? columnTitle : columnId,
+      });
+    }
+    return Array.from(deduped.values()).sort((a, b) => a.tag.localeCompare(b.tag));
+  }, []);
+  const normalizeMonthlyBoardMappings = useCallback(
+    (values: MondayPlatformSettings["monthlyBoardMappings"]) => {
+      const deduped = new Map<string, { monthKey: string; boardId: string }>();
+      for (const entry of values) {
+        const monthKey = entry.monthKey.trim();
+        const boardId = entry.boardId.trim();
+        if (!/^\d{4}-\d{2}$/.test(monthKey) || boardId.length === 0) continue;
+        deduped.set(monthKey, { monthKey, boardId });
+      }
+      return Array.from(deduped.values()).sort((a, b) =>
+        a.monthKey.localeCompare(b.monthKey),
+      );
+    },
+    [],
+  );
+  const platformSettingsNormalized = useMemo(
+    () => ({
+      ...platformSettings,
+      adminUserIds: normalizeUserIdList(platformSettings.adminUserIds),
+      employeeUserIds: normalizeUserIdList(platformSettings.employeeUserIds),
+      replyToEmails: normalizeReplyToEmailList(platformSettings.replyToEmails),
+      emailSystemTags: normalizeEmailSystemTags(platformSettings.emailSystemTags),
+      monthlyBoardMappings: normalizeMonthlyBoardMappings(
+        platformSettings.monthlyBoardMappings,
+      ),
+    }),
+    [
+      normalizeMonthlyBoardMappings,
+      normalizeEmailSystemTags,
+      normalizeReplyToEmailList,
+      normalizeUserIdList,
+      platformSettings,
+    ],
+  );
+  const platformSettingsDraftNormalized = useMemo(
+    () => ({
+      ...platformSettingsDraft,
+      adminUserIds: normalizeUserIdList(platformSettingsDraft.adminUserIds),
+      employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
+      replyToEmails: normalizeReplyToEmailList(platformSettingsDraft.replyToEmails),
+      emailSystemTags: normalizeEmailSystemTags(platformSettingsDraft.emailSystemTags),
+      monthlyBoardMappings: normalizeMonthlyBoardMappings(
+        platformSettingsDraft.monthlyBoardMappings,
+      ),
+    }),
+    [
+      normalizeMonthlyBoardMappings,
+      normalizeEmailSystemTags,
+      normalizeReplyToEmailList,
+      normalizeUserIdList,
+      platformSettingsDraft,
+    ],
+  );
+  const platformMappingsSignature = (mappings: MondayPlatformSettings["monthlyBoardMappings"]) =>
+    mappings.map((entry) => `${entry.monthKey}:${entry.boardId}`).join(",");
+  const emailSystemTagsSignature = (tags: MondayEmailSystemTag[]) =>
+    tags
+      .map((entry) => `${entry.tag}:${entry.columnId}:${entry.columnTitle}`)
+      .join(",");
+  const formatMonthMappingLabel = useCallback((monthKey: string) => {
+    const [yearPart, monthPart] = monthKey.split("-");
+    const year = Number(yearPart);
+    const monthIndex = Number(monthPart) - 1;
+    if (!Number.isInteger(year) || !Number.isInteger(monthIndex)) return monthKey;
+    if (monthIndex < 0 || monthIndex > 11) return monthKey;
+    const parsed = new Date(Date.UTC(year, monthIndex, 1));
+    if (Number.isNaN(parsed.getTime())) return monthKey;
+    return parsed.toLocaleDateString(undefined, {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  }, []);
+  const syncMonthlyBoardOptions = useMemo(
+    () =>
+      platformSettingsNormalized.monthlyBoardMappings
+        .map((entry) => {
+          const monthLabel = formatMonthMappingLabel(entry.monthKey);
+          return {
+            value: `${entry.monthKey}:${entry.boardId}`,
+            boardId: entry.boardId,
+            monthKey: entry.monthKey,
+            label: `${monthLabel} (${entry.monthKey})`,
+          };
+        })
+        .filter((entry) => entry.boardId.trim().length > 0),
+    [formatMonthMappingLabel, platformSettingsNormalized.monthlyBoardMappings],
+  );
+  const hasUnsavedPlatformSettings =
+    platformSettingsNormalized.adminUserIds.join(",") !==
+      platformSettingsDraftNormalized.adminUserIds.join(",") ||
+    platformSettingsNormalized.employeeUserIds.join(",") !==
+      platformSettingsDraftNormalized.employeeUserIds.join(",") ||
+    platformSettingsNormalized.replyToEmails.join(",") !==
+      platformSettingsDraftNormalized.replyToEmails.join(",") ||
+    emailSystemTagsSignature(platformSettingsNormalized.emailSystemTags) !==
+      emailSystemTagsSignature(platformSettingsDraftNormalized.emailSystemTags) ||
+    platformMappingsSignature(platformSettingsNormalized.monthlyBoardMappings) !==
+      platformMappingsSignature(platformSettingsDraftNormalized.monthlyBoardMappings);
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
     !hasForcedOwnerScope &&
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
-  const useUserRecordsEndpoint =
-    isTouchScopedView &&
-    !canOverrideUserScopeOwner &&
-    boardGeneralSettings.recordSource === "touched_in_month" &&
-    debouncedSearch.trim().length < 2;
   const presetScopeOwnerId = useMemo(() => {
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";
@@ -432,13 +805,33 @@ export function MondayBoardView({
     if (ownerFromFilter.length > 0) return ownerFromFilter;
     return identity?.userId.trim() ?? "";
   }, [forcedOwnerId, hasForcedOwnerScope, identity?.userId, ownerFilter, viewMode]);
+  const shouldGateRecordsForBoardSettings =
+    isTouchScopedView && presetScopeOwnerId.length > 0;
+  const hasResolvedUserScopeOwner =
+    !isTouchScopedView || presetScopeOwnerId.length > 0;
+  const boardSettingsReady =
+    !shouldGateRecordsForBoardSettings || boardSettingsReadyOwnerId === presetScopeOwnerId;
+  const useUserRecordsEndpoint =
+    boardSettingsReady &&
+    isTouchScopedView &&
+    !canOverrideUserScopeOwner &&
+    boardGeneralSettings.recordSource === "touched_in_month" &&
+    debouncedSearch.trim().length < 2;
   const boardThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
     [boardGeneralSettings.colorTheme],
   );
+  const boardThemeInlineStyles = useMemo(
+    () => buildUserBoardThemeInlineStyles(boardGeneralSettings),
+    [boardGeneralSettings],
+  );
   const boardDraftThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettingsDraft.colorTheme],
     [boardGeneralSettingsDraft.colorTheme],
+  );
+  const boardDraftThemeInlineStyles = useMemo(
+    () => buildUserBoardThemeInlineStyles(boardGeneralSettingsDraft),
+    [boardGeneralSettingsDraft],
   );
   const boardFontScale = USER_BOARD_FONT_SIZE_SCALE[boardGeneralSettings.fontSize];
   const boardFontScalePercent = Math.round(boardFontScale * 100);
@@ -448,8 +841,13 @@ export function MondayBoardView({
     USER_BOARD_ACTION_BUTTON_SIZE_CLASS[boardGeneralSettingsDraft.fontSize];
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
+    boardGeneralSettings.customTheme?.colorHex !==
+      boardGeneralSettingsDraft.customTheme?.colorHex ||
+    boardGeneralSettings.customTheme?.alpha !== boardGeneralSettingsDraft.customTheme?.alpha ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
     boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
+    boardGeneralSettings.hoverPopoversEnabled !==
+      boardGeneralSettingsDraft.hoverPopoversEnabled ||
     boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
     boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode ||
     boardGeneralSettings.recordSource !== boardGeneralSettingsDraft.recordSource;
@@ -469,14 +867,18 @@ export function MondayBoardView({
       ownerFilter,
       sessionToken,
     ],
-    enabled: !!sessionToken && !staticMode,
+    enabled:
+      !!sessionToken &&
+      !staticMode &&
+      hasResolvedUserScopeOwner &&
+      boardSettingsReady,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const recordsEndpoint = useUserRecordsEndpoint
         ? "/api/monday/user-records"
         : "/api/monday/records";
       const params = new URLSearchParams();
-      params.set("limit", "100");
+      params.set("limit", useUserRecordsEndpoint ? "50" : "100");
       if (pageParam) params.set("cursor", pageParam);
       const normalizedSearch = debouncedSearch.trim();
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
@@ -502,15 +904,16 @@ export function MondayBoardView({
       return data;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    staleTime: 30_000,
+    staleTime: useUserRecordsEndpoint ? 60_000 : 30_000,
   });
 
   const shouldAutoLoadMore =
-    !staticMode &&
-    !useUserRecordsEndpoint &&
-    debouncedSearch.trim().length === 0 &&
-    statusFilter.trim().length === 0 &&
-    ownerFilter.trim().length === 0;
+    !staticMode && boardGeneralSettings.pageSize === 0;
+  const handleLoadMoreRecords = () => {
+    if (recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  };
 
   const featureFlagsQuery = useQuery({
     queryKey: ["monday-feature-flags", sessionToken],
@@ -529,6 +932,50 @@ export function MondayBoardView({
     },
     staleTime: 30_000,
   });
+
+  const platformSettingsQuery = useQuery({
+    queryKey: ["monday-platform-settings", sessionToken],
+    enabled: !!sessionToken && !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/platform", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as MondayPlatformSettingsResponse;
+      if (!response.ok || !data.ok || !data.platformSettings) {
+        throw new Error(data.error ?? "Failed to load platform settings");
+      }
+      return data.platformSettings;
+    },
+    staleTime: 30_000,
+  });
+
+  const platformBoardColumnsQuery = useQuery({
+    queryKey: ["monday-platform-board-columns", sessionToken],
+    enabled: !!sessionToken && !staticMode && settingsOpen && isMasterAdmin,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/settings/platform/columns", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as PlatformBoardColumnsResponse;
+      if (!response.ok || !data.ok || !Array.isArray(data.columns)) {
+        throw new Error(data.error ?? "Failed to load platform board columns");
+      }
+      return data.columns;
+    },
+    staleTime: 5 * 60_000,
+  });
+  const platformBoardColumnOptions = useMemo(
+    () =>
+      (platformBoardColumnsQuery.data ?? []).map((column) => ({
+        ...column,
+        label: `${column.title} (${column.id})`,
+      })),
+    [platformBoardColumnsQuery.data],
+  );
 
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
@@ -613,6 +1060,41 @@ export function MondayBoardView({
     },
     staleTime: 30_000,
   });
+  const sendEmailContactOwnerId = sendEmailRecord?.ownerIds[0]?.trim() ?? "";
+  const outlookTeamMailboxesQuery = useQuery({
+    queryKey: [
+      "monday-outlook-team-mailboxes",
+      sessionToken,
+      sendEmailRecord?.id,
+      sendEmailContactOwnerId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !!identity?.userId &&
+      !!sendEmailRecord &&
+      featureFlags.emailMarketingEnabled &&
+      !staticMode,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (sendEmailContactOwnerId) {
+        params.set("contactOwnerUserId", sendEmailContactOwnerId);
+      }
+      const response = await fetch(
+        `/api/monday/email/outlook/team-mailboxes?${params.toString()}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+        },
+      );
+      const data = (await response.json()) as OutlookTeamMailboxesResponse;
+      if (!response.ok || !data.ok || !Array.isArray(data.mailboxes)) {
+        throw new Error(data.error ?? "Failed to load team sender mailboxes");
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
 
   const routingStatusQuery = useQuery({
     queryKey: ["monday-routing-status", sessionToken, identity?.userId, settingsOpen],
@@ -669,17 +1151,55 @@ export function MondayBoardView({
     staleTime: 30_000,
   });
 
+  const jobsQuery = useQuery({
+    queryKey: ["monday-jobs-board", sessionToken],
+    enabled:
+      !!sessionToken &&
+      !!contactHistoryDialogRecord &&
+      !staticMode &&
+      contactDialogTab === "jobs",
+    queryFn: async () => {
+      const response = await fetch("/api/monday/jobs?limit=300&onlyAvailable=true", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken
+          ? { "x-monday-session-token": sessionToken }
+          : undefined,
+      });
+      const data = (await response.json()) as MondayJobsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load jobs board");
+      }
+      return data;
+    },
+    staleTime: 60_000,
+  });
+
+  interface ContactColumnEntry {
+    id: string;
+    title: string;
+    type: string;
+    text: string | null;
+    value: string | null;
+    options?: string[];
+    isEditable?: boolean;
+  }
+
   interface ContactColumnsResponse {
     ok: boolean;
     error?: string;
     itemId?: string;
     itemName?: string | null;
+    columns?: ContactColumnEntry[];
+  }
+
+  interface PlatformBoardColumnsResponse {
+    ok: boolean;
+    error?: string;
     columns?: Array<{
       id: string;
       title: string;
       type: string;
-      text: string | null;
-      value: string | null;
     }>;
   }
 
@@ -765,6 +1285,8 @@ export function MondayBoardView({
   });
 
   useEffect(() => {
+    if (hasHydratedInitialQueryParamsRef.current) return;
+    hasHydratedInitialQueryParamsRef.current = true;
     const params = new URLSearchParams(window.location.search);
     const ownerIdParam = params.get("ownerId");
     const ownerParam = ownerIdParam ?? params.get("owner");
@@ -788,14 +1310,23 @@ export function MondayBoardView({
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, [hasForcedOwnerScope, outlookStatusQuery.refetch]);
+  }, [hasForcedOwnerScope, outlookStatusQuery]);
 
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
     setActiveSavedAdvancedFilterId(null);
+    setBoardSettingsReadyOwnerId("");
     setBoardGeneralSettings({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
     setBoardGeneralSettingsDraft({ ...DEFAULT_USER_BOARD_GENERAL_SETTINGS });
   }, [presetScopeOwnerId]);
+
+  useEffect(() => {
+    if (!presetScopeOwnerId) return;
+    if (!userBoardSettingsQuery.isFetched) return;
+    setBoardSettingsReadyOwnerId((prev) =>
+      prev === presetScopeOwnerId ? prev : presetScopeOwnerId,
+    );
+  }, [presetScopeOwnerId, userBoardSettingsQuery.isFetched]);
 
   useEffect(() => {
     if (!presetScopeOwnerId) return;
@@ -810,6 +1341,9 @@ export function MondayBoardView({
   useEffect(() => {
     if (!presetScopeOwnerId) return;
     if (!userBoardSettingsQuery.data) return;
+    setBoardSettingsReadyOwnerId((prev) =>
+      prev === presetScopeOwnerId ? prev : presetScopeOwnerId,
+    );
     setBoardGeneralSettings(userBoardSettingsQuery.data);
     setBoardGeneralSettingsDraft(userBoardSettingsQuery.data);
     if (isUserBoardDisplayMode(userBoardSettingsQuery.data.displayMode)) {
@@ -862,12 +1396,25 @@ export function MondayBoardView({
       setIsMondayEmbeddedContext(false);
 
       try {
-        let maybeToken = readTokenFromLocation();
-
-        if (!maybeToken) {
-          const tokenResponse = await monday.get("sessionToken");
-          maybeToken = readTokenFromSdkResponse(tokenResponse);
+        const queryToken = readTokenFromLocation();
+        if (queryToken && typeof window !== "undefined") {
+          const currentUrl = new URL(window.location.href);
+          if (currentUrl.searchParams.has("sessionToken")) {
+            currentUrl.searchParams.delete("sessionToken");
+            const nextSearch = currentUrl.searchParams.toString();
+            const nextUrl = `${currentUrl.pathname}${nextSearch ? `?${nextSearch}` : ""}${currentUrl.hash}`;
+            window.history.replaceState(null, "", nextUrl);
+          }
         }
+
+        let sdkToken: string | null = null;
+        try {
+          const tokenResponse = await monday.get("sessionToken");
+          sdkToken = readTokenFromSdkResponse(tokenResponse);
+        } catch {
+          sdkToken = null;
+        }
+        let maybeToken = sdkToken ?? queryToken;
 
         if (!maybeToken) {
           const devAuthResponse = await fetch("/api/monday/auth/session", {
@@ -896,22 +1443,36 @@ export function MondayBoardView({
           );
         }
 
-        const authResponse = await fetch("/api/monday/auth/session", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": maybeToken,
-          },
-          body: JSON.stringify({ sessionToken: maybeToken }),
-          cache: "no-store",
-        });
-
-        const authData = (await authResponse.json()) as {
-          ok: boolean;
-          error?: string;
-          identity?: MondayIdentity;
-          sessionToken?: string;
+        const verifyWithToken = async (token: string) => {
+          const authResponse = await fetch("/api/monday/auth/session", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": token,
+            },
+            body: JSON.stringify({ sessionToken: token }),
+            cache: "no-store",
+          });
+          const authData = (await authResponse.json()) as {
+            ok: boolean;
+            error?: string;
+            identity?: MondayIdentity;
+            sessionToken?: string;
+          };
+          return { authResponse, authData };
         };
+
+        let { authResponse, authData } = await verifyWithToken(maybeToken);
+
+        if (
+          (!authResponse.ok || !authData.ok || !authData.identity) &&
+          authData.error === "signature verification failed" &&
+          sdkToken &&
+          sdkToken !== maybeToken
+        ) {
+          maybeToken = sdkToken;
+          ({ authResponse, authData } = await verifyWithToken(maybeToken));
+        }
 
         if (!authResponse.ok || !authData.ok || !authData.identity) {
           throw new Error(authData.error ?? "Unable to verify Monday session");
@@ -961,6 +1522,12 @@ export function MondayBoardView({
   }, [featureFlagsQuery.data]);
 
   useEffect(() => {
+    if (!platformSettingsQuery.data) return;
+    setPlatformSettings(platformSettingsQuery.data);
+    setPlatformSettingsDraft(platformSettingsQuery.data);
+  }, [platformSettingsQuery.data]);
+
+  useEffect(() => {
     if (staticMode) return;
     if (!featureFlagsQuery.error) return;
     const message =
@@ -969,6 +1536,16 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [featureFlagsQuery.error, staticMode]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!platformSettingsQuery.error) return;
+    const message =
+      platformSettingsQuery.error instanceof Error
+        ? platformSettingsQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [platformSettingsQuery.error, staticMode]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1044,6 +1621,17 @@ export function MondayBoardView({
 
   useEffect(() => {
     if (staticMode) return;
+    if (!sendEmailRecord) return;
+    if (!outlookTeamMailboxesQuery.error) return;
+    const message =
+      outlookTeamMailboxesQuery.error instanceof Error
+        ? outlookTeamMailboxesQuery.error.message
+        : "Failed to load sender mailbox options";
+    toast.error(message);
+  }, [outlookTeamMailboxesQuery.error, sendEmailRecord, staticMode]);
+
+  useEffect(() => {
+    if (staticMode) return;
     if (!contactHistoryDialogRecord) return;
     if (!contactUpdatesQuery.error) return;
     const message =
@@ -1106,6 +1694,7 @@ export function MondayBoardView({
         phone: `(555) 010-${String(index).padStart(2, "0")}`,
         address: `${100 + index} Test Ave, Test City`,
         referredToContractors: index % 2 === 0 ? "Contractor A" : "Contractor B",
+        interviewingWithContractors: index % 4 === 0 ? "Contractor A" : null,
         hiredWithContractor: index % 3 === 0 ? "Contractor C" : "—",
         hireDate: new Date(
           Date.UTC(2026, 1, (index % 28) + 1, 0, 0, 0),
@@ -1117,6 +1706,9 @@ export function MondayBoardView({
         ).toISOString(),
         updatedAt: new Date(
           Date.UTC(2026, 1, (index % 28) + 1, 13, index % 60, 0),
+        ).toISOString(),
+        lastTouchpointAt: new Date(
+          Date.UTC(2026, 1, (index % 28) + 1, 14, index % 60, 0),
         ).toISOString(),
         contactDetails: [
           { label: "Name", value: `Static Lead ${id}` },
@@ -1320,6 +1912,10 @@ export function MondayBoardView({
       outlookStatusQuery.data?.callbackPath ?? "/api/monday/email/outlook/callback";
     return `${window.location.origin}${path}`;
   }, [outlookStatusQuery.data?.callbackPath]);
+  const monthlyWebhookUrl = useMemo(() => {
+    if (typeof window === "undefined") return "/api/monday/routing/monthly-webhook";
+    return `${window.location.origin}/api/monday/routing/monthly-webhook`;
+  }, []);
 
   const handleConnectOutlook = async () => {
     if (!sessionToken) {
@@ -1380,6 +1976,114 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsDisconnectingOutlook(false);
+    }
+  };
+
+  const parseDelimitedList = (value: string) => {
+    return uniqueSorted(
+      value
+        .split(/[\s,;\n]+/)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0),
+    );
+  };
+
+  const handleSavePlatformSettings = async (successMessage: string) => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    if (!isMasterAdmin) {
+      toast.error("Only the master admin can change platform settings");
+      return;
+    }
+
+    const normalizedReplyToEmails = normalizeReplyToEmailList(
+      platformSettingsDraft.replyToEmails,
+    );
+    const invalidReplyToEmails = normalizedReplyToEmails.filter(
+      (email) => !EMAIL_PATTERN.test(email),
+    );
+    if (invalidReplyToEmails.length > 0) {
+      toast.error(`Invalid reply-to emails: ${invalidReplyToEmails.join(", ")}`);
+      return;
+    }
+    const normalizedEmailSystemTags = normalizeEmailSystemTags(
+      platformSettingsDraft.emailSystemTags,
+    );
+    const invalidEmailSystemTags = platformSettingsDraft.emailSystemTags.filter((entry) => {
+      const tag = entry.tag.trim().toLowerCase();
+      const columnId = entry.columnId.trim();
+      return (
+        tag.length > 0 &&
+        (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag) || !/^[a-zA-Z0-9_]+$/.test(columnId))
+      );
+    });
+    if (invalidEmailSystemTags.length > 0) {
+      toast.error(
+        "Each email template tag needs a valid key (letters/numbers/._-) and a column.",
+      );
+      return;
+    }
+    const normalizedMonthlyBoardMappings = normalizeMonthlyBoardMappings(
+      platformSettingsDraft.monthlyBoardMappings,
+    );
+    const invalidMonthlyMappings = platformSettingsDraft.monthlyBoardMappings.filter(
+      (entry) =>
+        entry.monthKey.trim().length > 0 &&
+        (!/^\d{4}-\d{2}$/.test(entry.monthKey.trim()) ||
+          entry.boardId.trim().length === 0),
+    );
+    if (invalidMonthlyMappings.length > 0) {
+      toast.error(
+        "Each monthly board mapping row requires a valid month (YYYY-MM) and board ID.",
+      );
+      return;
+    }
+
+    const nextPayload: MondayPlatformSettings = {
+      masterAdminUserId: masterAdminUserId,
+      adminUserIds: normalizeUserIdList([
+        ...platformSettingsDraft.adminUserIds,
+        masterAdminUserId,
+      ]),
+      employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
+      replyToEmails: normalizedReplyToEmails,
+      emailSystemTags: normalizedEmailSystemTags,
+      monthlyBoardMappings: normalizedMonthlyBoardMappings,
+    };
+
+    setIsSavingPlatformSettings(true);
+    try {
+      const response = await fetch("/api/monday/settings/platform", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          adminUserIds: nextPayload.adminUserIds,
+          employeeUserIds: nextPayload.employeeUserIds,
+          replyToEmails: nextPayload.replyToEmails,
+          emailSystemTags: nextPayload.emailSystemTags,
+          monthlyBoardMappings: nextPayload.monthlyBoardMappings,
+        }),
+      });
+      const data = (await response.json()) as MondayPlatformSettingsResponse;
+      if (!response.ok || !data.ok || !data.platformSettings) {
+        throw new Error(data.error ?? "Failed to save platform settings");
+      }
+      setPlatformSettings(data.platformSettings);
+      setPlatformSettingsDraft(data.platformSettings);
+      await platformSettingsQuery.refetch();
+      toast.success(successMessage);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to save platform settings";
+      toast.error(message);
+    } finally {
+      setIsSavingPlatformSettings(false);
     }
   };
 
@@ -1493,6 +2197,9 @@ export function MondayBoardView({
 
     setIsSavingBoardGeneralSettings(true);
     try {
+      const parsedCustomTheme = parseUserBoardCustomTheme(
+        boardGeneralSettingsDraft.customTheme,
+      );
       const response = await fetch("/api/monday/settings/user-board", {
         method: "POST",
         cache: "no-store",
@@ -1503,8 +2210,11 @@ export function MondayBoardView({
         body: JSON.stringify({
           ownerId: presetScopeOwnerId,
           colorTheme: boardGeneralSettingsDraft.colorTheme,
+          customTheme:
+            boardGeneralSettingsDraft.colorTheme === "custom" ? parsedCustomTheme : undefined,
           fontSize: boardGeneralSettingsDraft.fontSize,
           tableDensity: boardGeneralSettingsDraft.tableDensity,
+          hoverPopoversEnabled: boardGeneralSettingsDraft.hoverPopoversEnabled,
           pageSize: boardGeneralSettingsDraft.pageSize,
           displayMode: boardGeneralSettingsDraft.displayMode,
           recordSource: boardGeneralSettingsDraft.recordSource,
@@ -1532,17 +2242,86 @@ export function MondayBoardView({
     }
   };
 
-  const openSendEmailDialog = (record: MondayRecord) => {
+  const openSendEmailDialog = (
+    record: MondayRecord,
+    options?: {
+      progressUpdate?: {
+        updateType: Exclude<ContactUpdateType, "general">;
+        body: string;
+        internalExternalStatus?: "Internal" | "External";
+      } | null;
+      autoAdvanceToPreview?: boolean;
+      preferredTemplateType?: Exclude<ContactUpdateType, "general"> | null;
+    },
+  ) => {
+    const resolvePreferredTemplateId = () => {
+      const templates = emailTemplates;
+      if (templates.length === 0) return null;
+      const preferredType =
+        options?.preferredTemplateType ??
+        options?.progressUpdate?.updateType ??
+        null;
+      if (preferredType === "welcome_email") {
+        const matchedWelcomeTemplate = templates.find((template) =>
+          template.name.toLowerCase().includes("welcome"),
+        );
+        if (matchedWelcomeTemplate) return matchedWelcomeTemplate.id;
+      }
+      if (preferredType === "followup") {
+        const matchedQuestionnaireTemplate = templates.find((template) => {
+          const name = template.name.toLowerCase();
+          return name.includes("questionnaire") || name.includes("questionaire");
+        });
+        if (matchedQuestionnaireTemplate) return matchedQuestionnaireTemplate.id;
+      }
+      return templates[0]?.id ?? null;
+    };
+
     setSendEmailRecord(record);
-    setSendEmailStep(1);
-    setSendEmailTemplateId(emailTemplates[0]?.id ?? null);
+    setSendEmailStep(options?.autoAdvanceToPreview ? 2 : 1);
+    setSendEmailTemplateId(resolvePreferredTemplateId());
+    setSendEmailOwnerUserId(record.ownerIds[0]?.trim() ?? "");
+    setSendEmailProgressUpdate(options?.progressUpdate ?? null);
   };
   const closeSendEmailDialog = () => {
+    if (sendEmailProgressUpdate && sendEmailRecord) {
+      const targetRecordId =
+        sendEmailRecord.contactId?.trim() || sendEmailRecord.id?.trim() || "";
+      if (targetRecordId) {
+        setOnboardingActionPending(targetRecordId, false);
+      }
+    }
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailOwnerUserId("");
+    setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   };
+  const sendEmailTargetRecordId =
+    sendEmailRecord?.contactId?.trim() || sendEmailRecord?.id?.trim() || "";
+  const sendEmailContactColumnsQuery = useQuery({
+    queryKey: ["monday-send-email-columns", sessionToken, sendEmailTargetRecordId],
+    enabled: !!sessionToken && !!sendEmailRecord && !staticMode && sendEmailTargetRecordId.length > 0,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(sendEmailTargetRecordId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken
+            ? { "x-monday-session-token": sessionToken }
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as ContactColumnsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact template values");
+      }
+      return data;
+    },
+    staleTime: 60_000,
+  });
   const sendEmailOwnerVars = useMemo(() => {
     const primaryOwner = sendEmailRecord?.ownerProfiles[0] ?? null;
     const ownerName =
@@ -1552,34 +2331,159 @@ export function MondayBoardView({
     const ownerEmail = primaryOwner?.email?.trim() ?? "";
     return { ownerName, ownerEmail };
   }, [sendEmailRecord]);
+  const sendEmailTemplateVariables = useMemo(() => {
+    const vars: Record<string, string> = {
+      "owner.name": sendEmailOwnerVars.ownerName,
+      "owner.email": sendEmailOwnerVars.ownerEmail,
+      "contact.name": sendEmailRecord?.name?.trim() ?? "",
+      "contact.email": sendEmailRecord?.email?.trim() ?? "",
+    };
+    const columnValues = new Map(
+      (sendEmailContactColumnsQuery.data?.columns ?? []).map((column) => {
+        const fallbackFromValue =
+          typeof column.value === "string" &&
+          column.value.trim().startsWith("{") &&
+          column.value.trim().endsWith("}")
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(column.value) as {
+                    label?: { text?: unknown };
+                    labels?: unknown;
+                    text?: unknown;
+                  };
+                  if (typeof parsed.label?.text === "string") return parsed.label.text;
+                  if (Array.isArray(parsed.labels)) {
+                    const labels = parsed.labels.filter(
+                      (value): value is string => typeof value === "string",
+                    );
+                    if (labels.length > 0) return labels.join(", ");
+                  }
+                  if (typeof parsed.text === "string") return parsed.text;
+                } catch {
+                  // ignore parse errors
+                }
+                return "";
+              })()
+            : "";
+        return [column.id, (column.text?.trim() || fallbackFromValue || "").trim()];
+      }),
+    );
+    for (const entry of platformSettings.emailSystemTags) {
+      vars[entry.tag] = columnValues.get(entry.columnId) ?? "";
+    }
+    return vars;
+  }, [
+    platformSettings.emailSystemTags,
+    sendEmailContactColumnsQuery.data?.columns,
+    sendEmailOwnerVars.ownerEmail,
+    sendEmailOwnerVars.ownerName,
+    sendEmailRecord?.email,
+    sendEmailRecord?.name,
+  ]);
+  useEffect(() => {
+    if (!sendEmailRecord) return;
+    if (sendEmailStep !== 2) return;
+    if (sendEmailTemplateId) return;
+    if (emailTemplates.length === 0) return;
+
+    const preferredType = sendEmailProgressUpdate?.updateType ?? null;
+    const matchedTemplateId =
+      preferredType === "welcome_email"
+        ? emailTemplates.find((template) =>
+            template.name.toLowerCase().includes("welcome"),
+          )?.id
+        : preferredType === "followup"
+          ? emailTemplates.find((template) => {
+              const name = template.name.toLowerCase();
+              return name.includes("questionnaire") || name.includes("questionaire");
+            })?.id
+        : null;
+    setSendEmailTemplateId(matchedTemplateId ?? emailTemplates[0]?.id ?? null);
+  }, [
+    emailTemplates,
+    sendEmailProgressUpdate?.updateType,
+    sendEmailRecord,
+    sendEmailStep,
+    sendEmailTemplateId,
+  ]);
   const sendEmailResolvedTemplate = useMemo(() => {
     if (!sendEmailTemplate) return null;
-    const subject = interpolateTemplateVariables(sendEmailTemplate.name, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
+    const subject = interpolateTemplateVariables(
+      sendEmailTemplate.name,
+      sendEmailTemplateVariables,
+    );
     const htmlSource =
       sendEmailTemplate.renderedHtml.trim().length > 0
         ? sendEmailTemplate.renderedHtml
         : sendEmailTemplate.content;
-    const html = interpolateTemplateVariables(htmlSource, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
-    const text = interpolateTemplateVariables(sendEmailTemplate.content, {
-      ownerName: sendEmailOwnerVars.ownerName,
-      ownerEmail: sendEmailOwnerVars.ownerEmail,
-    });
+    const html = interpolateTemplateVariables(htmlSource, sendEmailTemplateVariables);
+    const text = interpolateTemplateVariables(
+      sendEmailTemplate.content,
+      sendEmailTemplateVariables,
+    );
     return { subject, html, text };
-  }, [sendEmailOwnerVars.ownerEmail, sendEmailOwnerVars.ownerName, sendEmailTemplate]);
+  }, [sendEmailTemplate, sendEmailTemplateVariables]);
   useEffect(() => {
     if (featureFlags.emailMarketingEnabled) return;
     if (!sendEmailRecord) return;
+    if (sendEmailProgressUpdate) {
+      const targetRecordId =
+        sendEmailRecord.contactId?.trim() || sendEmailRecord.id?.trim() || "";
+      if (targetRecordId) {
+        setOnboardingActionPending(targetRecordId, false);
+      }
+    }
     setSendEmailRecord(null);
     setSendEmailStep(1);
     setSendEmailTemplateId(null);
+    setSendEmailOwnerUserId("");
+    setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
-  }, [featureFlags.emailMarketingEnabled, sendEmailRecord]);
+  }, [
+    featureFlags.emailMarketingEnabled,
+    sendEmailProgressUpdate,
+    sendEmailRecord,
+    setOnboardingActionPending,
+  ]);
+  useEffect(() => {
+    if (!sendEmailRecord) return;
+    const mailboxes = outlookTeamMailboxesQuery.data?.mailboxes ?? [];
+    if (mailboxes.length === 0) return;
+    const selectedExists = mailboxes.some(
+      (entry) => entry.mondayUserId === sendEmailOwnerUserId,
+    );
+    if (selectedExists) return;
+    const preferredId = outlookTeamMailboxesQuery.data?.defaultSenderUserId?.trim();
+    if (preferredId) {
+      setSendEmailOwnerUserId(preferredId);
+      return;
+    }
+    const fallbackMailbox =
+      mailboxes.find((entry) => entry.isContactOwner && entry.connected) ??
+      mailboxes.find((entry) => entry.isCurrentUser && entry.connected) ??
+      mailboxes.find((entry) => entry.connected) ??
+      mailboxes[0];
+    if (fallbackMailbox) {
+      setSendEmailOwnerUserId(fallbackMailbox.mondayUserId);
+    }
+  }, [
+    outlookTeamMailboxesQuery.data?.defaultSenderUserId,
+    outlookTeamMailboxesQuery.data?.mailboxes,
+    sendEmailOwnerUserId,
+    sendEmailRecord,
+  ]);
+  const sendEmailMailboxOptions = outlookTeamMailboxesQuery.data?.mailboxes ?? [];
+  const selectedSendEmailMailbox =
+    sendEmailMailboxOptions.find(
+      (entry) => entry.mondayUserId === sendEmailOwnerUserId,
+    ) ?? null;
+  const sendEmailCanSubmit =
+    !isSendingEmail &&
+    !!sendEmailRecord?.email &&
+    sendEmailOwnerUserId.trim().length > 0 &&
+    (selectedSendEmailMailbox ? selectedSendEmailMailbox.connected : true) &&
+    !outlookTeamMailboxesQuery.isLoading &&
+    !outlookTeamMailboxesQuery.isFetching;
   const handleConfirmSendEmail = async () => {
     if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
@@ -1588,6 +2492,15 @@ export function MondayBoardView({
     const recipient = sendEmailRecord.email?.trim() ?? "";
     if (!recipient) {
       toast.error("This contact does not have an email address");
+      return;
+    }
+    const senderMailboxUserId = sendEmailOwnerUserId.trim();
+    if (!senderMailboxUserId) {
+      toast.error("Select a sender mailbox before sending");
+      return;
+    }
+    if (selectedSendEmailMailbox && !selectedSendEmailMailbox.connected) {
+      toast.error("Selected sender mailbox is not connected to Outlook");
       return;
     }
     setIsSendingEmail(true);
@@ -1603,13 +2516,170 @@ export function MondayBoardView({
           to: recipient,
           subject: sendEmailResolvedTemplate.subject,
           html: sendEmailResolvedTemplate.html,
+          contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
+          ownerMondayUserId: senderMailboxUserId,
         }),
       });
       const data = (await response.json()) as MondaySendEmailResponse;
       if (!response.ok || !data.ok) {
         throw new Error(data.error ?? "Failed to send email");
       }
-      toast.success(`Email sent to ${recipient}`);
+      let progressSyncError: string | null = null;
+      const progressStepLabel =
+        sendEmailProgressUpdate?.updateType === "followup"
+          ? "questionnaire step"
+          : sendEmailProgressUpdate?.updateType === "welcome_email"
+            ? "welcome step"
+            : "email progress";
+      const deriveGeneralEmailUpdateType = (): ContactUpdateType => {
+        const normalizedTemplateName = sendEmailTemplate.name.toLowerCase();
+        if (normalizedTemplateName.includes("welcome")) return "welcome_email";
+        if (
+          normalizedTemplateName.includes("questionnaire") ||
+          normalizedTemplateName.includes("questionaire") ||
+          normalizedTemplateName.includes("followup")
+        ) {
+          return "followup";
+        }
+        return "general";
+      };
+      const derivedGeneralEmailUpdateType = deriveGeneralEmailUpdateType();
+      const emailUpdateSummary = sendEmailResolvedTemplate.subject.trim().length > 0
+        ? `Email Sent - ${sendEmailResolvedTemplate.subject.trim()}`
+        : "General Email Update";
+      const syncLabel = sendEmailProgressUpdate ? progressStepLabel : "email update";
+      try {
+        const targetRecordId = resolveContactUpdateTargetRecordId(sendEmailRecord);
+        const sendProgressDateTime = new Date().toISOString();
+        const updatePayload = sendEmailProgressUpdate
+          ? {
+              body: sendEmailProgressUpdate.body,
+              updateType: sendEmailProgressUpdate.updateType as ContactUpdateType,
+              internalExternalStatus: sendEmailProgressUpdate.internalExternalStatus ?? "External",
+              methodOfCommunication: undefined as string | undefined,
+              suppressApprovalStepMarking: false,
+              fallbackErrorMessage: "Failed to track onboarding progress",
+            }
+          : {
+              body: emailUpdateSummary,
+              updateType: derivedGeneralEmailUpdateType,
+              internalExternalStatus: "External" as "Internal" | "External",
+              methodOfCommunication: "Email",
+              suppressApprovalStepMarking: derivedGeneralEmailUpdateType !== "general",
+              fallbackErrorMessage: "Failed to log email update",
+            };
+        let updateData: MondayCreateRecordUpdateResponse;
+
+        const syncViaServer = async () => {
+          console.log("[sendEmail] falling back to server-side update sync", {
+            targetRecordId,
+            updateType: updatePayload.updateType,
+          });
+          const updateResponse = await fetch(
+            `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+            {
+              method: "POST",
+              cache: "no-store",
+              headers: {
+                "content-type": "application/json",
+                "x-monday-session-token": sessionToken,
+              },
+              body: JSON.stringify({
+                body: updatePayload.body,
+                updateType: updatePayload.updateType,
+                dateTime: sendProgressDateTime,
+                internalExternalStatus: updatePayload.internalExternalStatus,
+                methodOfCommunication: updatePayload.methodOfCommunication,
+                suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
+              }),
+            },
+          );
+          const serverData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+          if (!updateResponse.ok || !serverData.ok) {
+            throw new Error(serverData.error ?? updatePayload.fallbackErrorMessage);
+          }
+          return serverData;
+        };
+
+        if (canCreateUpdatesAsLoggedInMondayUser) {
+          try {
+            console.log("[sendEmail] attempting context-user update sync", {
+              targetRecordId,
+              updateType: updatePayload.updateType,
+              userId: identity?.userId,
+            });
+            const update = await createMondayRecordUpdateAsContextUser({
+              itemId: targetRecordId,
+              body: updatePayload.body,
+              updateType: updatePayload.updateType,
+              dateTime: sendProgressDateTime,
+              internalExternalStatus: updatePayload.internalExternalStatus,
+              methodOfCommunication: updatePayload.methodOfCommunication,
+              suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
+            });
+            updateData = { ok: true, update };
+          } catch (contextError) {
+            const contextMsg =
+              contextError instanceof Error ? contextError.message : String(contextError);
+            console.warn(
+              "[sendEmail] context-user update sync failed, falling back to server",
+              { error: contextMsg, targetRecordId, userId: identity?.userId },
+            );
+            updateData = await syncViaServer();
+          }
+        } else {
+          updateData = await syncViaServer();
+        }
+
+        if (identity?.userId) {
+          fetch("/api/monday/touches", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              contactItemId: targetRecordId,
+              contactName: sendEmailRecord.name ?? "",
+              ownerId: identity.userId,
+              source: "update",
+            }),
+          }).catch(() => {});
+        }
+
+        const [, refreshedRecordsResult] = await Promise.all([
+          contactUpdatesQuery.refetch(),
+          recordsQuery.refetch(),
+        ]);
+        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+          (page) => page.records ?? [],
+        );
+        syncContactHistoryDialogFromRecords(refreshedRecords);
+
+        if (updateData.update?.warning) {
+          progressSyncError = updateData.update.warning;
+        }
+      } catch (error) {
+        const msg =
+          error instanceof Error
+            ? error.message
+            : `Failed to sync ${syncLabel}`;
+        console.error("[sendEmail] post-send sync failed", {
+          error: msg,
+          userId: identity?.userId,
+          canCreateUpdatesAsLoggedInMondayUser,
+        });
+        progressSyncError = msg;
+      }
+
+      if (progressSyncError) {
+        toast.success(`Email sent to ${recipient}`);
+        toast.error(`Email sent, but ${syncLabel} sync failed: ${progressSyncError}`);
+      } else if (sendEmailProgressUpdate) {
+        toast.success(`Email sent to ${recipient} and ${progressStepLabel} marked complete`);
+      } else {
+        toast.success(`Email sent to ${recipient} and logged in updates`);
+      }
       closeSendEmailDialog();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to send email";
@@ -1748,6 +2818,54 @@ export function MondayBoardView({
       ),
     );
   }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+  const sortedGridRecords = useMemo(() => {
+    if (!(isTouchScopedView && userScopedDisplayMode === "grid")) {
+      return filteredRecords;
+    }
+    const getSortValue = (record: MondayRecord): string | number | null => {
+      switch (gridSort.field) {
+        case "name":
+          return record.name?.trim() ?? "";
+        case "resume":
+          return record.resumeFiles[0]?.name?.trim() ?? "";
+        case "tags":
+          return splitCsvValues(record.tags).join(", ").trim();
+        case "createdAt": {
+          const timestamp = Date.parse(record.createdAt ?? "");
+          return Number.isNaN(timestamp) ? null : timestamp;
+        }
+        case "updatedAt": {
+          const timestamp = Date.parse(record.updatedAt ?? "");
+          return Number.isNaN(timestamp) ? null : timestamp;
+        }
+        default:
+          return "";
+      }
+    };
+    const directionFactor = gridSort.direction === "asc" ? 1 : -1;
+    return [...filteredRecords].sort((a, b) => {
+      const valueA = getSortValue(a);
+      const valueB = getSortValue(b);
+      const isEmptyA =
+        valueA === null || (typeof valueA === "string" && valueA.trim().length === 0);
+      const isEmptyB =
+        valueB === null || (typeof valueB === "string" && valueB.trim().length === 0);
+      if (isEmptyA && isEmptyB) return 0;
+      if (isEmptyA) return 1;
+      if (isEmptyB) return -1;
+      const compareResult =
+        typeof valueA === "number" && typeof valueB === "number"
+          ? valueA - valueB
+          : String(valueA).localeCompare(String(valueB), undefined, {
+              numeric: true,
+              sensitivity: "base",
+            });
+      return compareResult * directionFactor;
+    });
+  }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
+  const filteredRecordCountLabel = `${filteredRecords.length} total contact${
+    filteredRecords.length === 1 ? "" : "s"
+  }`;
 
   const handleAddAdvancedFilterCondition = () => {
     setActiveSavedAdvancedFilterId(null);
@@ -2004,11 +3122,151 @@ export function MondayBoardView({
     };
   }, [editOptionsQuery.data, records]);
 
+  const contractorOptionCatalog = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [...retentionOptions.referredToContractors, ...retentionOptions.hiredWithContractor]
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      ),
+    [retentionOptions.hiredWithContractor, retentionOptions.referredToContractors],
+  );
+
+  const parseContractorValues = useCallback(
+    (
+      rawValue: string | null | undefined,
+      preferredOptions: string[] = [],
+    ) => {
+      const source = rawValue?.trim();
+      if (!source) return [] as string[];
+      const candidateOptions = Array.from(
+        new Set(
+          [...preferredOptions, ...contractorOptionCatalog]
+            .map((value) => value.trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
+      if (candidateOptions.length === 0) {
+        return splitCsvValues(source);
+      }
+      const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matches = candidateOptions
+        .slice()
+        .sort((a, b) => b.length - a.length)
+        .map((option) => {
+          const pattern = new RegExp(
+            `(?:^|,\\s*)(${escapeRegex(option)})(?=\\s*(?:,|$))`,
+            "i",
+          );
+          const matched = pattern.exec(source);
+          if (!matched) return null;
+          return {
+            option,
+            index: matched.index,
+          };
+        })
+        .filter((entry): entry is { option: string; index: number } => entry !== null)
+        .sort((a, b) => a.index - b.index)
+        .map((entry) => entry.option);
+      if (matches.length > 0) {
+        return matches;
+      }
+      return splitCsvValues(source);
+    },
+    [contractorOptionCatalog],
+  );
+
+  const getMergeTargetRecordId = useCallback((record: MondayRecord) => {
+    const contactId = record.contactId?.trim();
+    if (contactId && contactId.length > 0) return contactId;
+    return record.id.trim();
+  }, []);
+
+  const getMergeFieldValueFromRecord = useCallback(
+    (record: MondayRecord, key: MergeFieldKey) => {
+      switch (key) {
+        case "ownerId":
+          return record.ownerIds[0]?.trim() ?? null;
+        case "status":
+          return record.statusText?.trim() || null;
+        case "tags":
+          return splitCsvValues(record.tags ?? null);
+        case "referredToContractors":
+          return parseContractorValues(
+            record.referredToContractors,
+            retentionOptions.referredToContractors,
+          );
+        case "interviewingWithContractors":
+          return parseContractorValues(
+            record.interviewingWithContractors,
+            retentionOptions.referredToContractors,
+          );
+        case "hiredWithContractor":
+          return record.hiredWithContractor?.trim() || null;
+        case "hireDate": {
+          const dateOnly = normalizeDateOnlyFromRecord(record.hireDate);
+          return dateOnly.length > 0 ? dateOnly : null;
+        }
+        case "retentionPeriod":
+          return record.retentionPeriod?.trim() || null;
+        default:
+          return null;
+      }
+    },
+    [parseContractorValues, retentionOptions.referredToContractors],
+  );
+
+  const getMergeFieldDisplayValue = useCallback(
+    (record: MondayRecord, key: MergeFieldKey) => {
+      if (key === "ownerId") {
+        return record.peopleText?.trim() || record.ownerIds[0]?.trim() || "—";
+      }
+      const value = getMergeFieldValueFromRecord(record, key);
+      if (Array.isArray(value)) {
+        return value.length > 0 ? value.join(", ") : "—";
+      }
+      return value && String(value).trim().length > 0 ? String(value) : "—";
+    },
+    [getMergeFieldValueFromRecord],
+  );
+
+  const openMergeDialogForRecords = useCallback((selectedItems: MondayRecord[]) => {
+    const dedupedRecordsById = new Map<string, MondayRecord>();
+    for (const record of selectedItems) {
+      const targetRecordId = getMergeTargetRecordId(record);
+      if (!targetRecordId) continue;
+      if (!dedupedRecordsById.has(targetRecordId)) {
+        dedupedRecordsById.set(targetRecordId, record);
+      }
+    }
+    const records = Array.from(dedupedRecordsById.values());
+    if (records.length < 2 || records.length > 4) {
+      toast.error("Select between 2 and 4 contacts to merge.");
+      return;
+    }
+    const masterRecord = records[0]!;
+    const masterRecordId = getMergeTargetRecordId(masterRecord);
+    const fieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
+      (acc, field) => {
+        acc[field.key] = masterRecordId;
+        return acc;
+      },
+      {} as Record<MergeFieldKey, string>,
+    );
+    setMergeDialogState({
+      records,
+      masterRecordId,
+      fieldSourceByKey,
+    });
+  }, [getMergeTargetRecordId]);
+
   const openRetentionDialog = (record: MondayRecord) => {
     setRetentionDialogRecord(record);
     setRetentionHireDatePopoverOpen(false);
     setRetentionDraft({
-      referredToContractors: splitCsvValues(record.referredToContractors),
+      referredToContractors: parseContractorValues(record.referredToContractors),
       hiredWithContractor: record.hiredWithContractor ?? "",
       hireDate: normalizeDateOnlyFromRecord(record.hireDate),
       retentionPeriod: record.retentionPeriod ?? "",
@@ -2032,12 +3290,307 @@ export function MondayBoardView({
     setContactUpdateDraft("");
     setContactUpdateType("general");
     setContactDialogTab("updates");
+    setContactDialogSelectedResumeKey(null);
   };
 
   const contactDialogIndex = useMemo(() => {
     if (!contactHistoryDialogRecord) return -1;
     return filteredRecords.findIndex((r) => r.id === contactHistoryDialogRecord.id);
   }, [contactHistoryDialogRecord, filteredRecords]);
+  const contactDialogResumeFiles = useMemo(
+    () => contactHistoryDialogRecord?.resumeFiles ?? [],
+    [contactHistoryDialogRecord?.resumeFiles],
+  );
+  const getResumeFileKey = useCallback(
+    (
+      file: {
+        assetId: string | null;
+        name: string;
+        url: string | null;
+      },
+      index: number,
+    ) =>
+      file.assetId?.trim() ||
+      file.url?.trim() ||
+      `${file.name.trim().toLowerCase() || "resume"}-${index}`,
+    [],
+  );
+  const contactDialogSelectedResumeIndex = useMemo(() => {
+    if (contactDialogResumeFiles.length === 0) return -1;
+    if (!contactDialogSelectedResumeKey) return 0;
+    const matchedIndex = contactDialogResumeFiles.findIndex(
+      (file, index) => getResumeFileKey(file, index) === contactDialogSelectedResumeKey,
+    );
+    return matchedIndex >= 0 ? matchedIndex : 0;
+  }, [contactDialogResumeFiles, contactDialogSelectedResumeKey, getResumeFileKey]);
+  const contactDialogResumeFile =
+    contactDialogSelectedResumeIndex >= 0
+      ? (contactDialogResumeFiles[contactDialogSelectedResumeIndex] ?? null)
+      : null;
+  const contactDialogResumeFileName =
+    contactDialogResumeFile?.name?.trim() && contactDialogResumeFile.name.trim().length > 0
+      ? contactDialogResumeFile.name.trim()
+      : "Resume";
+  const contactDialogResumeHref = contactDialogResumeFile
+    ? getResumeFileHref(contactDialogResumeFile)
+    : null;
+  const isContactDialogUploadingResume = contactHistoryDialogRecord
+    ? uploadingResumeByRecordId[contactHistoryDialogRecord.id] === true
+    : false;
+  const contactDialogResumeInputId = contactHistoryDialogRecord
+    ? `contact-dialog-resume-upload-${contactHistoryDialogRecord.id}`
+    : "";
+  const jobsForContactDialog = useMemo(() => {
+    const jobs = jobsQuery.data?.jobs ?? [];
+    if (!contactHistoryDialogRecord || jobs.length === 0) return jobs;
+    const contactDistrict = (contactHistoryDialogRecord.statusText ?? "").trim().toLowerCase();
+    if (!contactDistrict) return jobs;
+    const matching: MondayJobListing[] = [];
+    const remaining: MondayJobListing[] = [];
+    for (const job of jobs) {
+      const districtText = (job.district ?? "").trim().toLowerCase();
+      if (districtText.length > 0 && districtText.includes(contactDistrict)) {
+        matching.push(job);
+      } else {
+        remaining.push(job);
+      }
+    }
+    return [...matching, ...remaining];
+  }, [jobsQuery.data?.jobs, contactHistoryDialogRecord]);
+  const referredJobsHistory = useMemo(() => {
+    const subitems = contactUpdatesQuery.data?.subitems ?? [];
+    const deduped = new Map<string, ReferredJobHistoryRow>();
+    for (const subitem of subitems) {
+      if (subitem.updateType !== "job_referral") continue;
+      const parsed = parseJobReferralHistoryFromText(subitem.name);
+      const dedupeKey =
+        parsed.jobId?.trim().length
+          ? `job:${parsed.jobId.trim()}`
+          : `title:${parsed.title.trim().toLowerCase()}`;
+      if (!dedupeKey || deduped.has(dedupeKey)) continue;
+      deduped.set(dedupeKey, {
+        id: dedupeKey,
+        jobId: parsed.jobId,
+        title: parsed.title,
+        referredAt: subitem.createdAt,
+        subitemId: subitem.id,
+      });
+    }
+    return Array.from(deduped.values());
+  }, [contactUpdatesQuery.data?.subitems]);
+  const referredJobIds = useMemo(
+    () =>
+      new Set(
+        referredJobsHistory
+          .map((entry) => entry.jobId?.trim())
+          .filter((entry): entry is string => !!entry && entry.length > 0),
+      ),
+    [referredJobsHistory],
+  );
+  const referredJobTitleKeys = useMemo(
+    () =>
+      new Set(
+        referredJobsHistory
+          .map((entry) => entry.title.trim().toLowerCase())
+          .filter((entry) => entry.length > 0),
+      ),
+    [referredJobsHistory],
+  );
+  const contactJobRows = useMemo<ContactJobRow[]>(
+    () =>
+      jobsForContactDialog.map((job) => ({
+        id: job.id,
+        title: job.title,
+        district: job.district ?? "",
+        location: job.locationSecondary || job.location || "",
+        contractor: job.contractor ?? "",
+        categoriesText: job.categories.join(", "),
+        postedDate: job.postedDate ?? "",
+        websiteUrl: job.websiteUrl,
+        applyEmail: job.applyEmail,
+        applyPhone: job.applyPhone,
+        isAlreadyReferred:
+          referredJobIds.has(job.id) ||
+          referredJobTitleKeys.has(job.title.trim().toLowerCase()),
+        rawJob: job,
+      })),
+    [jobsForContactDialog, referredJobIds, referredJobTitleKeys],
+  );
+  const contactJobColumns = useMemo<ColumnDefinition<ContactJobRow>[]>(
+    () => [
+      {
+        id: "title",
+        header: "Job",
+        accessorKey: "title",
+        sortable: true,
+        cell: (item) => (
+          <div className="px-2 py-2">
+            <p className="truncate font-medium">{item.title}</p>
+            <p className="text-muted-foreground truncate text-xs">
+              {item.location || "Location unavailable"}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "district",
+        header: "District",
+        accessorKey: "district",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.district || "—"}</span>
+        ),
+      },
+      {
+        id: "contractor",
+        header: "Contractor",
+        accessorKey: "contractor",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.contractor || "—"}</span>
+        ),
+      },
+      {
+        id: "categoriesText",
+        header: "Categories",
+        accessorKey: "categoriesText",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.categoriesText || "—"}</span>
+        ),
+      },
+      {
+        id: "postedDate",
+        header: "Posted",
+        accessorKey: "postedDate",
+        sortable: true,
+        cell: (item) => (
+          <span className="block truncate px-2 py-2">{item.postedDate || "—"}</span>
+        ),
+      },
+    ],
+    [],
+  );
+  const contactJobActions: EntityAction<ContactJobRow>[] = [
+    {
+      id: "refer",
+      label: (item) => (item.isAlreadyReferred ? "Referred" : "Refer"),
+      icon: <BriefcaseBusiness className="h-3.5 w-3.5" />,
+      variant: "outline",
+      isDisabled: (item) =>
+        item.isAlreadyReferred ||
+        isCreatingContactUpdate ||
+        referringJobId === item.id,
+      onClick: (item) => {
+        void handleReferContactToJob(item.rawJob);
+      },
+    },
+  ];
+  useEffect(() => {
+    if (contactDialogResumeFiles.length === 0) {
+      if (contactDialogSelectedResumeKey !== null) {
+        setContactDialogSelectedResumeKey(null);
+      }
+      return;
+    }
+    if (!contactDialogSelectedResumeKey) {
+      setContactDialogSelectedResumeKey(
+        getResumeFileKey(contactDialogResumeFiles[0]!, 0),
+      );
+      return;
+    }
+    const keyExists = contactDialogResumeFiles.some(
+      (file, index) => getResumeFileKey(file, index) === contactDialogSelectedResumeKey,
+    );
+    if (!keyExists) {
+      setContactDialogSelectedResumeKey(
+        getResumeFileKey(contactDialogResumeFiles[0]!, 0),
+      );
+    }
+  }, [
+    contactDialogResumeFiles,
+    contactDialogSelectedResumeKey,
+    getResumeFileKey,
+  ]);
+  const renderResumePreviewContent = (
+    fileName: string,
+    href: string,
+    previewHeightClass = "h-[65vh]",
+  ) => {
+    const lowerName = fileName.toLowerCase();
+    const isPdf = lowerName.endsWith(".pdf");
+    const isDocxDocument =
+      lowerName.endsWith(".docx") ||
+      lowerName.endsWith(".docm") ||
+      lowerName.endsWith(".dotx") ||
+      lowerName.endsWith(".dotm");
+    const isLegacyWordDocument = lowerName.endsWith(".doc") || lowerName.endsWith(".rtf");
+    const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
+      href,
+    )}`;
+    const isImage =
+      lowerName.endsWith(".png") ||
+      lowerName.endsWith(".jpg") ||
+      lowerName.endsWith(".jpeg") ||
+      lowerName.endsWith(".gif") ||
+      lowerName.endsWith(".webp") ||
+      lowerName.endsWith(".svg");
+
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="truncate text-sm font-medium">{fileName}</p>
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary text-xs underline"
+          >
+            Open in new tab
+          </a>
+        </div>
+        <div className={`bg-muted/20 ${previewHeightClass} overflow-hidden rounded-md border`}>
+          {isPdf ? (
+            <PdfResumePreview fileUrl={href} fileName={fileName} />
+          ) : isDocxDocument ? (
+            <DocxResumePreview fileUrl={href} fileName={fileName} />
+          ) : isLegacyWordDocument ? (
+            <iframe
+              src={officeEmbedUrl}
+              title={`Word preview: ${fileName}`}
+              className="h-full w-full border-0 bg-white"
+            />
+          ) : isImage ? (
+            <object data={href} className="h-full w-full">
+              <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+                <p className="text-sm font-medium">Image preview unavailable</p>
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary text-xs underline"
+                >
+                  Open resume in new tab
+                </a>
+              </div>
+            </object>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+              <p className="text-sm font-medium">This file type cannot be previewed inline.</p>
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary text-xs underline"
+              >
+                Open resume in new tab
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   const navigateContactDialog = useCallback(
     (direction: -1 | 1) => {
@@ -2055,22 +3608,132 @@ export function MondayBoardView({
     return record.id;
   };
 
+  const normalizeEditableColumnDraft = useCallback((column: ContactColumnEntry) => {
+    const normalizedType = column.type.toLowerCase();
+    if (normalizedType === "date") {
+      if (column.value) {
+        try {
+          const parsed = JSON.parse(column.value) as { date?: string };
+          if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+            return parsed.date;
+          }
+        } catch {
+          // ignore malformed value JSON
+        }
+      }
+      const text = column.text?.trim() ?? "";
+      return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+    }
+    if (normalizedType === "dropdown") {
+      const first = (column.text ?? "")
+        .split(",")
+        .map((entry) => entry.trim())
+        .find((entry) => entry.length > 0);
+      return first ?? "";
+    }
+    return column.text ?? "";
+  }, []);
+
+  const startEditingContactColumn = useCallback((column: ContactColumnEntry) => {
+    if (!column.isEditable) return;
+    setEditingContactColumnId(column.id);
+    setEditingContactColumnDraft(normalizeEditableColumnDraft(column));
+  }, [normalizeEditableColumnDraft]);
+
+  const cancelEditingContactColumn = useCallback(() => {
+    setEditingContactColumnId(null);
+    setEditingContactColumnDraft("");
+  }, []);
+
+  const saveEditingContactColumn = useCallback(async () => {
+    if (!sessionToken || !contactHistoryDialogRecord || !editingContactColumnId) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    const column = (contactColumnsQuery.data?.columns ?? []).find(
+      (entry) => entry.id === editingContactColumnId,
+    );
+    if (!column) {
+      toast.error("Column no longer available");
+      return;
+    }
+
+    setIsSavingContactColumn(true);
+    try {
+      const targetRecordId = resolveContactUpdateTargetRecordId(
+        contactHistoryDialogRecord,
+      );
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/columns`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            columnId: column.id,
+            columnType: column.type,
+            value: editingContactColumnDraft,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to update column");
+      }
+
+      await contactColumnsQuery.refetch();
+      const refreshedRecordsResult = await recordsQuery.refetch();
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      cancelEditingContactColumn();
+      toast.success(`Updated ${column.title}`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update column value",
+      );
+    } finally {
+      setIsSavingContactColumn(false);
+    }
+  }, [
+    cancelEditingContactColumn,
+    contactColumnsQuery,
+    contactHistoryDialogRecord,
+    editingContactColumnDraft,
+    editingContactColumnId,
+    recordsQuery,
+    sessionToken,
+  ]);
+
+  useEffect(() => {
+    cancelEditingContactColumn();
+  }, [cancelEditingContactColumn, contactHistoryDialogRecord?.id, contactDialogTab]);
+
   const syncContactHistoryDialogFromRecords = (refreshedRecords: MondayRecord[]) => {
     setContactHistoryDialogRecord((prev) => {
       if (!prev) return prev;
+      const previousRecordId = prev.id.trim();
       const prevContactId = prev.contactId?.trim() ?? "";
-      const matchedRecord = refreshedRecords.find((candidate) => {
-        const candidateId = candidate.id.trim();
-        const candidateContactId = candidate.contactId?.trim() ?? "";
-        const candidateTouchItemId = candidate.touchItemId?.trim() ?? "";
-        return (
-          candidateId === prev.id ||
-          candidateId === prevContactId ||
-          candidateContactId === prev.id ||
-          candidateContactId === prevContactId ||
-          candidateTouchItemId === prev.id
-        );
-      });
+      const findSingleMatch = (
+        predicate: (candidate: MondayRecord) => boolean,
+      ): MondayRecord | null => {
+        const matches = refreshedRecords.filter(predicate);
+        return matches.length === 1 ? (matches[0] ?? null) : null;
+      };
+      const matchedRecord =
+        refreshedRecords.find((candidate) => candidate.id.trim() === previousRecordId) ??
+        findSingleMatch(
+          (candidate) => (candidate.touchItemId?.trim() ?? "") === previousRecordId,
+        ) ??
+        (prevContactId
+          ? findSingleMatch((candidate) => candidate.id.trim() === prevContactId) ??
+            findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === prevContactId)
+          : null) ??
+        findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === previousRecordId);
       if (!matchedRecord) return prev;
       const matchedBatteryProgress =
         typeof matchedRecord.batteryProgress === "number" &&
@@ -2087,6 +3750,363 @@ export function MondayBoardView({
       };
     });
   };
+
+  const openSyncContactBoardPicker = useCallback(
+    (record: MondayRecord) => {
+      if (!sessionToken) {
+        toast.error("Missing monday session context");
+        return;
+      }
+      if (syncMonthlyBoardOptions.length === 0) {
+        toast.error("No monthly board mappings configured in platform settings.");
+        return;
+      }
+      const recordMonthKey = (() => {
+        if (!record.createdAt) return null;
+        const parsed = Date.parse(record.createdAt);
+        if (Number.isNaN(parsed)) return null;
+        return new Date(parsed).toISOString().slice(0, 7);
+      })();
+      const defaultSelection =
+        (recordMonthKey
+          ? syncMonthlyBoardOptions.find((entry) => entry.monthKey === recordMonthKey)
+          : null) ?? syncMonthlyBoardOptions[0];
+      setSyncContactBoardSelection(defaultSelection?.value ?? "");
+      setSyncContactBoardPickerRecord(record);
+    },
+    [sessionToken, syncMonthlyBoardOptions],
+  );
+
+  const handleSyncContactRecord = useCallback(
+    async (
+      record: MondayRecord,
+      options?: {
+        monthlyBoardId?: string;
+      },
+    ) => {
+      if (!sessionToken) return;
+      const syncKey = record.id;
+      const resolvedSyncOwnerId =
+        record.ownerIds.map((ownerId) => ownerId.trim()).find((ownerId) => ownerId.length > 0) ??
+        record.ownerProfiles
+          .map((profile) => profile.id.trim())
+          .find((ownerId) => ownerId.length > 0) ??
+        identity?.userId?.trim() ??
+        "";
+      setSyncingContactIds((prev) => new Set(prev).add(syncKey));
+      try {
+        const targetId = resolveContactUpdateTargetRecordId(record);
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
+          {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              ownerId: resolvedSyncOwnerId.length > 0 ? resolvedSyncOwnerId : undefined,
+              monthlyBoardId: options?.monthlyBoardId,
+            }),
+          },
+        );
+        const data = (await response.json()) as {
+          ok: boolean;
+          error?: string;
+          linkedItemCount?: number;
+          createdParentUpdates?: number;
+          createdSubitems?: number;
+          createdSubitemUpdates?: number;
+          updatedProgressColumns?: number;
+          skippedSubitems?: number;
+          warnings?: string[];
+        };
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "Sync failed");
+        }
+        const [, refreshedRecordsResult] = await Promise.all([
+          contactUpdatesQuery.refetch(),
+          recordsQuery.refetch(),
+        ]);
+        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+          (page) => page.records ?? [],
+        );
+        syncContactHistoryDialogFromRecords(refreshedRecords);
+        const parts = [
+          data.createdParentUpdates && `${data.createdParentUpdates} updates`,
+          data.createdSubitems && `${data.createdSubitems} subitems`,
+          data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
+        ].filter(Boolean);
+        toast.success(
+          parts.length > 0
+            ? `Synced: ${parts.join(", ")}`
+            : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
+        );
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Sync failed");
+      } finally {
+        setSyncingContactIds((prev) => {
+          const next = new Set(prev);
+          next.delete(syncKey);
+          return next;
+        });
+      }
+    },
+    [
+      contactUpdatesQuery,
+      identity?.userId,
+      recordsQuery,
+      sessionToken,
+      syncContactHistoryDialogFromRecords,
+    ],
+  );
+
+  const confirmSyncContactFromSelectedBoard = useCallback(() => {
+    const record = syncContactBoardPickerRecord;
+    if (!record) return;
+    const selectedBoard = syncMonthlyBoardOptions.find(
+      (entry) => entry.value === syncContactBoardSelection,
+    );
+    if (!selectedBoard) {
+      toast.error("Select a monthly board to sync.");
+      return;
+    }
+    setSyncContactBoardPickerRecord(null);
+    void handleSyncContactRecord(record, { monthlyBoardId: selectedBoard.boardId });
+  }, [
+    handleSyncContactRecord,
+    syncContactBoardPickerRecord,
+    syncContactBoardSelection,
+    syncMonthlyBoardOptions,
+  ]);
+
+  const fetchBulkSyncStatus = useCallback(
+    async (jobId?: string | null) => {
+      if (!sessionToken) return null;
+      const params = new URLSearchParams();
+      if (jobId && jobId.trim().length > 0) {
+        params.set("jobId", jobId.trim());
+      }
+      const response = await fetch(
+        `/api/monday/sync/bulk/status${params.toString() ? `?${params.toString()}` : ""}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: { "x-monday-session-token": sessionToken },
+        },
+      );
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load bulk sync status");
+      }
+      const job = data.job ?? null;
+      setLatestBulkSyncJob(job);
+      if (job?.status === "running") {
+        setActiveBulkSyncJobId(job.jobId);
+        setSyncingContactIds((prev) => {
+          const next = new Set(prev);
+          next.add("__bulk_sync__");
+          return next;
+        });
+      }
+      return job;
+    },
+    [sessionToken],
+  );
+
+  const startBulkSyncJob = useCallback(
+    async (records: MondayRecord[]) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const dedupedTargetIds = Array.from(
+        new Set(
+          records
+            .map((record) => resolveContactUpdateTargetRecordId(record).trim())
+            .filter((id) => id.length > 0),
+        ),
+      );
+      if (dedupedTargetIds.length === 0) {
+        throw new Error("No valid contact records selected");
+      }
+      const response = await fetch("/api/monday/sync/bulk/start", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          contactItemIds: dedupedTargetIds,
+          ownerId: identity?.userId,
+        }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok || !data.job) {
+        throw new Error(data.error ?? "Failed to start bulk sync");
+      }
+      finalizedBulkSyncJobIdRef.current = null;
+      setLatestBulkSyncJob(data.job);
+      setActiveBulkSyncJobId(data.job.jobId);
+      setSyncingContactIds((prev) => {
+        const next = new Set(prev);
+        next.add("__bulk_sync__");
+        return next;
+      });
+      return data.job;
+    },
+    [identity?.userId, sessionToken],
+  );
+
+  const cancelBulkSyncJob = useCallback(
+    async (jobId: string) => {
+      if (!sessionToken) return;
+      const response = await fetch("/api/monday/sync/bulk/cancel", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to cancel bulk sync");
+      }
+      if (data.job) {
+        setLatestBulkSyncJob(data.job);
+      }
+      setActiveBulkSyncJobId(null);
+    },
+    [sessionToken],
+  );
+
+  const retryFailedBulkSyncJob = useCallback(
+    async (jobId: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const response = await fetch("/api/monday/sync/bulk/retry", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ jobId }),
+      });
+      const data = (await response.json()) as MondayBulkSyncStatusResponse;
+      if (!response.ok || !data.ok || !data.job) {
+        throw new Error(data.error ?? "Failed to retry failed contacts");
+      }
+      finalizedBulkSyncJobIdRef.current = null;
+      setLatestBulkSyncJob(data.job);
+      setActiveBulkSyncJobId(data.job.jobId);
+      setSyncingContactIds((prev) => {
+        const next = new Set(prev);
+        next.add("__bulk_sync__");
+        return next;
+      });
+      return data;
+    },
+    [sessionToken],
+  );
+
+  useEffect(() => {
+    if (!sessionToken || staticMode || !isMondaySettingsAdmin) return;
+    void fetchBulkSyncStatus(null)
+      .then((job) => {
+        if (job && job.status !== "running") {
+          finalizedBulkSyncJobIdRef.current = job.jobId;
+        }
+      })
+      .catch(() => null);
+  }, [fetchBulkSyncStatus, isMondaySettingsAdmin, sessionToken, staticMode]);
+
+  useEffect(() => {
+    if (!sessionToken || !activeBulkSyncJobId) return;
+    if (latestBulkSyncJob?.status !== "running") return;
+
+    let cancelled = false;
+    let inFlight = false;
+    const tick = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await fetch("/api/monday/sync/bulk/tick", {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            jobId: activeBulkSyncJobId,
+            batchSize: 6,
+            concurrency: 3,
+          }),
+        });
+        const data = (await response.json()) as MondayBulkSyncStatusResponse;
+        if (cancelled) return;
+        if (response.ok && data.ok && data.job) {
+          setLatestBulkSyncJob(data.job);
+          return;
+        }
+        await fetchBulkSyncStatus(activeBulkSyncJobId);
+      } catch {
+        // status polling failures are tolerated; next interval retries
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => {
+      void tick();
+    }, 2_500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeBulkSyncJobId, fetchBulkSyncStatus, latestBulkSyncJob?.status, sessionToken]);
+
+  useEffect(() => {
+    if (!latestBulkSyncJob) return;
+    if (latestBulkSyncJob.status === "running") return;
+    if (finalizedBulkSyncJobIdRef.current === latestBulkSyncJob.jobId) return;
+
+    finalizedBulkSyncJobIdRef.current = latestBulkSyncJob.jobId;
+    setActiveBulkSyncJobId(null);
+    setSyncingContactIds((prev) => {
+      if (!prev.has("__bulk_sync__")) return prev;
+      const next = new Set(prev);
+      next.delete("__bulk_sync__");
+      return next;
+    });
+
+    void (async () => {
+      await recordsQuery.refetch();
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+      if (latestBulkSyncJob.status === "cancelled") {
+        toast.error("Bulk sync cancelled");
+        return;
+      }
+      if (latestBulkSyncJob.status === "failed") {
+        toast.error(latestBulkSyncJob.lastError ?? "Bulk sync failed");
+        return;
+      }
+      const summary = `${latestBulkSyncJob.succeededContacts}/${latestBulkSyncJob.totalContacts} synced`;
+      if (latestBulkSyncJob.failedContacts > 0) {
+        toast.error(`${summary} (${latestBulkSyncJob.failedContacts} failed)`);
+      } else {
+        toast.success(summary);
+      }
+    })();
+  }, [contactHistoryDialogRecord, contactUpdatesQuery, latestBulkSyncJob, recordsQuery]);
 
   const openQuestionnaireDialogForRecords = useCallback(
     (items: MondayRecord[]) => {
@@ -2171,6 +4191,11 @@ export function MondayBoardView({
     body: string;
     updateType?: ContactUpdateType;
     date?: string;
+    dateTime?: string;
+    methodOfCommunication?: string;
+    internalExternalStatus?: "Internal" | "External";
+    subitemNameOverride?: string;
+    suppressApprovalStepMarking?: boolean;
   }) => {
     const itemId = args.itemId.trim();
     const body = args.body.trim();
@@ -2178,16 +4203,56 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
+    const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-    const desiredSubitemName = updateType === "general"
-      ? "General Update"
-      : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
+    const baseSubitemName = normalizedSubitemNameOverride && normalizedSubitemNameOverride.length > 0
+      ? normalizedSubitemNameOverride
+      : updateType === "general"
+        ? body
+        : UPDATE_SUBITEM_NAME_BY_TYPE[updateType];
+    const desiredSubitemName = buildSubitemName(baseSubitemName, "General Update");
 
     const columnValues: Record<string, unknown> = {
       [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
     };
-    if (args.date) {
-      columnValues["date0"] = { date: args.date };
+    const actorMondayUserId = identity?.userId?.trim() ?? "";
+    if (/^\d+$/.test(actorMondayUserId)) {
+      columnValues.person = {
+        personsAndTeams: [{ id: Number(actorMondayUserId), kind: "person" }],
+      };
+    }
+    const methodOfCommunication = args.methodOfCommunication?.trim();
+    if (methodOfCommunication) {
+      columnValues["method_of_communication__1"] = { label: methodOfCommunication };
+    }
+    const internalExternalStatus = args.internalExternalStatus?.trim();
+    if (internalExternalStatus) {
+      columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
+    }
+    columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
+    const normalizedDateTime = args.dateTime?.trim();
+    const parsedDateTime = normalizedDateTime
+      ? new Date(normalizedDateTime)
+      : null;
+    const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+    const fallbackNow = new Date();
+    const normalizedDate = args.date?.trim();
+    const interactionDateOnly = hasValidDateTime
+      ? parsedDateTime.toISOString().slice(0, 10)
+      : normalizedDate || fallbackNow.toISOString().slice(0, 10);
+    if (hasValidDateTime) {
+      columnValues["date0"] = {
+        date: parsedDateTime.toISOString().slice(0, 10),
+        time: parsedDateTime.toISOString().slice(11, 19),
+      };
+    } else if (normalizedDate) {
+      columnValues["date0"] = { date: normalizedDate };
+    } else {
+      columnValues["date0"] = {
+        date: fallbackNow.toISOString().slice(0, 10),
+        time: fallbackNow.toISOString().slice(11, 19),
+      };
     }
 
     interface CreateSubitemData {
@@ -2219,79 +4284,182 @@ export function MondayBoardView({
       throw new Error("Failed to create subitem for update");
     }
 
-    // Post the update body on the subitem
-    interface CreateUpdateData {
-      create_update?: {
-        id?: string | number | null;
-        body?: string | null;
-      } | null;
-    }
-    const createUpdateData = await callMondayContextApi<CreateUpdateData>(
-      `
-        mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-          create_update(item_id: $itemId, body: $body) { id body }
-        }
-      `,
-      { itemId: targetSubitemId, body },
-    );
-    const createdUpdateIdRaw = createUpdateData.create_update?.id;
-    const createdUpdateId =
-      createdUpdateIdRaw === null || createdUpdateIdRaw === undefined
-        ? ""
-        : String(createdUpdateIdRaw).trim();
-    if (!createdUpdateId) {
-      throw new Error("Monday did not return a new update id");
-    }
+    const markApprovalStepDoneViaServer = async (stepColumnId: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token for step update");
+      }
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(itemId)}/reset-step`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            stepColumnId,
+            action: "done",
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to mark onboarding step done");
+      }
+    };
+
+    const markLastInteractionDateViaServer = async (dateOnly: string) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token for last interaction sync");
+      }
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(itemId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            lastInteractionDate: dateOnly,
+          }),
+        },
+      );
+      const payload = (await response.json()) as { ok?: boolean; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error ?? "Failed to set last interaction date");
+      }
+    };
 
     let warning: string | null = null;
-    let approvalStepMarked = false;
-    if (updateType !== "general") {
-      const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
-      const boardId = await resolveMondayContextBoardId();
-      if (!approvalStepColumnId) {
-        warning = "No onboarding step mapping exists for this update type";
-      } else if (!boardId) {
-        warning = "Missing boardId in monday context; skipped onboarding step update";
+    const appendWarning = (nextWarning: string | null) => {
+      const normalizedWarning = nextWarning?.trim() ?? "";
+      if (!normalizedWarning) return;
+      warning = warning ? `${warning} | ${normalizedWarning}` : normalizedWarning;
+    };
+
+    const boardId = await resolveMondayContextBoardId();
+    try {
+      if (boardId) {
+        await callMondayContextApi<{
+          change_multiple_column_values?: { id?: string | number | null } | null;
+        }>(
+          `
+            mutation SyncLastInteractionDate(
+              $boardId: ID!
+              $itemId: ID!
+              $columnValues: JSON!
+            ) {
+              change_multiple_column_values(
+                board_id: $boardId
+                item_id: $itemId
+                column_values: $columnValues
+                create_labels_if_missing: true
+              ) { id }
+            }
+          `,
+          {
+            boardId,
+            itemId,
+            columnValues: JSON.stringify({
+              [LAST_INTERACTION_DATE_COLUMN_ID]: { date: interactionDateOnly },
+            }),
+          },
+        );
       } else {
+        await markLastInteractionDateViaServer(interactionDateOnly);
+      }
+    } catch (error) {
+      if (boardId) {
         try {
-          await callMondayContextApi<{
-            change_multiple_column_values?: { id?: string | number | null } | null;
-          }>(
-            `
-              mutation MarkApprovalStepDone(
-                $boardId: ID!
-                $itemId: ID!
-                $columnValues: JSON!
-              ) {
-                change_multiple_column_values(
-                  board_id: $boardId
-                  item_id: $itemId
-                  column_values: $columnValues
-                  create_labels_if_missing: true
-                ) { id }
-              }
-            `,
-            {
-              boardId,
-              itemId,
-              columnValues: JSON.stringify({
-                [approvalStepColumnId]: { label: "Done" },
-              }),
-            },
-          );
-          approvalStepMarked = true;
-        } catch (error) {
-          warning =
+          await markLastInteractionDateViaServer(interactionDateOnly);
+        } catch (fallbackError) {
+          const primaryMessage =
             error instanceof Error
               ? error.message
-              : "Failed to mark onboarding step done";
+              : "Failed to sync last interaction date via monday context";
+          const fallbackMessage =
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : "Failed to sync last interaction date via server fallback";
+          appendWarning(`${primaryMessage} | ${fallbackMessage}`);
+        }
+      } else {
+        appendWarning(
+          error instanceof Error ? error.message : "Failed to sync last interaction date",
+        );
+      }
+    }
+
+    let approvalStepMarked = false;
+    if (updateType !== "general" && !suppressApprovalStepMarking) {
+      const approvalStepColumnId = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE[updateType];
+      if (!approvalStepColumnId) {
+        appendWarning("No onboarding step mapping exists for this update type");
+      } else {
+        try {
+          if (boardId) {
+            await callMondayContextApi<{
+              change_multiple_column_values?: { id?: string | number | null } | null;
+            }>(
+              `
+                mutation MarkApprovalStepDone(
+                  $boardId: ID!
+                  $itemId: ID!
+                  $columnValues: JSON!
+                ) {
+                  change_multiple_column_values(
+                    board_id: $boardId
+                    item_id: $itemId
+                    column_values: $columnValues
+                    create_labels_if_missing: true
+                  ) { id }
+                }
+              `,
+              {
+                boardId,
+                itemId,
+                columnValues: JSON.stringify({
+                  [approvalStepColumnId]: { label: "Done" },
+                }),
+              },
+            );
+          } else {
+            await markApprovalStepDoneViaServer(approvalStepColumnId);
+          }
+          approvalStepMarked = true;
+        } catch (error) {
+          if (boardId) {
+            try {
+              await markApprovalStepDoneViaServer(approvalStepColumnId);
+              approvalStepMarked = true;
+            } catch (fallbackError) {
+              const primaryMessage =
+                error instanceof Error
+                  ? error.message
+                  : "Failed to mark onboarding step done via monday context";
+              const fallbackMessage =
+                fallbackError instanceof Error
+                  ? fallbackError.message
+                  : "Failed to mark onboarding step done via server fallback";
+              appendWarning(`${primaryMessage} | ${fallbackMessage}`);
+            }
+          } else {
+            appendWarning(
+              error instanceof Error
+                ? error.message
+                : "Failed to mark onboarding step done",
+            );
+          }
         }
       }
     }
 
     return {
-      id: createdUpdateId,
-      body: createUpdateData.create_update?.body ?? body,
+      id: targetSubitemId,
+      body,
       updateType,
       source: "subitem" as const,
       subitemName: desiredSubitemName,
@@ -2306,33 +4474,99 @@ export function MondayBoardView({
       updateType?: ContactUpdateType;
       keepSelectedType?: boolean;
       date?: string;
+      dateTime?: string;
+      methodOfCommunication?: string;
+      internalExternalStatus?: "Internal" | "External";
+      subitemNameOverride?: string;
+      referredToContractors?: string[];
+      targetRecordId?: string;
     },
   ) => {
     if (staticMode) {
       toast.error("Updates are unavailable in static mode");
       return;
     }
-    if (!sessionToken || !contactHistoryDialogRecord) {
+    if (!sessionToken) {
       toast.error("Missing monday session context");
       return;
     }
+    const targetRecordId =
+      options?.targetRecordId?.trim() ??
+      (contactHistoryDialogRecord
+        ? resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+        : "");
+    if (!targetRecordId) {
+      toast.error("Missing monday update target");
+      return;
+    }
     const updateType = options?.updateType ?? contactUpdateType;
-    const body = (options?.body ?? contactUpdateDraft).trim();
+    const normalizedReferredToContractors = (options?.referredToContractors ?? [])
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    if (updateType === "resume" && normalizedReferredToContractors.length === 0) {
+      setResumeReferralDialogState({
+        targetRecordId,
+        selectedContractors: parseContractorValues(
+          contactHistoryDialogRecord?.referredToContractors ?? null,
+          retentionOptions.referredToContractors,
+        ),
+      });
+      return;
+    }
+    const resumeSummary =
+      updateType === "resume"
+        ? `Resume Sent To Contractors - ${normalizedReferredToContractors.join(", ")}`
+        : null;
+    const body = (resumeSummary ?? options?.body ?? contactUpdateDraft).trim();
+    const resolvedMethodOfCommunication =
+      options?.methodOfCommunication ?? (updateType === "resume" ? "Email" : undefined);
+    const resolvedSubitemNameOverride = resumeSummary ?? options?.subitemNameOverride;
+    const resolvedInternalExternalStatus =
+      options?.internalExternalStatus ??
+      (updateType === "welcome_email" || updateType === "followup"
+        ? "Internal"
+        : undefined);
     if (!body) {
       toast.error("Enter an update before posting");
       return;
     }
 
     setIsCreatingContactUpdate(true);
+    let data: MondayCreateRecordUpdateResponse;
+    const writePath = canCreateUpdatesAsLoggedInMondayUser
+      ? "monday-context-user"
+      : "server-fallback";
     try {
-      const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-      let data: MondayCreateRecordUpdateResponse;
+      if (updateType === "resume") {
+        const patchResponse = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+          {
+            method: "PATCH",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken,
+            },
+            body: JSON.stringify({
+              referredToContractors: normalizedReferredToContractors,
+            }),
+          },
+        );
+        const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+        if (!patchResponse.ok || !patchData.ok) {
+          throw new Error(patchData.error ?? "Failed to save referred contractor values");
+        }
+      }
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
           itemId: targetRecordId,
           body,
           updateType,
           date: options?.date,
+          dateTime: options?.dateTime,
+          methodOfCommunication: resolvedMethodOfCommunication,
+          internalExternalStatus: resolvedInternalExternalStatus,
+          subitemNameOverride: resolvedSubitemNameOverride,
         });
         data = { ok: true, update };
       } else {
@@ -2345,7 +4579,15 @@ export function MondayBoardView({
               "content-type": "application/json",
               "x-monday-session-token": sessionToken,
             },
-            body: JSON.stringify({ body, updateType, date: options?.date }),
+            body: JSON.stringify({
+              body,
+              updateType,
+              date: options?.date,
+              dateTime: options?.dateTime,
+              methodOfCommunication: resolvedMethodOfCommunication,
+              internalExternalStatus: resolvedInternalExternalStatus,
+              subitemNameOverride: resolvedSubitemNameOverride,
+            }),
           },
         );
         data = (await response.json()) as MondayCreateRecordUpdateResponse;
@@ -2353,29 +4595,43 @@ export function MondayBoardView({
           throw new Error(data.error ?? "Failed to post Monday update");
         }
       }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      console.error("[monday][contact-update] write failed", {
+        targetRecordId,
+        updateType,
+        writePath,
+        error: message,
+      });
+      toast.error(`Failed to post update (${writePath}): ${message}`);
+      setIsCreatingContactUpdate(false);
+      return;
+    }
 
-      setContactUpdateDraft("");
-      if (!options?.keepSelectedType) {
-        setContactUpdateType("general");
-      }
+    setContactUpdateDraft("");
+    if (!options?.keepSelectedType) {
+      setContactUpdateType("general");
+    }
 
-      if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
-        const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-        fetch("/api/monday/touches", {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            contactItemId: contactId,
-            contactName: contactHistoryDialogRecord.name ?? "",
-            ownerId: identity.userId,
-            source: "update",
-          }),
-        }).catch(() => {});
-      }
+    if (sessionToken && contactHistoryDialogRecord && identity?.userId) {
+      const contactId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+      fetch("/api/monday/touches", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          contactItemId: contactId,
+          contactName: contactHistoryDialogRecord.name ?? "",
+          ownerId: identity.userId,
+          source: "update",
+        }),
+      }).catch(() => {});
+    }
 
+    try {
       const [, refreshedRecordsResult] = await Promise.all([
         contactUpdatesQuery.refetch(),
         recordsQuery.refetch(),
@@ -2384,6 +4640,16 @@ export function MondayBoardView({
         (page) => page.records ?? [],
       );
       syncContactHistoryDialogFromRecords(refreshedRecords);
+    } catch (error) {
+      const syncMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to refresh contact data after posting update";
+      console.error("[monday][contact-update] update posted but sync failed", {
+        targetRecordId,
+        updateType,
+        error: syncMessage,
+      });
       if (data.update?.warning) {
         toast.success("Update posted to monday.com");
         toast.error(`Onboarding step sync warning: ${data.update.warning}`);
@@ -2392,12 +4658,88 @@ export function MondayBoardView({
       } else {
         toast.success("Update posted to monday.com");
       }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to post Monday update";
-      toast.error(message);
-    } finally {
+      toast.error(
+        `Update posted, but refreshing contact history failed: ${syncMessage}`,
+      );
       setIsCreatingContactUpdate(false);
+      return;
+    }
+
+    if (data.update?.warning) {
+      toast.success("Update posted to monday.com");
+      toast.error(`Onboarding step sync warning: ${data.update.warning}`);
+    } else if (data.update?.approvalStepMarked) {
+      toast.success("Update posted and onboarding step marked complete");
+    } else {
+      toast.success("Update posted to monday.com");
+    }
+
+    setIsCreatingContactUpdate(false);
+  };
+
+  const handleSubmitCommunicationQuickAction = async (values: {
+    body: string;
+    methodOfCommunication: CommunicationQuickActionMethod;
+    date: string;
+    time: string;
+  }) => {
+    const dateOnly = values.date.trim();
+    const timeOnly = values.time.trim();
+    const dateTime =
+      dateOnly && timeOnly ? `${dateOnly}T${timeOnly}:00` : undefined;
+    await handleCreateContactUpdate({
+      updateType: "general",
+      body: values.body,
+      keepSelectedType: true,
+      date: dateOnly || undefined,
+      dateTime,
+      methodOfCommunication: values.methodOfCommunication,
+    });
+    setCommunicationQuickAction(null);
+  };
+
+  const handleReferContactToJob = async (job: MondayJobListing) => {
+    if (!contactHistoryDialogRecord) {
+      toast.error("Open a contact before creating a referral");
+      return;
+    }
+    const targetRecordId =
+      contactHistoryDialogRecord.contactId?.trim() ||
+      contactHistoryDialogRecord.id.trim();
+    if (!targetRecordId) {
+      toast.error("Missing contact id for referral");
+      return;
+    }
+    const normalizedJobTitle = job.title.trim().toLowerCase();
+    if (
+      referredJobIds.has(job.id) ||
+      (normalizedJobTitle.length > 0 && referredJobTitleKeys.has(normalizedJobTitle))
+    ) {
+      toast("This contact is already referred to that job.");
+      return;
+    }
+
+    const details = [
+      `Job ID: ${job.id}`,
+      job.district ? `District: ${job.district}` : null,
+      job.location ? `Location: ${job.location}` : null,
+      job.contractor ? `Contractor: ${job.contractor}` : null,
+      job.applyEmail ? `Apply Email: ${job.applyEmail}` : null,
+      job.applyPhone ? `Apply Phone: ${job.applyPhone}` : null,
+      job.websiteUrl ? `URL: ${job.websiteUrl}` : null,
+    ].filter((value): value is string => !!value);
+
+    setReferringJobId(job.id);
+    try {
+      await handleCreateContactUpdate({
+        targetRecordId,
+        updateType: "job_referral",
+        body: [`Referred to Job: ${job.title}`, ...details].join("\n"),
+        subitemNameOverride: `Referral - ${job.title}`,
+        keepSelectedType: true,
+      });
+    } finally {
+      setReferringJobId(null);
     }
   };
 
@@ -2416,6 +4758,12 @@ export function MondayBoardView({
     }
     if (selectedItems.length === 0) {
       toast.error("Select at least one record");
+      return;
+    }
+    if (action.type === "resume") {
+      toast.error(
+        "Resume Submitted requires contractor selection per contact. Use contact dialog or Kanban move to complete this step.",
+      );
       return;
     }
 
@@ -2518,6 +4866,128 @@ export function MondayBoardView({
     }
   };
 
+  const handleConfirmMergeRecords = async () => {
+    if (staticMode) {
+      toast.error("Merge is unavailable in static mode");
+      return;
+    }
+    if (!sessionToken || !mergeDialogState) {
+      toast.error("Missing monday session context");
+      return;
+    }
+
+    const recordsByTargetId = new Map<string, MondayRecord>();
+    for (const record of mergeDialogState.records) {
+      const targetRecordId = getMergeTargetRecordId(record);
+      if (!targetRecordId) continue;
+      if (!recordsByTargetId.has(targetRecordId)) {
+        recordsByTargetId.set(targetRecordId, record);
+      }
+    }
+
+    const masterRecordId = mergeDialogState.masterRecordId.trim();
+    const masterRecord = recordsByTargetId.get(masterRecordId) ?? null;
+    if (!masterRecordId || !masterRecord) {
+      toast.error("Choose a valid master contact to continue");
+      return;
+    }
+
+    const sourceItemIds = Array.from(recordsByTargetId.keys()).filter(
+      (targetRecordId) => targetRecordId !== masterRecordId,
+    );
+    if (sourceItemIds.length === 0) {
+      toast.error("Select at least one duplicate contact to merge");
+      return;
+    }
+    if (sourceItemIds.length > 3) {
+      toast.error("You can merge up to 4 contacts at once");
+      return;
+    }
+
+    const fieldOverrides: {
+      ownerId?: string | null;
+      status?: string | null;
+      tags?: string[] | null;
+      referredToContractors?: string[] | null;
+      interviewingWithContractors?: string[] | null;
+      hiredWithContractor?: string | null;
+      hireDate?: string | null;
+      retentionPeriod?: string | null;
+    } = {};
+
+    for (const field of MERGE_FIELD_CONFIG) {
+      const sourceRecordId =
+        mergeDialogState.fieldSourceByKey[field.key]?.trim() || masterRecordId;
+      const sourceRecord = recordsByTargetId.get(sourceRecordId) ?? masterRecord;
+      const value = getMergeFieldValueFromRecord(sourceRecord, field.key);
+      if (field.key === "tags") {
+        fieldOverrides.tags = Array.isArray(value) ? value : null;
+      } else if (field.key === "referredToContractors") {
+        fieldOverrides.referredToContractors = Array.isArray(value) ? value : null;
+      } else if (field.key === "interviewingWithContractors") {
+        fieldOverrides.interviewingWithContractors = Array.isArray(value) ? value : null;
+      } else if (field.key === "ownerId") {
+        fieldOverrides.ownerId = typeof value === "string" ? value : null;
+      } else if (field.key === "status") {
+        fieldOverrides.status = typeof value === "string" ? value : null;
+      } else if (field.key === "hiredWithContractor") {
+        fieldOverrides.hiredWithContractor = typeof value === "string" ? value : null;
+      } else if (field.key === "hireDate") {
+        fieldOverrides.hireDate = typeof value === "string" ? value : null;
+      } else if (field.key === "retentionPeriod") {
+        fieldOverrides.retentionPeriod = typeof value === "string" ? value : null;
+      }
+    }
+
+    setIsMergingRecords(true);
+    try {
+      const response = await fetch("/api/monday/records/merge", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          masterItemId: masterRecordId,
+          sourceItemIds,
+          fieldOverrides,
+          deleteSources: true,
+        }),
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        createdSubitems?: number;
+        skippedDuplicates?: number;
+        deletedSourceCount?: number;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to merge selected contacts");
+      }
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      mergeClearSelectionRef.current?.();
+      setMergeDialogState(null);
+      toast.success(
+        `Merged ${sourceItemIds.length} duplicate contact${sourceItemIds.length === 1 ? "" : "s"} into master (${data.createdSubitems ?? 0} updates copied, ${data.skippedDuplicates ?? 0} duplicates skipped).`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to merge selected contacts";
+      toast.error(message);
+    } finally {
+      setIsMergingRecords(false);
+    }
+  };
+
   const handleKanbanStepMove = async (move: KanbanMoveConfirmation) => {
     if (staticMode) {
       toast.error("Updates are unavailable in static mode");
@@ -2536,6 +5006,13 @@ export function MondayBoardView({
         const stepConfig = KANBAN_STEP_CONFIG[move.toStepIndex - 1];
         if (!stepConfig) {
           toast.error("Invalid target step");
+          return;
+        }
+        if (stepConfig.updateType === "resume") {
+          setResumeReferralDialogState({
+            targetRecordId,
+            selectedContractors: splitCsvValues(move.record.referredToContractors),
+          });
           return;
         }
 
@@ -2726,6 +5203,190 @@ export function MondayBoardView({
     }
   };
 
+  const closeResumeReferralDialog = () => {
+    const targetRecordId = resumeReferralDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setResumeReferralDialogState(null);
+    setIsSavingResumeReferralStep(false);
+  };
+
+  const completeGenericOnboardingStep = async (args: {
+    targetRecordId: string;
+    body: string;
+    stepColumnId: string;
+    recordPatch?: Record<string, unknown>;
+    successMessage?: string;
+  }) => {
+    if (!sessionToken) {
+      throw new Error("Missing monday session context");
+    }
+
+    await handleCreateContactUpdate({
+      updateType: "general",
+      body: args.body,
+      keepSelectedType: true,
+      targetRecordId: args.targetRecordId,
+    });
+
+    if (args.recordPatch) {
+      const patchResponse = await fetch(
+        `/api/monday/records/${encodeURIComponent(args.targetRecordId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify(args.recordPatch),
+        },
+      );
+      const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+      if (!patchResponse.ok || !patchData.ok) {
+        throw new Error(patchData.error ?? "Failed to update contractor values");
+      }
+    }
+
+    const resetStepResponse = await fetch(
+      `/api/monday/records/${encodeURIComponent(args.targetRecordId)}/reset-step`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({ stepColumnId: args.stepColumnId, action: "done" }),
+      },
+    );
+    const resetStepData = (await resetStepResponse.json()) as { ok?: boolean; error?: string };
+    if (!resetStepResponse.ok || !resetStepData.ok) {
+      throw new Error(resetStepData.error ?? "Failed to mark onboarding step done");
+    }
+
+    const refreshedRecordsResult = await recordsQuery.refetch();
+    const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+      (page) => page.records ?? [],
+    );
+    syncContactHistoryDialogFromRecords(refreshedRecords);
+    toast.success(args.successMessage ?? "Onboarding step marked complete");
+  };
+
+  const handleConfirmResumeReferralStep = async () => {
+    if (!sessionToken || !resumeReferralDialogState) {
+      toast.error("Missing monday session context");
+      closeResumeReferralDialog();
+      return;
+    }
+
+    if (resumeReferralDialogState.selectedContractors.length === 0) {
+      toast.error("Select at least one contractor before continuing");
+      return;
+    }
+
+    setIsSavingResumeReferralStep(true);
+    try {
+      await handleCreateContactUpdate({
+        updateType: "resume",
+        targetRecordId: resumeReferralDialogState.targetRecordId,
+        referredToContractors: resumeReferralDialogState.selectedContractors,
+        keepSelectedType: true,
+      });
+
+      closeResumeReferralDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete resume submitted step";
+      toast.error(message);
+    } finally {
+      setIsSavingResumeReferralStep(false);
+    }
+  };
+
+  const closeInterviewingContractorDialog = () => {
+    const targetRecordId = interviewingContractorDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setInterviewingContractorDialogState(null);
+    setIsSavingInterviewingStep(false);
+  };
+
+  const handleConfirmInterviewingStep = async () => {
+    if (!sessionToken || !interviewingContractorDialogState) {
+      toast.error("Missing monday session context");
+      closeInterviewingContractorDialog();
+      return;
+    }
+    if (interviewingContractorDialogState.selectedContractors.length === 0) {
+      toast.error("Select at least one contractor before continuing");
+      return;
+    }
+    const interviewingSummary = `Interviewing - ${interviewingContractorDialogState.selectedContractors.join(", ")}`;
+
+    setIsSavingInterviewingStep(true);
+    try {
+      await completeGenericOnboardingStep({
+        targetRecordId: interviewingContractorDialogState.targetRecordId,
+        body: interviewingSummary,
+        stepColumnId: interviewingContractorDialogState.stepColumnId,
+        recordPatch: {
+          interviewingWithContractors: interviewingContractorDialogState.selectedContractors,
+        },
+      });
+      closeInterviewingContractorDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete interviewing step";
+      toast.error(message);
+    } finally {
+      setIsSavingInterviewingStep(false);
+    }
+  };
+
+  const closeHiredContractorDialog = () => {
+    const targetRecordId = hiredContractorDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setHiredContractorDialogState(null);
+    setIsSavingHiredStep(false);
+  };
+
+  const handleConfirmHiredStep = async () => {
+    if (!sessionToken || !hiredContractorDialogState) {
+      toast.error("Missing monday session context");
+      closeHiredContractorDialog();
+      return;
+    }
+    const selectedContractor = hiredContractorDialogState.selectedContractor.trim();
+    if (!selectedContractor) {
+      toast.error("Select a contractor before continuing");
+      return;
+    }
+    const hiredSummary = `Hired - ${selectedContractor}`;
+
+    setIsSavingHiredStep(true);
+    try {
+      await completeGenericOnboardingStep({
+        targetRecordId: hiredContractorDialogState.targetRecordId,
+        body: hiredSummary,
+        stepColumnId: hiredContractorDialogState.stepColumnId,
+        recordPatch: {
+          hiredWithContractor: selectedContractor,
+        },
+      });
+      closeHiredContractorDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete hired step";
+      toast.error(message);
+    } finally {
+      setIsSavingHiredStep(false);
+    }
+  };
+
   const handleSaveTags = async () => {
     if (!sessionToken || !tagsDialogRecord) {
       toast.error("Missing monday session context");
@@ -2851,33 +5512,121 @@ export function MondayBoardView({
       return;
     }
 
-    const contactId = record.contactId?.trim();
-    const targetRecordId = contactId && contactId.length > 0 ? contactId : record.id;
+    const contactId = record.contactId?.trim() ?? "";
+    const recordId = record.id.trim();
+    const targetRecordIds = Array.from(
+      new Set([contactId, recordId].filter((value) => value.length > 0)),
+    );
+    if (targetRecordIds.length === 0) {
+      toast.error("Missing record id for resume upload");
+      return;
+    }
 
     setUploadingResumeByRecordId((prev) => ({
       ...prev,
       [record.id]: true,
     }));
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/resume`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "x-monday-session-token": sessionToken,
+      let lastErrorMessage = "Failed to upload resume";
+      let uploaded = false;
+      let uploadedTargetRecordId: string | null = null;
+
+      for (let index = 0; index < targetRecordIds.length; index += 1) {
+        const targetRecordId = targetRecordIds[index]!;
+        const formData = new FormData();
+        formData.append("file", file);
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}/resume`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "x-monday-session-token": sessionToken,
+            },
+            body: formData,
           },
-          body: formData,
-        },
-      );
-      const data = (await response.json()) as MondayResumeUploadResponse;
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to upload resume");
+        );
+        const data = (await response.json()) as MondayResumeUploadResponse;
+        if (response.ok && data.ok) {
+          uploaded = true;
+          uploadedTargetRecordId = targetRecordId;
+          break;
+        }
+
+        lastErrorMessage = data.error ?? "Failed to upload resume";
+
+        // If the first target fails and we still have another possible Monday item id,
+        // retry once against that alternate target before surfacing the error.
+        const hasFallback = index < targetRecordIds.length - 1;
+        if (!hasFallback) {
+          throw new Error(lastErrorMessage);
+        }
       }
-      toast.success("Resume uploaded");
-      await recordsQuery.refetch();
+
+      if (!uploaded) {
+        throw new Error(lastErrorMessage);
+      }
+
+      let updateSyncError: string | null = null;
+      const updateTargetRecordId = uploadedTargetRecordId ?? targetRecordIds[0] ?? "";
+      if (updateTargetRecordId) {
+        const resumeAddedDateTime = new Date().toISOString();
+        try {
+          if (canCreateUpdatesAsLoggedInMondayUser) {
+            await createMondayRecordUpdateAsContextUser({
+              itemId: updateTargetRecordId,
+              body: "Resume Added",
+              updateType: "resume",
+              dateTime: resumeAddedDateTime,
+              subitemNameOverride: "Resume Added",
+              suppressApprovalStepMarking: true,
+            });
+          } else {
+            const updateResponse = await fetch(
+              `/api/monday/records/${encodeURIComponent(updateTargetRecordId)}/updates`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  body: "Resume Added",
+                  updateType: "resume",
+                  dateTime: resumeAddedDateTime,
+                  subitemNameOverride: "Resume Added",
+                  suppressApprovalStepMarking: true,
+                }),
+              },
+            );
+            const updateData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+            if (!updateResponse.ok || !updateData.ok) {
+              throw new Error(updateData.error ?? "Failed to log resume update");
+            }
+          }
+        } catch (error) {
+          updateSyncError =
+            error instanceof Error ? error.message : "Failed to log resume update";
+        }
+      } else {
+        updateSyncError = "Missing record id for resume update log";
+      }
+
+      const refreshedRecordsResult = await recordsQuery.refetch();
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      if (contactHistoryDialogRecord) {
+        await contactUpdatesQuery.refetch();
+      }
+      if (updateSyncError) {
+        toast.success("Resume uploaded");
+        toast.error(`Resume uploaded, but failed to log update: ${updateSyncError}`);
+      } else {
+        toast.success("Resume uploaded and logged as Resume Added");
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to upload resume";
@@ -2890,16 +5639,16 @@ export function MondayBoardView({
     }
   };
 
-  const getResumeFileHref = (file: {
+  function getResumeFileHref(file: {
     assetId: string | null;
     url: string | null;
-  }) => {
+  }) {
     if (file.assetId) {
       return `/api/monday/email-templates/assets/${encodeURIComponent(file.assetId)}`;
     }
     if (file.url) return file.url;
     return null;
-  };
+  }
 
   const resetAddContactDialog = () => {
     setAddContactStep(1);
@@ -2995,12 +5744,12 @@ export function MondayBoardView({
       id: "helpdesk",
       header: "",
       accessorKey: "id",
-      minWidth: 36,
+      minWidth: "36",
       cell: (item: MondayRecord) => (
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
-              type="button"
+          <button
+            type="button"
               className="flex h-full w-full items-center justify-center p-1 text-muted-foreground transition-colors hover:text-primary"
               onClick={(e) => {
                 e.stopPropagation();
@@ -3010,22 +5759,24 @@ export function MondayBoardView({
             >
               <CircleHelp className="h-3.5 w-3.5" />
             </button>
-          </TooltipTrigger>
+                </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">
             Submit a support ticket for {item.name}
-          </TooltipContent>
-        </Tooltip>
+                </TooltipContent>
+              </Tooltip>
       ),
     },
     {
       id: "name",
       header: "Item",
       accessorKey: "name",
+      sortable: true,
       cell: (item: MondayRecord) => (
         <NameCellContent
           item={item}
           tableDensity={tableDensity}
           approvalSteps={approvalSteps}
+          hoverPopoversEnabled={boardGeneralSettings.hoverPopoversEnabled}
           onOpen={() => openContactHistoryDialog(item)}
         />
       ),
@@ -3059,12 +5810,12 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => {
         const isCompactOwner = tableDensity === "compact";
         return (
-          <button
-            type="button"
-            onClick={() => openOwnerDialog(item)}
+        <button
+          type="button"
+          onClick={() => openOwnerDialog(item)}
             className={`hover:bg-accent/40 flex w-full cursor-pointer items-center rounded-md text-center ${isCompactOwner ? "justify-start gap-1.5 px-2 py-1" : "justify-center p-2"}`}
-          >
-            {item.ownerProfiles.length > 0 ? (
+        >
+          {item.ownerProfiles.length > 0 ? (
               isCompactOwner ? (
                 <div className="flex items-center gap-1.5">
                   <div className="flex items-center -space-x-1.5">
@@ -3089,33 +5840,59 @@ export function MondayBoardView({
                   </span>
                 </div>
               ) : (
-                <div className="flex flex-col items-center gap-1">
-                  <div className="flex items-center justify-center -space-x-2">
-                    {item.ownerProfiles.slice(0, 3).map((owner) => (
-                      <Avatar
-                        key={owner.id}
-                        className="size-8 border-2 border-background shadow-sm"
-                      >
-                        {owner.photoThumb ? (
-                          <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
-                        ) : null}
-                        <AvatarFallback className="text-xs font-semibold">
-                          {getNameInitials(owner.name ?? owner.id)}
-                        </AvatarFallback>
-                      </Avatar>
-                    ))}
-                  </div>
-                  <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
-                    {item.ownerProfiles
-                      .map((owner) => owner.name?.trim() ?? owner.id)
-                      .join(", ")}
-                  </span>
-                </div>
+            <div className="flex flex-col items-center gap-1">
+              <div className="flex items-center justify-center -space-x-2">
+                {item.ownerProfiles.slice(0, 3).map((owner) => (
+                  <Avatar
+                    key={owner.id}
+                    className="size-8 border-2 border-background shadow-sm"
+                  >
+                    {owner.photoThumb ? (
+                      <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                    ) : null}
+                    <AvatarFallback className="text-xs font-semibold">
+                      {getNameInitials(owner.name ?? owner.id)}
+                    </AvatarFallback>
+                  </Avatar>
+                ))}
+              </div>
+              <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
+                {item.ownerProfiles
+                  .map((owner) => owner.name?.trim() ?? owner.id)
+                  .join(", ")}
+              </span>
+            </div>
               )
-            ) : (
-              <span className="text-xs">{item.peopleText ?? "—"}</span>
-            )}
-          </button>
+          ) : (
+            <span className="text-xs">{item.peopleText ?? "—"}</span>
+          )}
+        </button>
+        );
+      },
+    },
+    {
+      id: "lastTouchpointAt",
+      header: "Last Touchpoint",
+      accessorKey: "lastTouchpointAt",
+      sortable: true,
+      cell: (item: MondayRecord) => {
+        const recency = getLastTouchpointRecency(item.lastTouchpointAt ?? null);
+        const formatted = formatDateTimeParts(recency.parsedAt);
+        return (
+          <div className="flex min-w-[140px] flex-col gap-1 px-2 py-1.5">
+            <div className="leading-tight">
+              <div>{formatted.date}</div>
+              {formatted.time ? (
+                <div className="text-muted-foreground text-xs">{formatted.time}</div>
+              ) : null}
+            </div>
+            <Badge
+              variant="outline"
+              className={`w-fit text-[10px] ${getLastTouchpointBadgeClassName(recency.tone)}`}
+            >
+              {recency.label}
+            </Badge>
+          </div>
         );
       },
     },
@@ -3131,10 +5908,10 @@ export function MondayBoardView({
         const isCompact = tableDensity === "compact";
 
         if (isCompact) {
-          return (
-            <button
-              type="button"
-              onClick={() => openRetentionDialog(item)}
+        return (
+          <button
+            type="button"
+            onClick={() => openRetentionDialog(item)}
               title={[
                 referredValues.length > 0 ? `Referred: ${referredValues.join(", ")}` : null,
                 item.hiredWithContractor?.trim() ? `Hired: ${item.hiredWithContractor.trim()}` : null,
@@ -3221,8 +5998,8 @@ export function MondayBoardView({
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Hire Date:</span>
               <span className="truncate text-xs">
-                {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
-              </span>
+              {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+            </span>
             </div>
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Period:</span>
@@ -3236,6 +6013,7 @@ export function MondayBoardView({
       id: "tags",
       header: "Tags",
       accessorKey: "tags",
+      sortable: true,
       cell: (item: MondayRecord) => {
         const tagValues = splitCsvValues(item.tags);
         const isCompactTags = tableDensity === "compact";
@@ -3270,6 +6048,7 @@ export function MondayBoardView({
       id: "resume",
       header: "Resume",
       accessorKey: "resumeFiles",
+      sortable: true,
       cell: (item: MondayRecord) => {
         const firstFile = item.resumeFiles[0] ?? null;
         const isUploading = uploadingResumeByRecordId[item.id] === true;
@@ -3299,19 +6078,19 @@ export function MondayBoardView({
             ) : (
               <span className="text-muted-foreground text-xs">—</span>
             )}
-            <input
+              <input
               id={fileInputId}
-              type="file"
+                type="file"
               className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                void handleUploadResume(item, file);
-                event.currentTarget.value = "";
-              }}
-              disabled={isUploading || staticMode}
-            />
-            {isUploading ? (
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  void handleUploadResume(item, file);
+                  event.currentTarget.value = "";
+                }}
+                disabled={isUploading || staticMode}
+              />
+              {isUploading ? (
               <span className="text-muted-foreground shrink-0 text-[10px]">Uploading…</span>
             ) : (
               <label
@@ -3375,17 +6154,17 @@ export function MondayBoardView({
     },
     ...(featureFlags.emailMarketingEnabled
       ? ([
-        {
-          id: "send-email",
-          label: "Send Email",
-          icon: <Mail className="h-4 w-4" />,
-          variant: "secondary",
+    {
+      id: "send-email",
+      label: "Send Email",
+      icon: <Mail className="h-4 w-4" />,
+      variant: "secondary",
           onClick: (record: MondayRecord) => {
-            openSendEmailDialog(record);
-          },
+        openSendEmailDialog(record);
+      },
           isDisabled: (record: MondayRecord) =>
             !record.email || !sessionToken || staticMode,
-        },
+    },
       ] satisfies EntityAction<MondayRecord>[])
       : []),
 
@@ -3395,71 +6174,75 @@ export function MondayBoardView({
     <GuidedTourProvider>
     <UserSettingsProvider settings={boardGeneralSettings}>
     <div className="monday-like-page mx-auto space-y-3 pb-10">
-      <div data-board-filter-bar className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}>
+      <div
+        data-board-filter-bar
+        className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+        style={boardThemeInlineStyles.shellCardStyle}
+      >
         <div className="flex min-w-0 items-center gap-1.5">
           {/* Search */}
           <div data-tour="search" className="relative min-w-0 flex-1">
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
               placeholder="Search (2+ chars)…"
               className="bg-background h-8 w-full text-xs shadow-sm"
-            />
-            {search.trim().length > 0 && search.trim().length < 2 ? (
+              />
+              {search.trim().length > 0 && search.trim().length < 2 ? (
               <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
                 2+ chars needed
-              </p>
-            ) : null}
-          </div>
+                </p>
+              ) : null}
+            </div>
 
           <div className="bg-border/60 h-5 w-px shrink-0" />
 
           {/* Owner + district filters */}
           <div data-tour="filters" className="flex items-center gap-1.5">
-          <select
-            value={ownerFilter || "__all_owner__"}
-            onChange={(event) => {
-              if (!isOwnerFilterEditable) return;
-              const value = event.target.value;
-              setOwnerFilter(value === "__all_owner__" ? "" : value);
-            }}
+                <select
+                  value={ownerFilter || "__all_owner__"}
+                  onChange={(event) => {
+                    if (!isOwnerFilterEditable) return;
+                    const value = event.target.value;
+                    setOwnerFilter(value === "__all_owner__" ? "" : value);
+                  }}
             className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
             style={{ maxWidth: "160px" }}
-            disabled={!isOwnerFilterEditable}
-          >
-            {isOwnerFilterEditable ? (
-              <option value="__all_owner__">Owner: all</option>
-            ) : (
+                  disabled={!isOwnerFilterEditable}
+                >
+                  {isOwnerFilterEditable ? (
+                    <option value="__all_owner__">Owner: all</option>
+                  ) : (
               <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
                 {lockedOwnerLabel}
               </option>
-            )}
-            {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
-              <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
-            ) : null}
-            {ownerOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter || "__all_status__"}
-            onChange={(event) => {
-              const value = event.target.value;
-              setStatusFilter(value === "__all_status__" ? "" : value);
-            }}
+                  )}
+                  {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
+                    <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
+                  ) : null}
+                  {ownerOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={statusFilter || "__all_status__"}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStatusFilter(value === "__all_status__" ? "" : value);
+                  }}
             className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
             style={{ maxWidth: "150px" }}
-          >
-            <option value="__all_status__">District: all</option>
-            {statusOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          </div>
+                >
+                  <option value="__all_status__">District: all</option>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
           <Dialog>
             <DialogTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
@@ -3524,9 +6307,9 @@ export function MondayBoardView({
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
+                <Button
+                  size="sm"
+                  variant="outline"
                         className="h-8 border-2 px-3 text-xs shadow-sm"
                         onClick={handleAddAdvancedFilterCondition}
                       >
@@ -3830,7 +6613,7 @@ export function MondayBoardView({
             size="sm"
             variant="ghost"
             className="h-8 shrink-0 px-2"
-            onClick={() => {
+                  onClick={() => {
               setActiveMonth(
                 (prev) =>
                   new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
@@ -3838,7 +6621,7 @@ export function MondayBoardView({
             }}
           >
             <ChevronLeft className="h-4 w-4" />
-          </Button>
+                </Button>
           <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
             {monthBounds.label}
           </Badge>
@@ -3856,22 +6639,22 @@ export function MondayBoardView({
             <ChevronRight className="h-4 w-4" />
           </Button>
 
-          {viewMode === "userScoped" ? (
+                {viewMode === "userScoped" ? (
             <>
               <div className="bg-border/60 h-5 w-px shrink-0" />
-              <Button
-                size="sm"
-                variant="default"
+                  <Button
+                    size="sm"
+                    variant="default"
                 className="h-8 shrink-0 px-2.5"
-                onClick={() => {
-                  resetAddContactDialog();
-                  setAddContactOpen(true);
-                }}
-                disabled={authLoading || !identity?.userId}
-              >
-                <UserPlus className="mr-1.5 h-4 w-4" />
+                    onClick={() => {
+                      resetAddContactDialog();
+                      setAddContactOpen(true);
+                    }}
+                    disabled={authLoading || !identity?.userId}
+                  >
+                    <UserPlus className="mr-1.5 h-4 w-4" />
                 Add
-              </Button>
+                  </Button>
               <div data-tour="view-toggle" className="flex overflow-hidden rounded-md border shrink-0">
                 <button
                   type="button"
@@ -3940,19 +6723,19 @@ export function MondayBoardView({
             <RefreshCcw className="h-4 w-4" />
           </Button>
 
-          {!staticMode && recordsQuery.hasNextPage ? (
-            <Button
-              size="sm"
-              variant="secondary"
+                {!staticMode && recordsQuery.hasNextPage && !shouldAutoLoadMore ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
               className="h-8 shrink-0 px-2.5 text-xs"
-              onClick={() => {
-                void recordsQuery.fetchNextPage();
-              }}
-              disabled={recordsQuery.isFetchingNextPage}
-            >
+                    onClick={() => {
+                      handleLoadMoreRecords();
+                    }}
+                    disabled={recordsQuery.isFetchingNextPage}
+                  >
               {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-            </Button>
-          ) : null}
+                  </Button>
+                ) : null}
 
           <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
           <Button
@@ -3966,52 +6749,68 @@ export function MondayBoardView({
             }}
           >
             <CircleHelp className="h-4 w-4" />
-          </Button>
+                </Button>
 
-          <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-            <DialogTrigger asChild>
+                <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+                  <DialogTrigger asChild>
               <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
                 <Settings className="h-4 w-4" />
-              </Button>
-            </DialogTrigger>
+                    </Button>
+                  </DialogTrigger>
             <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
               <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
-                <DialogTitle>Monday Settings</DialogTitle>
-              </DialogHeader>
+                      <DialogTitle>Monday Settings</DialogTitle>
+                    </DialogHeader>
               <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
                 <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
                   <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
-                    <TabsTrigger
+                        <TabsTrigger
                       value="general-settings"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
+                        >
                       General Settings
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="email-settings"
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="email-settings"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      Email Settings
-                    </TabsTrigger>
+                        >
+                          Email Settings
+                        </TabsTrigger>
                     <TabsTrigger
                       value="email-templates"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Email Templates
-                    </TabsTrigger>
-                    <TabsTrigger
-                      value="user-zip-map"
+                        </TabsTrigger>
+                        <TabsTrigger
+                          value="user-zip-map"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      User {"<->"} Zipcode map
-                    </TabsTrigger>
+                        >
+                          User {"<->"} Zipcode map
+                        </TabsTrigger>
                     <TabsTrigger
                       value="feature-flags"
                       className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                     >
                       Feature Flags
-                    </TabsTrigger>
-                  </TabsList>
+                        </TabsTrigger>
+                    {isMasterAdmin ? (
+                      <TabsTrigger
+                        value="monthly-board-mapping"
+                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      >
+                        Monthly Board Mapping
+                      </TabsTrigger>
+                    ) : null}
+                    {isMasterAdmin ? (
+                      <TabsTrigger
+                        value="platform-settings"
+                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                      >
+                        Platform Settings
+                      </TabsTrigger>
+                    ) : null}
+                      </TabsList>
                 </div>
                 <div className="flex-1 overflow-y-auto px-6 py-5">
                   <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
@@ -4061,7 +6860,7 @@ export function MondayBoardView({
                             <p className="text-muted-foreground text-xs">
                               {USER_BOARD_COLOR_THEME_OPTIONS.find(
                                 (o) => o.value === boardGeneralSettingsDraft.colorTheme,
-                              )?.description ?? "Accent color for the board UI."}
+                              )?.description ?? "Board accent and filter bar styling."}
                             </p>
                           </div>
                           <div className="flex shrink-0 gap-1.5">
@@ -4080,10 +6879,77 @@ export function MondayBoardView({
                                   ? "ring-2 ring-offset-2 ring-primary scale-110"
                                   : "opacity-60 hover:opacity-100 hover:scale-105"
                                   }`}
+                                style={
+                                  option.value === "custom"
+                                    ? {
+                                      backgroundColor:
+                                        boardGeneralSettingsDraft.customTheme?.colorHex ??
+                                        "#0ea5e9",
+                                      opacity:
+                                        boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22,
+                                    }
+                                    : undefined
+                                }
                               />
                             ))}
                           </div>
                         </div>
+
+                        {boardGeneralSettingsDraft.colorTheme === "custom" ? (
+                          <div className="rounded-md border p-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <label className="space-y-1.5">
+                                <span className="text-sm font-medium">Custom Color</span>
+                                <input
+                                  type="color"
+                                  value={
+                                    boardGeneralSettingsDraft.customTheme?.colorHex ?? "#0ea5e9"
+                                  }
+                                  onChange={(event) => {
+                                    const nextHex = event.target.value;
+                                    setBoardGeneralSettingsDraft((prev) => ({
+                                      ...prev,
+                                      customTheme: parseUserBoardCustomTheme({
+                                        colorHex: nextHex,
+                                        alpha: prev.customTheme?.alpha,
+                                      }),
+                                    }));
+                                  }}
+                                  className="h-10 w-full cursor-pointer rounded border bg-transparent p-1"
+                                />
+                              </label>
+                              <label className="space-y-1.5">
+                                <span className="text-sm font-medium">Transparency</span>
+                                <input
+                                  type="range"
+                                  min={0}
+                                  max={100}
+                                  step={1}
+                                  value={Math.round(
+                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                  )}
+                                  onChange={(event) => {
+                                    const nextAlpha = Number(event.target.value) / 100;
+                                    setBoardGeneralSettingsDraft((prev) => ({
+                                      ...prev,
+                                      customTheme: parseUserBoardCustomTheme({
+                                        colorHex: prev.customTheme?.colorHex,
+                                        alpha: nextAlpha,
+                                      }),
+                                    }));
+                                  }}
+                                  className="w-full"
+                                />
+                                <p className="text-muted-foreground text-xs">
+                                  {Math.round(
+                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                  )}
+                                  % opacity
+                                </p>
+                              </label>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {/* Font Size */}
                         <div className="flex items-center justify-between py-3.5">
@@ -4158,6 +7024,48 @@ export function MondayBoardView({
                                 {option.label}
                               </button>
                             ))}
+                          </div>
+                        </div>
+
+                        {/* Hover Popovers */}
+                        <div className="flex items-center justify-between py-3.5">
+                          <div className="min-w-0 flex-1 pr-6">
+                            <p className="text-sm font-medium">Hover Popovers</p>
+                            <p className="text-muted-foreground text-xs">
+                              Show or hide hover details on contact name and progress bar columns.
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 overflow-hidden rounded-md border">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft((prev) => ({
+                                  ...prev,
+                                  hoverPopoversEnabled: true,
+                                }));
+                              }}
+                              className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.hoverPopoversEnabled
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background text-muted-foreground hover:bg-muted"
+                                }`}
+                            >
+                              Enabled
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setBoardGeneralSettingsDraft((prev) => ({
+                                  ...prev,
+                                  hoverPopoversEnabled: false,
+                                }));
+                              }}
+                              className={`h-8 px-3 text-xs font-medium transition-colors ${!boardGeneralSettingsDraft.hoverPopoversEnabled
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-background text-muted-foreground hover:bg-muted"
+                                }`}
+                            >
+                              Disabled
+                            </button>
                           </div>
                         </div>
 
@@ -4252,7 +7160,10 @@ export function MondayBoardView({
                         </div>
 
                         {/* Preview strip */}
-                        <div className={`flex items-center justify-between rounded-md px-4 py-3 mt-3 ${boardDraftThemeStyles.previewClassName}`}>
+                        <div
+                          className={`mt-3 flex items-center justify-between rounded-md px-4 py-3 ${boardDraftThemeStyles.previewClassName}`}
+                          style={boardDraftThemeInlineStyles.previewStyle}
+                        >
                           <p className="text-xs text-muted-foreground">
                             Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
                             {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
@@ -4262,6 +7173,7 @@ export function MondayBoardView({
                             size="sm"
                             variant="secondary"
                             className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                            style={boardDraftThemeInlineStyles.actionButtonStyle}
                             disabled
                           >
                             Quick Action
@@ -4271,105 +7183,105 @@ export function MondayBoardView({
                       </div>
                     </TabsContent>
 
-                    <TabsContent value="email-templates" className="mt-0">
-                        <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium">
-                              Templates ({emailTemplates.length})
-                            </p>
-                            <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                              {emailTemplates.map((template) => {
-                                const isActive = template.id === selectedTemplate?.id;
-                                return (
-                                  <button
-                                    key={template.id}
-                                    type="button"
-                                    className={[
-                                      "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                      isActive
-                                        ? "border-primary bg-primary/10"
-                                        : "hover:bg-muted/60",
-                                    ].join(" ")}
-                                    onClick={() => {
-                                      setSelectedTemplateId(template.id);
-                                    }}
-                                  >
-                                    <p className="line-clamp-1 font-medium">{template.name}</p>
-                                    <p className="text-muted-foreground mt-1 text-xs">
-                                      Updated {formatUpdatedAt(template.updatedAt)}
-                                    </p>
-                                  </button>
-                                );
-                              })}
-                              {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                <p className="text-muted-foreground text-sm">
-                                  No templates found on board 18401299370.
-                                </p>
-                              ) : null}
-                              {emailTemplatesQuery.isLoading ? (
-                                <p className="text-muted-foreground text-sm">
-                                  Loading templates...
-                                </p>
-                              ) : null}
+                        <TabsContent value="email-templates" className="mt-0">
+                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">
+                                Templates ({emailTemplates.length})
+                              </p>
+                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                {emailTemplates.map((template) => {
+                                  const isActive = template.id === selectedTemplate?.id;
+                                  return (
+                                    <button
+                                      key={template.id}
+                                      type="button"
+                                      className={[
+                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                        isActive
+                                          ? "border-primary bg-primary/10"
+                                          : "hover:bg-muted/60",
+                                      ].join(" ")}
+                                      onClick={() => {
+                                        setSelectedTemplateId(template.id);
+                                      }}
+                                    >
+                                      <p className="line-clamp-1 font-medium">{template.name}</p>
+                                      <p className="text-muted-foreground mt-1 text-xs">
+                                        Updated {formatUpdatedAt(template.updatedAt)}
+                                      </p>
+                                    </button>
+                                  );
+                                })}
+                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    No templates found on board 18401299370.
+                                  </p>
+                                ) : null}
+                                {emailTemplatesQuery.isLoading ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    Loading templates...
+                                  </p>
+                                ) : null}
+                              </div>
                             </div>
-                          </div>
-                          <div className="bg-background min-h-[420px] rounded-md border p-4">
-                            {selectedTemplate ? (
-                              <div className="space-y-4">
-                                <div className="border-b pb-3">
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Subject
-                                  </p>
-                                  <p className="mt-1 text-base font-medium">
-                                    {selectedTemplate.name}
-                                  </p>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold tracking-wide uppercase">
-                                    Email Preview (Lead View)
-                                  </p>
-                                  <div className="bg-card mt-2 rounded-md border p-4">
-                                    {selectedTemplate.content.trim().length === 0 ? (
-                                      <p className="text-muted-foreground text-sm">
-                                        No content found in column doc_mm0wq4r.
-                                      </p>
-                                    ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                      <div
-                                        className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                        style={{ whiteSpace: "pre-wrap" }}
-                                        dangerouslySetInnerHTML={{
-                                          __html: selectedTemplate.renderedHtml,
-                                        }}
-                                      />
-                                    ) : (
-                                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                        {selectedTemplate.content}
-                                      </div>
-                                    )}
-                                    {selectedTemplate.docLink ? (
-                                      <p className="mt-3 text-xs">
-                                        <a
-                                          href={selectedTemplate.docLink}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-primary underline underline-offset-2"
-                                        >
-                                          Open source Monday Workdoc
-                                        </a>
-                                      </p>
-                                    ) : null}
+                            <div className="bg-background min-h-[420px] rounded-md border p-4">
+                              {selectedTemplate ? (
+                                <div className="space-y-4">
+                                  <div className="border-b pb-3">
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Subject
+                                    </p>
+                                    <p className="mt-1 text-base font-medium">
+                                      {selectedTemplate.name}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Email Preview (Lead View)
+                                    </p>
+                                    <div className="bg-card mt-2 rounded-md border p-4">
+                                      {selectedTemplate.content.trim().length === 0 ? (
+                                        <p className="text-muted-foreground text-sm">
+                                          No content found in column doc_mm0wq4r.
+                                        </p>
+                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                        <div
+                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                          style={{ whiteSpace: "pre-wrap" }}
+                                          dangerouslySetInnerHTML={{
+                                            __html: selectedTemplate.renderedHtml,
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                          {selectedTemplate.content}
+                                        </div>
+                                      )}
+                                      {selectedTemplate.docLink ? (
+                                        <p className="mt-3 text-xs">
+                                          <a
+                                            href={selectedTemplate.docLink}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="text-primary underline underline-offset-2"
+                                          >
+                                            Open source Monday Workdoc
+                                          </a>
+                                        </p>
+                                      ) : null}
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ) : (
-                              <p className="text-muted-foreground text-sm">
-                                Select an email template to preview.
-                              </p>
-                            )}
+                              ) : (
+                                <p className="text-muted-foreground text-sm">
+                                  Select an email template to preview.
+                                </p>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </TabsContent>
-                    <TabsContent value="user-zip-map" className="mt-0">
+                        </TabsContent>
+                        <TabsContent value="user-zip-map" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
                             <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
@@ -4536,86 +7448,143 @@ export function MondayBoardView({
                               </Button>
                             </div>
                           </div>
-                        </div>
-                      </TabsContent>
-                    <TabsContent value="email-settings" className="mt-0">
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">Email Settings</p>
-                          <p className="text-muted-foreground text-sm">
-                            Configure outbound email account settings for sending
-                            monday-designed templates.
-                          </p>
-                        </div>
-                        <div className="space-y-3 rounded-md border p-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant={
-                                outlookStatusQuery.data?.connected
-                                  ? "default"
-                                  : "secondary"
-                              }
-                            >
-                              {outlookStatusQuery.data?.connected
-                                ? "Outlook connected"
-                                : "Outlook not connected"}
-                            </Badge>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                void handleConnectOutlook();
-                              }}
-                              disabled={isConnectingOutlook}
-                            >
-                              {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                            </Button>
-                            {outlookStatusQuery.data?.connected ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  void handleDisconnectOutlook();
-                                }}
-                                disabled={isDisconnectingOutlook}
-                              >
-                                {isDisconnectingOutlook
-                                  ? "Disconnecting..."
-                                  : "Disconnect"}
-                              </Button>
-                            ) : null}
                           </div>
-                          <div className="text-muted-foreground text-sm">
-                            {outlookStatusQuery.data?.connection?.email ? (
-                              <p>
-                                Connected mailbox:{" "}
-                                {outlookStatusQuery.data.connection.email}
+                        </TabsContent>
+                        <TabsContent value="email-settings" className="mt-0">
+                          <div className="space-y-4">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium">Email Settings</p>
+                              <p className="text-muted-foreground text-sm">
+                                Configure outbound email account settings for sending
+                                monday-designed templates.
                               </p>
-                            ) : (
-                              <p>
-                                Use OAuth to connect Outlook, then use this account
-                                for sending and engagement tracking.
-                              </p>
-                            )}
-                            {outlookStatusQuery.data?.connection?.updatedAt ? (
-                              <p className="mt-1">
-                                Last updated:{" "}
-                                {new Date(
-                                  outlookStatusQuery.data.connection.updatedAt,
-                                ).toLocaleString()}
-                              </p>
-                            ) : null}
+                            </div>
+                            <div className="space-y-3 rounded-md border p-4">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  variant={
+                                    outlookStatusQuery.data?.connected
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                >
+                                  {outlookStatusQuery.data?.connected
+                                    ? "Outlook connected"
+                                    : "Outlook not connected"}
+                                </Badge>
+                                <Button
+                                  size="sm"
+                                  onClick={() => {
+                                    void handleConnectOutlook();
+                                  }}
+                                  disabled={isConnectingOutlook}
+                                >
+                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                </Button>
+                                {outlookStatusQuery.data?.connected ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      void handleDisconnectOutlook();
+                                    }}
+                                    disabled={isDisconnectingOutlook}
+                                  >
+                                    {isDisconnectingOutlook
+                                      ? "Disconnecting..."
+                                      : "Disconnect"}
+                                  </Button>
+                                ) : null}
+                              </div>
+                              <div className="text-muted-foreground text-sm">
+                                {outlookStatusQuery.data?.connection?.email ? (
+                                  <p>
+                                    Connected mailbox:{" "}
+                                    {outlookStatusQuery.data.connection.email}
+                                  </p>
+                                ) : (
+                                  <p>
+                                    Use OAuth to connect Outlook, then use this account
+                                    for sending and engagement tracking.
+                                  </p>
+                                )}
+                                {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                  <p className="mt-1">
+                                    Last updated:{" "}
+                                    {new Date(
+                                      outlookStatusQuery.data.connection.updatedAt,
+                                    ).toLocaleString()}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <div className="rounded-md border bg-muted/30 p-3">
+                                <p className="text-xs font-semibold tracking-wide uppercase">
+                                  Callback URL
+                                </p>
+                                <p className="mt-1 break-all font-mono text-xs">
+                                  {callbackUrl}
+                                </p>
+                              </div>
+                              {isMasterAdmin ? (
+                                <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium">Global Reply-To Addresses</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      One email per line (or comma-separated). Every outbound message
+                                      includes the sender&apos;s mailbox plus these addresses in
+                                      Reply-To.
+                                    </p>
+                                  </div>
+                                  <Textarea
+                                    value={platformSettingsDraft.replyToEmails.join("\n")}
+                                    onChange={(event) => {
+                                      const nextReplyToEmails = parseDelimitedList(
+                                        event.target.value,
+                                      ).map((entry) => entry.toLowerCase());
+                                      setPlatformSettingsDraft((prev) => ({
+                                        ...prev,
+                                        replyToEmails: nextReplyToEmails,
+                                      }));
+                                    }}
+                                    rows={4}
+                                    placeholder="info@floridaroadjobs.com"
+                                    className="font-mono text-xs"
+                                  />
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={
+                                        isSavingPlatformSettings ||
+                                        platformSettings.replyToEmails.join(",") ===
+                                          platformSettingsDraft.replyToEmails.join(",")
+                                      }
+                                      onClick={() => {
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          replyToEmails: [...platformSettings.replyToEmails],
+                                        }));
+                                      }}
+                                    >
+                                      Reset
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      disabled={isSavingPlatformSettings}
+                                      onClick={() => {
+                                        void handleSavePlatformSettings(
+                                          "Reply-to settings updated",
+                                        );
+                                      }}
+                                    >
+                                      {isSavingPlatformSettings ? "Saving..." : "Save reply-to"}
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
                           </div>
-                          <div className="rounded-md border bg-muted/30 p-3">
-                            <p className="text-xs font-semibold tracking-wide uppercase">
-                              Callback URL
-                            </p>
-                            <p className="mt-1 break-all font-mono text-xs">
-                              {callbackUrl}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    </TabsContent>
+                        </TabsContent>
                     <TabsContent value="feature-flags" className="mt-0">
                         <div className="space-y-4">
                           <div className="space-y-1">
@@ -4652,120 +7621,699 @@ export function MondayBoardView({
                           </div>
                         </div>
                       </TabsContent>
+                    {isMasterAdmin ? (
+                      <TabsContent value="monthly-board-mapping" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Monthly Board Mapping</p>
+                            <p className="text-muted-foreground text-sm">
+                              Configure which monthly board should sync by month/year.
+                            </p>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-medium">Mappings</p>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const currentMonthKey = new Date()
+                                    .toISOString()
+                                    .slice(0, 7);
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    monthlyBoardMappings: [
+                                      ...prev.monthlyBoardMappings,
+                                      { monthKey: currentMonthKey, boardId: "" },
+                                    ],
+                                  }));
+                                }}
+                              >
+                                Add row
+                              </Button>
+                            </div>
+                            {platformSettingsDraft.monthlyBoardMappings.length === 0 ? (
+                              <p className="text-muted-foreground text-xs">
+                                No mappings yet. Add at least one month/year to board ID mapping.
+                              </p>
+                            ) : (
+                              <div className="space-y-2">
+                                {platformSettingsDraft.monthlyBoardMappings.map(
+                                  (mapping, index) => (
+                                    <div
+                                      key={`${mapping.monthKey}-${mapping.boardId}-${index}`}
+                                      className="grid gap-2 md:grid-cols-[180px_1fr_auto]"
+                                    >
+                                      <Input
+                                        type="month"
+                                        value={mapping.monthKey}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...entry, monthKey: value }
+                                                  : entry,
+                                              ),
+                                          }));
+                                        }}
+                                      />
+                                      <Input
+                                        value={mapping.boardId}
+                                        onChange={(event) => {
+                                          const value = event.target.value.trim();
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...entry, boardId: value }
+                                                  : entry,
+                                              ),
+                                          }));
+                                        }}
+                                        placeholder="Monthly board ID"
+                                      />
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            monthlyBoardMappings:
+                                              prev.monthlyBoardMappings.filter(
+                                                (_, entryIndex) => entryIndex !== index,
+                                              ),
+                                          }));
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                    </div>
+                                  ),
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                            <p className="text-xs font-semibold tracking-wide uppercase">
+                              Monthly Board Webhook URL
+                            </p>
+                            <p className="mt-1 break-all font-mono text-xs">
+                              {monthlyWebhookUrl}
+                            </p>
+                            <p className="text-muted-foreground mt-2 text-xs">
+                              Configure this URL as a webhook on each mapped monthly board.
+                              New monthly updates and subitem changes will sync to the linked
+                              contact in the API board.
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                setPlatformSettingsDraft(platformSettings);
+                              }}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                void handleSavePlatformSettings(
+                                  "Monthly board mappings updated",
+                                );
+                              }}
+                            >
+                              {isSavingPlatformSettings ? "Saving..." : "Save mappings"}
+                            </Button>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
+                    {isMasterAdmin ? (
+                      <TabsContent value="platform-settings" className="mt-0">
+                        <div className="space-y-4">
+                          <div className="space-y-1">
+                            <p className="text-sm font-medium">Platform Settings</p>
+                            <p className="text-muted-foreground text-sm">
+                              Manage role assignments for settings access.
+                            </p>
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="space-y-2 rounded-md border p-4">
+                              <p className="text-sm font-medium">Admin User IDs</p>
+                              <p className="text-muted-foreground text-xs">
+                                One user ID per line. Admins can modify feature flags and admin
+                                tools.
+                              </p>
+                              <Textarea
+                                value={platformSettingsDraft.adminUserIds.join("\n")}
+                                onChange={(event) => {
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    adminUserIds: parseDelimitedList(event.target.value),
+                                  }));
+                                }}
+                                rows={8}
+                                className="font-mono text-xs"
+                                placeholder={"53441186\n38959704"}
+                              />
+                            </div>
+                            <div className="space-y-2 rounded-md border p-4">
+                              <p className="text-sm font-medium">Employee User IDs</p>
+                              <p className="text-muted-foreground text-xs">
+                                Optional reference list for employee role assignments.
+                              </p>
+                              <Textarea
+                                value={platformSettingsDraft.employeeUserIds.join("\n")}
+                                onChange={(event) => {
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    employeeUserIds: parseDelimitedList(event.target.value),
+                                  }));
+                                }}
+                                rows={8}
+                                className="font-mono text-xs"
+                                placeholder={"49566535\n38959704"}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-3 rounded-md border p-4">
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium">Email Template System Tags</p>
+                              <p className="text-muted-foreground text-xs">
+                                Built-ins always available:{" "}
+                                <code>{"{{owner.name}}"}</code>,{" "}
+                                <code>{"{{owner.email}}"}</code>,{" "}
+                                <code>{"{{contact.name}}"}</code>,{" "}
+                                <code>{"{{contact.email}}"}</code>.
+                              </p>
+                              <p className="text-muted-foreground text-xs">
+                                Add custom tags mapped to any top-level API board column.
+                              </p>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]">
+                              <Input
+                                value={newEmailSystemTagKey}
+                                onChange={(event) => setNewEmailSystemTagKey(event.target.value)}
+                                placeholder="contact.city"
+                              />
+                              <Select
+                                value={newEmailSystemTagColumnId || "__none__"}
+                                onValueChange={(value) =>
+                                  setNewEmailSystemTagColumnId(
+                                    value === "__none__" ? "" : value,
+                                  )
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select contact column" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="__none__">Select contact column</SelectItem>
+                                  {platformBoardColumnOptions.map((column) => (
+                                    <SelectItem key={column.id} value={column.id}>
+                                      {column.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() => {
+                                  const tag = newEmailSystemTagKey.trim().toLowerCase();
+                                  const columnId = newEmailSystemTagColumnId.trim();
+                                  const selectedColumn = platformBoardColumnOptions.find(
+                                    (column) => column.id === columnId,
+                                  );
+                                  if (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag)) {
+                                    toast.error(
+                                      "Tag key must start with a letter and use letters, numbers, dots, dashes, or underscores.",
+                                    );
+                                    return;
+                                  }
+                                  if (!columnId) {
+                                    toast.error("Select a contact column for this tag.");
+                                    return;
+                                  }
+                                  setPlatformSettingsDraft((prev) => ({
+                                    ...prev,
+                                    emailSystemTags: normalizeEmailSystemTags([
+                                      ...prev.emailSystemTags,
+                                      {
+                                        tag,
+                                        columnId,
+                                        columnTitle: selectedColumn?.title ?? columnId,
+                                      },
+                                    ]),
+                                  }));
+                                  setNewEmailSystemTagKey("");
+                                  setNewEmailSystemTagColumnId("");
+                                }}
+                                disabled={platformBoardColumnsQuery.isLoading}
+                              >
+                                Add Tag
+                              </Button>
+                            </div>
+                            <div className="space-y-2">
+                              {platformSettingsDraft.emailSystemTags.length === 0 ? (
+                                <p className="text-muted-foreground text-xs">
+                                  No custom tags configured yet.
+                                </p>
+                              ) : (
+                                platformSettingsDraft.emailSystemTags.map((entry, index) => {
+                                  const selectedColumn = platformBoardColumnOptions.find(
+                                    (column) => column.id === entry.columnId,
+                                  );
+                                  return (
+                                    <div
+                                      key={`${entry.tag}:${entry.columnId}:${index}`}
+                                      className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]"
+                                    >
+                                      <Input
+                                        value={entry.tag}
+                                        onChange={(event) => {
+                                          const value = event.target.value;
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.map(
+                                              (tagEntry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? { ...tagEntry, tag: value }
+                                                  : tagEntry,
+                                            ),
+                                          }));
+                                        }}
+                                      />
+                                      <Select
+                                        value={entry.columnId}
+                                        onValueChange={(value) => {
+                                          const selected = platformBoardColumnOptions.find(
+                                            (column) => column.id === value,
+                                          );
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.map(
+                                              (tagEntry, entryIndex) =>
+                                                entryIndex === index
+                                                  ? {
+                                                      ...tagEntry,
+                                                      columnId: value,
+                                                      columnTitle:
+                                                        selected?.title ??
+                                                        tagEntry.columnTitle,
+                                                    }
+                                                  : tagEntry,
+                                            ),
+                                          }));
+                                        }}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select contact column" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {platformBoardColumnOptions.map((column) => (
+                                            <SelectItem key={column.id} value={column.id}>
+                                              {column.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            emailSystemTags: prev.emailSystemTags.filter(
+                                              (_, entryIndex) => entryIndex !== index,
+                                            ),
+                                          }));
+                                        }}
+                                      >
+                                        Remove
+                                      </Button>
+                                      <p className="text-muted-foreground text-xs md:col-span-3">
+                                        Token:{" "}
+                                        <code>{`{{${entry.tag.trim().toLowerCase()}}}`}</code>
+                                        {" · "}
+                                        Column: {selectedColumn?.title ?? entry.columnTitle} (
+                                        {entry.columnId})
+                                      </p>
+                                    </div>
+                                  );
+                                })
+                              )}
+                            </div>
+                            {platformBoardColumnsQuery.isLoading ? (
+                              <p className="text-muted-foreground text-xs">
+                                Loading API board columns...
+                              </p>
+                            ) : null}
+                            {platformBoardColumnsQuery.error ? (
+                              <p className="text-destructive text-xs">
+                                {platformBoardColumnsQuery.error instanceof Error
+                                  ? platformBoardColumnsQuery.error.message
+                                  : "Failed to load API board columns"}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="rounded-md border border-amber-300 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-100">
+                            Master admin ({masterAdminUserId}) is always included in admin IDs.
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                setPlatformSettingsDraft(platformSettings);
+                              }}
+                            >
+                              Reset
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                              onClick={() => {
+                                void handleSavePlatformSettings("Platform settings updated");
+                              }}
+                            >
+                              {isSavingPlatformSettings ? "Saving..." : "Save platform settings"}
+                            </Button>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    ) : null}
                   </div>
-                </div>
-              </Tabs>
-            </DialogContent>
-          </Dialog>
+                      </div>
+                    </Tabs>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
       <div className="max-w-[1600px] container">
 
-        <Dialog
-          open={addContactOpen}
-          onOpenChange={(open) => {
-            setAddContactOpen(open);
-            if (!open) {
-              resetAddContactDialog();
-            }
-          }}
-        >
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Add New Contact</DialogTitle>
-            </DialogHeader>
-            {addContactStep === 1 ? (
-              <AddNewContactForm
-                values={addContactValues}
-                ownerOptions={addContactOwnerOptions}
-                isSubmitting={isCheckingDuplicates || isCreatingContact}
-                onChange={(key, value) => {
-                  setAddContactValues((prev) => ({ ...prev, [key]: value }));
-                }}
-                onSubmit={() => {
-                  void handleCheckDuplicatesAndContinue();
-                }}
-              />
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium">
-                    Before we create, we found these records with the same email.
-                  </p>
-                  <p className="text-muted-foreground text-sm">
-                    Do you want to use one of these existing records?
-                  </p>
-                </div>
-                <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                  {existingContactsByEmail.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between gap-3 rounded-md border p-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{record.name || record.id}</p>
-                        <p className="text-muted-foreground truncate text-xs">
-                          {record.email ?? "No email"} · {record.owner ?? "No owner"}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {record.url ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              window.open(record.url ?? "", "_blank", "noopener,noreferrer")
-                            }
-                          >
-                            Open
-                          </Button>
-                        ) : null}
+      <Dialog
+        open={addContactOpen}
+        onOpenChange={(open) => {
+          setAddContactOpen(open);
+          if (!open) {
+            resetAddContactDialog();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Contact</DialogTitle>
+          </DialogHeader>
+          {addContactStep === 1 ? (
+            <AddNewContactForm
+              values={addContactValues}
+              ownerOptions={addContactOwnerOptions}
+              isSubmitting={isCheckingDuplicates || isCreatingContact}
+              onChange={(key, value) => {
+                setAddContactValues((prev) => ({ ...prev, [key]: value }));
+              }}
+              onSubmit={() => {
+                void handleCheckDuplicatesAndContinue();
+              }}
+            />
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">
+                  Before we create, we found these records with the same email.
+                </p>
+                <p className="text-muted-foreground text-sm">
+                  Do you want to use one of these existing records?
+                </p>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
+                {existingContactsByEmail.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex items-center justify-between gap-3 rounded-md border p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{record.name || record.id}</p>
+                      <p className="text-muted-foreground truncate text-xs">
+                        {record.email ?? "No email"} · {record.owner ?? "No owner"}
+                      </p>
+                      <p className="text-muted-foreground text-xs">
+                        Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {record.url ? (
                         <Button
                           size="sm"
-                          onClick={() => {
-                            toast.success("Using existing contact");
-                            setAddContactOpen(false);
-                            resetAddContactDialog();
-                          }}
+                          variant="outline"
+                          onClick={() =>
+                            window.open(record.url ?? "", "_blank", "noopener,noreferrer")
+                          }
                         >
-                          Use Existing
+                          Open
                         </Button>
-                      </div>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          toast.success("Using existing contact");
+                          setAddContactOpen(false);
+                          resetAddContactDialog();
+                        }}
+                      >
+                        Use Existing
+                      </Button>
                     </div>
-                  ))}
-                </div>
-                <div className="flex justify-between gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setAddContactStep(1)}
-                    disabled={isCreatingContact}
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      void handleCreateContact();
-                    }}
-                    disabled={isCreatingContact}
-                  >
-                    {isCreatingContact ? "Creating..." : "Create New Anyway"}
-                  </Button>
-                </div>
+                  </div>
+                ))}
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              <div className="flex justify-between gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setAddContactStep(1)}
+                  disabled={isCreatingContact}
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => {
+                    void handleCreateContact();
+                  }}
+                  disabled={isCreatingContact}
+                >
+                  {isCreatingContact ? "Creating..." : "Create New Anyway"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!retentionDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setRetentionDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!resumeReferralDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeResumeReferralDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Resume Submitted to Contractor</DialogTitle>
+            <DialogDescription>
+              Choose which contractor(s) this contact was referred to. This updates the API board
+              referral column before completing the onboarding step.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Referred To Contractor(s)</label>
+              <MultiSelect
+                key={`${resumeReferralDialogState?.targetRecordId ?? "no-item"}-${resumeReferralDialogState?.selectedContractors.join("|") ?? ""}`}
+                options={Array.from(
+                  new Set([
+                    ...retentionOptions.referredToContractors,
+                    ...(resumeReferralDialogState?.selectedContractors ?? []),
+                  ]),
+                )
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={resumeReferralDialogState?.selectedContractors ?? []}
+                onValueChange={(values) => {
+                  setResumeReferralDialogState((prev) =>
+                    prev ? { ...prev, selectedContractors: values } : prev,
+                  );
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeResumeReferralDialog}
+                disabled={isSavingResumeReferralStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmResumeReferralStep();
+                }}
+                disabled={
+                  isSavingResumeReferralStep ||
+                  (resumeReferralDialogState?.selectedContractors.length ?? 0) === 0
+                }
+              >
+                {isSavingResumeReferralStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!interviewingContractorDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeInterviewingContractorDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mark Interviewing</DialogTitle>
+            <DialogDescription>
+              Select the contractor(s) this contact is interviewing with. Options are limited to
+              contractors from Referred to Contractor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Interviewing With Contractor(s)</label>
+              <MultiSelect
+                key={`${interviewingContractorDialogState?.targetRecordId ?? "no-item"}-${interviewingContractorDialogState?.selectedContractors.join("|") ?? ""}`}
+                options={(interviewingContractorDialogState?.availableContractors ?? [])
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={interviewingContractorDialogState?.selectedContractors ?? []}
+                onValueChange={(values) => {
+                  setInterviewingContractorDialogState((prev) =>
+                    prev ? { ...prev, selectedContractors: values } : prev,
+                  );
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeInterviewingContractorDialog}
+                disabled={isSavingInterviewingStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmInterviewingStep();
+                }}
+                disabled={
+                  isSavingInterviewingStep ||
+                  (interviewingContractorDialogState?.selectedContractors.length ?? 0) === 0
+                }
+              >
+                {isSavingInterviewingStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!hiredContractorDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeHiredContractorDialog();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mark as Hired</DialogTitle>
+            <DialogDescription>
+              Select the contractor this contact was hired with. Options come from Interviewing
+              With Contractor.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hired With Contractor</label>
+              <Select
+                value={hiredContractorDialogState?.selectedContractor || "__none__"}
+                onValueChange={(value) => {
+                  setHiredContractorDialogState((prev) =>
+                    prev
+                      ? { ...prev, selectedContractor: value === "__none__" ? "" : value }
+                      : prev,
+                  );
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select contractor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">None</SelectItem>
+                  {(hiredContractorDialogState?.availableContractors ?? [])
+                    .filter((value) => value.trim().length > 0)
+                    .map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeHiredContractorDialog}
+                disabled={isSavingHiredStep}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmHiredStep();
+                }}
+                disabled={
+                  isSavingHiredStep ||
+                  !hiredContractorDialogState?.selectedContractor.trim()
+                }
+              >
+                {isSavingHiredStep ? "Saving..." : "Save and Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!retentionDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setRetentionDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -4775,11 +8323,11 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Retention</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              {/* <div className="space-y-2 rounded-md border p-3">
+          <DialogHeader>
+            <DialogTitle>Update Retention</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* <div className="space-y-2 rounded-md border p-3">
               <div>
                 <p className="text-sm font-medium">Business Connections Overview</p>
                 <p className="text-muted-foreground text-xs">
@@ -4826,162 +8374,162 @@ export function MondayBoardView({
                 </div>
               </div>
             </div> */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Referred To Contractor(s)</label>
-                <MultiSelect
-                  key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
-                  options={Array.from(
-                    new Set([
-                      ...retentionOptions.referredToContractors,
-                      ...retentionDraft.referredToContractors,
-                    ]),
-                  )
-                    .filter((value) => value.trim().length > 0)
-                    .map((value) => ({ label: value, value }))}
-                  defaultValue={retentionDraft.referredToContractors}
-                  onValueChange={(values) => {
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      referredToContractors: values,
-                    }));
-                  }}
-                  placeholder="Select contractor(s)"
-                  disablePortal
-                  popoverSide="bottom"
-                  popoverAvoidCollisions={false}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Hired With Contractor</label>
-                <select
-                  value={retentionDraft.hiredWithContractor || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      hiredWithContractor: value === "__none__" ? "" : value,
-                    }));
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Referred To Contractor(s)</label>
+              <MultiSelect
+                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                options={Array.from(
+                  new Set([
+                    ...retentionOptions.referredToContractors,
+                    ...retentionDraft.referredToContractors,
+                  ]),
+                )
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={retentionDraft.referredToContractors}
+                onValueChange={(values) => {
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    referredToContractors: values,
+                  }));
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hired With Contractor</label>
+              <select
+                value={retentionDraft.hiredWithContractor || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    hiredWithContractor: value === "__none__" ? "" : value,
+                  }));
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(
+                  new Set([
+                    ...retentionOptions.hiredWithContractor,
+                    retentionDraft.hiredWithContractor,
+                  ]),
+                )
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hire Date</label>
+              <div className="flex items-center gap-2">
+                <Popover
+                  open={retentionHireDatePopoverOpen}
+                  onOpenChange={setRetentionHireDatePopoverOpen}
                 >
-                  <option value="__none__">Select value</option>
-                  {Array.from(
-                    new Set([
-                      ...retentionOptions.hiredWithContractor,
-                      retentionDraft.hiredWithContractor,
-                    ]),
-                  )
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Hire Date</label>
-                <div className="flex items-center gap-2">
-                  <Popover
-                    open={retentionHireDatePopoverOpen}
-                    onOpenChange={setRetentionHireDatePopoverOpen}
-                  >
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 flex-1 justify-start font-normal"
-                      >
-                        {retentionDraft.hireDate || "Select date"}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                      <Calendar
-                        mode="single"
-                        selected={
-                          retentionDraft.hireDate
-                            ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                            : undefined
-                        }
-                        onSelect={(date) => {
-                          if (!date) return;
-                          setRetentionDraft((prev) => ({
-                            ...prev,
-                            hireDate: toDateOnlyLocal(date),
-                          }));
-                          setRetentionHireDatePopoverOpen(false);
-                        }}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                    }}
-                    disabled={!retentionDraft.hireDate}
-                  >
-                    Clear
-                  </Button>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Retention Period</label>
-                <select
-                  value={retentionDraft.retentionPeriod || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRetentionDraft((prev) => ({
-                      ...prev,
-                      retentionPeriod: value === "__none__" ? "" : value,
-                    }));
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="__none__">Select value</option>
-                  {Array.from(
-                    new Set([
-                      ...retentionOptions.retentionPeriod,
-                      retentionDraft.retentionPeriod,
-                    ]),
-                  )
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2">
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 flex-1 justify-start font-normal"
+                    >
+                      {retentionDraft.hireDate || "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                    <Calendar
+                      mode="single"
+                      selected={
+                        retentionDraft.hireDate
+                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                          : undefined
+                      }
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setRetentionDraft((prev) => ({
+                          ...prev,
+                          hireDate: toDateOnlyLocal(date),
+                        }));
+                        setRetentionHireDatePopoverOpen(false);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
                 <Button
-                  variant="outline"
-                  onClick={() => setRetentionDialogRecord(null)}
-                  disabled={isSavingRetention}
-                >
-                  Cancel
-                </Button>
-                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
-                    void handleSaveRetention();
+                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
                   }}
-                  disabled={isSavingRetention}
+                  disabled={!retentionDraft.hireDate}
                 >
-                  {isSavingRetention ? "Saving..." : "Save"}
+                  Clear
                 </Button>
               </div>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Retention Period</label>
+              <select
+                value={retentionDraft.retentionPeriod || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRetentionDraft((prev) => ({
+                    ...prev,
+                    retentionPeriod: value === "__none__" ? "" : value,
+                  }));
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(
+                  new Set([
+                    ...retentionOptions.retentionPeriod,
+                    retentionDraft.retentionPeriod,
+                  ]),
+                )
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setRetentionDialogRecord(null)}
+                disabled={isSavingRetention}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveRetention();
+                }}
+                disabled={isSavingRetention}
+              >
+                {isSavingRetention ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!statusDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setStatusDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!statusDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setStatusDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -4991,57 +8539,57 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Status</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Status</label>
-                <select
-                  value={statusDraft || "__none__"}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setStatusDraft(value === "__none__" ? "" : value);
-                  }}
-                  className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-                >
-                  <option value="__none__">Select value</option>
-                  {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                </select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setStatusDialogRecord(null)}
-                  disabled={isSavingStatus}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveStatus();
-                  }}
-                  disabled={isSavingStatus}
-                >
-                  {isSavingStatus ? "Saving..." : "Save"}
-                </Button>
-              </div>
+          <DialogHeader>
+            <DialogTitle>Update Status</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Status</label>
+              <select
+                value={statusDraft || "__none__"}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStatusDraft(value === "__none__" ? "" : value);
+                }}
+                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="__none__">Select value</option>
+                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                  .filter((value): value is string => !!value && value.trim().length > 0)
+                  .map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+              </select>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setStatusDialogRecord(null)}
+                disabled={isSavingStatus}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveStatus();
+                }}
+                disabled={isSavingStatus}
+              >
+                {isSavingStatus ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!ownerDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setOwnerDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!ownerDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setOwnerDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg"
             onInteractOutside={(event) => {
@@ -5051,104 +8599,104 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Owner</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Owner</label>
-                <Select
-                  value={ownerDraft || "__none__"}
-                  onValueChange={(value) => {
-                    setOwnerDraft(value === "__none__" ? "" : value);
-                  }}
-                >
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue placeholder="Select owner" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Select value</SelectItem>
-                    {Array.from(
-                      new Map(
-                        [
-                          ...ownerOptions.map((option) => [option.value, option] as const),
-                          ownerDraft.trim().length > 0
-                            ? [
-                              ownerDraft,
-                              {
-                                value: ownerDraft,
-                                label: `User ${ownerDraft}`,
-                                name: null,
-                                photoThumb: null,
-                              },
-                            ]
-                            : null,
-                        ].filter(
-                          (
-                            entry,
-                          ): entry is readonly [
-                            string,
+          <DialogHeader>
+            <DialogTitle>Update Owner</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Owner</label>
+              <Select
+                value={ownerDraft || "__none__"}
+                onValueChange={(value) => {
+                  setOwnerDraft(value === "__none__" ? "" : value);
+                }}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue placeholder="Select owner" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select value</SelectItem>
+                  {Array.from(
+                    new Map(
+                      [
+                        ...ownerOptions.map((option) => [option.value, option] as const),
+                        ownerDraft.trim().length > 0
+                          ? [
+                            ownerDraft,
                             {
-                              value: string;
-                              label: string;
-                              name: string | null;
-                              photoThumb: string | null;
+                              value: ownerDraft,
+                              label: `User ${ownerDraft}`,
+                              name: null,
+                              photoThumb: null,
                             },
-                          ] => !!entry,
-                        ),
+                          ]
+                          : null,
+                      ].filter(
+                        (
+                          entry,
+                        ): entry is readonly [
+                          string,
+                          {
+                            value: string;
+                            label: string;
+                            name: string | null;
+                            photoThumb: string | null;
+                          },
+                        ] => !!entry,
                       ),
-                    )
-                      .map(([, option]) => option)
-                      .map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <div className="flex items-center gap-2">
-                            <Avatar className="size-5">
-                              {option.photoThumb ? (
-                                <AvatarImage
-                                  src={option.photoThumb}
-                                  alt={option.name ?? option.value}
-                                />
-                              ) : null}
-                              <AvatarFallback className="text-[10px] font-semibold">
-                                {getNameInitials(option.name ?? option.value)}
-                              </AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm">
-                              {option.name ?? option.label}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setOwnerDialogRecord(null)}
-                  disabled={isSavingOwner}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveOwner();
-                  }}
-                  disabled={isSavingOwner}
-                >
-                  {isSavingOwner ? "Saving..." : "Save"}
-                </Button>
-              </div>
+                    ),
+                  )
+                    .map(([, option]) => option)
+                    .map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="size-5">
+                            {option.photoThumb ? (
+                              <AvatarImage
+                                src={option.photoThumb}
+                                alt={option.name ?? option.value}
+                              />
+                            ) : null}
+                            <AvatarFallback className="text-[10px] font-semibold">
+                              {getNameInitials(option.name ?? option.value)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">
+                            {option.name ?? option.label}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setOwnerDialogRecord(null)}
+                disabled={isSavingOwner}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveOwner();
+                }}
+                disabled={isSavingOwner}
+              >
+                {isSavingOwner ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!tagsDialogRecord}
-          onOpenChange={(open) => {
-            if (!open) setTagsDialogRecord(null);
-          }}
-        >
+      <Dialog
+        open={!!tagsDialogRecord}
+        onOpenChange={(open) => {
+          if (!open) setTagsDialogRecord(null);
+        }}
+      >
           <DialogContent
             className="max-w-lg overflow-visible"
             onInteractOutside={(event) => {
@@ -5158,62 +8706,60 @@ export function MondayBoardView({
               event.preventDefault();
             }}
           >
-            <DialogHeader>
-              <DialogTitle>Update Tags</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Tags</label>
-                <MultiSelect
-                  key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
-                  options={sortFiscalYearTagsDesc(
-                    Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
-                      (value) => value.trim().length > 0,
-                    ),
-                  )
-                    .map((value) => ({ label: value, value }))}
-                  defaultValue={tagsDraft}
-                  onValueChange={(values) => setTagsDraft(values)}
-                  placeholder="Select tags"
-                  disablePortal
-                  popoverSide="bottom"
-                  popoverAvoidCollisions={false}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setTagsDialogRecord(null)}
-                  disabled={isSavingTags}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleSaveTags();
-                  }}
-                  disabled={isSavingTags}
-                >
-                  {isSavingTags ? "Saving..." : "Save"}
-                </Button>
-              </div>
+          <DialogHeader>
+            <DialogTitle>Update Tags</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Tags</label>
+              <MultiSelect
+                key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
+                options={sortFiscalYearTagsDesc(
+                  Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
+                    (value) => value.trim().length > 0,
+                  ),
+                )
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={tagsDraft}
+                onValueChange={(values) => setTagsDraft(values)}
+                placeholder="Select tags"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setTagsDialogRecord(null)}
+                disabled={isSavingTags}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleSaveTags();
+                }}
+                disabled={isSavingTags}
+              >
+                {isSavingTags ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!contactHistoryDialogRecord}
-          onOpenChange={(open) => {
-            if (!open && !isTourLockingDialog()) setContactHistoryDialogRecord(null);
+      <Dialog
+        open={!!contactHistoryDialogRecord}
+        onOpenChange={(open) => {
+            if (!open) setContactHistoryDialogRecord(null);
           }}
         >
           <DialogContent
             data-tour="contact-dialog"
-            className="max-h-[90vh] max-w-6xl overflow-y-auto p-0"
-            onPointerDownOutside={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
-            onEscapeKeyDown={(e) => { if (isTourLockingDialog()) e.preventDefault(); }}
+            className="flex h-[90vh] gap-0 max-h-[90vh] max-w-[90vw] flex-col overflow-hidden p-0"
           >
-            <DialogHeader className="sticky top-0 z-10 bg-background p-5">
+            <DialogHeader className="z-10 border-b bg-background p-4">
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -5235,194 +8781,326 @@ export function MondayBoardView({
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <DialogTitle className="min-w-0 truncate">
-                  {contactHistoryDialogRecord?.name ?? "Contact"} · Conversation history
-                </DialogTitle>
+                <DialogTitle className="min-w-0 max-w-[300px] shrink-0 truncate">
+              {contactHistoryDialogRecord?.name ?? "Contact"}
+            </DialogTitle>
+                {!staticMode && contactHistoryDialogRecord ? (
+                  <div data-tour="onboarding-stepper" className="mx-2 min-w-0 flex-1">
+                    <OnboardingStepper
+                      record={contactHistoryDialogRecord}
+                      approvalSteps={approvalSteps}
+                      isProcessing={
+                        isCreatingContactUpdate ||
+                        isSendingEmail ||
+                        !!pendingOnboardingActionsByTargetId[
+                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+                        ]
+                      }
+                      layout="inline"
+                      emailMarketingEnabled={featureFlags.emailMarketingEnabled}
+                      onQuickAction={({ updateType, body, method }) => {
+                        const targetRecordId =
+                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                        if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                        setOnboardingActionPending(targetRecordId, true);
+                        setContactUpdateType(updateType);
+                        if (updateType === "resume") {
+                          setResumeReferralDialogState({
+                            targetRecordId,
+                            selectedContractors: parseContractorValues(
+                              contactHistoryDialogRecord.referredToContractors,
+                              retentionOptions.referredToContractors,
+                            ),
+                          });
+                          return;
+                        }
+                        if (
+                          (updateType === "welcome_email" || updateType === "followup") &&
+                          featureFlags.emailMarketingEnabled &&
+                          method === "platform"
+                        ) {
+                          openSendEmailDialog(contactHistoryDialogRecord, {
+                            progressUpdate: {
+                              updateType,
+                              body,
+                              internalExternalStatus: "External",
+                            },
+                            autoAdvanceToPreview: true,
+                            preferredTemplateType: updateType,
+                          });
+                          return;
+                        }
+                        void (async () => {
+                          try {
+                            const internalExternalStatus =
+                              method === "platform"
+                                ? "External"
+                                : updateType === "welcome_email" || updateType === "followup"
+                                  ? "Internal"
+                                  : undefined;
+                            await handleCreateContactUpdate({
+                              updateType,
+                              body,
+                              keepSelectedType: true,
+                              internalExternalStatus,
+                            });
+                          } finally {
+                            setOnboardingActionPending(targetRecordId, false);
+                          }
+                        })();
+                      }}
+                      onQuestionnaireAction={(record) => {
+                        openQuestionnaireDialogForRecords([record]);
+                      }}
+                      onGenericStepAction={({ body, stepColumnId }) => {
+                        void (async () => {
+                          if (!sessionToken) return;
+                          const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                          if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                          setOnboardingActionPending(targetRecordId, true);
+
+                          if (stepColumnId === INTERVIEWING_STEP_COLUMN_ID) {
+                            const referredContractors = parseContractorValues(
+                              contactHistoryDialogRecord.referredToContractors,
+                              retentionOptions.referredToContractors,
+                            );
+                            if (referredContractors.length === 0) {
+                              toast.error(
+                                "No referred contractors found. Complete Resume Submitted first.",
+                              );
+                              setOnboardingActionPending(targetRecordId, false);
+                              return;
+                            }
+
+                            const selectedInterviewingContractors = parseContractorValues(
+                              contactHistoryDialogRecord.interviewingWithContractors,
+                              referredContractors,
+                            ).filter((value) => referredContractors.includes(value));
+
+                            setInterviewingContractorDialogState({
+                              targetRecordId,
+                              stepColumnId,
+                              selectedContractors: selectedInterviewingContractors,
+                              availableContractors: referredContractors,
+                            });
+                            return;
+                          }
+
+                          if (stepColumnId === HIRED_STEP_COLUMN_ID) {
+                            const interviewingContractors = parseContractorValues(
+                              contactHistoryDialogRecord.interviewingWithContractors,
+                              retentionOptions.referredToContractors,
+                            );
+                            if (interviewingContractors.length === 0) {
+                              toast.error(
+                                "No interviewing contractors found. Mark Interviewing first.",
+                              );
+                              setOnboardingActionPending(targetRecordId, false);
+                              return;
+                            }
+
+                            const currentHiredContractor =
+                              contactHistoryDialogRecord.hiredWithContractor?.trim() ?? "";
+                            const selectedContractor = interviewingContractors.includes(
+                              currentHiredContractor,
+                            )
+                              ? currentHiredContractor
+                              : interviewingContractors[0] ?? "";
+
+                            setHiredContractorDialogState({
+                              targetRecordId,
+                              stepColumnId,
+                              selectedContractor,
+                              availableContractors: interviewingContractors,
+                            });
+                            return;
+                          }
+
+                          try {
+                            await completeGenericOnboardingStep({
+                              targetRecordId,
+                              body,
+                              stepColumnId,
+                            });
+                          } catch (error) {
+                            const message =
+                              error instanceof Error ? error.message : "Failed to mark step complete";
+                            toast.error(message);
+                          } finally {
+                            setOnboardingActionPending(targetRecordId, false);
+                          }
+                        })();
+                      }}
+                      actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                      actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
+                      buttonSizeClassName={quickActionButtonSizeClass}
+                    />
+                  </div>
+                ) : null}
                 {contactDialogIndex >= 0 ? (
                   <span className="text-muted-foreground shrink-0 text-xs">
                     {contactDialogIndex + 1} / {filteredRecords.length}
                   </span>
                 ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="ml-2 h-8 w-8 shrink-0"
+                      title="More actions"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      disabled={!contactHistoryDialogRecord?.url}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        if (!contactHistoryDialogRecord?.url) return;
+                        window.open(contactHistoryDialogRecord.url, "_blank", "noopener,noreferrer");
+                      }}
+                    >
+                      Open
+                    </DropdownMenuItem>
+                    {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
+                      <DropdownMenuItem
+                        disabled={
+                          isCreatingContactUpdate ||
+                          syncingContactIds.has(contactHistoryDialogRecord.id)
+                        }
+                        onSelect={(event) => {
+                          event.preventDefault();
+                          openSyncContactBoardPicker(contactHistoryDialogRecord);
+                        }}
+                      >
+                        {syncingContactIds.has(contactHistoryDialogRecord.id)
+                          ? "Syncing..."
+                          : "Sync User"}
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="ml-1 h-8 w-8 shrink-0"
+                  onClick={() => setContactHistoryDialogRecord(null)}
+                  title="Close contact dialog"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
-            </DialogHeader>
-            <div className="p-6">
-            {contactHistoryDialogRecord ? (
-              <div className="space-y-4">
-                {(() => {
-                  const record = contactHistoryDialogRecord;
-                  const addressDisplay = getAddressDisplayParts(record.address);
-                  return (
-                    <div data-tour="contact-header" className="rounded-md border p-4">
-                      <div className="flex flex-wrap items-start gap-3 md:items-center md:justify-between">
-                        <div className="flex min-w-0 items-start gap-3">
-                          <Avatar className="size-12">
-                            <AvatarFallback className="text-sm font-semibold">
-                              {getNameInitials(record.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="min-w-0">
-                            <p className="truncate text-base font-semibold">{record.name}</p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {record.email ?? "—"}
-                            </p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {record.phone ?? "—"}
-                            </p>
-                            <p className="text-muted-foreground truncate text-sm">
-                              {addressDisplay.full ? (
-                                <>
-                                  {addressDisplay.prefix ? `${addressDisplay.prefix}, ` : ""}
-                                  {addressDisplay.cityStateZip ? (
-                                    <span className="text-[15px] font-semibold text-foreground">
-                                      {addressDisplay.cityStateZip}
-                                    </span>
-                                  ) : (
-                                    addressDisplay.full
-                                  )}
-                                </>
-                              ) : (
-                                "—"
-                              )}
-                            </p>
-                          </div>
+          </DialogHeader>
+            <div className="flex min-h-0 flex-1 p-4">
+          {contactHistoryDialogRecord ? (
+            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2fr)]">
+              <div
+                data-tour="contact-header"
+                className="min-h-0 space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold">
+                    {contactHistoryDialogRecord.name ?? "Contact"}
+                  </p>
+                  <p className="text-muted-foreground truncate text-sm">
+                    {contactHistoryDialogRecord.email ?? "—"}
+                  </p>
+                  <p className="text-muted-foreground truncate text-sm">
+                    {contactHistoryDialogRecord.phone ?? "—"}
+                  </p>
+                </div>
+                {!staticMode ? (
+                  <>
+                    <input
+                      id={contactDialogResumeInputId}
+                      type="file"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file || !contactHistoryDialogRecord) return;
+                        void handleUploadResume(contactHistoryDialogRecord, file);
+                        event.currentTarget.value = "";
+                      }}
+                      disabled={isContactDialogUploadingResume || !sessionToken}
+                    />
+                    <div className="space-y-1.5">
+                      <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                        Communication
+                      </p>
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                          Resume
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={isContactDialogUploadingResume || !sessionToken}
+                            onClick={() => {
+                              const input = document.getElementById(contactDialogResumeInputId);
+                              if (input instanceof HTMLInputElement) {
+                                input.click();
+                              }
+                            }}
+                          >
+                            <Upload className="mr-1.5 h-3.5 w-3.5" />
+                            {isContactDialogUploadingResume
+                              ? "Uploading..."
+                              : contactDialogResumeFile
+                                ? "Add Resume"
+                                : "Upload Resume"}
+                          </Button>
                         </div>
-                        <div className="w-full max-w-sm">
-                          <ApprovalProgressIndicator
-                            progressValue={record.batteryProgress}
-                            steps={approvalSteps}
-                            rawProgressValue={record.batteryRawValue}
-                          />
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                          Outreach
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {COMMUNICATION_QUICK_ACTIONS.map((action) => {
+                            const Icon = action.icon;
+                            return (
+                              <Button
+                                key={action.id}
+                                type="button"
+                                size="sm"
+                                className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                                style={boardThemeInlineStyles.actionButtonStyle}
+                                disabled={isCreatingContactUpdate || !sessionToken}
+                                onClick={() => {
+                                  setCommunicationQuickAction(action);
+                                }}
+                              >
+                                <Icon className="mr-1.5 h-3.5 w-3.5" />
+                                {action.label}
+                              </Button>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
-                  );
-                })()}
-
-                {!staticMode && contactHistoryDialogRecord ? (
-                  <div data-tour="onboarding-stepper">
-                  <OnboardingStepper
-                    record={contactHistoryDialogRecord}
-                    approvalSteps={approvalSteps}
-                    isProcessing={isCreatingContactUpdate}
-                    onQuickAction={({ updateType, body }) => {
-                      setContactUpdateType(updateType);
-                      void handleCreateContactUpdate({
-                        updateType,
-                        body,
-                        keepSelectedType: true,
-                      });
-                    }}
-                    onQuestionnaireAction={(record) => {
-                      openQuestionnaireDialogForRecords([record]);
-                    }}
-                    onGenericStepAction={({ body, stepColumnId }) => {
-                      void (async () => {
-                        if (!sessionToken || !contactHistoryDialogRecord) return;
-                        const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                        await handleCreateContactUpdate({
-                          updateType: "general",
-                          body,
-                          keepSelectedType: true,
-                        });
-                        try {
-                          await fetch(
-                            `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-                            {
-                              method: "POST",
-                              headers: {
-                                "content-type": "application/json",
-                                "x-monday-session-token": sessionToken,
-                              },
-                              body: JSON.stringify({ stepColumnId, action: "done" }),
-                            },
-                          );
-                          await recordsQuery.refetch();
-                          const refreshedRecords = (recordsQuery.data?.pages ?? []).flatMap(
-                            (page) => page.records ?? [],
-                          );
-                          syncContactHistoryDialogFromRecords(refreshedRecords);
-                          toast.success("Onboarding step marked complete");
-                        } catch {
-                          toast.error("Failed to mark step complete");
-                        }
-                      })();
-                    }}
-                    isAdmin={isMondaySettingsAdmin}
-                    isSyncing={syncingContactIds.has(contactHistoryDialogRecord?.id ?? "")}
-                    onSyncUser={(record) => {
-                      void (async () => {
-                        if (!sessionToken) return;
-                        const syncKey = record.id;
-                        setSyncingContactIds((prev) => new Set(prev).add(syncKey));
-                        try {
-                          const targetId = resolveContactUpdateTargetRecordId(record);
-                          const response = await fetch(
-                            `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
-                            {
-                              method: "POST",
-                              headers: {
-                                "content-type": "application/json",
-                                "x-monday-session-token": sessionToken,
-                              },
-                              body: JSON.stringify({ ownerId: identity?.userId }),
-                            },
-                          );
-                          const data = (await response.json()) as {
-                            ok: boolean;
-                            error?: string;
-                            linkedItemCount?: number;
-                            createdParentUpdates?: number;
-                            createdSubitems?: number;
-                            createdSubitemUpdates?: number;
-                            updatedProgressColumns?: number;
-                            skippedSubitems?: number;
-                            warnings?: string[];
-                          };
-                          if (!response.ok || !data.ok) {
-                            throw new Error(data.error ?? "Sync failed");
-                          }
-                          const [, refreshedRecordsResult] = await Promise.all([
-                            contactUpdatesQuery.refetch(),
-                            recordsQuery.refetch(),
-                          ]);
-                          const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
-                            (page) => page.records ?? [],
-                          );
-                          syncContactHistoryDialogFromRecords(refreshedRecords);
-                          const parts = [
-                            data.createdParentUpdates && `${data.createdParentUpdates} updates`,
-                            data.createdSubitems && `${data.createdSubitems} subitems`,
-                            data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
-                          ].filter(Boolean);
-                          toast.success(
-                            parts.length > 0
-                              ? `Synced: ${parts.join(", ")}`
-                              : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
-                          );
-                        } catch (err) {
-                          toast.error(err instanceof Error ? err.message : "Sync failed");
-                        } finally {
-                          setSyncingContactIds((prev) => {
-                            const next = new Set(prev);
-                            next.delete(syncKey);
-                            return next;
-                          });
-                        }
-                      })();
-                    }}
-                    actionButtonClassName={boardThemeStyles.actionButtonClassName}
-                    buttonSizeClassName={quickActionButtonSizeClass}
-                  />
-                  </div>
+                  </>
                 ) : null}
-
-                <Tabs value={contactDialogTab} onValueChange={setContactDialogTab} className="w-full">
+              </div>
+              <div className="flex min-h-0 flex-col">
+                <Tabs
+                  value={contactDialogTab}
+                  onValueChange={setContactDialogTab}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
                   <TabsList data-tour="contact-tabs">
                     <TabsTrigger value="updates">Updates</TabsTrigger>
                     <TabsTrigger value="info">Additional Information</TabsTrigger>
+                    <TabsTrigger value="resume">Resume</TabsTrigger>
+                    <TabsTrigger value="jobs">Jobs</TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="updates" className="mt-3">
+                  <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
                     <ContactUpdates
                       subitems={contactUpdatesQuery.data?.subitems ?? []}
                       isLoading={contactUpdatesQuery.isLoading}
@@ -5465,66 +9143,510 @@ export function MondayBoardView({
                         await contactUpdatesQuery.refetch();
                       }}
                       isSubmitting={isCreatingContactUpdate}
-                      sessionToken={sessionToken}
                       currentUserId={forcedOwnerId || identity?.userId || null}
                     />
                   </TabsContent>
 
-                  <TabsContent value="info" className="mt-3">
+                  <TabsContent value="info" className="mt-3 min-h-0 flex-1">
                     {contactColumnsQuery.isLoading ? (
                       <div className="space-y-2 p-3">
                         {Array.from({ length: 10 }).map((_, i) => (
                           <div key={i} className="grid grid-cols-[140px_1fr] gap-3">
                             <Skeleton className="h-4 w-full" />
                             <Skeleton className="h-4 w-3/4" />
-                          </div>
+                    </div>
                         ))}
-                      </div>
+                  </div>
                     ) : contactColumnsQuery.error ? (
-                      <div className="rounded-md border p-3">
+                  <div className="rounded-md border p-3">
                         <p className="text-destructive text-sm">
                           {contactColumnsQuery.error instanceof Error
                             ? contactColumnsQuery.error.message
                             : "Failed to load contact details"}
                         </p>
-                      </div>
+                        </div>
                     ) : (
-                      <div className="max-h-[60vh] overflow-y-auto rounded-md border">
-                        <table className="w-full text-sm">
+                      <div className="h-full max-w-full overflow-x-hidden overflow-y-auto rounded-md border">
+                        <table className="w-full table-fixed text-sm">
                           <tbody>
                             {(contactColumnsQuery.data?.columns ?? []).map((col) => (
                               <tr
                                 key={col.id}
                                 className="border-b last:border-b-0"
                               >
-                                <td className="text-muted-foreground bg-muted/30 w-[180px] shrink-0 border-r px-3 py-2 text-xs font-medium">
+                                <td className="text-muted-foreground bg-muted/30 w-[180px] max-w-[180px] border-r px-3 py-2 text-xs font-medium align-top truncate">
                                   {col.title}
                                 </td>
-                                <td className="break-words px-3 py-2 text-xs">
-                                  {col.text || <span className="text-muted-foreground">—</span>}
+                                <td className="group relative min-w-0 max-w-0 overflow-hidden px-3 py-2 pr-10 text-xs align-top">
+                                  {editingContactColumnId === col.id ? (
+                                    <div className="space-y-2">
+                                      {(() => {
+                                        const normalizedType = col.type.toLowerCase();
+                                        if (
+                                          normalizedType === "status" ||
+                                          normalizedType === "dropdown"
+                                        ) {
+                                          const options = Array.from(
+                                            new Set((col.options ?? []).filter(Boolean)),
+                                          );
+                                          return (
+                                            <Select
+                                              value={
+                                                editingContactColumnDraft.length > 0
+                                                  ? editingContactColumnDraft
+                                                  : "__clear__"
+                                              }
+                                              onValueChange={(value) => {
+                                                setEditingContactColumnDraft(
+                                                  value === "__clear__" ? "" : value,
+                                                );
+                                              }}
+                                            >
+                                              <SelectTrigger className="h-8 text-xs">
+                                                <SelectValue placeholder="Select value" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="__clear__">Clear</SelectItem>
+                                                {options.map((option) => (
+                                                  <SelectItem key={option} value={option}>
+                                                    {option}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                          );
+                                        }
+                                        if (normalizedType === "date") {
+                                          return (
+                                            <Input
+                                              type="date"
+                                              className="h-8 text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        if (
+                                          normalizedType === "long_text" ||
+                                          normalizedType === "long-text"
+                                        ) {
+                                          return (
+                                            <Textarea
+                                              className="min-h-[72px] text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        if (
+                                          normalizedType === "numbers" ||
+                                          normalizedType === "numeric"
+                                        ) {
+                                          return (
+                                            <Input
+                                              type="number"
+                                              className="h-8 text-xs"
+                                              value={editingContactColumnDraft}
+                                              onChange={(event) =>
+                                                setEditingContactColumnDraft(
+                                                  event.target.value,
+                                                )
+                                              }
+                                            />
+                                          );
+                                        }
+                                        return (
+                                          <Input
+                                            type="text"
+                                            className="h-8 text-xs"
+                                            value={editingContactColumnDraft}
+                                            onChange={(event) =>
+                                              setEditingContactColumnDraft(
+                                                event.target.value,
+                                              )
+                                            }
+                                          />
+                                        );
+                                      })()}
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="outline"
+                                          className="h-6 w-6"
+                                          onClick={() => {
+                                            void saveEditingContactColumn();
+                                          }}
+                                          disabled={isSavingContactColumn}
+                                        >
+                                          <Check className="h-3.5 w-3.5" />
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6"
+                                          onClick={cancelEditingContactColumn}
+                                          disabled={isSavingContactColumn}
+                                        >
+                                          <X className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {col.text ? (
+                                        <span className="block max-w-full truncate" title={col.text}>
+                                          {col.text}
+                                        </span>
+                                      ) : (
+                                        <span className="text-muted-foreground">—</span>
+                                      )}
+                                      {col.isEditable ? (
+                                        <Button
+                                          type="button"
+                                          size="icon"
+                                          variant="ghost"
+                                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2"
+                                          onClick={() => {
+                                            startEditingContactColumn(col);
+                                          }}
+                                          title={`Edit ${col.title}`}
+                                        >
+                                          <Pencil className="h-3.5 w-3.5" />
+                                        </Button>
+                                      ) : null}
+                                    </>
+                                  )}
                                 </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                    </div>
+                    )}
+                  </TabsContent>
+                  <TabsContent value="resume" className="mt-3 min-h-0 flex-1">
+                    {contactDialogResumeFiles.length > 0 ? (
+                      <div className="flex h-full min-h-0 flex-col gap-3">
+                        <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                          <p className="text-muted-foreground text-xs">
+                            Resume {contactDialogSelectedResumeIndex + 1} of {contactDialogResumeFiles.length}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              disabled={contactDialogSelectedResumeIndex <= 0}
+                              onClick={() => {
+                                const previousIndex = contactDialogSelectedResumeIndex - 1;
+                                const previousFile = contactDialogResumeFiles[previousIndex];
+                                if (!previousFile) return;
+                                setContactDialogSelectedResumeKey(
+                                  getResumeFileKey(previousFile, previousIndex),
+                                );
+                              }}
+                            >
+                              <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
+                              Previous
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8"
+                              disabled={
+                                contactDialogSelectedResumeIndex < 0 ||
+                                contactDialogSelectedResumeIndex >= contactDialogResumeFiles.length - 1
+                              }
+                              onClick={() => {
+                                const nextIndex = contactDialogSelectedResumeIndex + 1;
+                                const nextFile = contactDialogResumeFiles[nextIndex];
+                                if (!nextFile) return;
+                                setContactDialogSelectedResumeKey(
+                                  getResumeFileKey(nextFile, nextIndex),
+                                );
+                              }}
+                            >
+                              Next
+                              <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                            </Button>
+                            {!staticMode ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8"
+                                disabled={isContactDialogUploadingResume || !sessionToken}
+                                onClick={() => {
+                                  const input = document.getElementById(contactDialogResumeInputId);
+                                  if (input instanceof HTMLInputElement) {
+                                    input.click();
+                                  }
+                                }}
+                              >
+                                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                {isContactDialogUploadingResume ? "Uploading..." : "Add Resume"}
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
+                          {contactDialogResumeFiles.map((file, index) => {
+                            const optionLabel =
+                              file.name?.trim().length > 0 ? file.name.trim() : `Resume ${index + 1}`;
+                            const isSelected = index === contactDialogSelectedResumeIndex;
+                            return (
+                              <Button
+                                key={getResumeFileKey(file, index)}
+                                type="button"
+                                variant={isSelected ? "secondary" : "ghost"}
+                                size="sm"
+                                className="max-w-[240px] justify-start truncate"
+                                title={optionLabel}
+                                onClick={() => {
+                                  setContactDialogSelectedResumeKey(getResumeFileKey(file, index));
+                                }}
+                              >
+                                <span className="truncate">{optionLabel}</span>
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        {contactDialogResumeHref ? (
+                          renderResumePreviewContent(
+                            contactDialogResumeFileName,
+                            contactDialogResumeHref,
+                            "h-[60vh]",
+                          )
+                        ) : (
+                          <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                            <p className="text-sm font-medium">
+                              This resume is attached but could not be previewed.
+                            </p>
+                            <p className="text-muted-foreground mt-1 text-xs">
+                              Try opening it in a new tab from the selected resume card.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                        <p className="text-sm font-medium">No resume attached yet.</p>
+                        {!staticMode ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="mt-3"
+                            disabled={isContactDialogUploadingResume || !sessionToken}
+                            onClick={() => {
+                              const input = document.getElementById(contactDialogResumeInputId);
+                              if (input instanceof HTMLInputElement) {
+                                input.click();
+                              }
+                            }}
+                          >
+                            <Upload className="mr-1.5 h-3.5 w-3.5" />
+                            Upload Resume
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                   </TabsContent>
+                  <TabsContent value="jobs" className="mt-3 min-h-0 flex-1">
+                    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+                      <div className="rounded-md border p-3">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">
+                            Referred Jobs ({referredJobsHistory.length})
+                          </p>
+                        </div>
+                        {contactUpdatesQuery.isLoading ? (
+                          <div className="space-y-2">
+                            {Array.from({ length: 2 }).map((_, index) => (
+                              <Skeleton key={index} className="h-8 w-full" />
+                            ))}
+                          </div>
+                        ) : referredJobsHistory.length === 0 ? (
+                          <p className="text-muted-foreground text-xs">
+                            No job referrals logged for this contact yet.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {referredJobsHistory.slice(0, 6).map((entry) => (
+                              <div
+                                key={entry.id}
+                                className="bg-muted/20 flex items-center justify-between gap-2 rounded-md px-2 py-1.5"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-medium">{entry.title}</p>
+                                  <p className="text-muted-foreground text-[11px]">
+                                    {entry.jobId ? `Job ID ${entry.jobId}` : "Job ID unavailable"}
+                                  </p>
+                                </div>
+                                <span className="text-muted-foreground shrink-0 text-[11px]">
+                                  {entry.referredAt ? formatUpdatedAt(entry.referredAt) : "—"}
+                                </span>
+                              </div>
+                            ))}
+                            {referredJobsHistory.length > 6 ? (
+                              <p className="text-muted-foreground text-[11px]">
+                                +{referredJobsHistory.length - 6} more referrals
+                              </p>
+                            ) : null}
+                          </div>
+                        )}
+                      </div>
+                      <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                        <div>
+                          <p className="text-sm font-medium">Available Jobs</p>
+                          <p className="text-muted-foreground text-xs">
+                            Search and switch list/grid view. Referred jobs are automatically
+                            disabled.
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={jobsQuery.isFetching}
+                          onClick={() => {
+                            void jobsQuery.refetch();
+                          }}
+                        >
+                          <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                          Refresh
+                        </Button>
+                      </div>
+                      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                        {jobsQuery.error ? (
+                          <div className="rounded-md border p-3">
+                            <p className="text-destructive text-sm">
+                              {jobsQuery.error instanceof Error
+                                ? jobsQuery.error.message
+                                : "Failed to load jobs"}
+                            </p>
+                          </div>
+                        ) : (
+                          <EntityList
+                            data={contactJobRows}
+                            columns={contactJobColumns}
+                            entityActions={contactJobActions}
+                            getRowId={(item) => item.id}
+                            isLoading={jobsQuery.isLoading}
+                            enableSearch
+                            viewModes={["list", "grid"]}
+                            defaultViewMode="list"
+                            enableFooter={false}
+                            showRowCount={false}
+                            hideFilters
+                            emptyState={
+                              <div className="text-muted-foreground py-6 text-sm">
+                                No available jobs found.
+                              </div>
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </TabsContent>
                 </Tabs>
-
-                <div className="flex justify-end">
-                  <Button
-                    variant="outline"
-                    onClick={() => setContactHistoryDialogRecord(null)}
-                  >
-                    Close
-                  </Button>
-                </div>
               </div>
-            ) : null}
             </div>
-          </DialogContent>
-        </Dialog>
+          ) : null}
+        </div>
+        </DialogContent>
+      </Dialog>
+
+      <CommunicationQuickActionDialog
+        open={!!communicationQuickAction}
+        onOpenChange={(open) => {
+          if (!open) setCommunicationQuickAction(null);
+        }}
+        actionLabel={communicationQuickAction?.label ?? "Communication Update"}
+        defaultMethod={communicationQuickAction?.method ?? "Email"}
+        isSubmitting={isCreatingContactUpdate}
+        onSubmit={handleSubmitCommunicationQuickAction}
+      />
+
+      <Dialog
+        open={!!syncContactBoardPickerRecord}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSyncContactBoardPickerRecord(null);
+            setSyncContactBoardSelection("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sync User</DialogTitle>
+            <DialogDescription>
+              Choose which monthly board to scrape for{" "}
+              {syncContactBoardPickerRecord?.name ?? "this contact"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Select
+              value={syncContactBoardSelection}
+              onValueChange={setSyncContactBoardSelection}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select monthly board" />
+              </SelectTrigger>
+              <SelectContent>
+                {syncMonthlyBoardOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label} · {option.boardId}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {syncMonthlyBoardOptions.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No monthly board mappings are configured in platform settings.
+              </p>
+            ) : null}
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setSyncContactBoardPickerRecord(null);
+                setSyncContactBoardSelection("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmSyncContactFromSelectedBoard}
+              disabled={
+                !syncContactBoardSelection ||
+                !syncContactBoardPickerRecord ||
+                syncingContactIds.has(syncContactBoardPickerRecord?.id ?? "")
+              }
+            >
+              {syncContactBoardPickerRecord &&
+              syncingContactIds.has(syncContactBoardPickerRecord.id)
+                ? "Syncing..."
+                : "Start Sync"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
         <QuestionnaireFormDialog
           open={questionnaireDialogRecords.length > 0}
@@ -5537,6 +9659,45 @@ export function MondayBoardView({
           resolveItemId={resolveContactUpdateTargetRecordId}
           onSaved={handleQuestionnaireSaved}
         />
+
+        <p className="text-muted-foreground px-1 text-xs font-medium">
+          {filteredRecordCountLabel}
+        </p>
+
+        {isTouchScopedView && userScopedDisplayMode === "grid" ? (
+          <div className="flex items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
+            <span className="text-muted-foreground shrink-0 text-[11px] font-medium tracking-wide uppercase">
+              Grid Sort
+            </span>
+            <select
+              value={gridSort.field}
+              onChange={(event) => {
+                const selectedField = event.target.value as GridSortField;
+                setGridSort((prev) => ({ ...prev, field: selectedField }));
+              }}
+              className="bg-background border-input h-7 rounded-md border px-2 text-xs shadow-sm"
+            >
+              {GRID_SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="bg-background border-input hover:bg-accent h-7 rounded-md border px-2 text-xs font-medium transition-colors"
+              onClick={() => {
+                setGridSort((prev) => ({
+                  ...prev,
+                  direction: prev.direction === "asc" ? "desc" : "asc",
+                }));
+              }}
+              title="Toggle sort direction"
+            >
+              {gridSort.direction === "asc" ? "Asc" : "Desc"}
+            </button>
+          </div>
+        ) : null}
 
         {userScopedDisplayMode === "kanban" ? (
           <KanbanBoard
@@ -5556,7 +9717,7 @@ export function MondayBoardView({
               ? Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
               ))
-              : filteredRecords.map((record) => (
+              : sortedGridRecords.map((record) => (
                 <ContactCard
                   key={record.id}
                   record={record}
@@ -5572,11 +9733,15 @@ export function MondayBoardView({
         ) : (
           <BoardTable
             data={filteredRecords}
-            columns={columns}
-            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-            initialSort={{ id: "createdAt", direction: "desc" }}
-            getRowId={(item) => item.id}
-            entityActions={entityActions}
+        columns={columns}
+        isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+        initialSort={{ id: "createdAt", direction: "desc" }}
+        getRowId={(item) => item.id}
+        entityActions={entityActions}
+            enableInfiniteScroll={shouldAutoLoadMore}
+            hasNextPage={!!recordsQuery.hasNextPage}
+            isFetchingNextPage={recordsQuery.isFetchingNextPage}
+            onLoadMore={handleLoadMoreRecords}
             bulkActions={({ selectedItems, clearSelection }) => {
               const eligibleByAction = new Map<string, MondayRecord[]>();
               for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
@@ -5600,6 +9765,24 @@ export function MondayBoardView({
                 const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
                 return currentStep === questionnaireStepIndex;
               });
+              const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
+              for (const item of selectedItems) {
+                const targetRecordId = getMergeTargetRecordId(item);
+                if (!targetRecordId) continue;
+                if (!mergeCandidatesByTargetId.has(targetRecordId)) {
+                  mergeCandidatesByTargetId.set(targetRecordId, item);
+                }
+              }
+              const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
+              const canMergeSelection =
+                mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
+              const bulkSyncProgressPercent =
+                latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
+                  ? Math.round(
+                      (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
+                        100,
+                    )
+                  : 0;
 
               return (
                 <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -5617,6 +9800,7 @@ export function MondayBoardView({
                           size="sm"
                           variant="secondary"
                           className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                          style={boardThemeInlineStyles.actionButtonStyle}
                           disabled={!!bulkQuickActionType || !hasEligible}
                           onClick={() => {
                             bulkClearSelectionRef.current = clearSelection;
@@ -5642,6 +9826,7 @@ export function MondayBoardView({
                       size="sm"
                       variant="secondary"
                       className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                      style={boardThemeInlineStyles.actionButtonStyle}
                       disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
                       onClick={() => {
                         openQuestionnaireDialogForRecords([...questionnaireEligible]);
@@ -5654,6 +9839,26 @@ export function MondayBoardView({
                     >
                       {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
                     </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                      disabled={!!bulkQuickActionType || isMergingRecords || !canMergeSelection}
+                      onClick={() => {
+                        mergeClearSelectionRef.current = clearSelection;
+                        openMergeDialogForRecords(mergeEligibleRecords);
+                        if (mergeEligibleRecords.length < selectedItems.length) {
+                          toast(
+                            `${selectedItems.length - mergeEligibleRecords.length} contact${selectedItems.length - mergeEligibleRecords.length === 1 ? "" : "s"} skipped (duplicate contact ids in selection)`,
+                          );
+                        }
+                      }}
+                    >
+                      {isMergingRecords
+                        ? "Merging..."
+                        : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
+                    </Button>
                     {isMondaySettingsAdmin && (
                       <Button
                         type="button"
@@ -5663,52 +9868,87 @@ export function MondayBoardView({
                         disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
                         onClick={() => {
                           void (async () => {
-                            if (!sessionToken) return;
-                            const items = [...selectedItems];
-                            const bulkSyncKey = "__bulk_sync__";
-                            setSyncingContactIds((prev) => new Set(prev).add(bulkSyncKey));
-                            let synced = 0;
-                            let errors = 0;
-                            for (const item of items) {
-                              const targetId = resolveContactUpdateTargetRecordId(item);
-                              if (!targetId.trim()) { errors++; continue; }
-                              try {
-                                toast(`Syncing ${synced + 1}/${items.length}...`);
-                                const response = await fetch(
-                                  `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
-                                  {
-                                    method: "POST",
-                                    headers: {
-                                      "content-type": "application/json",
-                                      "x-monday-session-token": sessionToken,
-                                    },
-                                    body: JSON.stringify({ ownerId: identity?.userId }),
-                                  },
-                                );
-                                const data = (await response.json()) as { ok: boolean; error?: string };
-                                if (!response.ok || !data.ok) throw new Error(data.error ?? "Sync failed");
-                                synced++;
-                              } catch {
-                                errors++;
-                              }
-                            }
-                            await recordsQuery.refetch();
-                            setSyncingContactIds((prev) => {
-                              const next = new Set(prev);
-                              next.delete(bulkSyncKey);
-                              return next;
-                            });
-                            if (errors > 0) {
-                              toast.error(`Synced ${synced}/${items.length} (${errors} failed)`);
-                            } else {
-                              toast.success(`Synced ${synced} contact${synced === 1 ? "" : "s"}`);
+                            try {
+                              const items = [...selectedItems];
+                              const job = await startBulkSyncJob(items);
+                              clearSelection();
+                              toast.success(
+                                `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
+                              );
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to start bulk sync",
+                              );
                             }
                           })();
                         }}
                       >
-                        {syncingContactIds.has("__bulk_sync__") ? "Syncing..." : `Sync Users (${selectedItems.length})`}
+                        {syncingContactIds.has("__bulk_sync__")
+                          ? latestBulkSyncJob
+                            ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
+                            : "Syncing..."
+                          : `Sync Users (${selectedItems.length})`}
                       </Button>
                     )}
+                    {isMondaySettingsAdmin &&
+                    latestBulkSyncJob &&
+                    latestBulkSyncJob.status === "running" ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              await cancelBulkSyncJob(latestBulkSyncJob.jobId);
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to cancel bulk sync",
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        Cancel Bulk Sync
+                      </Button>
+                    ) : null}
+                    {isMondaySettingsAdmin &&
+                    latestBulkSyncJob &&
+                    latestBulkSyncJob.status !== "running" &&
+                    latestBulkSyncJob.failedContacts > 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        disabled={syncingContactIds.has("__bulk_sync__")}
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              const result = await retryFailedBulkSyncJob(
+                                latestBulkSyncJob.jobId,
+                              );
+                              toast.success(
+                                `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
+                              );
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to retry failed bulk sync contacts",
+                              );
+                            }
+                          })();
+                        }}
+                      >
+                        Retry Failed ({latestBulkSyncJob.failedContacts})
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"
@@ -5719,11 +9959,33 @@ export function MondayBoardView({
                       Clear
                     </Button>
                   </div>
+                  {isMondaySettingsAdmin && latestBulkSyncJob ? (
+                    <div className="w-full rounded-md border px-2 py-1">
+                      <div className="mb-1 flex items-center justify-between text-[11px]">
+                        <span className="text-muted-foreground">
+                          Bulk Sync {latestBulkSyncJob.status}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
+                        </span>
+                      </div>
+                      <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+                        <div
+                          className="bg-primary h-full transition-[width] duration-300 ease-out"
+                          style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             }}
           />
         )}
+
+        <p className="text-muted-foreground px-1 text-xs font-medium">
+          {filteredRecordCountLabel}
+        </p>
 
         <Dialog
           open={!!bulkQuickActionConfirmation}
@@ -5770,6 +10032,128 @@ export function MondayBoardView({
         </Dialog>
 
         <Dialog
+          open={!!mergeDialogState}
+          onOpenChange={(open) => {
+            if (open) return;
+            if (isMergingRecords) return;
+            setMergeDialogState(null);
+          }}
+        >
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden">
+            <DialogHeader>
+              <DialogTitle>Merge / De-duplicate Contacts</DialogTitle>
+              <DialogDescription>
+                Choose a master contact, pick field sources, then merge updates from duplicate
+                contacts. Exact same action on the same day is kept once.
+              </DialogDescription>
+            </DialogHeader>
+            {mergeDialogState ? (
+              <div className="space-y-4">
+                <div className="grid gap-2">
+                  <p className="text-xs font-medium">Master contact</p>
+                  <Select
+                    value={mergeDialogState.masterRecordId}
+                    onValueChange={(value) => {
+                      setMergeDialogState((prev) => {
+                        if (!prev) return prev;
+                        const nextFieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
+                          (acc, field) => {
+                            acc[field.key] = value;
+                            return acc;
+                          },
+                          {} as Record<MergeFieldKey, string>,
+                        );
+                        return {
+                          ...prev,
+                          masterRecordId: value,
+                          fieldSourceByKey: nextFieldSourceByKey,
+                        };
+                      });
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select master contact" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {mergeDialogState.records.map((record) => {
+                        const targetRecordId = getMergeTargetRecordId(record);
+                        return (
+                          <SelectItem key={targetRecordId} value={targetRecordId}>
+                            {record.name} · {record.email ?? "No email"}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="rounded-md border bg-amber-50/40 p-3 text-xs text-amber-900">
+                  Source contacts will be deleted after merge. Name and email stay from the selected
+                  master contact.
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-medium">Choose source record for each mergeable field</p>
+                  <div className="max-h-[42vh] space-y-3 overflow-y-auto rounded-md border p-3">
+                    {MERGE_FIELD_CONFIG.map((field) => (
+                      <div
+                        key={field.key}
+                        className="grid gap-2 rounded-md border p-2 md:grid-cols-[220px_1fr]"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{field.label}</p>
+                        </div>
+                        <Select
+                          value={mergeDialogState.fieldSourceByKey[field.key]}
+                          onValueChange={(value) => {
+                            setMergeDialogState((prev) => {
+                              if (!prev) return prev;
+                              return {
+                                ...prev,
+                                fieldSourceByKey: {
+                                  ...prev.fieldSourceByKey,
+                                  [field.key]: value,
+                                },
+                              };
+                            });
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {mergeDialogState.records.map((record) => {
+                              const targetRecordId = getMergeTargetRecordId(record);
+                              return (
+                                <SelectItem key={targetRecordId} value={targetRecordId}>
+                                  {record.name} · {getMergeFieldDisplayValue(record, field.key)}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setMergeDialogState(null)}
+                disabled={isMergingRecords}
+              >
+                Cancel
+              </Button>
+              <Button onClick={() => void handleConfirmMergeRecords()} disabled={isMergingRecords}>
+                {isMergingRecords ? "Merging..." : "Merge Contacts"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
           open={!!kanbanMoveConfirmation}
           onOpenChange={(open) => {
             if (open) return;
@@ -5810,272 +10194,275 @@ export function MondayBoardView({
           </DialogContent>
         </Dialog>
 
-        <Dialog
-          open={!!resumePreview}
-          onOpenChange={(open) => {
-            if (!open) setResumePreview(null);
-          }}
-        >
-          <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>
-                Resume · {resumePreview?.recordName ?? "Contact"}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                Resume preview dialog with open in new tab fallback.
-              </DialogDescription>
-            </DialogHeader>
-            {resumePreview ? (
-              <div className="space-y-3">
-                {(() => {
-                  const lowerName = resumePreview.fileName.toLowerCase();
-                  const isPdf = lowerName.endsWith(".pdf");
-                  const isImage =
-                    lowerName.endsWith(".png") ||
-                    lowerName.endsWith(".jpg") ||
-                    lowerName.endsWith(".jpeg") ||
-                    lowerName.endsWith(".gif") ||
-                    lowerName.endsWith(".webp") ||
-                    lowerName.endsWith(".svg");
-                  return (
-                    <>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="truncate text-sm font-medium">{resumePreview.fileName}</p>
-                        <a
-                          href={resumePreview.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary text-xs underline"
-                        >
-                          Open in new tab
-                        </a>
-                      </div>
-                      <div className="bg-muted/20 h-[65vh] overflow-hidden rounded-md border">
-                        {isPdf ? (
-                          <iframe
-                            src={resumePreview.href}
-                            title={`Resume preview: ${resumePreview.fileName}`}
-                            className="h-full w-full"
-                          />
-                        ) : isImage ? (
-                          <object
-                            data={resumePreview.href}
-                            className="h-full w-full"
-                          >
-                            <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                              <p className="text-sm font-medium">Image preview unavailable</p>
-                              <a
-                                href={resumePreview.href}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-primary text-xs underline"
-                              >
-                                Open resume in new tab
-                              </a>
-                            </div>
-                          </object>
-                        ) : (
-                          <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-                            <p className="text-sm font-medium">
-                              This file type cannot be previewed inline.
-                            </p>
-                            <a
-                              href={resumePreview.href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary text-xs underline"
-                            >
-                              Open resume in new tab
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+      <Dialog
+        open={!!resumePreview}
+        onOpenChange={(open) => {
+          if (!open) setResumePreview(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>
+              Resume · {resumePreview?.recordName ?? "Contact"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Resume preview dialog with open in new tab fallback.
+            </DialogDescription>
+          </DialogHeader>
+          {resumePreview ? (
+            renderResumePreviewContent(resumePreview.fileName, resumePreview.href)
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
-        <Dialog
-          open={!!sendEmailRecord}
-          onOpenChange={(open) => {
-            if (!open) closeSendEmailDialog();
-          }}
-        >
-          <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
-            <DialogHeader>
-              <DialogTitle>Send Email</DialogTitle>
-            </DialogHeader>
-            {sendEmailRecord ? (
-              <div className="space-y-4">
-                <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
-                  Recipient:{" "}
-                  <span className="font-medium text-slate-900">
-                    {sendEmailRecord.name}
-                    {" · "}
-                    {sendEmailRecord.email ?? "No email"}
-                  </span>
+      <Dialog
+        open={!!sendEmailRecord}
+        onOpenChange={(open) => {
+          if (!open) closeSendEmailDialog();
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
+          <DialogHeader>
+            <DialogTitle>
+              {sendEmailProgressUpdate?.updateType === "followup"
+                ? "Send Questionnaire Email"
+                : sendEmailProgressUpdate?.updateType === "welcome_email"
+                  ? "Send Welcome Email"
+                  : "Send Email"}
+            </DialogTitle>
+          </DialogHeader>
+          {sendEmailRecord ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                Recipient:{" "}
+                <span className="font-medium text-slate-900">
+                  {sendEmailRecord.name}
+                  {" · "}
+                  {sendEmailRecord.email ?? "No email"}
+                </span>
+              </div>
+              {sendEmailStep === 1 ? (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    Step 1: Choose an email template
+                  </p>
+                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {emailTemplates.map((template) => {
+                        const isActive = template.id === sendEmailTemplateId;
+                        const resolvedTemplateName = interpolateTemplateVariables(
+                          template.name,
+                          sendEmailTemplateVariables,
+                        );
+                        const resolvedRenderedHtml = interpolateTemplateVariables(
+                          template.renderedHtml,
+                          sendEmailTemplateVariables,
+                        );
+                        const resolvedContent = interpolateTemplateVariables(
+                          template.content,
+                          sendEmailTemplateVariables,
+                        );
+                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                        const hasPlainContent = resolvedContent.trim().length > 0;
+                        return (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className={[
+                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                              isActive
+                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                            ].join(" ")}
+                            onClick={() => {
+                              setSendEmailTemplateId(template.id);
+                            }}
+                          >
+                            <p className="line-clamp-1 font-medium text-slate-900">
+                              {resolvedTemplateName}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Updated {formatUpdatedAt(template.updatedAt)}
+                            </p>
+                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                              {hasRenderedHtml ? (
+                                <div
+                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                  style={{ whiteSpace: "pre-wrap" }}
+                                  dangerouslySetInnerHTML={{
+                                    __html: resolvedRenderedHtml,
+                                  }}
+                                />
+                              ) : hasPlainContent ? (
+                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                  {resolvedContent}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-500">No preview content.</p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">
+                        No templates found.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={closeSendEmailDialog}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => setSendEmailStep(2)}
+                      disabled={!sendEmailTemplate}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
-                {sendEmailStep === 1 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">
-                      Step 1: Choose an email template
-                    </p>
-                    <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {emailTemplates.map((template) => {
-                          const isActive = template.id === sendEmailTemplateId;
-                          const resolvedTemplateName = interpolateTemplateVariables(
-                            template.name,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const resolvedRenderedHtml = interpolateTemplateVariables(
-                            template.renderedHtml,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const resolvedContent = interpolateTemplateVariables(
-                            template.content,
-                            {
-                              ownerName: sendEmailOwnerVars.ownerName,
-                              ownerEmail: sendEmailOwnerVars.ownerEmail,
-                            },
-                          );
-                          const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
-                          const hasPlainContent = resolvedContent.trim().length > 0;
-                          return (
-                            <button
-                              key={template.id}
-                              type="button"
-                              className={[
-                                "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
-                                isActive
-                                  ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-                                  : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
-                              ].join(" ")}
-                              onClick={() => {
-                                setSendEmailTemplateId(template.id);
+              ) : null}
+
+              {sendEmailStep === 2 ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 2: Preview template</p>
+                  <div className="rounded-md border p-4">
+                    {sendEmailTemplate ? (
+                      <>
+                        <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                        <p className="mt-1 text-base font-medium">
+                          {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                        </p>
+                        <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                          Email Preview (Lead View)
+                        </p>
+                        <div className="bg-card mt-2 rounded-md border p-4">
+                          {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                              No content found in template.
+                            </p>
+                          ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                            <div
+                              className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                              style={{ whiteSpace: "pre-wrap" }}
+                              dangerouslySetInnerHTML={{
+                                __html: sendEmailResolvedTemplate?.html ?? "",
                               }}
-                            >
-                              <p className="line-clamp-1 font-medium text-slate-900">
-                                {resolvedTemplateName}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                Updated {formatUpdatedAt(template.updatedAt)}
-                              </p>
-                              <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
-                                {hasRenderedHtml ? (
-                                  <div
-                                    className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
-                                    style={{ whiteSpace: "pre-wrap" }}
-                                    dangerouslySetInnerHTML={{
-                                      __html: resolvedRenderedHtml,
-                                    }}
-                                  />
-                                ) : hasPlainContent ? (
-                                  <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
-                                    {resolvedContent}
-                                  </p>
-                                ) : (
-                                  <p className="text-xs text-slate-500">No preview content.</p>
-                                )}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                        <p className="text-muted-foreground text-sm">
-                          No templates found.
+                            />
+                          ) : (
+                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                              {sendEmailResolvedTemplate?.text ?? ""}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : emailTemplatesQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">Loading templates…</p>
+                    ) : (
+                      <p className="text-muted-foreground text-sm">
+                        No templates found. Choose another action or add templates in settings.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                      Back
+                    </Button>
+                    <Button
+                      onClick={() => setSendEmailStep(3)}
+                      disabled={!sendEmailTemplate}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {sendEmailStep === 3 && sendEmailTemplate ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-medium">Step 3: Confirm send</p>
+                  <div className="space-y-3 rounded-md border p-4 text-sm">
+                    <p>Are you sure you want to send this email?</p>
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold tracking-wide uppercase">
+                        From mailbox
+                      </p>
+                      {outlookTeamMailboxesQuery.isLoading ||
+                      outlookTeamMailboxesQuery.isFetching ? (
+                        <p className="text-muted-foreground text-xs">
+                          Loading mailbox options…
+                        </p>
+                      ) : sendEmailMailboxOptions.length === 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          No team sender mailboxes are configured for this workspace.
+                        </p>
+                      ) : (
+                        <select
+                          value={sendEmailOwnerUserId}
+                          onChange={(event) => {
+                            setSendEmailOwnerUserId(event.target.value);
+                          }}
+                          className="bg-background border-input h-9 w-full rounded-md border px-2 text-xs shadow-sm"
+                          disabled={
+                            isSendingEmail ||
+                            outlookTeamMailboxesQuery.isLoading ||
+                            outlookTeamMailboxesQuery.isFetching
+                          }
+                        >
+                          <option value="">Select sender mailbox</option>
+                          {sendEmailMailboxOptions.map((mailbox) => {
+                            const displayName =
+                              mailbox.name?.trim() ||
+                              mailbox.mailboxDisplayName?.trim() ||
+                              mailbox.userEmail?.trim() ||
+                              mailbox.mondayUserId;
+                            const mailboxEmail =
+                              mailbox.mailboxEmail?.trim() ||
+                              mailbox.userEmail?.trim() ||
+                              "no mailbox email";
+                            return (
+                              <option
+                                key={mailbox.mondayUserId}
+                                value={mailbox.mondayUserId}
+                              >
+                                {`${displayName} • ${mailboxEmail} • ${mailbox.connected ? "connected" : "not connected"}`}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      )}
+                      {selectedSendEmailMailbox ? (
+                        <p
+                          className={`text-xs ${selectedSendEmailMailbox.connected ? "text-emerald-700" : "text-rose-600"}`}
+                        >
+                          {selectedSendEmailMailbox.connected
+                            ? "Selected mailbox is connected and ready."
+                            : "Selected mailbox is not connected. Connect Outlook before sending."}
                         </p>
                       ) : null}
                     </div>
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={closeSendEmailDialog}>
-                        Cancel
-                      </Button>
-                      <Button
-                        onClick={() => setSendEmailStep(2)}
-                        disabled={!sendEmailTemplate}
-                      >
-                        Next
-                      </Button>
-                    </div>
                   </div>
-                ) : null}
-
-                {sendEmailStep === 2 && sendEmailTemplate ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Step 2: Preview template</p>
-                    <div className="rounded-md border p-4">
-                      <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                      <p className="mt-1 text-base font-medium">
-                        {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
-                      </p>
-                      <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                        Email Preview (Lead View)
-                      </p>
-                      <div className="bg-card mt-2 rounded-md border p-4">
-                        {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
-                          <p className="text-muted-foreground text-sm">
-                            No content found in template.
-                          </p>
-                        ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
-                          <div
-                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                            style={{ whiteSpace: "pre-wrap" }}
-                            dangerouslySetInnerHTML={{
-                              __html: sendEmailResolvedTemplate?.html ?? "",
-                            }}
-                          />
-                        ) : (
-                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                            {sendEmailResolvedTemplate?.text ?? ""}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <Button variant="outline" onClick={() => setSendEmailStep(1)}>
-                        Back
-                      </Button>
-                      <Button onClick={() => setSendEmailStep(3)}>Next</Button>
-                    </div>
+                  <div className="flex justify-between gap-2">
+                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                      Back
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmSendEmail();
+                      }}
+                      disabled={!sendEmailCanSubmit}
+                    >
+                      {isSendingEmail ? "Sending..." : "Send Email"}
+                    </Button>
                   </div>
-                ) : null}
-
-                {sendEmailStep === 3 && sendEmailTemplate ? (
-                  <div className="space-y-3">
-                    <p className="text-sm font-medium">Step 3: Confirm send</p>
-                    <div className="rounded-md border p-4 text-sm">
-                      Are you sure you want to send this email?
-                    </div>
-                    <div className="flex justify-between gap-2">
-                      <Button variant="outline" onClick={() => setSendEmailStep(2)}>
-                        Back
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          void handleConfirmSendEmail();
-                        }}
-                        disabled={isSendingEmail || !sendEmailRecord.email}
-                      >
-                        {isSendingEmail ? "Sending..." : "Send Email"}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-          </DialogContent>
-        </Dialog>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
       </div>
       <HelpDeskDialog
         open={helpDeskOpen}
@@ -6088,7 +10475,7 @@ export function MondayBoardView({
         currentUserId={forcedOwnerId || identity?.userId || null}
       />
 
-      {!staticMode && recordsQuery.hasNextPage ? (
+      {!staticMode && recordsQuery.hasNextPage && shouldAutoLoadMore ? (
         <div ref={loadMoreAnchorRef} className="h-2" />
       ) : null}
     </div>

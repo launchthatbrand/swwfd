@@ -4,20 +4,22 @@ import { env } from "~/env";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const RETENTION_REFERRED_COLUMN_ID = "dropdown_mkwqcc1w";
+const RETENTION_INTERVIEWING_WITH_COLUMN_ID = "dropdown_mm3jj2gr";
 const RETENTION_HIRED_WITH_COLUMN_ID = "dropdown_mkwqm5fb";
 const RETENTION_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const RETENTION_PERIOD_COLUMN_ID = "dropdown_mkwthbh2";
 const TAGS_COLUMN_ID = "dropdown_mkvw578t";
 const RESUME_FILES_COLUMN_ID = "files__1";
+const API_BOARD_CREATED_AT_COLUMN_ID = "date1__1";
+const API_BOARD_UPDATED_AT_COLUMN_ID = "pulse_updated_mm3av0c5";
 const APPROVAL_STEP_COLUMN_IDS = [
   "color_mm1db321",
-  "color_mm1dwtvd",
+  "color_mm3ggf4t",
   "color_mm1dwr4k",
   "color_mm1dnr11",
   "color_mm1dgeqy",
   "color_mm1d80yc",
   "color_mm1djwjj",
-  "color_mm1d4e3y",
 ] as const;
 
 export interface MondayRecord {
@@ -38,6 +40,7 @@ export interface MondayRecord {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
@@ -46,6 +49,7 @@ export interface MondayRecord {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt: string | null;
   contactDetails: Array<{
     label: string;
     value: string;
@@ -114,6 +118,8 @@ export const MONDAY_UPDATE_TYPES = [
   "questionnaire",
   "resume",
   "resume_referral",
+  "job_referral",
+  "merge",
 ] as const;
 
 export type MondayUpdateType = (typeof MONDAY_UPDATE_TYPES)[number];
@@ -124,23 +130,57 @@ const SUBITEM_NAME_BY_UPDATE_TYPE: Record<
   Exclude<MondayUpdateType, "general">,
   string
 > = {
-  welcome_email: "Welcome Email Update",
-  followup: "Followup Update",
+  welcome_email: "Welcome Email Sent",
+  followup: "Questionnaire Sent Update",
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
+  job_referral: "Job Referral Update",
+  merge: "Contact Merged",
 };
 
 const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
+const SUBITEM_DATE_COLUMN_ID = "date0";
+const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
+const SUBITEM_PERSON_COLUMN_ID = "person";
+const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
+const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
+const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
+const SUBITEM_NAME_MAX_LENGTH = 120;
+export const MONDAY_HIRE_EVENT_TYPE_LABEL = "Hire Event";
+const MONDAY_HIRE_EVENT_TOKEN_PREFIX = "hk";
 
 const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<MondayUpdateType, string> = {
   general: "General",
   welcome_email: "Welcome Email",
-  followup: "Followup",
+  followup: "Questionnaire Sent",
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+  job_referral: "Referral",
+  merge: "Merge",
 };
+
+const buildSubitemName = (rawValue: string, fallbackName: string) => {
+  const normalized = rawValue.replace(/\s+/g, " ").trim();
+  const candidate = normalized.length > 0 ? normalized : fallbackName.trim();
+  if (candidate.length <= SUBITEM_NAME_MAX_LENGTH) return candidate;
+  return `${candidate.slice(0, SUBITEM_NAME_MAX_LENGTH - 3).trimEnd()}...`;
+};
+
+export interface MondayHireEventSegments {
+  isCandidatesGroup: boolean;
+  isReentry: boolean;
+  isVeteran: boolean;
+}
+
+export interface MondayHireEventMetadata {
+  contactItemId: string;
+  ownerId: string;
+  hireDate: string;
+  source: string;
+  segments: MondayHireEventSegments;
+}
 
 const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   Record<Exclude<MondayUpdateType, "general">, string>
@@ -149,12 +189,58 @@ const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
   followup: APPROVAL_STEP_COLUMN_IDS[1],
   questionnaire: APPROVAL_STEP_COLUMN_IDS[2],
   resume: APPROVAL_STEP_COLUMN_IDS[3],
-  resume_referral: APPROVAL_STEP_COLUMN_IDS[4],
 };
 
 export const isMondayUpdateType = (value: string | null | undefined): value is MondayUpdateType => {
   if (!value) return false;
   return MONDAY_UPDATE_TYPE_SET.has(value.trim().toLowerCase());
+};
+
+const normalizeHireEventMetadataValue = (value: string) => {
+  return value.trim().replace(/[;\]\r\n]/g, "");
+};
+
+export const buildMondayHireEventToken = (args: MondayHireEventMetadata) => {
+  const contactItemId = normalizeHireEventMetadataValue(args.contactItemId);
+  const ownerId = normalizeHireEventMetadataValue(args.ownerId);
+  const hireDate = normalizeHireEventMetadataValue(args.hireDate);
+  const source = normalizeHireEventMetadataValue(args.source || "unknown");
+  const cg = args.segments.isCandidatesGroup ? "1" : "0";
+  const re = args.segments.isReentry ? "1" : "0";
+  const vet = args.segments.isVeteran ? "1" : "0";
+  return `[${MONDAY_HIRE_EVENT_TOKEN_PREFIX}:contact=${contactItemId};owner=${ownerId};date=${hireDate};cg=${cg};re=${re};vet=${vet};src=${source}]`;
+};
+
+export const parseMondayHireEventToken = (
+  value: string | null | undefined,
+): MondayHireEventMetadata | null => {
+  if (!value) return null;
+  const match = value.match(/\[hk:([^\]]+)\]/i);
+  if (!match?.[1]) return null;
+  const params = new Map<string, string>();
+  for (const part of match[1].split(";")) {
+    const [keyRaw, valueRaw] = part.split("=");
+    const key = keyRaw?.trim().toLowerCase();
+    const entryValue = valueRaw?.trim() ?? "";
+    if (!key) continue;
+    params.set(key, entryValue);
+  }
+  const contactItemId = params.get("contact")?.trim() ?? "";
+  const ownerId = params.get("owner")?.trim() ?? "";
+  const hireDate = params.get("date")?.trim() ?? "";
+  if (!contactItemId || !ownerId || !hireDate) return null;
+  const source = params.get("src")?.trim() ?? "unknown";
+  return {
+    contactItemId,
+    ownerId,
+    hireDate,
+    source,
+    segments: {
+      isCandidatesGroup: params.get("cg") === "1",
+      isReentry: params.get("re") === "1",
+      isVeteran: params.get("vet") === "1",
+    },
+  };
 };
 
 interface MondayGraphQLResponse<TData> {
@@ -726,15 +812,35 @@ export const listMondayBoardRecords = async (args?: {
     | null = null;
 
   let boardName: string | null = null;
-  const readCreatedAtFromCreationLog = (
+  const parseTimestampFromColumn = (
     value: string | null | undefined,
     text: string | null | undefined,
   ) => {
     if (typeof value === "string" && value.length > 0) {
       try {
-        const parsed = JSON.parse(value) as { created_at?: unknown };
-        if (typeof parsed.created_at === "string" && parsed.created_at.length > 0) {
-          return parsed.created_at;
+        const parsed = JSON.parse(value) as {
+          date?: unknown;
+          time?: unknown;
+          created_at?: unknown;
+          updated_at?: unknown;
+          changed_at?: unknown;
+        };
+        if (typeof parsed.date === "string" && parsed.date.length > 0) {
+          if (typeof parsed.time === "string" && parsed.time.length > 0) {
+            return `${parsed.date}T${parsed.time}Z`;
+          }
+          return `${parsed.date}T00:00:00Z`;
+        }
+        const rawTimestamp =
+          typeof parsed.updated_at === "string"
+            ? parsed.updated_at
+            : typeof parsed.changed_at === "string"
+              ? parsed.changed_at
+              : typeof parsed.created_at === "string"
+                ? parsed.created_at
+                : null;
+        if (rawTimestamp && rawTimestamp.length > 0) {
+          return rawTimestamp;
         }
       } catch {
         // Fall through to text parsing.
@@ -774,6 +880,9 @@ export const listMondayBoardRecords = async (args?: {
     const referredToContractorsColumn = columns.find(
       (column) => column.id === "dropdown_mkwqcc1w",
     );
+    const interviewingWithContractorColumn = columns.find(
+      (column) => column.id === "dropdown_mm3jj2gr",
+    );
     const hiredWithContractorColumn = columns.find(
       (column) => column.id === "dropdown_mkwqm5fb",
     );
@@ -810,26 +919,17 @@ export const listMondayBoardRecords = async (args?: {
     const city = columns.find((column) => column.id === "text1__1")?.text;
     const state = columns.find((column) => column.id === "text7__1")?.text;
     const zip = columns.find((column) => column.id === "text3__1")?.text;
-    const dateColumn = columns.find((column) => column.id === "date1__1");
-    const creationLogColumn = columns.find(
-      (column) => column.type === "creation_log",
+    const dateColumn = columns.find((column) => column.id === API_BOARD_CREATED_AT_COLUMN_ID);
+    const pulseUpdatedColumn = columns.find(
+      (column) => column.id === API_BOARD_UPDATED_AT_COLUMN_ID,
     );
-    let createdAtFromDateColumn: string | null = null;
-    if (dateColumn?.value) {
-      try {
-        const parsed = JSON.parse(dateColumn.value) as {
-          date?: string;
-          time?: string;
-        };
-        if (parsed.date && parsed.time) {
-          createdAtFromDateColumn = `${parsed.date}T${parsed.time}Z`;
-        } else if (parsed.date) {
-          createdAtFromDateColumn = `${parsed.date}T00:00:00Z`;
-        }
-      } catch {
-        // Ignore malformed date JSON.
-      }
-    }
+    const lastTouchpointColumn = columns.find(
+      (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+    );
+    const createdAtFromDateColumn = parseTimestampFromColumn(
+      dateColumn?.value,
+      dateColumn?.text,
+    );
     let hireDateFromColumn: string | null = null;
     if (hireDateColumn?.value) {
       try {
@@ -846,9 +946,13 @@ export const listMondayBoardRecords = async (args?: {
         // Ignore malformed date JSON.
       }
     }
-    const createdAtFromColumn = readCreatedAtFromCreationLog(
-      creationLogColumn?.value,
-      creationLogColumn?.text,
+    const updatedAtFromPulseColumn = parseTimestampFromColumn(
+      pulseUpdatedColumn?.value,
+      pulseUpdatedColumn?.text,
+    );
+    const lastTouchpointAtFromColumn = parseTimestampFromColumn(
+      lastTouchpointColumn?.value,
+      lastTouchpointColumn?.text,
     );
     const addressParts = [addressLine1, addressLine2, city, state, zip]
       .map((value) => value?.trim())
@@ -942,6 +1046,11 @@ export const listMondayBoardRecords = async (args?: {
         referredToContractorsColumn?.text,
         referredToContractorsColumn?.value,
       ) || null,
+      interviewingWithContractors:
+        toColumnDisplayValue(
+          interviewingWithContractorColumn?.text,
+          interviewingWithContractorColumn?.value,
+        ) || null,
       hiredWithContractor:
         toColumnDisplayValue(
           hiredWithContractorColumn?.text,
@@ -957,9 +1066,9 @@ export const listMondayBoardRecords = async (args?: {
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress: parsedBatteryProgress,
       batteryRawValue: batteryColumn?.value ?? null,
-      createdAt:
-        createdAtFromDateColumn ?? createdAtFromColumn ?? item.updated_at ?? null,
-      updatedAt: item.updated_at ?? null,
+      createdAt: createdAtFromDateColumn ?? null,
+      updatedAt: updatedAtFromPulseColumn ?? null,
+      lastTouchpointAt: lastTouchpointAtFromColumn ?? null,
       contactDetails,
       resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
     };
@@ -1428,6 +1537,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       phone: null,
       address: null,
       referredToContractors: null,
+      interviewingWithContractors: null,
       hiredWithContractor: null,
       hireDate: null,
       retentionPeriod: null,
@@ -1436,6 +1546,7 @@ export const listMondayTouchBoardRecords = async (args?: {
       batteryRawValue: null,
       createdAt: touchDateIso ?? item.updated_at ?? null,
       updatedAt: item.updated_at ?? touchDateIso ?? null,
+      lastTouchpointAt: touchDateIso ?? item.updated_at ?? null,
       contactDetails: detailEntries,
       resumeFiles: [],
     } satisfies MondayRecord;
@@ -1818,6 +1929,8 @@ export const listMondayEmailTemplates = async (args?: {
   cursor?: string;
   limit?: number;
   workdocColumnId?: string;
+  statusColumnId?: string;
+  readyStatusLabel?: string;
 }) => {
   const fallbackBoardId = env.MONDAY_EMAIL_TEMPLATES_BOARD_ID ?? "18401299370";
   const boardId = args?.boardId?.trim() || fallbackBoardId;
@@ -1826,6 +1939,8 @@ export const listMondayEmailTemplates = async (args?: {
   }
 
   const workdocColumnId = args?.workdocColumnId?.trim() || "doc_mm0wq4r";
+  const statusColumnId = args?.statusColumnId?.trim() || "color_mm16fvtn";
+  const readyStatusLabel = (args?.readyStatusLabel?.trim() || "Done").toLowerCase();
   const limit = Math.min(Math.max(args?.limit ?? 100, 1), 500);
 
   const query = `
@@ -1877,7 +1992,35 @@ export const listMondayEmailTemplates = async (args?: {
 
   const boardName = data.boards?.[0]?.name ?? null;
   const nextCursor = data.boards?.[0]?.items_page?.cursor ?? null;
-  const templates = (data.boards?.[0]?.items_page?.items ?? []).map((item) => {
+  const sourceItems = data.boards?.[0]?.items_page?.items ?? [];
+  const readyItems = sourceItems.filter((item) => {
+    const statusColumn = item.column_values?.find((column) => column.id === statusColumnId);
+    const statusText = statusColumn?.text?.trim().toLowerCase() ?? "";
+    if (statusText === readyStatusLabel) return true;
+    const statusValue = parseJsonIfString(statusColumn?.value);
+    if (!statusValue || typeof statusValue !== "object") return false;
+    const statusRecord = statusValue as {
+      label?: unknown;
+      labels?: unknown;
+      index?: unknown;
+    };
+    if (
+      typeof statusRecord.label === "string" &&
+      statusRecord.label.trim().toLowerCase() === readyStatusLabel
+    ) {
+      return true;
+    }
+    if (Array.isArray(statusRecord.labels)) {
+      return statusRecord.labels.some(
+        (entry) =>
+          typeof entry === "string" &&
+          entry.trim().toLowerCase() === readyStatusLabel,
+      );
+    }
+    return false;
+  });
+
+  const templates = readyItems.map((item) => {
     const workdocMeta = parseWorkdocMeta(
       item.column_values?.find((column) => column.id === workdocColumnId)?.value,
     );
@@ -1894,7 +2037,7 @@ export const listMondayEmailTemplates = async (args?: {
 
   const hydratedTemplates = await Promise.all(
     templates.map(async (template) => {
-      const item = (data.boards?.[0]?.items_page?.items ?? []).find(
+      const item = readyItems.find(
         (entry) => entry.id === template.id,
       );
       const workdocColumn = item?.column_values?.find(
@@ -2092,13 +2235,18 @@ export const getMondayRecordEditOptions = async () => {
 interface UpdateMondayRecordFieldsArgs {
   itemId: string;
   referredToContractors?: string[] | string | null;
+  interviewingWithContractors?: string[] | string | null;
   hiredWithContractor?: string | null;
   hireDate?: string | null;
+  lastInteractionDate?: string | null;
   retentionPeriod?: string | null;
   tags?: string[] | null;
   status?: string | null;
   ownerId?: string | null;
+  districtLabel?: string | null;
 }
+
+const ROUTING_DISTRICT_COLUMN_ID = "district_1__1";
 
 const normalizeDateOnlyValue = (value: string | null | undefined) => {
   if (!value) return null;
@@ -2123,7 +2271,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   const columnValues: Record<string, unknown> = {};
   const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
 
-  if ("referredToContractors" in args) {
+  if (args.referredToContractors !== undefined) {
     const valuesRaw = Array.isArray(args.referredToContractors)
       ? args.referredToContractors
       : splitCsvValues(args.referredToContractors);
@@ -2134,31 +2282,48 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
       ? { labels }
       : null;
   }
-  if ("hiredWithContractor" in args) {
+  if (args.interviewingWithContractors !== undefined) {
+    const valuesRaw = Array.isArray(args.interviewingWithContractors)
+      ? args.interviewingWithContractors
+      : splitCsvValues(args.interviewingWithContractors);
+    const labels = valuesRaw
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+    columnValues[RETENTION_INTERVIEWING_WITH_COLUMN_ID] = labels.length > 0
+      ? { labels }
+      : null;
+  }
+  if (args.hiredWithContractor !== undefined) {
     const value = args.hiredWithContractor?.trim() ?? "";
     columnValues[RETENTION_HIRED_WITH_COLUMN_ID] = value
       ? { labels: [value] }
       : null;
   }
-  if ("hireDate" in args) {
+  if (args.hireDate !== undefined) {
     const dateOnly = normalizeDateOnlyValue(args.hireDate);
     columnValues[RETENTION_HIRE_DATE_COLUMN_ID] = dateOnly
       ? { date: dateOnly }
       : null;
   }
-  if ("retentionPeriod" in args) {
+  if (args.lastInteractionDate !== undefined) {
+    const dateOnly = normalizeDateOnlyValue(args.lastInteractionDate);
+    columnValues[LAST_INTERACTION_DATE_COLUMN_ID] = dateOnly
+      ? { date: dateOnly }
+      : null;
+  }
+  if (args.retentionPeriod !== undefined) {
     const value = args.retentionPeriod?.trim() ?? "";
     columnValues[RETENTION_PERIOD_COLUMN_ID] = value
       ? { labels: [value] }
       : null;
   }
-  if ("tags" in args) {
+  if (args.tags !== undefined) {
     const labels = (args.tags ?? [])
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
     columnValues[TAGS_COLUMN_ID] = labels.length > 0 ? { labels } : null;
   }
-  if ("status" in args) {
+  if (args.status !== undefined) {
     const statusColumnId = boardColumnIds.statusColumnId;
     if (!statusColumnId) {
       throw new Error("Status column not found on Monday board");
@@ -2166,7 +2331,7 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
     const value = args.status?.trim() ?? "";
     columnValues[statusColumnId] = value ? { label: value } : null;
   }
-  if ("ownerId" in args) {
+  if (args.ownerId !== undefined) {
     const peopleColumnId = boardColumnIds.peopleColumnId;
     if (!peopleColumnId) {
       throw new Error("Owner people column not found on Monday board");
@@ -2185,6 +2350,10 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
         ],
       };
     }
+  }
+  if (args.districtLabel !== undefined) {
+    const label = args.districtLabel?.trim() ?? "";
+    columnValues[ROUTING_DISTRICT_COLUMN_ID] = label ? { label } : null;
   }
 
   if (Object.keys(columnValues).length === 0) {
@@ -2219,6 +2388,147 @@ export const updateMondayRecordFields = async (args: UpdateMondayRecordFieldsArg
   });
 };
 
+interface UpdateMondayRecordColumnValueArgs {
+  itemId: string;
+  columnId: string;
+  columnType: string;
+  value: string | null;
+}
+
+const CONTACT_EDITABLE_COLUMN_TYPES = new Set([
+  "text",
+  "long_text",
+  "long-text",
+  "date",
+  "numbers",
+  "numeric",
+  "status",
+  "dropdown",
+]);
+
+export const updateMondayRecordColumnValue = async (
+  args: UpdateMondayRecordColumnValueArgs,
+) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const itemId = args.itemId.trim();
+  const columnId = args.columnId.trim();
+  const columnType = args.columnType.trim().toLowerCase();
+  const rawValue = args.value?.trim() ?? "";
+  const normalizedValue = rawValue.length > 0 ? rawValue : null;
+
+  if (!itemId) throw new Error("Missing itemId");
+  if (!columnId) throw new Error("Missing columnId");
+  if (!/^[a-zA-Z0-9_]+$/.test(columnId)) {
+    throw new Error("Invalid columnId");
+  }
+  if (!CONTACT_EDITABLE_COLUMN_TYPES.has(columnType)) {
+    throw new Error(`Column type "${columnType}" is not editable`);
+  }
+
+  const columnValues: Record<string, unknown> = {};
+  if (columnType === "status" || columnType === "dropdown") {
+    interface BoardColumnsData {
+      boards?: Array<{
+        columns?: Array<{
+          id?: string | null;
+          type?: string | null;
+          settings_str?: string | null;
+        }>;
+      }>;
+    }
+    const boardData = await callMondayGraphQL<BoardColumnsData>(
+      `query ResolveBoardColumn($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id type settings_str }
+        }
+      }`,
+      { boardId: mondayBoard.boardId },
+    );
+    const matchedColumn = (boardData.boards?.[0]?.columns ?? []).find(
+      (column) => column.id === columnId,
+    );
+    if (!matchedColumn) {
+      throw new Error("Column does not exist on the main API board");
+    }
+    const allowedLabels = parseDropdownLabelsFromSettings(
+      matchedColumn.settings_str ?? null,
+    );
+    if (normalizedValue && allowedLabels.length === 0) {
+      throw new Error("No predefined options are available for this column");
+    }
+    if (
+      normalizedValue &&
+      !allowedLabels.some(
+        (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+      )
+    ) {
+      throw new Error("Value must match one of the predefined options");
+    }
+    const canonicalValue =
+      normalizedValue == null
+        ? null
+        : allowedLabels.find(
+            (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+          ) ?? normalizedValue;
+    columnValues[columnId] = canonicalValue
+      ? columnType === "status"
+        ? { label: canonicalValue }
+        : { labels: [canonicalValue] }
+      : null;
+  } else if (columnType === "date") {
+    const dateOnly = normalizeDateOnlyValue(normalizedValue);
+    if (normalizedValue && !dateOnly) {
+      throw new Error("Date must be in YYYY-MM-DD format");
+    }
+    columnValues[columnId] = dateOnly ? { date: dateOnly } : null;
+  } else if (columnType === "numbers" || columnType === "numeric") {
+    if (!normalizedValue) {
+      columnValues[columnId] = null;
+    } else {
+      const numericValue = Number(normalizedValue);
+      if (!Number.isFinite(numericValue)) {
+        throw new Error("Numbers columns require a valid numeric value");
+      }
+      columnValues[columnId] = numericValue;
+    }
+  } else if (columnType === "long_text" || columnType === "long-text") {
+    columnValues[columnId] = normalizedValue ? { text: normalizedValue } : null;
+  } else {
+    columnValues[columnId] = normalizedValue ?? null;
+  }
+
+  const mutation = `
+    mutation UpdateMondayItemColumnValue(
+      $boardId: ID!
+      $itemId: ID!
+      $columnValues: JSON!
+    ) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+        create_labels_if_missing: false
+      ) {
+        id
+      }
+    }
+  `;
+
+  interface UpdateColumnMutationData {
+    change_multiple_column_values?: { id?: string };
+  }
+
+  await callMondayGraphQL<UpdateColumnMutationData>(mutation, {
+    boardId: mondayBoard.boardId,
+    itemId,
+    columnValues: JSON.stringify(columnValues),
+  });
+};
+
 export const uploadMondayRecordFile = async (args: {
   itemId: string;
   file: Blob;
@@ -2245,27 +2555,15 @@ export const uploadMondayRecordFile = async (args: {
     throw new Error("MONDAY_API_KEY is missing");
   }
 
-  const mutation = `
-    mutation AddFileToColumn($itemId: ID!, $columnId: String!, $file: File!) {
-      add_file_to_column(item_id: $itemId, column_id: $columnId, file: $file) {
-        id
-      }
+  const mutation = `mutation ($file: File!) {
+    add_file_to_column(item_id: ${JSON.stringify(itemId)}, column_id: ${JSON.stringify(columnId)}, file: $file) {
+      id
     }
-  `;
+  }`;
 
   const formData = new FormData();
-  formData.append(
-    "operations",
-    JSON.stringify({
-      query: mutation,
-      variables: {
-        itemId,
-        columnId,
-        file: null,
-      },
-    }),
-  );
-  formData.append("map", JSON.stringify({ file: ["variables.file"] }));
+  formData.append("query", mutation);
+  formData.append("map", JSON.stringify({ file: "variables.file" }));
   formData.append("file", args.file, filename);
 
   const response = await fetch(`${MONDAY_API_URL}/file`, {
@@ -2277,29 +2575,57 @@ export const uploadMondayRecordFile = async (args: {
     cache: "no-store",
   });
 
+  const responseText = await response.text();
+  const json = (() => {
+    if (!responseText) return null;
+    try {
+      return JSON.parse(responseText) as {
+        data?: {
+          add_file_to_column?: {
+            id?: string | null;
+          };
+        };
+        errors?: { message?: string }[];
+      };
+    } catch {
+      return null;
+    }
+  })();
+  const responseErrorMessage =
+    json?.errors?.map((error) => error.message).filter(Boolean).join(" | ") ?? "";
+
   if (!response.ok) {
-    throw new Error(`Monday file upload failed with ${response.status}`);
+    const messageSuffix = responseErrorMessage ? `: ${responseErrorMessage}` : "";
+    throw new Error(`Monday file upload failed with ${response.status}${messageSuffix}`);
   }
 
-  const json = (await response.json()) as {
+  const parsed = json as {
     data?: {
       add_file_to_column?: {
-        id?: string;
+        id?: string | null;
       };
     };
     errors?: { message?: string }[];
   };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
+  if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
     const message =
-      json.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
+      parsed.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
       "Unknown Monday API error";
     throw new Error(message);
   }
-  if (!json.data?.add_file_to_column?.id) {
-    throw new Error("Monday file upload returned no item id");
+
+  if (!parsed.data?.add_file_to_column) {
+    throw new Error("Monday file upload returned no mutation payload");
   }
 
-  return { id: json.data.add_file_to_column.id };
+  const returnedItemId = parsed.data.add_file_to_column.id?.trim() ?? "";
+  if (!returnedItemId) {
+    // Monday occasionally omits item id while still persisting the file.
+    // Treat this as success and fall back to the requested target item.
+    return { id: itemId };
+  }
+
+  return { id: returnedItemId };
 };
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
@@ -2537,9 +2863,10 @@ export const listMondayRecordUpdates = async (args: {
 
   const limit = Math.min(Math.max(args.limit ?? 100, 1), 200);
   const typeColId = SUBITEM_TYPE_COLUMN_ID;
-  const methodColId = "method_of_communication__1";
+  const methodColId = SUBITEM_METHOD_COLUMN_ID;
   const dateColId = "date0";
   const personColId = "person";
+  const notesColId = SUBITEM_NOTES_COLUMN_ID;
   const query = `
     query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
       items(ids: $itemIds) {
@@ -2559,7 +2886,7 @@ export const listMondayRecordUpdates = async (args: {
           id
           name
           created_at
-          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}"]) {
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${notesColId}"]) {
             id
             text
             value
@@ -2624,10 +2951,13 @@ export const listMondayRecordUpdates = async (args: {
     subitemName: string | null | undefined,
   ): MondayUpdateType => {
     const normalized = normalizeForSubitemTypeMatch(subitemName ?? "");
+    if (normalized.includes("merge") || normalized.includes("dedup")) return "merge";
+    if (normalized.includes("job referral") || normalized.startsWith("referral -")) return "job_referral";
     if (normalized.includes("resume referral")) return "resume_referral";
     if (normalized.includes("question")) return "questionnaire";
     if (normalized.includes("welcome")) return "welcome_email";
     if (
+      normalized.includes("questionnaire sent") ||
       normalized.includes("follow-up") ||
       normalized.includes("follow up") ||
       normalized.includes("followup")
@@ -2676,6 +3006,23 @@ export const listMondayRecordUpdates = async (args: {
     if (!normalized) return null;
     for (const [type, label] of Object.entries(SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE)) {
       if (normalized === label.toLowerCase()) return type as MondayUpdateType;
+    }
+    return null;
+  };
+
+  const readSubitemNotes = (value: string | null | undefined, text: string | null | undefined) => {
+    if (value) {
+      try {
+        const parsed = JSON.parse(value) as { text?: string };
+        if (typeof parsed.text === "string" && parsed.text.trim().length > 0) {
+          return parsed.text;
+        }
+      } catch {
+        // Ignore parse failures and fall through to text.
+      }
+    }
+    if (typeof text === "string" && text.trim().length > 0) {
+      return text;
     }
     return null;
   };
@@ -2742,6 +3089,9 @@ export const listMondayRecordUpdates = async (args: {
     const typeColText = subitem.column_values?.find((c) => c.id === typeColId)?.text ?? null;
     const methodText = subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
+    const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
+    const subitemNotes = readSubitemNotes(notesCol?.value, notesCol?.text);
+    const subitemDisplayName = subitemNotes ?? subitemName;
     let subitemCreatedAt: string | null = null;
     if (dateCol?.value) {
       try {
@@ -2785,7 +3135,7 @@ export const listMondayRecordUpdates = async (args: {
         updateType,
         source: "subitem",
         subitemId: subitemId.length > 0 ? subitemId : null,
-        subitemName,
+        subitemName: subitemDisplayName,
         createdAt,
         updatedAt,
         creatorId: update.creator?.id ?? null,
@@ -2805,7 +3155,7 @@ export const listMondayRecordUpdates = async (args: {
     if (subitemId) {
       subitems.push({
         id: subitemId,
-        name: subitemName ?? `Subitem ${subitemId}`,
+        name: subitemDisplayName ?? `Subitem ${subitemId}`,
         typeLabel: typeColText ?? methodText,
         updateType,
         methodOfCommunication: methodText,
@@ -2837,12 +3187,63 @@ export const listMondayRecordUpdates = async (args: {
 };
 
 // ---------------------------------------------------------------------------
+// List main board columns
+// ---------------------------------------------------------------------------
+
+export const listMondayBoardColumns = async () => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+
+  const boardData = await callMondayGraphQL<BoardColumnsData>(
+    `query ListBoardColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns { id title type }
+      }
+    }`,
+    { boardId: mondayBoard.boardId },
+  );
+
+  return (boardData.boards?.[0]?.columns ?? [])
+    .filter((column): column is { id: string; title: string; type: string } =>
+      Boolean(column.id && column.title && column.type),
+    )
+    .map((column) => ({
+      id: column.id,
+      title: column.title,
+      type: column.type,
+    }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+};
+
+// ---------------------------------------------------------------------------
 // Fetch all column values for an item
 // ---------------------------------------------------------------------------
 
 export const fetchMondayItemColumns = async (args: { itemId: string }) => {
   const itemId = args.itemId.trim();
   if (!itemId) throw new Error("Missing item id");
+  const editableColumnTypes = new Set([
+    "text",
+    "long_text",
+    "long-text",
+    "date",
+    "numbers",
+    "numeric",
+    "status",
+    "dropdown",
+  ]);
 
   interface ItemData {
     items?: Array<{
@@ -2878,16 +3279,25 @@ export const fetchMondayItemColumns = async (args: { itemId: string }) => {
   const boardId = item?.board?.id;
 
   let columnTitles = new Map<string, string>();
+  let boardColumnsById = new Map<
+    string,
+    { id: string; title: string; type: string; settingsStr: string | null }
+  >();
   if (boardId) {
     interface BoardData {
       boards?: Array<{
-        columns?: Array<{ id?: string | null; title?: string | null }>;
+        columns?: Array<{
+          id?: string | null;
+          title?: string | null;
+          type?: string | null;
+          settings_str?: string | null;
+        }>;
       }>;
     }
     const boardData = await callMondayGraphQL<BoardData>(
       `query GetBoardColumns($boardId: ID!) {
         boards(ids: [$boardId]) {
-          columns { id title }
+          columns { id title type settings_str }
         }
       }`,
       { boardId },
@@ -2897,23 +3307,78 @@ export const fetchMondayItemColumns = async (args: { itemId: string }) => {
         .filter((c) => c.id && c.title)
         .map((c) => [c.id!, c.title!]),
     );
+    boardColumnsById = new Map(
+      (boardData.boards?.[0]?.columns ?? [])
+        .filter((column): column is {
+          id: string;
+          title: string;
+          type: string;
+          settings_str?: string | null;
+        } => Boolean(column.id && column.title && column.type))
+        .map((column) => [
+          column.id,
+          {
+            id: column.id,
+            title: column.title,
+            type: column.type,
+            settingsStr: column.settings_str ?? null,
+          },
+        ]),
+    );
   }
 
   const columns = (item?.column_values ?? [])
     .filter((col) => col.id)
-    .map((col) => ({
-      id: col.id!,
-      title: columnTitles.get(col.id!) ?? col.id!,
-      type: col.type ?? "unknown",
-      text: col.text?.trim() || null,
-      value: col.value ?? null,
-    }));
+    .map((col) => {
+      const resolvedColumn = boardColumnsById.get(col.id!);
+      const type = (col.type ?? resolvedColumn?.type ?? "unknown").trim();
+      const normalizedType = type.toLowerCase();
+      const options =
+        normalizedType === "status" || normalizedType === "dropdown"
+          ? parseDropdownLabelsFromSettings(resolvedColumn?.settingsStr)
+          : [];
+      const isEditable =
+        editableColumnTypes.has(normalizedType) &&
+        (normalizedType !== "status" && normalizedType !== "dropdown"
+          ? true
+          : options.length > 0);
+      return {
+        id: col.id!,
+        title: columnTitles.get(col.id!) ?? col.id!,
+        type,
+        text: col.text?.trim() || null,
+        value: col.value ?? null,
+        options,
+        isEditable,
+      };
+    });
 
   return {
     itemId: item?.id ?? itemId,
     itemName: item?.name ?? null,
     columns,
   };
+};
+
+export const resolveMondayContactOwnerId = async (args: { itemId: string }) => {
+  const payload = await fetchMondayItemColumns({ itemId: args.itemId });
+  const peopleColumn = payload.columns.find(
+    (column) => column.type.toLowerCase() === "people",
+  );
+  if (!peopleColumn?.value) return null;
+  try {
+    const parsed = JSON.parse(peopleColumn.value) as {
+      personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+    };
+    const firstOwnerId = (parsed.personsAndTeams ?? [])
+      .find((entry) => entry.kind === "person" && entry.id != null)
+      ?.id;
+    if (firstOwnerId == null) return null;
+    const normalized = String(firstOwnerId).trim();
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -2963,6 +3428,187 @@ export const updateMondaySubitemDate = async (args: {
     },
   );
   return { updatedId: String(data.change_column_value?.id ?? subitemId), date };
+};
+
+export const upsertMondayHireEventSubitem = async (args: {
+  contactItemId: string;
+  contactName?: string | null;
+  ownerId: string;
+  hireDate: string;
+  source?: string;
+  segments: MondayHireEventSegments;
+}): Promise<{ id: string | null; upserted: "created" | "skipped" }> => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+  const contactItemId = args.contactItemId.trim();
+  if (!contactItemId) throw new Error("Missing contactItemId");
+  const ownerId = args.ownerId.trim();
+  if (!ownerId) throw new Error("Missing ownerId");
+  const hireDate = normalizeDateOnlyValue(args.hireDate);
+  if (!hireDate) {
+    throw new Error("hireDate must be in YYYY-MM-DD format");
+  }
+
+  const token = buildMondayHireEventToken({
+    contactItemId,
+    ownerId,
+    hireDate,
+    source: args.source?.trim() || "record_patch",
+    segments: args.segments,
+  });
+  const subitemName = `Hire Event - ${hireDate} ${token}`;
+  const fallbackContactName = args.contactName?.trim() || contactItemId;
+  const subitemLabel = `${fallbackContactName} · Hire Event`;
+
+  interface SubitemColumnValue {
+    id?: string | null;
+    text?: string | null;
+    value?: string | null;
+  }
+  interface ExistingSubitem {
+    id?: string | null;
+    name?: string | null;
+    column_values?: SubitemColumnValue[];
+  }
+  interface ExistingData {
+    items?: Array<{
+      id?: string | null;
+      subitems?: ExistingSubitem[];
+    }>;
+  }
+  const existingData = await callMondayGraphQL<ExistingData>(
+    `
+      query GetHireEventSubitems($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          subitems {
+            id
+            name
+            column_values(ids: ["${SUBITEM_TYPE_COLUMN_ID}", "${SUBITEM_DATE_COLUMN_ID}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+              id
+              text
+              value
+            }
+          }
+        }
+      }
+    `,
+    { itemIds: [contactItemId] },
+  );
+
+  const parsePeopleIds = (value: string | null | undefined) => {
+    if (!value) return [] as string[];
+    try {
+      const parsed = JSON.parse(value) as {
+        personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+      };
+      return (parsed.personsAndTeams ?? [])
+        .filter((entry) => entry.kind === "person" && entry.id != null)
+        .map((entry) => String(entry.id).trim())
+        .filter((entry) => entry.length > 0);
+    } catch {
+      return [] as string[];
+    }
+  };
+  const parseDateOnly = (value: string | null | undefined, text: string | null | undefined) => {
+    if (value) {
+      try {
+        const parsed = JSON.parse(value) as { date?: string; time?: string };
+        if (parsed.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) return parsed.date;
+      } catch {
+        // ignore parse errors
+      }
+    }
+    const trimmedText = text?.trim() ?? "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedText)) return trimmedText;
+    return null;
+  };
+
+  const existingSubitems = existingData.items?.[0]?.subitems ?? [];
+  const existing = existingSubitems.find((subitem) => {
+    const parsedFromName = parseMondayHireEventToken(subitem.name);
+    if (
+      parsedFromName &&
+      parsedFromName.contactItemId === contactItemId &&
+      parsedFromName.ownerId === ownerId &&
+      parsedFromName.hireDate === hireDate
+    ) {
+      return true;
+    }
+    const columns = subitem.column_values ?? [];
+    const byId = (id: string) => columns.find((column) => column.id === id);
+    const typeText = byId(SUBITEM_TYPE_COLUMN_ID)?.text?.trim().toLowerCase() ?? "";
+    const dateOnly = parseDateOnly(
+      byId(SUBITEM_DATE_COLUMN_ID)?.value,
+      byId(SUBITEM_DATE_COLUMN_ID)?.text,
+    );
+    const ownerIds = parsePeopleIds(byId(SUBITEM_PERSON_COLUMN_ID)?.value);
+    return (
+      typeText === MONDAY_HIRE_EVENT_TYPE_LABEL.toLowerCase() &&
+      dateOnly === hireDate &&
+      ownerIds.includes(ownerId)
+    );
+  });
+  if (existing?.id?.trim()) {
+    return { id: existing.id.trim(), upserted: "skipped" };
+  }
+
+  const columnValues: Record<string, unknown> = {
+    [SUBITEM_TYPE_COLUMN_ID]: { label: MONDAY_HIRE_EVENT_TYPE_LABEL },
+    [SUBITEM_DATE_COLUMN_ID]: { date: hireDate },
+  };
+  if (/^\d+$/.test(ownerId)) {
+    columnValues[SUBITEM_PERSON_COLUMN_ID] = {
+      personsAndTeams: [{ id: Number(ownerId), kind: "person" }],
+    };
+  }
+
+  interface CreateSubitemData {
+    create_subitem?: { id?: string | null } | null;
+  }
+  const createdSubitemData = await callMondayGraphQL<CreateSubitemData>(
+    `
+      mutation CreateHireEventSubitem($parentItemId: ID!, $itemName: String!, $columnValues: JSON!) {
+        create_subitem(
+          parent_item_id: $parentItemId
+          item_name: $itemName
+          column_values: $columnValues
+          create_labels_if_missing: true
+        ) { id }
+      }
+    `,
+    {
+      parentItemId: contactItemId,
+      itemName: subitemName,
+      columnValues: JSON.stringify(columnValues),
+    },
+  );
+  const subitemId = createdSubitemData.create_subitem?.id?.trim() ?? null;
+  if (!subitemId) {
+    throw new Error("Failed to create hire event subitem");
+  }
+
+  interface CreateUpdateData {
+    create_update?: { id?: string | null } | null;
+  }
+  await callMondayGraphQL<CreateUpdateData>(
+    `
+      mutation CreateHireEventSubitemUpdate($itemId: ID!, $body: String!) {
+        create_update(item_id: $itemId, body: $body) { id }
+      }
+    `,
+    {
+      itemId: subitemId,
+      body: [
+        `<p><strong>Hire event captured</strong> (${hireDate})</p>`,
+        `<p>Source: ${args.source?.trim() || "record_patch"}</p>`,
+        `<p>Contact: ${subitemLabel}</p>`,
+      ].join(""),
+    },
+  );
+  return { id: subitemId, upserted: "created" };
 };
 
 // ---------------------------------------------------------------------------
@@ -3166,6 +3812,12 @@ export const createMondayRecordUpdate = async (args: {
   body: string;
   updateType?: MondayUpdateType;
   date?: string;
+  dateTime?: string;
+  methodOfCommunication?: string;
+  subitemNameOverride?: string;
+  actorMondayUserId?: string | number | null;
+  internalExternalStatus?: "Internal" | "External";
+  suppressApprovalStepMarking?: boolean;
 }) => {
   const mondayBoard = getMondayBoardEnv();
   if (!mondayBoard.ok) {
@@ -3184,7 +3836,15 @@ export const createMondayRecordUpdate = async (args: {
   const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
     ? requestedUpdateType
     : "general";
+  const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
   const markApprovalStepCompleteForUpdateType = async () => {
+    if (suppressApprovalStepMarking) {
+      return {
+        stepColumnId: null as string | null,
+        stepMarked: false,
+        warning: null as string | null,
+      };
+    }
     if (updateType === "general") {
       return {
         stepColumnId: null as string | null,
@@ -3246,9 +3906,59 @@ export const createMondayRecordUpdate = async (args: {
   };
 
   const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
-  const subitemName = updateType === "general"
-    ? "General Update"
-    : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
+  const subitemNameOverride = args.subitemNameOverride?.trim();
+  const baseSubitemName = subitemNameOverride && subitemNameOverride.length > 0
+    ? subitemNameOverride
+    : updateType === "general"
+      ? body
+      : SUBITEM_NAME_BY_UPDATE_TYPE[updateType];
+  const subitemName = buildSubitemName(baseSubitemName, "General Update");
+  const methodOfCommunication = args.methodOfCommunication?.trim();
+  const normalizedDateTime = args.dateTime?.trim();
+  const parsedDateTime = normalizedDateTime
+    ? new Date(normalizedDateTime)
+    : null;
+  const hasValidDateTime = !!parsedDateTime && !Number.isNaN(parsedDateTime.getTime());
+  const fallbackNow = new Date();
+  const normalizedDate = args.date?.trim();
+  const interactionDateOnly = hasValidDateTime
+    ? parsedDateTime.toISOString().slice(0, 10)
+    : normalizeDateOnlyValue(normalizedDate) || fallbackNow.toISOString().slice(0, 10);
+  const normalizedActorMondayUserId =
+    args.actorMondayUserId == null ? "" : String(args.actorMondayUserId).trim();
+  const normalizedInternalExternalStatus = args.internalExternalStatus?.trim();
+  const columnValues: Record<string, unknown> = {
+    [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
+    ...(hasValidDateTime
+      ? {
+          [SUBITEM_DATE_COLUMN_ID]: {
+            date: parsedDateTime.toISOString().slice(0, 10),
+            time: parsedDateTime.toISOString().slice(11, 19),
+          },
+        }
+      : normalizedDate
+        ? { [SUBITEM_DATE_COLUMN_ID]: { date: normalizedDate } }
+        : {
+            [SUBITEM_DATE_COLUMN_ID]: {
+              date: fallbackNow.toISOString().slice(0, 10),
+              time: fallbackNow.toISOString().slice(11, 19),
+            },
+          }),
+    ...(methodOfCommunication
+      ? { [SUBITEM_METHOD_COLUMN_ID]: { label: methodOfCommunication } }
+      : {}),
+    ...(normalizedInternalExternalStatus
+      ? { [SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID]: { label: normalizedInternalExternalStatus } }
+      : {}),
+    [SUBITEM_NOTES_COLUMN_ID]: { text: body },
+    ...(/^\d+$/.test(normalizedActorMondayUserId)
+      ? {
+          [SUBITEM_PERSON_COLUMN_ID]: {
+            personsAndTeams: [{ id: Number(normalizedActorMondayUserId), kind: "person" }],
+          },
+        }
+      : {}),
+  };
 
   // Always create a subitem to store the update
   interface CreateSubitemData {
@@ -3268,10 +3978,7 @@ export const createMondayRecordUpdate = async (args: {
     {
       parentItemId: itemId,
       itemName: subitemName,
-      columnValues: JSON.stringify({
-        [SUBITEM_TYPE_COLUMN_ID]: { label: subitemTypeLabel },
-        ...(args.date ? { date0: { date: args.date } } : {}),
-      }),
+      columnValues: JSON.stringify(columnValues),
     },
   );
   const targetSubitemId = createdSubitemData.create_subitem?.id?.trim() ?? "";
@@ -3279,35 +3986,444 @@ export const createMondayRecordUpdate = async (args: {
     throw new Error("Failed to create subitem for update");
   }
 
-  // Post the body as an update on the subitem
-  interface CreateUpdateData {
-    create_update?: { id?: string | null; body?: string | null } | null;
-  }
-  const data = await callMondayGraphQL<CreateUpdateData>(
-    `
-      mutation CreateMondayItemUpdate($itemId: ID!, $body: String!) {
-        create_update(item_id: $itemId, body: $body) { id body }
-      }
-    `,
-    { itemId: targetSubitemId, body },
-  );
-  const updateId = data.create_update?.id?.trim() ?? "";
-  if (!updateId) {
-    throw new Error("Monday did not return a new update id");
+  let lastInteractionWarning: string | null = null;
+  try {
+    await updateMondayRecordFields({
+      itemId,
+      lastInteractionDate: interactionDateOnly,
+    });
+  } catch (error) {
+    lastInteractionWarning =
+      error instanceof Error ? error.message : "Failed to sync last interaction date";
   }
 
   const approvalStepResult = await markApprovalStepCompleteForUpdateType();
+  const warning = [approvalStepResult.warning, lastInteractionWarning]
+    .filter((value): value is string => !!value && value.trim().length > 0)
+    .join(" | ") || null;
 
   return {
-    id: updateId,
-    body: data.create_update?.body ?? body,
+    id: targetSubitemId,
+    body,
     updateType,
     source: "subitem" as const,
     targetItemId: targetSubitemId,
     subitemName,
     approvalStepColumnId: approvalStepResult.stepColumnId,
     approvalStepMarked: approvalStepResult.stepMarked,
-    warning: approvalStepResult.warning,
+    warning,
+  };
+};
+
+const parseMonthRange = (monthKeyRaw: string) => {
+  const monthKey = monthKeyRaw.trim();
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+    throw new Error("monthKey must be in YYYY-MM format");
+  }
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+    throw new Error("monthKey must be in YYYY-MM format");
+  }
+  const monthStartMs = Date.UTC(year, month - 1, 1, 0, 0, 0, 0);
+  const monthEndExclusiveMs = Date.UTC(year, month, 1, 0, 0, 0, 0);
+  return {
+    monthKey,
+    dateFrom: new Date(monthStartMs).toISOString().slice(0, 10),
+    dateTo: new Date(monthEndExclusiveMs - 1).toISOString().slice(0, 10),
+    monthStartMs,
+    monthEndExclusiveMs,
+  };
+};
+
+const parseDateTimeToEpochMs = (rawValue: string | null | undefined) => {
+  const trimmed = rawValue?.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return Date.parse(`${trimmed}T00:00:00Z`);
+  }
+  const parsed = Date.parse(trimmed.replace(" UTC", "Z"));
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const toUtcDateTimeParts = (epochMs: number) => {
+  const iso = new Date(epochMs).toISOString();
+  return {
+    dateOnly: iso.slice(0, 10),
+    timeOnly: iso.slice(11, 19),
+  };
+};
+
+const parseSubitemInteractionDate = (args: {
+  value?: string | null;
+  text?: string | null;
+  createdAt?: string | null;
+}) => {
+  const value = args.value?.trim();
+  if (value) {
+    try {
+      const parsed = JSON.parse(value) as {
+        date?: unknown;
+        time?: unknown;
+        created_at?: unknown;
+        updated_at?: unknown;
+      };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        const dateTimeValue = typeof parsed.time === "string" && parsed.time.trim().length > 0
+          ? `${parsed.date}T${parsed.time.trim()}Z`
+          : `${parsed.date}T00:00:00Z`;
+        const epochMs = parseDateTimeToEpochMs(dateTimeValue);
+        if (epochMs != null) {
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
+        }
+      }
+      const fallbackFromValue =
+        typeof parsed.updated_at === "string"
+          ? parsed.updated_at
+          : typeof parsed.created_at === "string"
+            ? parsed.created_at
+            : null;
+      const fallbackEpochMs = parseDateTimeToEpochMs(fallbackFromValue);
+      if (fallbackEpochMs != null) {
+        return {
+          epochMs: fallbackEpochMs,
+          ...toUtcDateTimeParts(fallbackEpochMs),
+        };
+      }
+    } catch {
+      // ignore parse errors and continue with text/created_at fallback
+    }
+  }
+
+  const fromTextMs = parseDateTimeToEpochMs(args.text);
+  if (fromTextMs != null) {
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
+  }
+  const fromCreatedAtMs = parseDateTimeToEpochMs(args.createdAt);
+  if (fromCreatedAtMs != null) {
+    return {
+      epochMs: fromCreatedAtMs,
+      ...toUtcDateTimeParts(fromCreatedAtMs),
+    };
+  }
+  return null;
+};
+
+const readDateOnlyFromTopLevelDateColumn = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  const trimmedValue = value?.trim();
+  if (trimmedValue) {
+    try {
+      const parsed = JSON.parse(trimmedValue) as { date?: unknown };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        return parsed.date;
+      }
+    } catch {
+      // fall through to text parsing
+    }
+  }
+  return normalizeDateOnlyValue(text);
+};
+
+const readDateTimeFromTopLevelDateColumn = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  const trimmedValue = value?.trim();
+  if (trimmedValue) {
+    try {
+      const parsed = JSON.parse(trimmedValue) as { date?: unknown; time?: unknown };
+      if (typeof parsed.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+        const parsedTime =
+          typeof parsed.time === "string" && /^\d{2}:\d{2}:\d{2}$/.test(parsed.time.trim())
+            ? parsed.time.trim()
+            : "00:00:00";
+        const epochMs = parseDateTimeToEpochMs(`${parsed.date}T${parsedTime}Z`);
+        if (epochMs != null) {
+          return { epochMs, ...toUtcDateTimeParts(epochMs) };
+        }
+      }
+    } catch {
+      // fall through to text parsing
+    }
+  }
+  const fromTextMs = parseDateTimeToEpochMs(text);
+  if (fromTextMs != null) {
+    return { epochMs: fromTextMs, ...toUtcDateTimeParts(fromTextMs) };
+  }
+  return null;
+};
+
+export const backfillMondayLastInteractionDateByMonth = async (args: {
+  monthKey: string;
+  dryRun?: boolean;
+  pageSize?: number;
+}) => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  const range = parseMonthRange(args.monthKey);
+  const dryRun = args.dryRun ?? true;
+  const pageSizeRaw = Number(args.pageSize ?? 100);
+  const pageSize = Number.isFinite(pageSizeRaw)
+    ? Math.min(Math.max(Math.floor(pageSizeRaw), 10), 200)
+    : 100;
+
+  interface BackfillItem {
+    id?: string | null;
+    name?: string | null;
+    column_values?: Array<{ id?: string | null; value?: string | null; text?: string | null }>;
+    subitems?: Array<{
+      id?: string | null;
+      created_at?: string | null;
+      column_values?: Array<{ id?: string | null; value?: string | null; text?: string | null }>;
+    }>;
+  }
+  interface BackfillData {
+    boards?: Array<{
+      items_page?: {
+        cursor?: string | null;
+        items?: BackfillItem[];
+      };
+    }>;
+  }
+  interface UpdateData {
+    change_multiple_column_values?: { id?: string | null } | null;
+  }
+  const CONTACT_REGISTRATION_DATE_COLUMN_ID = "date1__1";
+  const safeRegistrationDateColumnId = /^[a-zA-Z0-9_]+$/.test(
+    CONTACT_REGISTRATION_DATE_COLUMN_ID,
+  )
+    ? CONTACT_REGISTRATION_DATE_COLUMN_ID
+    : "date1__1";
+  const registrationDateRule = `{
+    column_id: "${safeRegistrationDateColumnId}"
+    compare_value: ["${range.dateFrom}", "${range.dateTo}"]
+    operator: between
+  }`;
+  const buildListQuery = (includeCursor: boolean) => `
+    query BackfillLastInteractionPage($boardId: ID!, $limit: Int!${
+      includeCursor ? ", $cursor: String" : ""
+    }) {
+      boards(ids: [$boardId]) {
+        items_page(
+          limit: $limit
+          ${includeCursor ? "cursor: $cursor" : ""}
+          ${includeCursor ? "" : `query_params: { rules: [${registrationDateRule}] }`}
+        ) {
+          cursor
+          items {
+            id
+            name
+            column_values(ids: ["${LAST_INTERACTION_DATE_COLUMN_ID}", "${CONTACT_REGISTRATION_DATE_COLUMN_ID}"]) {
+              id
+              text
+              value
+            }
+            subitems {
+              id
+              created_at
+              column_values(ids: ["${SUBITEM_DATE_COLUMN_ID}"]) {
+                id
+                text
+                value
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+  const firstPageQuery = buildListQuery(false);
+  const cursorPageQuery = buildListQuery(true);
+
+  const updateMutation = `
+    mutation SetLastInteractionDate(
+      $boardId: ID!
+      $itemId: ID!
+      $columnValues: JSON!
+    ) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+        create_labels_if_missing: true
+      ) { id }
+    }
+  `;
+
+  let cursor: string | null = null;
+  let processedContacts = 0;
+  let registeredContacts = 0;
+  let registeredWithInteraction = 0;
+  let registeredWithoutInteraction = 0;
+  let contactsAlreadyCurrent = 0;
+  let contactsWouldUpdate = 0;
+  let contactsUpdated = 0;
+  let errorsCount = 0;
+  const errorSamples: string[] = [];
+  let pageCount = 0;
+  console.info("[MondayLastInteractionBackfill] started", {
+    monthKey: range.monthKey,
+    rangeFrom: range.dateFrom,
+    rangeTo: range.dateTo,
+    dryRun,
+    pageSize,
+  });
+
+  while (true) {
+    pageCount += 1;
+    if (pageCount > 10000) {
+      throw new Error("Aborted: exceeded page safety limit while backfilling");
+    }
+    const data = await callMondayGraphQL<BackfillData>(
+      cursor ? cursorPageQuery : firstPageQuery,
+      {
+        boardId: mondayBoard.boardId,
+        limit: pageSize,
+        ...(cursor ? { cursor } : {}),
+      },
+    );
+    const itemsPage = data.boards?.[0]?.items_page;
+    const items = itemsPage?.items ?? [];
+    if (pageCount === 1 || pageCount % 10 === 0) {
+      console.info("[MondayLastInteractionBackfill] page processed", {
+        pageCount,
+        pageItems: items.length,
+        cursorPresent: !!cursor,
+        processedContacts,
+        registeredContacts,
+        contactsWouldUpdate,
+        contactsUpdated,
+        errorsCount,
+      });
+    }
+
+    for (const item of items) {
+      const itemId = item.id?.trim() ?? "";
+      if (!itemId) continue;
+      processedContacts += 1;
+
+      const registrationColumn = (item.column_values ?? []).find(
+        (column) => column.id === CONTACT_REGISTRATION_DATE_COLUMN_ID,
+      );
+      const registrationDate = readDateOnlyFromTopLevelDateColumn(
+        registrationColumn?.value,
+        registrationColumn?.text,
+      );
+      if (!registrationDate) {
+        continue;
+      }
+      const registrationMs = parseDateTimeToEpochMs(`${registrationDate}T00:00:00Z`);
+      if (
+        registrationMs == null ||
+        registrationMs < range.monthStartMs ||
+        registrationMs >= range.monthEndExclusiveMs
+      ) {
+        continue;
+      }
+      registeredContacts += 1;
+
+      let latestInteraction:
+        | { epochMs: number; dateOnly: string; timeOnly: string }
+        | null = null;
+      for (const subitem of item.subitems ?? []) {
+        const dateColumn = subitem.column_values?.[0];
+        const parsedDate = parseSubitemInteractionDate({
+          value: dateColumn?.value,
+          text: dateColumn?.text,
+          createdAt: subitem.created_at ?? null,
+        });
+        if (!parsedDate) continue;
+        if (!latestInteraction || parsedDate.epochMs > latestInteraction.epochMs) {
+          latestInteraction = parsedDate;
+        }
+      }
+
+      if (!latestInteraction) {
+        registeredWithoutInteraction += 1;
+        continue;
+      }
+      registeredWithInteraction += 1;
+
+      const lastInteractionColumn = (item.column_values ?? []).find(
+        (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+      );
+      const currentDateTime = readDateTimeFromTopLevelDateColumn(
+        lastInteractionColumn?.value,
+        lastInteractionColumn?.text,
+      );
+      if (
+        currentDateTime &&
+        Math.floor(currentDateTime.epochMs / 1000) === Math.floor(latestInteraction.epochMs / 1000)
+      ) {
+        contactsAlreadyCurrent += 1;
+        continue;
+      }
+
+      contactsWouldUpdate += 1;
+      if (dryRun) {
+        continue;
+      }
+
+      try {
+        await callMondayGraphQL<UpdateData>(updateMutation, {
+          boardId: mondayBoard.boardId,
+          itemId,
+          columnValues: JSON.stringify({
+            [LAST_INTERACTION_DATE_COLUMN_ID]: {
+              date: latestInteraction.dateOnly,
+              time: latestInteraction.timeOnly,
+            },
+          }),
+        });
+        contactsUpdated += 1;
+      } catch (error) {
+        errorsCount += 1;
+        if (errorSamples.length < 10) {
+          const message =
+            error instanceof Error ? error.message : "Failed to update contact";
+          errorSamples.push(`${itemId}: ${message}`);
+        }
+      }
+    }
+
+    const nextCursor = itemsPage?.cursor?.trim() ?? "";
+    if (!nextCursor) break;
+    cursor = nextCursor;
+  }
+
+  console.info("[MondayLastInteractionBackfill] completed", {
+    monthKey: range.monthKey,
+    processedContacts,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
+    contactsAlreadyCurrent,
+    contactsWouldUpdate,
+    contactsUpdated,
+    errorsCount,
+  });
+
+  return {
+    monthKey: range.monthKey,
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+    dryRun,
+    pageSize,
+    processedContacts,
+    registeredContacts,
+    registeredWithInteraction,
+    registeredWithoutInteraction,
+    contactsAlreadyCurrent,
+    contactsWouldUpdate,
+    contactsUpdated,
+    errorsCount,
+    errorSamples,
   };
 };
 

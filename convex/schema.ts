@@ -129,6 +129,35 @@ export default defineSchema({
     .index("by_startedAt", ["startedAt"])
     .index("by_status", ["status"]),
 
+  mondayHireEventBackfillJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    workflowId: v.optional(v.string()),
+    monthKey: v.string(),
+    dateFrom: v.string(),
+    dateTo: v.string(),
+    dryRun: v.boolean(),
+    contactBoardId: v.string(),
+    subitemBoardId: v.optional(v.union(v.string(), v.null())),
+    pageSize: v.number(),
+    currentCursor: v.optional(v.union(v.string(), v.null())),
+    processedContacts: v.number(),
+    inRangeContacts: v.number(),
+    createdEvents: v.number(),
+    skippedEvents: v.number(),
+    errorsCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"]),
+
   mondayTouchCsvExportJobs: defineTable({
     status: v.union(
       v.literal("running"),
@@ -163,9 +192,47 @@ export default defineSchema({
   mondayGlobalSettings: defineTable({
     key: v.string(),
     emailMarketingEnabled: v.boolean(),
+    adminUserIds: v.optional(v.array(v.string())),
+    employeeUserIds: v.optional(v.array(v.string())),
+    replyToEmails: v.optional(v.array(v.string())),
+    emailSystemTags: v.optional(
+      v.array(
+        v.object({
+          tag: v.string(),
+          columnId: v.string(),
+          columnTitle: v.string(),
+        }),
+      ),
+    ),
+    monthlyBoardMappings: v.optional(
+      v.array(
+        v.object({
+          monthKey: v.string(),
+          boardId: v.string(),
+        }),
+      ),
+    ),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
   }).index("by_key", ["key"]),
+
+  mondayUsers: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    email: v.union(v.string(), v.null()),
+    name: v.union(v.string(), v.null()),
+    firstSeenAt: v.number(),
+    lastSeenAt: v.number(),
+    lastSeenSource: v.string(),
+  })
+    .index("by_account_and_user", ["mondayAccountId", "mondayUserId"])
+    .index("by_account_and_user_and_app_client", [
+      "mondayAccountId",
+      "mondayUserId",
+      "mondayAppClientId",
+    ])
+    .index("by_account", ["mondayAccountId"]),
 
   mondayUserFilterPresets: defineTable({
     accountId: v.string(),
@@ -194,9 +261,17 @@ export default defineSchema({
       v.literal("emerald"),
       v.literal("violet"),
       v.literal("rose"),
+      v.literal("custom"),
+    ),
+    customTheme: v.optional(
+      v.object({
+        colorHex: v.string(),
+        alpha: v.number(),
+      }),
     ),
     fontSize: v.union(v.literal("default"), v.literal("medium"), v.literal("large")),
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),
+    hoverPopoversEnabled: v.optional(v.boolean()),
     pageSize: v.optional(v.number()),
     displayMode: v.optional(v.union(v.literal("table"), v.literal("grid"))),
     recordSource: v.optional(
@@ -267,6 +342,56 @@ export default defineSchema({
       "sourceEntityId",
     ]),
 
+  mondayBulkSyncJobs: defineTable({
+    status: v.union(
+      v.literal("running"),
+      v.literal("done"),
+      v.literal("failed"),
+      v.literal("cancelled"),
+    ),
+    mondayAccountId: v.string(),
+    requestedByMondayUserId: v.string(),
+    requestedByMondayAppClientId: v.union(v.string(), v.null()),
+    ownerId: v.string(),
+    contactItemIds: v.array(v.string()),
+    monthlyBoardMappings: v.array(
+      v.object({
+        monthKey: v.string(),
+        boardId: v.string(),
+      }),
+    ),
+    totalContacts: v.number(),
+    nextIndex: v.number(),
+    processedContacts: v.number(),
+    succeededContacts: v.number(),
+    failedContacts: v.number(),
+    warningsCount: v.number(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_startedAt", ["startedAt"])
+    .index("by_status", ["status"])
+    .index("by_account_and_startedAt", ["mondayAccountId", "startedAt"]),
+
+  mondayBulkSyncJobResults: defineTable({
+    jobId: v.id("mondayBulkSyncJobs"),
+    contactItemId: v.string(),
+    status: v.union(v.literal("success"), v.literal("failed")),
+    linkedItemCount: v.number(),
+    createdParentUpdates: v.number(),
+    createdSubitems: v.number(),
+    createdSubitemUpdates: v.number(),
+    updatedProgressColumns: v.number(),
+    skippedSubitems: v.number(),
+    warnings: v.array(v.string()),
+    error: v.union(v.string(), v.null()),
+    attemptedAt: v.number(),
+  })
+    .index("by_jobId", ["jobId"])
+    .index("by_jobId_and_contactItemId", ["jobId", "contactItemId"]),
+
   outlookConnections: defineTable({
     mondayAccountId: v.string(),
     mondayUserId: v.string(),
@@ -288,5 +413,111 @@ export default defineSchema({
       "mondayAppClientId",
     ])
     .index("by_monday_user", ["mondayAccountId", "mondayUserId"]),
+
+  outlookOutboundMessages: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    actingMondayUserId: v.optional(v.string()),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    connectionEmail: v.union(v.string(), v.null()),
+    contactItemId: v.union(v.string(), v.null()),
+    recipientEmail: v.string(),
+    subject: v.string(),
+    sentAt: v.number(),
+    graphMessageId: v.union(v.string(), v.null()),
+    internetMessageId: v.union(v.string(), v.null()),
+    conversationId: v.union(v.string(), v.null()),
+    correlationToken: v.union(v.string(), v.null()),
+    status: v.union(v.literal("pending_lookup"), v.literal("identified")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_internetMessageId", ["internetMessageId"])
+    .index("by_conversationId", ["conversationId"])
+    .index("by_contactItemId", ["contactItemId"])
+    .index("by_correlationToken", ["correlationToken"])
+    .index("by_identity_and_sentAt", [
+      "mondayAccountId",
+      "mondayUserId",
+      "sentAt",
+    ]),
+
+  outlookInboundMessages: defineTable({
+    dedupeKey: v.string(),
+    internetMessageId: v.union(v.string(), v.null()),
+    graphMessageId: v.string(),
+    conversationId: v.union(v.string(), v.null()),
+    inReplyTo: v.union(v.string(), v.null()),
+    fromEmail: v.string(),
+    subject: v.string(),
+    receivedAt: v.number(),
+    rawBodyPreview: v.union(v.string(), v.null()),
+    parsedBody: v.union(v.string(), v.null()),
+    correlationMethod: v.union(
+      v.literal("inReplyTo"),
+      v.literal("conversationId"),
+      v.literal("senderEmail"),
+      v.literal("none"),
+      v.null(),
+    ),
+    correlationConfidence: v.union(
+      v.literal("high"),
+      v.literal("medium"),
+      v.literal("low"),
+      v.null(),
+    ),
+    outboundMessageId: v.optional(v.id("outlookOutboundMessages")),
+    contactItemId: v.union(v.string(), v.null()),
+    matchedContactEmail: v.union(v.string(), v.null()),
+    status: v.union(
+      v.literal("received"),
+      v.literal("parsed"),
+      v.literal("mirrored"),
+      v.literal("failed"),
+      v.literal("ignored"),
+    ),
+    mirrorMondayUpdateId: v.union(v.string(), v.null()),
+    mirrorMondaySubitemId: v.union(v.string(), v.null()),
+    mirrorTouchId: v.union(v.string(), v.null()),
+    errorMessage: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_internetMessageId", ["internetMessageId"])
+    .index("by_conversationId", ["conversationId"])
+    .index("by_contactItemId", ["contactItemId"])
+    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
+
+  outlookGraphSubscriptions: defineTable({
+    mondayAccountId: v.string(),
+    mondayUserId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    connectionEmail: v.union(v.string(), v.null()),
+    subscriptionId: v.string(),
+    clientState: v.string(),
+    resource: v.string(),
+    changeType: v.string(),
+    notificationUrl: v.string(),
+    expirationDateTime: v.string(),
+    expirationTimestamp: v.number(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("expired"),
+      v.literal("deleted"),
+      v.literal("error"),
+    ),
+    lastRenewedAt: v.union(v.number(), v.null()),
+    lastError: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_subscriptionId", ["subscriptionId"])
+    .index("by_status_and_expirationTimestamp", ["status", "expirationTimestamp"])
+    .index("by_monday_identity", [
+      "mondayAccountId",
+      "mondayUserId",
+      "mondayAppClientId",
+    ]),
 
 });

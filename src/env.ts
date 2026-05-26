@@ -20,6 +20,7 @@ export const env = createEnv({
     MONDAY_SIGNING_SECRET: z.string().min(1).optional(),
     MONDAY_API_KEY: z.string().optional(),
     MONDAY_BOARD_ID: z.string().optional(),
+    MONDAY_JOBS_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_COUNTY_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_DISTRICT_BOARD_ID: z.string().optional(),
     MONDAY_ROUTING_COUNTY_NAME_COLUMN_ID: z.string().optional(),
@@ -38,6 +39,15 @@ export const env = createEnv({
     OUTLOOK_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
     OUTLOOK_OAUTH_REDIRECT_URI: z.url().optional(),
     OUTLOOK_REPLY_TO_EMAIL: z.string().email().optional(),
+    OUTLOOK_SUBSCRIPTION_RENEW_SECRET: z.string().min(1).optional(),
+    OUTLOOK_INBOUND_MIRROR_ENABLED: z
+      .enum(["true", "false"])
+      .optional()
+      .default("true"),
+    OUTLOOK_INBOUND_SENDER_FALLBACK_ENABLED: z
+      .enum(["true", "false"])
+      .optional()
+      .default("false"),
   },
 
   client: {

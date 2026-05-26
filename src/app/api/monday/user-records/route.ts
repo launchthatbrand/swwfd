@@ -6,6 +6,14 @@ import { requireVerifiedMondaySession } from "~/server/monday/session";
 export const runtime = "nodejs";
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
+const ENABLE_WHOLE_MONTH_HYDRATION_BY_DEFAULT = false;
+const METADATA_CACHE_TTL_MS = 60_000;
+const CONTACT_CHUNK_CONCURRENCY = 4;
+const CONTACT_CHUNK_RETRY_LIMIT = 2;
+const CONTACT_CHUNK_RETRY_BASE_DELAY_MS = 250;
+const API_BOARD_CREATED_AT_COLUMN_ID = "date1__1";
+const API_BOARD_UPDATED_AT_COLUMN_ID = "pulse_updated_mm3av0c5";
+const API_BOARD_LAST_TOUCHPOINT_COLUMN_ID = "date_mm3jfsd1";
 
 type MondayColumnValue = {
   id?: string | null;
@@ -52,6 +60,7 @@ type MergedRecord = {
   phone: string | null;
   address: string | null;
   referredToContractors: string | null;
+  interviewingWithContractors: string | null;
   hiredWithContractor: string | null;
   hireDate: string | null;
   retentionPeriod: string | null;
@@ -60,6 +69,7 @@ type MergedRecord = {
   batteryRawValue: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  lastTouchpointAt: string | null;
   contactDetails: Array<{ label: string; value: string }>;
   resumeFiles: Array<{
     assetId: string | null;
@@ -114,13 +124,12 @@ const toJson = (body: unknown, status = 200) => {
 const getRequiredConfig = () => {
   const apiKey = env.MONDAY_API_KEY?.trim() ?? "";
   const contactBoardId = env.MONDAY_BOARD_ID?.trim() ?? "";
-  const touchBoardId = env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!apiKey || !contactBoardId || !touchBoardId) {
+  if (!apiKey || !contactBoardId) {
     throw new Error(
-      "Missing Monday config. Set MONDAY_API_KEY, MONDAY_BOARD_ID, MONDAY_CONTACT_TOUCHED_BOARD_ID.",
+      "Missing Monday config. Set MONDAY_API_KEY and MONDAY_BOARD_ID.",
     );
   }
-  return { apiKey, contactBoardId, touchBoardId };
+  return { apiKey, contactBoardId };
 };
 
 const callMondayGraphQL = async <TData>(
@@ -170,9 +179,20 @@ const parseDateValue = (column: MondayColumnValue | undefined) => {
   if (!column) return null;
   if (column.value) {
     try {
-      const parsed = JSON.parse(column.value) as { date?: string; time?: string };
+      const parsed = JSON.parse(column.value) as {
+        date?: string;
+        time?: string;
+        created_at?: string;
+        updated_at?: string;
+        changed_at?: string;
+      };
       if (parsed.date && parsed.time) return `${parsed.date}T${parsed.time}Z`;
       if (parsed.date) return `${parsed.date}T00:00:00Z`;
+      const rawTimestamp =
+        parsed.updated_at ?? parsed.changed_at ?? parsed.created_at ?? null;
+      if (typeof rawTimestamp === "string" && rawTimestamp.trim().length > 0) {
+        return rawTimestamp.trim();
+      }
     } catch {
       // ignore
     }
@@ -227,13 +247,12 @@ const toColumnDisplayValue = (
 
 const APPROVAL_STEP_COLUMN_IDS = [
   "color_mm1db321",
-  "color_mm1dwtvd",
+  "color_mm3ggf4t",
   "color_mm1dwr4k",
   "color_mm1dnr11",
   "color_mm1dgeqy",
   "color_mm1d80yc",
   "color_mm1djwjj",
-  "color_mm1d4e3y",
 ] as const;
 
 interface ProgressColumnConfig {
@@ -248,7 +267,61 @@ interface ProgressColumnConfig {
 interface ContactBoardMeta {
   approvalSteps: Array<{ id: string; title: string }>;
   progressColumnConfig: ProgressColumnConfig | null;
+  contactOwnerColumnId: string | null;
+  subitemBoardId: string | null;
 }
+
+interface TouchColumns {
+  touchDateColumnId: string | null;
+  ownerIdColumnId: string;
+  peopleColumnId: string | null;
+  relationColumnIds: string[];
+  lookupColumnIds: string[];
+  contactItemIdColumnId: string | null;
+  sourceColumnId: string | null;
+}
+
+interface SubitemTouchColumns {
+  dateColumnId: string;
+  typeColumnId: string | null;
+}
+
+type CacheEntry<TValue> = {
+  value: TValue;
+  expiresAt: number;
+};
+
+const touchColumnsCache = new Map<string, CacheEntry<TouchColumns>>();
+const contactBoardMetaCache = new Map<string, CacheEntry<ContactBoardMeta>>();
+const subitemTouchColumnsCache = new Map<string, CacheEntry<SubitemTouchColumns>>();
+
+const readCachedValue = <TValue>(
+  cache: Map<string, CacheEntry<TValue>>,
+  key: string,
+): TValue | null => {
+  const now = Date.now();
+  const existing = cache.get(key);
+  if (!existing) return null;
+  if (existing.expiresAt <= now) {
+    cache.delete(key);
+    return null;
+  }
+  return existing.value;
+};
+
+const writeCachedValue = <TValue>(
+  cache: Map<string, CacheEntry<TValue>>,
+  key: string,
+  value: TValue,
+) => {
+  cache.set(key, {
+    value,
+    expiresAt: Date.now() + METADATA_CACHE_TTL_MS,
+  });
+  return value;
+};
+
+const sanitizeColumnId = (value: string) => value.replace(/[^a-zA-Z0-9_]/g, "");
 
 const resolveContactBoardMeta = async (
   contactBoardId: string,
@@ -275,6 +348,12 @@ const resolveContactBoardMeta = async (
       { boardId: contactBoardId },
     );
     const columns = data.boards?.[0]?.columns ?? [];
+    const byType = (type: string) =>
+      columns.find((column) => (column.type ?? "").toLowerCase() === type);
+    const byTitle = (needle: string) =>
+      columns.find((column) =>
+        (column.title ?? "").toLowerCase().includes(needle.toLowerCase()),
+      );
     const titleById: Record<string, string> = {};
     for (const col of columns) {
       const id = col?.id?.trim();
@@ -332,12 +411,35 @@ const resolveContactBoardMeta = async (
       }
     }
 
+    const ownerColumnId =
+      byTitle("owner")?.id?.trim() ??
+      byType("people")?.id?.trim() ??
+      null;
+    const subtasksColumn = byType("subtasks");
+    let subitemBoardId: string | null = null;
+    if (subtasksColumn?.settings_str) {
+      try {
+        const parsed = JSON.parse(subtasksColumn.settings_str) as {
+          boardIds?: Array<number | string>;
+        };
+        const raw = parsed.boardIds?.[0];
+        if (raw != null) {
+          const normalized = String(raw).trim();
+          if (normalized.length > 0) subitemBoardId = normalized;
+        }
+      } catch {
+        subitemBoardId = null;
+      }
+    }
+
     return {
       approvalSteps: APPROVAL_STEP_COLUMN_IDS.map((id, index) => ({
         id,
         title: titleById[id] ?? `Approval Step ${index + 1}`,
       })),
       progressColumnConfig,
+      contactOwnerColumnId: ownerColumnId,
+      subitemBoardId,
     };
   } catch {
     return {
@@ -346,6 +448,8 @@ const resolveContactBoardMeta = async (
         title: `Approval Step ${index + 1}`,
       })),
       progressColumnConfig: null,
+      contactOwnerColumnId: null,
+      subitemBoardId: null,
     };
   }
 };
@@ -411,7 +515,7 @@ const parseBatteryProgressValue = (
   return text?.trim() ? parseNumber(text) : null;
 };
 
-const resolveTouchColumns = async (touchBoardId: string) => {
+const resolveTouchColumns = async (touchBoardId: string): Promise<TouchColumns> => {
   interface Data {
     boards?: Array<{
       columns?: Array<{ id?: string | null; title?: string | null; type?: string | null }>;
@@ -452,6 +556,24 @@ const resolveTouchColumns = async (touchBoardId: string) => {
         .filter((value): value is string => !!value && value.length > 0),
     ),
   );
+  const lookupColumnIds = Array.from(
+    new Set(
+      columns
+        .filter((column) => {
+          const type = (column.type ?? "").toLowerCase();
+          const id = (column.id ?? "").toLowerCase();
+          const title = (column.title ?? "").toLowerCase();
+          return (
+            type === "lookup" ||
+            id.startsWith("lookup_") ||
+            title.includes("contact id") ||
+            title.includes("database")
+          );
+        })
+        .map((column) => column.id?.trim())
+        .filter((value): value is string => !!value && value.length > 0),
+    ),
+  );
   return {
     touchDateColumnId:
       findByTitle("touch date")?.id ??
@@ -468,6 +590,7 @@ const resolveTouchColumns = async (touchBoardId: string) => {
       findByType("people")?.id ??
       null,
     relationColumnIds,
+    lookupColumnIds,
     contactItemIdColumnId:
       findByTitle("contact item")?.id ??
       findByTitle("contact id")?.id ??
@@ -477,17 +600,213 @@ const resolveTouchColumns = async (touchBoardId: string) => {
   };
 };
 
-const fetchTouchPage = async (args: {
+const _getCachedTouchColumns = async (touchBoardId: string): Promise<TouchColumns> => {
+  const cached = readCachedValue(touchColumnsCache, touchBoardId);
+  if (cached) return cached;
+  const resolved = await resolveTouchColumns(touchBoardId);
+  return writeCachedValue(touchColumnsCache, touchBoardId, resolved);
+};
+
+const getCachedContactBoardMeta = async (
+  contactBoardId: string,
+): Promise<ContactBoardMeta> => {
+  const cached = readCachedValue(contactBoardMetaCache, contactBoardId);
+  if (cached) return cached;
+  const resolved = await resolveContactBoardMeta(contactBoardId);
+  return writeCachedValue(contactBoardMetaCache, contactBoardId, resolved);
+};
+
+const resolveSubitemTouchColumns = async (
+  subitemBoardId: string,
+): Promise<SubitemTouchColumns> => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `
+      query ResolveSubitemTouchColumns($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          columns { id title type }
+        }
+      }
+    `,
+    { boardId: subitemBoardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const byType = (type: string) =>
+    columns.find((column) => (column.type ?? "").toLowerCase() === type);
+  const byId = (id: string) =>
+    columns.find((column) => (column.id ?? "").trim() === id);
+  const byTitle = (needle: string) =>
+    columns.find((column) =>
+      (column.title ?? "").toLowerCase().includes(needle.toLowerCase()),
+    );
+  return {
+    dateColumnId:
+      byId("date0")?.id?.trim() ??
+      byTitle("date")?.id?.trim() ??
+      byType("date")?.id?.trim() ??
+      "date0",
+    typeColumnId:
+      byId("color_mm2x49t2")?.id?.trim() ??
+      byTitle("type")?.id?.trim() ??
+      byType("status")?.id?.trim() ??
+      null,
+  };
+};
+
+const getCachedSubitemTouchColumns = async (
+  subitemBoardId: string,
+): Promise<SubitemTouchColumns> => {
+  const cached = readCachedValue(subitemTouchColumnsCache, subitemBoardId);
+  if (cached) return cached;
+  const resolved = await resolveSubitemTouchColumns(subitemBoardId);
+  return writeCachedValue(subitemTouchColumnsCache, subitemBoardId, resolved);
+};
+
+const fetchSubitemTouchPage = async (args: {
+  subitemBoardId: string;
+  cursor: string | null;
+  limit: number;
+  dateColumnId: string;
+  dateFrom: string;
+  dateTo: string;
+  parentOwnerColumnId: string | null;
+  typeColumnId: string | null;
+}) => {
+  interface SubitemItem {
+    id: string;
+    name?: string | null;
+    created_at?: string | null;
+    parent_item?: {
+      id?: string | null;
+      name?: string | null;
+      url?: string | null;
+      column_values?: Array<{
+        id?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    } | null;
+    column_values?: Array<{
+      id?: string | null;
+      text?: string | null;
+      value?: string | null;
+    }>;
+  }
+  interface Data {
+    boards?: Array<{
+      name?: string | null;
+      items_page?: { cursor?: string | null; items?: SubitemItem[] };
+    }>;
+  }
+
+  const safeDateColumnId = sanitizeColumnId(args.dateColumnId);
+  const safeParentOwnerColumnId = args.parentOwnerColumnId
+    ? sanitizeColumnId(args.parentOwnerColumnId)
+    : "";
+  const safeTypeColumnId = args.typeColumnId ? sanitizeColumnId(args.typeColumnId) : "";
+  const safeColumnIds = Array.from(
+    new Set(
+      [safeDateColumnId, safeTypeColumnId].filter((value) => value.length > 0),
+    ),
+  );
+  const canLimitColumnValues = safeColumnIds.length > 0;
+  const parentColumnsFragment = safeParentOwnerColumnId
+    ? `column_values(ids: ["${safeParentOwnerColumnId}"]) {
+                id
+                text
+                value
+              }`
+    : "";
+  const includeCursor = !!args.cursor;
+  const canPushDateRule =
+    !includeCursor &&
+    safeDateColumnId.length > 0 &&
+    isIsoDateOnly(args.dateFrom) &&
+    isIsoDateOnly(args.dateTo);
+  const queryParams = canPushDateRule
+    ? `query_params: { rules: [{
+          column_id: "${safeDateColumnId}"
+          compare_value: ["${args.dateFrom}", "${args.dateTo}"]
+          operator: between
+        }] }`
+    : "";
+
+  const query = `
+    query ListSubitemTouches($boardId: ID!, $limit: Int!${includeCursor ? ", $cursor: String" : ""}) {
+      boards(ids: [$boardId]) {
+        name
+        items_page(
+          limit: $limit
+          ${includeCursor ? "cursor: $cursor" : ""}
+          ${includeCursor ? "" : queryParams}
+        ) {
+          cursor
+          items {
+            id
+            name
+            created_at
+            parent_item {
+              id
+              name
+              url
+              ${parentColumnsFragment}
+            }
+            ${
+              canLimitColumnValues
+                ? `column_values(ids: [${safeColumnIds.map((id) => `"${id}"`).join(", ")}]) {
+                    id
+                    text
+                    value
+                  }`
+                : `column_values {
+                    id
+                    text
+                    value
+                  }`
+            }
+          }
+        }
+      }
+    }
+  `;
+  const data = await callMondayGraphQL<Data>(query, {
+    boardId: args.subitemBoardId,
+    limit: args.limit,
+    ...(args.cursor ? { cursor: args.cursor } : {}),
+  });
+  return {
+    boardName: data.boards?.[0]?.name ?? null,
+    nextCursor: data.boards?.[0]?.items_page?.cursor ?? null,
+    items: data.boards?.[0]?.items_page?.items ?? [],
+  };
+};
+
+const _fetchTouchPage = async (args: {
   touchBoardId: string;
   cursor: string | null;
   limit: number;
   linkedBoardId?: string | null;
   relationColumnId?: string | null;
+  columnValueIds?: string[];
   dateRule?:
     | {
         touchDateColumnId: string;
         dateFrom: string;
         dateTo: string;
+      }
+    | null;
+  ownerRule?:
+    | {
+        ownerColumnId: string;
+        ownerId: string;
       }
     | null;
 }) => {
@@ -503,33 +822,53 @@ const fetchTouchPage = async (args: {
     /^[a-zA-Z0-9_]+$/.test(args.dateRule.touchDateColumnId) &&
     isIsoDateOnly(args.dateRule.dateFrom) &&
     isIsoDateOnly(args.dateRule.dateTo);
+  const canPushOwnerRule =
+    !args.cursor &&
+    !!args.ownerRule &&
+    /^[a-zA-Z0-9_]+$/.test(args.ownerRule.ownerColumnId) &&
+    /^\d+$/.test(args.ownerRule.ownerId);
   const canFetchLinkedItems =
     !!args.linkedBoardId &&
     !!args.relationColumnId &&
     /^[a-zA-Z0-9_]+$/.test(args.relationColumnId);
+  const sanitizedColumnValueIds = (args.columnValueIds ?? [])
+    .map((value) => value.trim())
+    .filter((value) => /^[a-zA-Z0-9_]+$/.test(value));
+  const canLimitColumnValues = sanitizedColumnValueIds.length > 0;
+
+  const queryRules: string[] = [];
+  if (canPushDateRule && args.dateRule) {
+    queryRules.push(`{
+      column_id: "${args.dateRule.touchDateColumnId}"
+      compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
+      operator: between
+    }`);
+  }
+  if (canPushOwnerRule && args.ownerRule) {
+    queryRules.push(`{
+      column_id: "${args.ownerRule.ownerColumnId}"
+      compare_value: ["${args.ownerRule.ownerId}"]
+      operator: any_of
+    }`);
+  }
+  const queryParams = queryRules.length
+    ? `query_params: { rules: [${queryRules.join(", ")}] }`
+    : "";
+
   const query = `
     query ListTouchItems(
       $boardId: ID!
       $limit: Int!
       ${args.cursor ? ", $cursor: String" : ""}
       ${canFetchLinkedItems ? ", $linkedBoardId: ID!, $relationColumnId: String!" : ""}
+      ${canLimitColumnValues ? ", $columnValueIds: [String!]!" : ""}
     ) {
       boards(ids: [$boardId]) {
         name
         items_page(
           limit: $limit
           ${args.cursor ? "cursor: $cursor" : ""}
-          ${
-            canPushDateRule
-              ? `query_params: {
-            rules: [{
-              column_id: "${args.dateRule.touchDateColumnId}"
-              compare_value: ["${args.dateRule.dateFrom}", "${args.dateRule.dateTo}"]
-              operator: between
-            }]
-          }`
-              : ""
-          }
+          ${queryParams}
         ) {
           cursor
           items {
@@ -547,11 +886,18 @@ const fetchTouchPage = async (args: {
                   }`
                 : ""
             }
-            column_values {
-              id
-              type
-              text
-              value
+            ${
+              canLimitColumnValues
+                ? `column_values(ids: $columnValueIds) {
+                    id
+                    text
+                    value
+                  }`
+                : `column_values {
+                    id
+                    text
+                    value
+                  }`
             }
           }
         }
@@ -568,6 +914,7 @@ const fetchTouchPage = async (args: {
           relationColumnId: args.relationColumnId,
         }
       : {}),
+    ...(canLimitColumnValues ? { columnValueIds: sanitizedColumnValueIds } : {}),
   });
   return {
     boardName: data.boards?.[0]?.name ?? null,
@@ -576,9 +923,9 @@ const fetchTouchPage = async (args: {
   };
 };
 
-const extractContactIdFromTouch = (
+const _extractContactIdFromTouch = (
   item: MondayBoardItem,
-  columnIds: Awaited<ReturnType<typeof resolveTouchColumns>>,
+  columnIds: TouchColumns,
 ) => {
   const values = item.column_values ?? [];
   const byId = (id: string | null) => values.find((column) => column.id === id);
@@ -639,6 +986,12 @@ const extractContactIdFromTouch = (
   for (const relationColumnId of columnIds.relationColumnIds) {
     const linkedId = tryExtractLinkedId(byId(relationColumnId)?.value);
     if (linkedId) return linkedId;
+  }
+  for (const lookupColumnId of columnIds.lookupColumnIds) {
+    const lookupFromValue = tryExtractLinkedId(byId(lookupColumnId)?.value);
+    if (lookupFromValue) return lookupFromValue;
+    const lookupFromText = parseLikelyItemId(byId(lookupColumnId)?.text);
+    if (lookupFromText) return lookupFromText;
   }
 
   const fallbackColumn = byId(columnIds.contactItemIdColumnId);
@@ -720,6 +1073,8 @@ const parseResumeFiles = (
         assetId?: number | string | null;
         name?: string | null;
         fileType?: string | null;
+        url?: string | null;
+        public_url?: string | null;
       }>;
     };
     return (parsed.files ?? [])
@@ -736,11 +1091,51 @@ const parseResumeFiles = (
       .map((f) => ({
         assetId: f.assetId != null ? String(f.assetId) : null,
         name: f.name ?? "Resume",
-        url: null,
+        url:
+          typeof f.public_url === "string" && f.public_url.trim().length > 0
+            ? f.public_url.trim()
+            : typeof f.url === "string" && f.url.trim().length > 0
+              ? f.url.trim()
+              : null,
       }));
   } catch {
     return [];
   }
+};
+
+const sleep = async (durationMs: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+
+const isRateLimitError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("(429)") || message.toLowerCase().includes("rate limit");
+};
+
+const mapWithConcurrency = async <TValue, TResult>(
+  items: TValue[],
+  concurrency: number,
+  worker: (item: TValue, index: number) => Promise<TResult>,
+) => {
+  if (items.length === 0) return [] as TResult[];
+  const safeConcurrency = Math.max(1, Math.min(concurrency, items.length));
+  const results = new Array<TResult>(items.length);
+  let currentIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: safeConcurrency }, async () => {
+      while (true) {
+        const nextIndex = currentIndex;
+        currentIndex += 1;
+        if (nextIndex >= items.length) break;
+        const item = items[nextIndex] as TValue;
+        results[nextIndex] = await worker(item, nextIndex);
+      }
+    }),
+  );
+
+  return results;
 };
 
 const fetchContactRecordsByIds = async (args: {
@@ -757,35 +1152,54 @@ const fetchContactRecordsByIds = async (args: {
     chunks.push(ids.slice(index, index + MONDAY_ITEMS_BY_IDS_CHUNK_SIZE));
   }
 
-  const items: MondayBoardItem[] = [];
-  for (const chunk of chunks) {
-    interface Data {
-      items?: MondayBoardItem[];
-    }
-    const data = await callMondayGraphQL<Data>(
-      `
-        query ContactsByIds($itemIds: [ID!]) {
-          items(ids: $itemIds) {
-            id
-            name
-            url
-            updated_at
-            group {
-              title
-            }
-            column_values {
-              id
-              type
-              text
-              value
-            }
-          }
-        }
-      `,
-      { itemIds: chunk },
-    );
-    items.push(...(data.items ?? []));
+  interface Data {
+    items?: MondayBoardItem[];
   }
+
+  let rateLimitRetries = 0;
+  const fetchContactChunk = async (chunk: string[]) => {
+    let attempt = 0;
+    while (true) {
+      try {
+        const data = await callMondayGraphQL<Data>(
+          `
+            query ContactsByIds($itemIds: [ID!]) {
+              items(ids: $itemIds) {
+                id
+                name
+                url
+                updated_at
+                group {
+                  title
+                }
+                column_values {
+                  id
+                  type
+                  text
+                  value
+                }
+              }
+            }
+          `,
+          { itemIds: chunk },
+        );
+        return data.items ?? [];
+      } catch (error) {
+        if (!isRateLimitError(error) || attempt >= CONTACT_CHUNK_RETRY_LIMIT) {
+          throw error;
+        }
+        rateLimitRetries += 1;
+        const retryDelay = CONTACT_CHUNK_RETRY_BASE_DELAY_MS * 2 ** attempt;
+        attempt += 1;
+        await sleep(retryDelay);
+      }
+    }
+  };
+
+  const chunkResults = await mapWithConcurrency(chunks, CONTACT_CHUNK_CONCURRENCY, (chunk) =>
+    fetchContactChunk(chunk),
+  );
+  const items = chunkResults.flatMap((chunkItems) => chunkItems);
 
   const toContactRecord = (item: MondayBoardItem): MergedRecord => {
     const columns = item.column_values ?? [];
@@ -798,12 +1212,14 @@ const fetchContactRecordsByIds = async (args: {
     const emailColumn = byId("email__1") ?? byType("email");
     const phoneColumn = byId("phone____1") ?? byType("phone");
     const referredColumn = byId("dropdown_mkwqcc1w");
+    const interviewingColumn = byId("dropdown_mm3jj2gr");
     const hiredColumn = byId("dropdown_mkwqm5fb");
     const hireDateColumn = byId("date_mkty234p");
     const retentionColumn = byId("dropdown_mkwthbh2");
     const tagsColumn = byId("dropdown_mkvw578t");
-    const dateColumn = byId("date1__1");
-    const creationLogColumn = byType("creation_log");
+    const dateColumn = byId(API_BOARD_CREATED_AT_COLUMN_ID);
+    const pulseUpdatedColumn = byId(API_BOARD_UPDATED_AT_COLUMN_ID);
+    const lastTouchpointColumn = byId(API_BOARD_LAST_TOUCHPOINT_COLUMN_ID);
 
     const addressParts = [
       byId("text6__1")?.text,
@@ -826,15 +1242,9 @@ const fetchContactRecordsByIds = async (args: {
     const batteryProgress =
       computedProgress ?? parseBatteryProgressValue(batteryColumn?.text, batteryColumn?.value);
 
-    let createdAt: string | null = parseDateValue(dateColumn);
-    if (!createdAt && creationLogColumn?.value) {
-      try {
-        const parsed = JSON.parse(creationLogColumn.value) as { created_at?: unknown };
-        if (typeof parsed.created_at === "string") createdAt = parsed.created_at;
-      } catch {
-        // ignore
-      }
-    }
+    const createdAt = parseDateValue(dateColumn);
+    const updatedAt = parseDateValue(pulseUpdatedColumn);
+    const lastTouchpointAt = parseDateValue(lastTouchpointColumn);
 
     const details: Array<{ label: string; value: string }> = [];
     if ((item.name ?? "").trim()) details.push({ label: "Name", value: item.name ?? "" });
@@ -860,14 +1270,17 @@ const fetchContactRecordsByIds = async (args: {
       phone: phoneColumn?.text ?? null,
       address,
       referredToContractors: toColumnDisplayValue(referredColumn?.text, referredColumn?.value) || null,
+      interviewingWithContractors:
+        toColumnDisplayValue(interviewingColumn?.text, interviewingColumn?.value) || null,
       hiredWithContractor: toColumnDisplayValue(hiredColumn?.text, hiredColumn?.value) || null,
       hireDate: hireDate,
       retentionPeriod: toColumnDisplayValue(retentionColumn?.text, retentionColumn?.value) || null,
       tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
       batteryProgress,
       batteryRawValue: batteryColumn?.value ?? null,
-      createdAt: createdAt ?? item.updated_at ?? null,
-      updatedAt: item.updated_at ?? null,
+      createdAt: createdAt ?? null,
+      updatedAt: updatedAt ?? null,
+      lastTouchpointAt: lastTouchpointAt ?? null,
       contactDetails: details,
       resumeFiles: parseResumeFiles(columns),
     };
@@ -892,7 +1305,13 @@ const fetchContactRecordsByIds = async (args: {
       );
   }
 
-  return map;
+  return {
+    recordsById: map,
+    chunkCount: chunks.length,
+    chunkConcurrency:
+      chunks.length === 0 ? 0 : Math.min(CONTACT_CHUNK_CONCURRENCY, chunks.length),
+    rateLimitRetries,
+  };
 };
 
 export const GET = async (request: Request) => {
@@ -917,94 +1336,146 @@ export const GET = async (request: Request) => {
   const cursorStart = cursorParam && cursorParam.trim().length > 0 ? cursorParam : null;
   const limit = parseLimit(url.searchParams.get("limit"));
   const search = url.searchParams.get("search")?.trim().toLowerCase() ?? "";
-  const ownerFilter = url.searchParams.get("owner")?.trim().toLowerCase() ?? "";
+  const ownerFilterRaw = url.searchParams.get("owner")?.trim() ?? "";
+  const ownerFilter = ownerFilterRaw.toLowerCase();
   const statusFilter = url.searchParams.get("status")?.trim().toLowerCase() ?? "";
   const dateFrom = parseIsoDateOnly(url.searchParams.get("dateFrom"));
   const dateTo = parseIsoDateOnly(url.searchParams.get("dateTo"));
   const dateFromText = url.searchParams.get("dateFrom")?.trim() ?? "";
   const dateToText = url.searchParams.get("dateTo")?.trim() ?? "";
+  const hydrateWholeMonthParam =
+    url.searchParams.get("hydrateWholeMonth")?.trim().toLowerCase() ?? "";
+  const shouldHydrateWholeMonthRequested =
+    hydrateWholeMonthParam === "1" || hydrateWholeMonthParam === "true";
 
   const startedAt = Date.now();
 
   try {
-    const [touchColumns, contactBoardMeta] = await Promise.all([
-      resolveTouchColumns(config.touchBoardId),
-      resolveContactBoardMeta(config.contactBoardId),
-    ]);
-    const { approvalSteps, progressColumnConfig } = contactBoardMeta;
+    const contactBoardMeta = await getCachedContactBoardMeta(config.contactBoardId);
+    const {
+      approvalSteps,
+      progressColumnConfig,
+      contactOwnerColumnId,
+      subitemBoardId,
+    } = contactBoardMeta;
+    if (!subitemBoardId) {
+      throw new Error(
+        "Unable to resolve subitem board for touches mode from MONDAY_BOARD_ID.",
+      );
+    }
+    const subitemTouchColumns = await getCachedSubitemTouchColumns(subitemBoardId);
     const canApplyDateRule =
-      !!touchColumns.touchDateColumnId &&
+      !!subitemTouchColumns.dateColumnId &&
       isIsoDateOnly(dateFromText) &&
       isIsoDateOnly(dateToText);
     const shouldHydrateWholeMonth =
+      (ENABLE_WHOLE_MONTH_HYDRATION_BY_DEFAULT || shouldHydrateWholeMonthRequested) &&
       !cursorStart &&
       canApplyDateRule &&
       search.length === 0 &&
       statusFilter.length === 0;
-
+    const canEarlyStopByUniqueContacts =
+      !shouldHydrateWholeMonth &&
+      ownerFilter.length === 0 &&
+      search.length === 0 &&
+      statusFilter.length === 0;
+    const uniqueContactTarget = Math.max(limit + 10, Math.ceil(limit * 1.5));
     const matchedTouches: TouchRecord[] = [];
+    const uniqueContactIdsScanned = new Set<string>();
     let cursor: string | null = cursorStart;
     let boardName: string | null = null;
     let scanPages = 0;
-    const maxScanPages = shouldHydrateWholeMonth ? 200 : canApplyDateRule ? 10 : 25;
-    const maxScanDurationMs = shouldHydrateWholeMonth ? 45_000 : 12_000;
-    const maxMatchedTouches = shouldHydrateWholeMonth ? 10_000 : limit;
+    let stoppedAfterUniqueContactTarget = false;
+    const maxScanPages = shouldHydrateWholeMonth
+      ? 200
+      : canApplyDateRule
+        ? 12
+        : ownerFilter.length > 0
+          ? 80
+          : 25;
+    const maxScanDurationMs = shouldHydrateWholeMonth
+      ? 45_000
+      : ownerFilter.length > 0
+        ? 20_000
+        : 12_000;
+    const maxMatchedTouches = shouldHydrateWholeMonth
+      ? 10_000
+      : ownerFilter.length > 0
+        ? Math.max(limit * 12, 600)
+        : Math.max(limit * 3, limit + 20);
     while (matchedTouches.length < maxMatchedTouches && scanPages < maxScanPages) {
-      const page = await fetchTouchPage({
-        touchBoardId: config.touchBoardId,
+      const fetchPageArgs = {
+        subitemBoardId,
         cursor,
-        limit: 100,
-        linkedBoardId: config.contactBoardId,
-        relationColumnId: touchColumns.relationColumnIds[0] ?? null,
-        dateRule:
-          scanPages === 0 && canApplyDateRule && touchColumns.touchDateColumnId
-            ? {
-                touchDateColumnId: touchColumns.touchDateColumnId,
-                dateFrom: dateFromText,
-                dateTo: dateToText,
-              }
-            : null,
-      });
+        limit: 500,
+        dateColumnId: subitemTouchColumns.dateColumnId,
+        dateFrom: dateFromText,
+        dateTo: dateToText,
+        parentOwnerColumnId: contactOwnerColumnId,
+        typeColumnId: subitemTouchColumns.typeColumnId,
+      };
+      let page;
+      try {
+        page = await fetchSubitemTouchPage(fetchPageArgs);
+      } catch (error) {
+        throw error;
+      }
       boardName = boardName ?? page.boardName;
       cursor = page.nextCursor;
       scanPages += 1;
 
       for (const item of page.items) {
+        const contactId = item.parent_item?.id?.trim() ?? null;
+        if (!contactId) continue;
+        const parentColumns = item.parent_item?.column_values ?? [];
+        const parentOwnerColumn = contactOwnerColumnId
+          ? parentColumns.find((column) => column.id === contactOwnerColumnId)
+          : null;
+        const parentOwnerIds = parsePeopleIds(parentOwnerColumn?.value);
+        const parentOwnerText = parentOwnerColumn?.text?.trim().toLowerCase() ?? "";
+        if (ownerFilter.length > 0 && contactOwnerColumnId) {
+          const ownerIdMatch = parentOwnerIds.some(
+            (ownerId) => ownerId.trim().toLowerCase() === ownerFilter,
+          );
+          const ownerTextMatch = parentOwnerText === ownerFilter;
+          if (!ownerIdMatch && !ownerTextMatch) continue;
+        }
+
         const values = item.column_values ?? [];
         const byId = (id: string | null) => values.find((column) => column.id === id);
-        const ownerIdText = byId(touchColumns.ownerIdColumnId)?.text?.trim() ?? null;
-        const peopleIds = parsePeopleIds(byId(touchColumns.peopleColumnId)?.value);
-        const touchedBy = peopleIds[0] ?? ownerIdText;
-        const touchedAt = parseDateValue(byId(touchColumns.touchDateColumnId));
-        const touchSource = byId(touchColumns.sourceColumnId)?.text?.trim() ?? null;
-        const debugRelationCandidates = touchColumns.relationColumnIds.map((columnId) => ({
-          columnId,
-          text: byId(columnId)?.text ?? null,
-          value: byId(columnId)?.value ?? null,
-        }));
-        const debugContactItemColumn = {
-          columnId: touchColumns.contactItemIdColumnId,
-          text: byId(touchColumns.contactItemIdColumnId)?.text ?? null,
-          value: byId(touchColumns.contactItemIdColumnId)?.value ?? null,
-        };
+        const touchedAt =
+          parseDateValue(byId(subitemTouchColumns.dateColumnId)) ??
+          item.created_at?.trim() ??
+          null;
+        const touchSource = subitemTouchColumns.typeColumnId
+          ? byId(subitemTouchColumns.typeColumnId)?.text?.trim() ?? null
+          : null;
         const touch: TouchRecord = {
           touchItemId: item.id,
-          contactId: extractContactIdFromTouch(item, touchColumns),
+          contactId,
           touchedAt,
-          touchedBy,
+          touchedBy: null,
           touchSource,
-          debugRelationCandidates,
-          debugContactItemColumn,
         };
         if (!touchMatchesFilters({ touch, dateFrom, dateTo })) {
           continue;
         }
         matchedTouches.push(touch);
+        if (touch.contactId) {
+          uniqueContactIdsScanned.add(touch.contactId);
+        }
+        if (canEarlyStopByUniqueContacts && uniqueContactIdsScanned.size >= uniqueContactTarget) {
+          stoppedAfterUniqueContactTarget = true;
+          break;
+        }
         if (matchedTouches.length >= maxMatchedTouches) break;
       }
 
       if (!cursor) break;
-      if (!shouldHydrateWholeMonth && matchedTouches.length >= limit) break;
+      if (stoppedAfterUniqueContactTarget) break;
+      if (!shouldHydrateWholeMonth && ownerFilter.length === 0 && matchedTouches.length >= limit) {
+        break;
+      }
       if (Date.now() - startedAt >= maxScanDurationMs) break;
     }
 
@@ -1016,7 +1487,7 @@ export const GET = async (request: Request) => {
       }
       return b.touchItemId.localeCompare(a.touchItemId);
     });
-    const selectedTouches = shouldHydrateWholeMonth
+    const selectedTouches = shouldHydrateWholeMonth || ownerFilter.length > 0
       ? matchedTouches
       : matchedTouches.slice(0, limit);
 
@@ -1027,11 +1498,12 @@ export const GET = async (request: Request) => {
           .filter((entry): entry is string => !!entry && entry.trim().length > 0),
       ),
     );
-    const contactMap = await fetchContactRecordsByIds({
+    const contactFetchResult = await fetchContactRecordsByIds({
       boardId: config.contactBoardId,
       itemIds: contactIds,
       progressColumnConfig,
     });
+    const contactMap = contactFetchResult.recordsById;
     if (matchedTouches.length > 0 && (contactIds.length === 0 || contactMap.size === 0)) {
       const sampleTouches = selectedTouches.slice(0, 5).map((touch) => ({
         touchItemId: touch.touchItemId,
@@ -1039,14 +1511,10 @@ export const GET = async (request: Request) => {
         touchedBy: touch.touchedBy,
         touchedAt: touch.touchedAt,
         source: touch.touchSource,
-        relationCandidates: touch.debugRelationCandidates ?? [],
-        contactItemColumn: touch.debugContactItemColumn ?? null,
       }));
       console.warn("[MondayUserRecordsRoute] touch hydration mismatch", {
-        touchBoardId: config.touchBoardId,
+        subitemBoardId,
         contactBoardId: config.contactBoardId,
-        relationColumnIds: touchColumns.relationColumnIds,
-        contactItemIdColumnId: touchColumns.contactItemIdColumnId,
         matchedTouches: matchedTouches.length,
         selectedTouches: selectedTouches.length,
         uniqueContactIds: contactIds.length,
@@ -1057,9 +1525,15 @@ export const GET = async (request: Request) => {
     }
 
     const merged: MergedRecord[] = [];
+    const seenContactKeys = new Set<string>();
     for (const touch of selectedTouches) {
       const contact = touch.contactId ? contactMap.get(touch.contactId) : undefined;
       if (!contact) continue;
+      const dedupeKey = touch.contactId?.trim() || contact.contactId?.trim() || contact.id.trim();
+      if (!dedupeKey) continue;
+      if (seenContactKeys.has(dedupeKey)) {
+        continue;
+      }
       if (
         ownerFilter.length > 0 &&
         !contact.ownerIds.some((ownerId) => ownerId.trim().toLowerCase() === ownerFilter)
@@ -1080,7 +1554,7 @@ export const GET = async (request: Request) => {
         touchedAt: touch.touchedAt,
         touchedBy: touch.touchedBy,
         touchSource: touch.touchSource,
-        createdAt: touch.touchedAt ?? contact.createdAt,
+        createdAt: contact.createdAt,
         contactDetails: [...detailPrefix, ...contact.contactDetails],
       };
       if (statusFilter.length > 0) {
@@ -1091,6 +1565,7 @@ export const GET = async (request: Request) => {
         const haystack = [
           mergedRecord.name,
           mergedRecord.id,
+          mergedRecord.contactId ?? "",
           mergedRecord.email ?? "",
           mergedRecord.phone ?? "",
           mergedRecord.address ?? "",
@@ -1102,6 +1577,7 @@ export const GET = async (request: Request) => {
         if (!haystack.includes(search)) continue;
       }
       merged.push(mergedRecord);
+      seenContactKeys.add(dedupeKey);
     }
     merged.sort((a, b) => {
       const aTime = a.createdAt ? Date.parse(a.createdAt) : Number.NEGATIVE_INFINITY;
@@ -1120,7 +1596,12 @@ export const GET = async (request: Request) => {
       loadedContacts: contactMap.size,
       hasNextCursor: !!cursor,
       scanPages,
+      scannedUniqueContacts: uniqueContactIdsScanned.size,
+      stoppedAfterUniqueContactTarget,
       hydratedWholeMonth: shouldHydrateWholeMonth,
+      contactChunkCount: contactFetchResult.chunkCount,
+      contactChunkConcurrency: contactFetchResult.chunkConcurrency,
+      contactChunkRateLimitRetries: contactFetchResult.rateLimitRetries,
       hasOwner: ownerFilter.length > 0,
       hasSearch: search.length > 0,
       hasStatus: statusFilter.length > 0,
