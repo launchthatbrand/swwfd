@@ -23,7 +23,7 @@ const toJson = (body: unknown, status = 200) => {
 
 interface ResetStepBody {
   stepColumnId?: string;
-  action?: "reset" | "done";
+  action?: "reset" | "done" | "skipped";
 }
 
 export const POST = async (
@@ -56,7 +56,7 @@ export const POST = async (
   }
 
   const action = body.action ?? "reset";
-  const label = action === "done" ? "Done" : "";
+  const label = action === "done" ? "Done" : action === "skipped" ? "Skipped" : "";
 
   const apiKey = env.MONDAY_API_KEY?.trim() ?? "";
   const boardId = env.MONDAY_BOARD_ID?.trim() ?? "";

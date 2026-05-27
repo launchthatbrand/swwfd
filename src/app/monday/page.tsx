@@ -178,6 +178,7 @@ import {
   getLastTouchpointRecency,
   getMonthBounds,
   getNameInitials,
+  getApprovalStepProgress,
   getRecordStepIndexFromApprovalSteps,
   hasHtmlLikeMarkup,
   hasUnsubscribe,
@@ -297,6 +298,9 @@ const DEFAULT_PLATFORM_SETTINGS: MondayPlatformSettings = {
 const EMAIL_TEMPLATE_TAG_KEY_PATTERN = /^[a-z][a-z0-9_.-]*$/;
 const INTERVIEWING_STEP_COLUMN_ID = "color_mm1dgeqy";
 const HIRED_STEP_COLUMN_ID = "color_mm1d80yc";
+const SCREENING_STEP_COLUMN_ID =
+  APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE.questionnaire ?? "color_mm1dwr4k";
+const RESUME_STEP_COLUMN_ID = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE.resume ?? "color_mm1dnr11";
 type MergeFieldKey =
   | "ownerId"
   | "status"
@@ -491,6 +495,14 @@ export function MondayBoardView({
     selectedContractor: string;
     availableContractors: string[];
   } | null>(null);
+  const [markAsHiredWorkflowDialogState, setMarkAsHiredWorkflowDialogState] = useState<{
+    targetRecordId: string;
+    referredToContractors: string[];
+    hiredWithContractor: string;
+    hireDate: string;
+    availableContractors: string[];
+    screeningAlreadyDone: boolean;
+  } | null>(null);
   const [tagsDraft, setTagsDraft] = useState<string[]>([]);
   const [statusDraft, setStatusDraft] = useState("");
   const [ownerDraft, setOwnerDraft] = useState("");
@@ -498,7 +510,10 @@ export function MondayBoardView({
   const [isSavingResumeReferralStep, setIsSavingResumeReferralStep] = useState(false);
   const [isSavingInterviewingStep, setIsSavingInterviewingStep] = useState(false);
   const [isSavingHiredStep, setIsSavingHiredStep] = useState(false);
+  const [isSavingMarkAsHiredWorkflow, setIsSavingMarkAsHiredWorkflow] = useState(false);
   const [retentionHireDatePopoverOpen, setRetentionHireDatePopoverOpen] =
+    useState(false);
+  const [markAsHiredHireDatePopoverOpen, setMarkAsHiredHireDatePopoverOpen] =
     useState(false);
   const [isSavingTags, setIsSavingTags] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
@@ -3292,6 +3307,50 @@ export function MondayBoardView({
     });
   };
 
+  const openMarkAsHiredWorkflowDialog = (record: MondayRecord) => {
+    const targetRecordId = resolveContactUpdateTargetRecordId(record);
+    if (!targetRecordId) {
+      toast.error("Missing monday update target");
+      return;
+    }
+    const referredToContractors = parseContractorValues(
+      record.referredToContractors,
+      retentionOptions.referredToContractors,
+    );
+    const interviewingContractors = parseContractorValues(
+      record.interviewingWithContractors,
+      retentionOptions.referredToContractors,
+    );
+    const availableContractors = uniqueSorted(
+      [
+        ...retentionOptions.referredToContractors,
+        ...referredToContractors,
+        ...interviewingContractors,
+        record.hiredWithContractor ?? "",
+      ].filter((value) => value.trim().length > 0),
+    );
+    const preferredReferredToContractors =
+      referredToContractors.length > 0 ? referredToContractors : interviewingContractors;
+    const fallbackHiredContractor = record.hiredWithContractor?.trim() ?? "";
+    const hiredWithContractor = fallbackHiredContractor
+      ? fallbackHiredContractor
+      : preferredReferredToContractors[0] ?? "";
+    const approvalProgress = getApprovalStepProgress(record, approvalSteps);
+    const screeningAlreadyDone =
+      approvalProgress.states.find((state) => state.step.id === SCREENING_STEP_COLUMN_ID)?.state ===
+      "done";
+    setOnboardingActionPending(targetRecordId, true);
+    setMarkAsHiredHireDatePopoverOpen(false);
+    setMarkAsHiredWorkflowDialogState({
+      targetRecordId,
+      referredToContractors: preferredReferredToContractors,
+      hiredWithContractor,
+      hireDate: normalizeDateOnlyFromRecord(record.hireDate),
+      availableContractors,
+      screeningAlreadyDone,
+    });
+  };
+
   const openTagsDialog = (record: MondayRecord) => {
     setTagsDialogRecord(record);
     setTagsDraft(splitCsvValues(record.tags));
@@ -5231,6 +5290,35 @@ export function MondayBoardView({
     setIsSavingResumeReferralStep(false);
   };
 
+  type OnboardingStepAction = "reset" | "done" | "skipped";
+  const updateOnboardingStepStatus = async (args: {
+    targetRecordId: string;
+    stepColumnId: string;
+    action: OnboardingStepAction;
+  }) => {
+    if (!sessionToken) {
+      throw new Error("Missing monday session context");
+    }
+    const response = await fetch(
+      `/api/monday/records/${encodeURIComponent(args.targetRecordId)}/reset-step`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          stepColumnId: args.stepColumnId,
+          action: args.action,
+        }),
+      },
+    );
+    const data = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error ?? "Failed to update onboarding step");
+    }
+  };
+
   const completeGenericOnboardingStep = async (args: {
     targetRecordId: string;
     body: string;
@@ -5268,21 +5356,11 @@ export function MondayBoardView({
       }
     }
 
-    const resetStepResponse = await fetch(
-      `/api/monday/records/${encodeURIComponent(args.targetRecordId)}/reset-step`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-monday-session-token": sessionToken,
-        },
-        body: JSON.stringify({ stepColumnId: args.stepColumnId, action: "done" }),
-      },
-    );
-    const resetStepData = (await resetStepResponse.json()) as { ok?: boolean; error?: string };
-    if (!resetStepResponse.ok || !resetStepData.ok) {
-      throw new Error(resetStepData.error ?? "Failed to mark onboarding step done");
-    }
+    await updateOnboardingStepStatus({
+      targetRecordId: args.targetRecordId,
+      stepColumnId: args.stepColumnId,
+      action: "done",
+    });
 
     const refreshedRecordsResult = await recordsQuery.refetch();
     const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
@@ -5403,6 +5481,132 @@ export function MondayBoardView({
       toast.error(message);
     } finally {
       setIsSavingHiredStep(false);
+    }
+  };
+
+  const closeMarkAsHiredWorkflowDialog = () => {
+    const targetRecordId = markAsHiredWorkflowDialogState?.targetRecordId?.trim() ?? "";
+    if (targetRecordId) {
+      setOnboardingActionPending(targetRecordId, false);
+    }
+    setMarkAsHiredWorkflowDialogState(null);
+    setMarkAsHiredHireDatePopoverOpen(false);
+    setIsSavingMarkAsHiredWorkflow(false);
+  };
+
+  const handleConfirmMarkAsHiredWorkflow = async () => {
+    if (!sessionToken || !markAsHiredWorkflowDialogState) {
+      toast.error("Missing monday session context");
+      closeMarkAsHiredWorkflowDialog();
+      return;
+    }
+
+    const targetRecordId = markAsHiredWorkflowDialogState.targetRecordId.trim();
+    const referredToContractors = Array.from(
+      new Set(
+        markAsHiredWorkflowDialogState.referredToContractors
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    const hiredWithContractor = markAsHiredWorkflowDialogState.hiredWithContractor.trim();
+    const hireDate = markAsHiredWorkflowDialogState.hireDate.trim();
+
+    if (!targetRecordId) {
+      toast.error("Missing monday update target");
+      return;
+    }
+    if (referredToContractors.length === 0) {
+      toast.error("Select at least one referred contractor");
+      return;
+    }
+    if (!hiredWithContractor) {
+      toast.error("Select the hired-with contractor");
+      return;
+    }
+    if (!hireDate) {
+      toast.error("Choose a hire date");
+      return;
+    }
+
+    const interviewingWithContractors = Array.from(
+      new Set([...referredToContractors, hiredWithContractor]),
+    );
+
+    setIsSavingMarkAsHiredWorkflow(true);
+    try {
+      const hiredSummary = [
+        `Hired - ${hiredWithContractor}`,
+        `Referred To Contractor(s): ${referredToContractors.join(", ")}`,
+        `Interviewing With Contractor(s): ${interviewingWithContractors.join(", ")}`,
+        `Hire Date: ${hireDate}`,
+      ].join("\n");
+
+      await handleCreateContactUpdate({
+        updateType: "general",
+        targetRecordId,
+        body: hiredSummary,
+        keepSelectedType: true,
+      });
+
+      const patchResponse = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+        {
+          method: "PATCH",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            referredToContractors,
+            interviewingWithContractors,
+            hiredWithContractor,
+            hireDate,
+          }),
+        },
+      );
+      const patchData = (await patchResponse.json()) as { ok?: boolean; error?: string };
+      if (!patchResponse.ok || !patchData.ok) {
+        throw new Error(patchData.error ?? "Failed to update contractor/hire values");
+      }
+
+      if (!markAsHiredWorkflowDialogState.screeningAlreadyDone) {
+        await updateOnboardingStepStatus({
+          targetRecordId,
+          stepColumnId: SCREENING_STEP_COLUMN_ID,
+          action: "skipped",
+        });
+      }
+      await updateOnboardingStepStatus({
+        targetRecordId,
+        stepColumnId: RESUME_STEP_COLUMN_ID,
+        action: "done",
+      });
+      await updateOnboardingStepStatus({
+        targetRecordId,
+        stepColumnId: INTERVIEWING_STEP_COLUMN_ID,
+        action: "done",
+      });
+      await updateOnboardingStepStatus({
+        targetRecordId,
+        stepColumnId: HIRED_STEP_COLUMN_ID,
+        action: "done",
+      });
+
+      const refreshedRecordsResult = await recordsQuery.refetch();
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      toast.success("Marked as hired and advanced onboarding steps");
+      closeMarkAsHiredWorkflowDialog();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to complete Mark as Hired workflow";
+      toast.error(message);
+    } finally {
+      setIsSavingMarkAsHiredWorkflow(false);
     }
   };
 
@@ -8328,6 +8532,152 @@ export function MondayBoardView({
       </Dialog>
 
       <Dialog
+        open={!!markAsHiredWorkflowDialogState}
+        onOpenChange={(open) => {
+          if (!open) closeMarkAsHiredWorkflowDialog();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Mark as Hired Workflow</DialogTitle>
+            <DialogDescription>
+              Enter referred contractor(s), hired-with contractor, and hire date. This workflow
+              marks Resume Submitted, Interviewing, and Hired as done, and marks Screening Complete
+              as skipped when it is still incomplete.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Referred To Contractor(s)</label>
+              <MultiSelect
+                key={`${markAsHiredWorkflowDialogState?.targetRecordId ?? "no-item"}-${markAsHiredWorkflowDialogState?.referredToContractors.join("|") ?? ""}`}
+                options={Array.from(
+                  new Set([
+                    ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
+                    ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
+                    markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
+                  ]),
+                )
+                  .filter((value) => value.trim().length > 0)
+                  .map((value) => ({ label: value, value }))}
+                defaultValue={markAsHiredWorkflowDialogState?.referredToContractors ?? []}
+                onValueChange={(values) => {
+                  setMarkAsHiredWorkflowDialogState((prev) =>
+                    prev ? { ...prev, referredToContractors: values } : prev,
+                  );
+                }}
+                placeholder="Select contractor(s)"
+                disablePortal
+                popoverSide="bottom"
+                popoverAvoidCollisions={false}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hired With Contractor</label>
+              <Select
+                value={markAsHiredWorkflowDialogState?.hiredWithContractor || "__none__"}
+                onValueChange={(value) => {
+                  setMarkAsHiredWorkflowDialogState((prev) =>
+                    prev ? { ...prev, hiredWithContractor: value === "__none__" ? "" : value } : prev,
+                  );
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select contractor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Select contractor</SelectItem>
+                  {Array.from(
+                    new Set([
+                      ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
+                      ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
+                      markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
+                    ]),
+                  )
+                    .filter((value): value is string => !!value && value.trim().length > 0)
+                    .map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Hire Date</label>
+              <div className="flex items-center gap-2">
+                <Popover
+                  open={markAsHiredHireDatePopoverOpen}
+                  onOpenChange={setMarkAsHiredHireDatePopoverOpen}
+                >
+                  <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" className="h-9 flex-1 justify-start font-normal">
+                      {markAsHiredWorkflowDialogState?.hireDate || "Select date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                    <Calendar
+                      mode="single"
+                      selected={
+                        markAsHiredWorkflowDialogState?.hireDate
+                          ? new Date(`${markAsHiredWorkflowDialogState.hireDate}T00:00:00`)
+                          : undefined
+                      }
+                      onSelect={(date) => {
+                        if (!date) return;
+                        setMarkAsHiredWorkflowDialogState((prev) =>
+                          prev ? { ...prev, hireDate: toDateOnlyLocal(date) } : prev,
+                        );
+                        setMarkAsHiredHireDatePopoverOpen(false);
+                      }}
+                    />
+                  </PopoverContent>
+                </Popover>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setMarkAsHiredWorkflowDialogState((prev) =>
+                      prev ? { ...prev, hireDate: "" } : prev,
+                    );
+                  }}
+                  disabled={!markAsHiredWorkflowDialogState?.hireDate}
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={closeMarkAsHiredWorkflowDialog}
+                disabled={isSavingMarkAsHiredWorkflow}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  void handleConfirmMarkAsHiredWorkflow();
+                }}
+                disabled={
+                  isSavingMarkAsHiredWorkflow ||
+                  (markAsHiredWorkflowDialogState?.referredToContractors.length ?? 0) === 0 ||
+                  !markAsHiredWorkflowDialogState?.hiredWithContractor.trim() ||
+                  !markAsHiredWorkflowDialogState?.hireDate.trim()
+                }
+              >
+                {isSavingMarkAsHiredWorkflow ? "Saving..." : "Save and Advance"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={!!retentionDialogRecord}
         onOpenChange={(open) => {
           if (!open) setRetentionDialogRecord(null);
@@ -9100,6 +9450,39 @@ export function MondayBoardView({
                               </Button>
                             );
                           })}
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                          Hiring Workflow
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                            style={boardThemeInlineStyles.actionButtonStyle}
+                            disabled={(() => {
+                              if (!contactHistoryDialogRecord || !sessionToken) return true;
+                              const targetRecordId =
+                                resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                              return (
+                                isCreatingContactUpdate ||
+                                isSavingMarkAsHiredWorkflow ||
+                                pendingOnboardingActionsByTargetId[targetRecordId]
+                              );
+                            })()}
+                            onClick={() => {
+                              if (!contactHistoryDialogRecord) return;
+                              const targetRecordId =
+                                resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                              if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                              openMarkAsHiredWorkflowDialog(contactHistoryDialogRecord);
+                            }}
+                          >
+                            <BriefcaseBusiness className="mr-1.5 h-3.5 w-3.5" />
+                            Mark as Hired
+                          </Button>
                         </div>
                       </div>
                     </div>
