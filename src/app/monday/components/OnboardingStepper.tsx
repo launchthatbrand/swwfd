@@ -22,7 +22,7 @@ import { Button } from "@launchthatapp/ui/button";
 import type { CSSProperties } from "react";
 import { STEP_ACTION_CONFIG } from "../constants";
 import { cn } from "~/lib/utils";
-import { getRecordStepIndexFromApprovalSteps } from "../helpers";
+import { getApprovalStepProgress } from "../helpers";
 import { useState } from "react";
 
 export interface OnboardingStepperProps {
@@ -68,16 +68,25 @@ export const OnboardingStepper = ({
   const [overrideStepColumnId, setOverrideStepColumnId] = useState("");
 
   const stepCount = approvalSteps.length;
-  const currentStepIndex = getRecordStepIndexFromApprovalSteps(record, approvalSteps);
+  const stepProgress = getApprovalStepProgress(record, approvalSteps);
+  const nextIncompleteStepIndex = stepProgress.states.findIndex((step) => step.state !== "done");
+  const currentStepIndex = nextIncompleteStepIndex >= 0 ? nextIncompleteStepIndex : stepCount;
   const allComplete = currentStepIndex >= stepCount;
+  const doneStepCount = stepProgress.completedCount;
 
-  type StepWithState = StepActionConfig & { title: string; completed: boolean; isCurrent: boolean };
+  type StepWithState = StepActionConfig & {
+    title: string;
+    completed: boolean;
+    skipped: boolean;
+    isCurrent: boolean;
+  };
 
   const allSteps: StepWithState[] =
     STEP_ACTION_CONFIG.map((config, i) => ({
       ...config,
       title: approvalSteps[i]?.title ?? config.defaultBody,
-      completed: i < currentStepIndex,
+      completed: stepProgress.states[i]?.state === "done",
+      skipped: stepProgress.states[i]?.state === "skipped",
       isCurrent: i === currentStepIndex,
     }));
 
@@ -178,7 +187,7 @@ export const OnboardingStepper = ({
       {isInline ? (
         <section className="flex min-w-0 items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
           <p className="text-muted-foreground shrink-0 text-[10px] font-medium tracking-wide uppercase">
-            Onboarding {steps.filter((s) => s.completed).length}/{steps.length}
+            Onboarding {doneStepCount}/{steps.length}
           </p>
           <div className="flex min-w-[90px] max-w-[180px] flex-1 gap-0.5">
             {steps.map((step) => (
@@ -188,6 +197,8 @@ export const OnboardingStepper = ({
                   "h-1.5 flex-1 rounded-full transition-colors",
                   step.completed
                     ? "bg-emerald-500"
+                    : step.skipped
+                      ? "bg-amber-400"
                     : step.isCurrent
                       ? "bg-border"
                       : "bg-muted",
@@ -233,7 +244,7 @@ export const OnboardingStepper = ({
           <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
             Onboarding Progress
             <span className="text-muted-foreground/70 ml-1.5 font-normal normal-case">
-              {steps.filter((s) => s.completed).length}/{steps.length}
+              {doneStepCount}/{steps.length}
             </span>
           </p>
           <button
@@ -256,6 +267,8 @@ export const OnboardingStepper = ({
                   "h-1.5 flex-1 rounded-full transition-colors",
                   step.completed
                     ? "bg-emerald-500"
+                    : step.skipped
+                      ? "bg-amber-400"
                     : step.isCurrent
                       ? "bg-border"
                       : "bg-muted",
@@ -374,7 +387,11 @@ export const OnboardingStepper = ({
                   <div
                     className={cn(
                       "absolute left-[13px] top-7 h-[calc(100%-12px)] w-0.5",
-                      step.completed ? "bg-emerald-500/40" : "bg-border",
+                      step.completed
+                        ? "bg-emerald-500/40"
+                        : step.skipped
+                          ? "bg-amber-400/40"
+                          : "bg-border",
                     )}
                   />
                 )}
@@ -383,6 +400,10 @@ export const OnboardingStepper = ({
                   {step.completed ? (
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
                       <Check className="h-3.5 w-3.5" />
+                    </div>
+                  ) : step.skipped ? (
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full border border-amber-400/60 bg-amber-400/15 text-amber-700">
+                      <Circle className="h-2.5 w-2.5 fill-current" />
                     </div>
                   ) : step.isCurrent ? (
                     <div className="text-muted-foreground flex h-7 w-7 items-center justify-center rounded-full border-2 border-dashed border-primary/40">
@@ -401,6 +422,7 @@ export const OnboardingStepper = ({
                       className={cn(
                         "text-sm",
                         step.completed && "text-muted-foreground line-through decoration-muted-foreground/40",
+                        step.skipped && "text-amber-700 dark:text-amber-400",
                         step.isCurrent && "font-medium",
                         !step.completed && !step.isCurrent && "text-muted-foreground/60",
                       )}
@@ -417,9 +439,19 @@ export const OnboardingStepper = ({
                         Next
                       </span>
                     )}
+                    {!step.completed && step.skipped && (
+                      <span className="shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        Skipped
+                      </span>
+                    )}
                   </div>
                   {step.isCurrent && (
                     <div className="mt-1.5">
+                      {step.skipped && (
+                        <p className="mb-1.5 text-[11px] text-amber-700">
+                          Completed out of order. This step is still missing.
+                        </p>
+                      )}
                       <Button
                         type="button"
                         size="sm"
@@ -440,7 +472,9 @@ export const OnboardingStepper = ({
                   )}
                   {!step.completed && !step.isCurrent && (
                     <p className="text-muted-foreground/50 text-[11px]">
-                      Complete previous step first
+                      {step.skipped
+                        ? "Completed out of order"
+                        : "Complete previous step first"}
                     </p>
                   )}
                 </div>

@@ -903,41 +903,106 @@ const isDoneStepStatusValue = (value: string | null | undefined) => {
   return /\bdone\b/.test(normalized) || /\bcomplete(d)?\b/.test(normalized);
 };
 
-const readStepStatusValue = (record: MondayRecord, stepTitle: string) => {
-  const normalizedStepTitle = normalizeStepText(stepTitle);
-  if (!normalizedStepTitle) return null;
-  const exact = record.contactDetails.find(
-    (detail) => normalizeStepText(detail.label) === normalizedStepTitle,
-  );
-  if (exact) return exact.value;
-  const fuzzy = record.contactDetails.find((detail) => {
-    const normalizedLabel = normalizeStepText(detail.label);
-    return (
-      normalizedLabel.includes(normalizedStepTitle) ||
-      normalizedStepTitle.includes(normalizedLabel)
-    );
-  });
-  return fuzzy?.value ?? null;
+const toStepKey = (value: string | null | undefined) => {
+  return normalizeStepText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\bquestionaire\b/g, "questionnaire")
+    .trim();
+};
+
+export type ApprovalStepState = "done" | "skipped" | "pending";
+
+export interface ApprovalStepProgressState {
+  step: ApprovalStepConfig;
+  statusValue: string | null;
+  state: ApprovalStepState;
+}
+
+export interface ApprovalStepProgress {
+  states: ApprovalStepProgressState[];
+  completedCount: number;
+  skippedCount: number;
+  hasAnyStepStatusValue: boolean;
+}
+
+export const getApprovalStepProgress = (
+  record: MondayRecord,
+  approvalSteps: ApprovalStepConfig[],
+) : ApprovalStepProgress => {
+  if (approvalSteps.length === 0) {
+    return {
+      states: [],
+      completedCount: 0,
+      skippedCount: 0,
+      hasAnyStepStatusValue: false,
+    };
+  }
+  const statusByStepKey = new Map<string, string>();
+  for (const detail of record.contactDetails) {
+    const key = toStepKey(detail.label);
+    if (!key) continue;
+    if (!statusByStepKey.has(key)) {
+      statusByStepKey.set(key, detail.value);
+    }
+  }
+
+  const stepValues = approvalSteps.map((step) => statusByStepKey.get(toStepKey(step.title)) ?? null);
+  const hasAnyStepStatusValue = stepValues.some((value) => normalizeStepText(value).length > 0);
+  const states: ApprovalStepProgressState[] = [];
+
+  if (!hasAnyStepStatusValue) {
+    const contiguousDoneCount = getRecordStepIndex(record.batteryProgress, approvalSteps.length);
+    for (let index = 0; index < approvalSteps.length; index += 1) {
+      states.push({
+        step: approvalSteps[index]!,
+        statusValue: null,
+        state: index < contiguousDoneCount ? "done" : "pending",
+      });
+    }
+    return {
+      states,
+      completedCount: states.filter((entry) => entry.state === "done").length,
+      skippedCount: 0,
+      hasAnyStepStatusValue: false,
+    };
+  }
+
+  const doneFlags = stepValues.map((value) => isDoneStepStatusValue(value));
+  let furthestDoneIndex = -1;
+  for (let index = 0; index < doneFlags.length; index += 1) {
+    if (doneFlags[index]) furthestDoneIndex = index;
+  }
+
+  for (let index = 0; index < approvalSteps.length; index += 1) {
+    const isDone = doneFlags[index];
+    const state: ApprovalStepState = isDone
+      ? "done"
+      : furthestDoneIndex > index
+        ? "skipped"
+        : "pending";
+    states.push({
+      step: approvalSteps[index]!,
+      statusValue: stepValues[index] ?? null,
+      state,
+    });
+  }
+
+  return {
+    states,
+    completedCount: states.filter((entry) => entry.state === "done").length,
+    skippedCount: states.filter((entry) => entry.state === "skipped").length,
+    hasAnyStepStatusValue: true,
+  };
 };
 
 export const getRecordStepIndexFromApprovalSteps = (
   record: MondayRecord,
   approvalSteps: ApprovalStepConfig[],
 ) => {
-  if (approvalSteps.length === 0) return 0;
-  const stepValues = approvalSteps.map((step) => readStepStatusValue(record, step.title));
-  const hasAnyStepStatusValue = stepValues.some((value) => normalizeStepText(value).length > 0);
-  if (!hasAnyStepStatusValue) {
-    return getRecordStepIndex(record.batteryProgress, approvalSteps.length);
-  }
-  let furthestCompletedStepIndex = -1;
-  for (let index = 0; index < stepValues.length; index += 1) {
-    if (isDoneStepStatusValue(stepValues[index])) {
-      furthestCompletedStepIndex = index;
-    }
-  }
-  if (furthestCompletedStepIndex < 0) return 0;
-  return Math.min(approvalSteps.length, furthestCompletedStepIndex + 1);
+  const stepProgress = getApprovalStepProgress(record, approvalSteps);
+  const firstNotDoneIndex = stepProgress.states.findIndex((entry) => entry.state !== "done");
+  if (firstNotDoneIndex < 0) return approvalSteps.length;
+  return firstNotDoneIndex;
 };
 
 export const buildKanbanColumns = (
