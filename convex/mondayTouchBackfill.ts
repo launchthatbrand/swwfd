@@ -17,6 +17,47 @@ const internalAny = internal as any;
 type BackfillStatus = "running" | "done" | "failed" | "cancelled";
 type CsvExportStatus = "running" | "done" | "failed" | "cancelled";
 const CSV_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
+const DEFAULT_HISTORY_LIMIT = 25;
+const MAX_HISTORY_LIMIT = 200;
+
+const touchJobStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("done"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+
+const unifiedMigrationJobRowValidator = v.object({
+  toolType: v.union(v.literal("touch_backfill"), v.literal("touch_csv_export")),
+  toolLabel: v.string(),
+  legacy: v.boolean(),
+  jobId: v.string(),
+  status: touchJobStatusValidator,
+  workflowId: v.optional(v.union(v.string(), v.null())),
+  startedAt: v.number(),
+  updatedAt: v.number(),
+  finishedAt: v.optional(v.union(v.number(), v.null())),
+  dryRun: v.optional(v.boolean()),
+  sourceBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceBoardName: v.optional(v.union(v.string(), v.null())),
+  targetBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceTag: v.optional(v.union(v.string(), v.null())),
+  baselineDate: v.optional(v.union(v.string(), v.null())),
+  monthTag: v.optional(v.union(v.string(), v.null())),
+  monthKey: v.optional(v.union(v.string(), v.null())),
+  dateFrom: v.optional(v.union(v.string(), v.null())),
+  dateTo: v.optional(v.union(v.string(), v.null())),
+  pageSize: v.optional(v.number()),
+  processedCount: v.number(),
+  mappedCount: v.number(),
+  skippedCount: v.number(),
+  createdCount: v.number(),
+  updatedCount: v.number(),
+  errorCount: v.number(),
+  warningCount: v.number(),
+  lastError: v.optional(v.union(v.string(), v.null())),
+  searchText: v.string(),
+});
 
 type CsvContact = {
   id: string;
@@ -78,6 +119,11 @@ const csvHeaderLine = [
   CSV_RELATION_COLUMN_ID,
   "baseline_key",
 ].join(",");
+
+const clampHistoryLimit = (value: number | undefined) => {
+  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
+};
 
 const buildCsvChunk = (args: {
   contacts: CsvContact[];
@@ -178,6 +224,69 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayTouchBackfillJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "touch backfill",
+        "touch_backfill",
+        "baseline",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceTag,
+        job.baselineDate,
+        job.contactBoardId,
+        job.touchBoardId,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "touch_backfill" as const,
+        toolLabel: "Baseline Touch Backfill",
+        legacy: true,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: false,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: job.touchBoardId,
+        sourceTag: job.sourceTag,
+        baselineDate: job.baselineDate,
+        monthTag: null,
+        monthKey: null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: 0,
+        skippedCount: job.skippedTouches,
+        createdCount: job.createdTouches,
+        updatedCount: 0,
+        errorCount: job.errorsCount,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 
@@ -486,6 +595,67 @@ export const getLatestCsvExportJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentCsvExportJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayTouchCsvExportJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "touch csv export",
+        "touch_csv_export",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceTag,
+        job.baselineDate,
+        job.contactBoardId,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "touch_csv_export" as const,
+        toolLabel: "Touch CSV Export",
+        legacy: true,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: true,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: null,
+        sourceTag: job.sourceTag,
+        baselineDate: job.baselineDate,
+        monthTag: null,
+        monthKey: null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: 0,
+        skippedCount: 0,
+        createdCount: job.rowCount,
+        updatedCount: job.chunkCount,
+        errorCount: 0,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

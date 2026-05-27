@@ -27,6 +27,52 @@ type MigrationStatus = "running" | "done" | "failed" | "cancelled";
 const DEFAULT_PAGE_SIZE = 20;
 const MIN_PAGE_SIZE = 5;
 const MAX_PAGE_SIZE = 50;
+const DEFAULT_HISTORY_LIMIT = 25;
+const MAX_HISTORY_LIMIT = 200;
+
+const migrationJobStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("done"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+
+const unifiedMigrationJobRowValidator = v.object({
+  toolType: v.literal("monthly_migration"),
+  toolLabel: v.string(),
+  legacy: v.boolean(),
+  jobId: v.string(),
+  status: migrationJobStatusValidator,
+  workflowId: v.optional(v.union(v.string(), v.null())),
+  startedAt: v.number(),
+  updatedAt: v.number(),
+  finishedAt: v.optional(v.union(v.number(), v.null())),
+  dryRun: v.optional(v.boolean()),
+  sourceBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceBoardName: v.optional(v.union(v.string(), v.null())),
+  targetBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceTag: v.optional(v.union(v.string(), v.null())),
+  baselineDate: v.optional(v.union(v.string(), v.null())),
+  monthTag: v.optional(v.union(v.string(), v.null())),
+  monthKey: v.optional(v.union(v.string(), v.null())),
+  dateFrom: v.optional(v.union(v.string(), v.null())),
+  dateTo: v.optional(v.union(v.string(), v.null())),
+  pageSize: v.optional(v.number()),
+  processedCount: v.number(),
+  mappedCount: v.number(),
+  skippedCount: v.number(),
+  createdCount: v.number(),
+  updatedCount: v.number(),
+  errorCount: v.number(),
+  warningCount: v.number(),
+  lastError: v.optional(v.union(v.string(), v.null())),
+  searchText: v.string(),
+});
+
+const clampHistoryLimit = (value: number | undefined) => {
+  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
+};
 
 const normalizeMonthTag = (value: string | undefined, sourceBoardId: string) => {
   const raw = (value ?? "").trim();
@@ -119,6 +165,70 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayMonthlyMigrationJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "monthly migration",
+        "monthly_migration",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceBoardId,
+        job.sourceBoardName ?? "",
+        job.targetBoardId,
+        job.monthTag,
+        job.monthKey ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "monthly_migration" as const,
+        toolLabel: "Monthly Migration",
+        legacy: false,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: job.dryRun,
+        sourceBoardId: job.sourceBoardId,
+        sourceBoardName: job.sourceBoardName ?? null,
+        targetBoardId: job.targetBoardId,
+        sourceTag: null,
+        baselineDate: null,
+        monthTag: job.monthTag,
+        monthKey: job.monthKey ?? null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: job.mappedContacts,
+        skippedCount: job.skippedContacts,
+        createdCount:
+          job.createdParentUpdates + job.createdSubitems + job.createdSubitemUpdates,
+        updatedCount: job.updatedProgressColumns ?? 0,
+        errorCount: job.errorsCount,
+        warningCount: job.warningsCount,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 
