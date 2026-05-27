@@ -178,7 +178,7 @@ import {
   getLastTouchpointRecency,
   getMonthBounds,
   getNameInitials,
-  getRecordStepIndex,
+  getRecordStepIndexFromApprovalSteps,
   hasHtmlLikeMarkup,
   hasUnsubscribe,
   interpolateTemplateVariables,
@@ -9772,7 +9772,7 @@ export function MondayBoardView({
                 eligibleByAction.set(
                   action.type,
                   selectedItems.filter((item) => {
-                    const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
+                    const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
                     return currentStep === stepConfig.stepIndex;
                   }),
                 );
@@ -9781,7 +9781,7 @@ export function MondayBoardView({
                 (s) => s.actionVariant === "questionnaire",
               )?.stepIndex ?? -1;
               const questionnaireEligible = selectedItems.filter((item) => {
-                const currentStep = getRecordStepIndex(item.batteryProgress, approvalSteps.length);
+                const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
                 return currentStep === questionnaireStepIndex;
               });
               const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
