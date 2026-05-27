@@ -863,7 +863,6 @@ export function MondayBoardView({
       monthBounds.from,
       monthBounds.to,
       debouncedSearch,
-      statusFilter,
       ownerFilter,
       sessionToken,
     ],
@@ -883,7 +882,6 @@ export function MondayBoardView({
       const normalizedSearch = debouncedSearch.trim();
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
       if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
-      if (statusFilter.trim()) params.set("status", statusFilter.trim());
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
       if (!isFullDbSearch) {
         params.set("dateFrom", monthBounds.from);
@@ -1755,8 +1753,8 @@ export function MondayBoardView({
   }, [recordsQuery.data?.pages]);
 
   const records = useMemo(() => {
-    if (!staticMode) return apiRecords;
-    return staticRecords.filter((record) => {
+    const sourceRecords = staticMode ? staticRecords : apiRecords;
+    return sourceRecords.filter((record) => {
       if (debouncedSearch.trim().length >= 2) {
         const haystack = [
           record.name,
@@ -2797,6 +2795,27 @@ export function MondayBoardView({
     }
     return kinds;
   }, [boardColumnFilterOptions, records]);
+  const boardColumnValueOptionsByLabel = useMemo(() => {
+    const byLabel = new Map<string, string[]>();
+    for (const record of records) {
+      for (const detail of record.contactDetails) {
+        const label = detail.label.trim();
+        const value = detail.value.trim();
+        if (!label || !value) continue;
+        const existing = byLabel.get(label) ?? [];
+        if (!existing.includes(value) && existing.length < 200) {
+          existing.push(value);
+          byLabel.set(label, existing);
+        } else if (!byLabel.has(label)) {
+          byLabel.set(label, existing);
+        }
+      }
+    }
+    for (const values of byLabel.values()) {
+      values.sort((a, b) => a.localeCompare(b));
+    }
+    return byLabel;
+  }, [records]);
 
   const statusOptions = useMemo(() => {
     return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
@@ -6350,10 +6369,11 @@ export function MondayBoardView({
                         const targetLabelLower = conditionTarget.toLowerCase();
                         const usesOwnerOptions =
                           targetLabelLower === "owner" && ownerOptions.length > 0;
-                        const usesDistrictOptions =
-                          (targetLabelLower === "status" ||
-                            targetLabelLower === "district") &&
-                          statusOptions.length > 0;
+                        const selectedBoardColumnOptions = isDateField
+                          ? []
+                          : (boardColumnValueOptionsByLabel.get(conditionTarget) ?? []);
+                        const usesBoardColumnValueOptions =
+                          selectedBoardColumnOptions.length > 0 && !usesOwnerOptions;
                         const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
                         return (
                           <div
@@ -6458,7 +6478,7 @@ export function MondayBoardView({
                                         </option>
                                       ))}
                                     </select>
-                                  ) : usesDistrictOptions ? (
+                                  ) : usesBoardColumnValueOptions ? (
                                     <select
                                       value={condition.value}
                                       onChange={(event) =>
@@ -6469,17 +6489,16 @@ export function MondayBoardView({
                                       }
                                       className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
                                     >
-                                      <option value="">Select district</option>
-                                      {!statusOptions.some(
-                                        (option) => option.value === condition.value,
-                                      ) && condition.value.trim().length > 0 ? (
+                                      <option value="">Select value</option>
+                                      {!selectedBoardColumnOptions.includes(condition.value) &&
+                                      condition.value.trim().length > 0 ? (
                                         <option value={condition.value}>
-                                          {`District ${condition.value} (selected)`}
+                                          {`${condition.value} (selected)`}
                                         </option>
                                       ) : null}
-                                      {statusOptions.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                          {option.label}
+                                      {selectedBoardColumnOptions.map((value) => (
+                                        <option key={value} value={value}>
+                                          {value}
                                         </option>
                                       ))}
                                     </select>

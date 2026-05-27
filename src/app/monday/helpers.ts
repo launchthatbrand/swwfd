@@ -705,10 +705,22 @@ export const getRecordFieldValuesForCondition = (
 ) => {
   const boardColumnTarget = getBoardColumnTargetForCondition(condition);
   if (boardColumnTarget.length > 0) {
-    return record.contactDetails
-      .filter((detail) => detail.label.trim() === boardColumnTarget)
+    const normalizedTarget = boardColumnTarget.trim().toLowerCase();
+    const detailValues = record.contactDetails
+      .filter((detail) => detail.label.trim().toLowerCase() === normalizedTarget)
       .map((detail) => detail.value.trim())
       .filter((value) => value.length > 0);
+    if (detailValues.length > 0) {
+      return detailValues;
+    }
+    // Fallbacks keep legacy/saved filters useful even when board labels differ.
+    if (normalizedTarget === "owner") {
+      return getRecordFieldValues(record, "owner");
+    }
+    if (normalizedTarget === "status" || normalizedTarget === "district") {
+      return [record.statusText ?? ""].map((value) => value.trim()).filter(Boolean);
+    }
+    return [];
   }
   return getRecordFieldValues(record, condition.field);
 };
