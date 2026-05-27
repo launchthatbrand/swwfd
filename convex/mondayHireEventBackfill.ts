@@ -15,6 +15,47 @@ const workflowAny = workflow as any;
 const internalAny = internal as any;
 
 type HireEventBackfillStatus = "running" | "done" | "failed" | "cancelled";
+const DEFAULT_HISTORY_LIMIT = 25;
+const MAX_HISTORY_LIMIT = 200;
+
+const hireEventBackfillStatusValidator = v.union(
+  v.literal("running"),
+  v.literal("done"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+
+const unifiedMigrationJobRowValidator = v.object({
+  toolType: v.literal("hire_event_backfill"),
+  toolLabel: v.string(),
+  legacy: v.boolean(),
+  jobId: v.string(),
+  status: hireEventBackfillStatusValidator,
+  workflowId: v.optional(v.union(v.string(), v.null())),
+  startedAt: v.number(),
+  updatedAt: v.number(),
+  finishedAt: v.optional(v.union(v.number(), v.null())),
+  dryRun: v.optional(v.boolean()),
+  sourceBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceBoardName: v.optional(v.union(v.string(), v.null())),
+  targetBoardId: v.optional(v.union(v.string(), v.null())),
+  sourceTag: v.optional(v.union(v.string(), v.null())),
+  baselineDate: v.optional(v.union(v.string(), v.null())),
+  monthTag: v.optional(v.union(v.string(), v.null())),
+  monthKey: v.optional(v.union(v.string(), v.null())),
+  dateFrom: v.optional(v.union(v.string(), v.null())),
+  dateTo: v.optional(v.union(v.string(), v.null())),
+  pageSize: v.optional(v.number()),
+  processedCount: v.number(),
+  mappedCount: v.number(),
+  skippedCount: v.number(),
+  createdCount: v.number(),
+  updatedCount: v.number(),
+  errorCount: v.number(),
+  warningCount: v.number(),
+  lastError: v.optional(v.union(v.string(), v.null())),
+  searchText: v.string(),
+});
 
 const getHireEventBackfillEnv = () => {
   const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
@@ -46,6 +87,11 @@ const monthKeyToRange = (monthKey: string) => {
 
 const clampPageSize = (value: number | undefined) =>
   Math.max(25, Math.min(200, Math.floor(value ?? 50)));
+
+const clampHistoryLimit = (value: number | undefined) => {
+  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
+};
 
 export const getLatestJob = query({
   args: {},
@@ -108,6 +154,69 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayHireEventBackfillJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "hire event backfill",
+        "hire_event_backfill",
+        job._id,
+        job.workflowId ?? "",
+        job.monthKey,
+        job.dateFrom,
+        job.dateTo,
+        job.contactBoardId,
+        job.subitemBoardId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "hire_event_backfill" as const,
+        toolLabel: "Hire Event Backfill",
+        legacy: false,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: job.dryRun,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: job.subitemBoardId ?? null,
+        sourceTag: null,
+        baselineDate: null,
+        monthTag: null,
+        monthKey: job.monthKey,
+        dateFrom: job.dateFrom,
+        dateTo: job.dateTo,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: job.inRangeContacts,
+        skippedCount: job.skippedEvents,
+        createdCount: job.createdEvents,
+        updatedCount: 0,
+        errorCount: job.errorsCount,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

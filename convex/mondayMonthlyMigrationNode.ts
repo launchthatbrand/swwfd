@@ -38,6 +38,7 @@ type MigrationSourceColumnValue = {
 type MigrationSourceSubitem = {
   id: string;
   name: string;
+  createdAt: string | null;
   columnValues: MigrationSourceColumnValue[];
   updates: MigrationSourceUpdate[];
 };
@@ -158,12 +159,86 @@ const parseDateOnly = (value: string | null | undefined) => {
   return new Date(parsed).toISOString().slice(0, 10);
 };
 
+const normalizeTimeOnly = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const twentyFourHourMatch = /^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(trimmed);
+  if (twentyFourHourMatch) {
+    const hours = Number(twentyFourHourMatch[1]);
+    const minutes = twentyFourHourMatch[2] ?? "00";
+    const seconds = twentyFourHourMatch[3] ?? "00";
+    return `${String(hours).padStart(2, "0")}:${minutes}:${seconds}`;
+  }
+
+  const twelveHourMatch =
+    /^(0?\d|1[0-2]):([0-5]\d)(?::([0-5]\d))?\s*([AaPp][Mm])$/.exec(trimmed);
+  if (twelveHourMatch) {
+    const rawHours = Number(twelveHourMatch[1]);
+    const minutes = twelveHourMatch[2] ?? "00";
+    const seconds = twelveHourMatch[3] ?? "00";
+    const period = (twelveHourMatch[4] ?? "").toUpperCase();
+    const normalizedHours =
+      period === "PM"
+        ? rawHours === 12
+          ? 12
+          : rawHours + 12
+        : rawHours === 12
+          ? 0
+          : rawHours;
+    return `${String(normalizedHours).padStart(2, "0")}:${minutes}:${seconds}`;
+  }
+
+  return null;
+};
+
+const extractTimeFromText = (text: string | null) => {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const twelveHourMatch = /\b(0?\d|1[0-2]):([0-5]\d)(?::([0-5]\d))?\s*([AaPp][Mm])\b/.exec(
+    trimmed,
+  );
+  if (twelveHourMatch) {
+    return normalizeTimeOnly(twelveHourMatch[0]);
+  }
+
+  const twentyFourHourMatch = /\b([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\b/.exec(trimmed);
+  if (twentyFourHourMatch) {
+    return normalizeTimeOnly(twentyFourHourMatch[0]);
+  }
+
+  return null;
+};
+
+const parseDateTimeFromTimestamp = (value: string | null | undefined) => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return null;
+  const iso = new Date(parsed).toISOString();
+  return {
+    date: iso.slice(0, 10),
+    time: iso.slice(11, 19),
+  };
+};
+
 const parseDateFromColumnValue = (value: string | null | undefined, text: string | null) => {
   const parsed = parseJsonSafe<{ date?: string; time?: string }>(value);
-  if (parsed?.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
-    return parsed.date;
+  const date =
+    parsed?.date && /^\d{4}-\d{2}-\d{2}$/.test(parsed.date)
+      ? parsed.date
+      : parseDateOnly(text);
+  if (!date) return null;
+
+  const time = normalizeTimeOnly(parsed?.time) ?? extractTimeFromText(text);
+  if (time) {
+    return { date, time };
   }
-  return parseDateOnly(text);
+  return { date };
 };
 
 const extractStringFromColumn = (
@@ -303,6 +378,7 @@ const fetchSourcePage = async (args: {
           subitems?: Array<{
             id?: string | null;
             name?: string | null;
+            created_at?: string | null;
             updates?: Array<{
               id?: string | null;
               body?: string | null;
@@ -352,6 +428,7 @@ const fetchSourcePage = async (args: {
             subitems {
               id
               name
+              created_at
               updates(limit: 200) {
                 id
                 body
@@ -452,6 +529,7 @@ const fetchSourcePage = async (args: {
         return {
           id: subitemId,
           name: (subitem.name ?? "").trim(),
+          createdAt: subitem.created_at?.trim() || null,
           updates: subitemUpdates,
           columnValues,
         } satisfies MigrationSourceSubitem;
@@ -673,6 +751,7 @@ const mapSourceToTargetSubitemColumnId = (args: {
 const mapSubitemColumnValueForTarget = (args: {
   sourceColumn: MigrationSourceColumnValue;
   targetColumnType: string;
+  sourceSubitemCreatedAt?: string | null;
 }) => {
   const targetType = normalizeText(args.targetColumnType);
   if (targetType === "file" || targetType === "files") {
@@ -698,11 +777,15 @@ const mapSubitemColumnValueForTarget = (args: {
     return { shouldSkip: false as const, value: { label } };
   }
   if (targetType === "date") {
-    const date = parseDateFromColumnValue(args.sourceColumn.value, args.sourceColumn.text);
-    if (!date) {
+    const createdAtDateTime = parseDateTimeFromTimestamp(args.sourceSubitemCreatedAt);
+    if (createdAtDateTime) {
+      return { shouldSkip: false as const, value: createdAtDateTime };
+    }
+    const dateTimeValue = parseDateFromColumnValue(args.sourceColumn.value, args.sourceColumn.text);
+    if (!dateTimeValue) {
       return { shouldSkip: true as const, value: null };
     }
-    return { shouldSkip: false as const, value: { date } };
+    return { shouldSkip: false as const, value: dateTimeValue };
   }
   if (targetType === "long_text") {
     const text = args.sourceColumn.text?.trim() ?? "";
@@ -783,20 +866,67 @@ const ONBOARDING_STEP_COLUMN_MAP: Array<{
   columnId: string;
 }> = [
   { patterns: ["welcome email"], columnId: "color_mm1db321" },
-  { patterns: ["questionnaire sent", "send questionnaire"], columnId: "color_mm3ggf4t" },
+  {
+    patterns: [
+      "questionnaire sent",
+      "send questionnaire",
+      "questionaire sent",
+      "send questionaire",
+    ],
+    columnId: "color_mm3ggf4t",
+  },
   { patterns: ["screening complete", "questionnaire update", "phone screen", "screening"], columnId: "color_mm1dwr4k" },
   { patterns: ["resume submitted", "resume received", "referred", "resume referral"], columnId: "color_mm1dnr11" },
   { patterns: ["interview"], columnId: "color_mm1dgeqy" },
   { patterns: ["hired"], columnId: "color_mm1d80yc" },
   { patterns: ["retained", "30-60-90"], columnId: "color_mm1djwjj" },
 ];
+const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
 
-const classifySubitemForProgressColumn = (name: string): string | null => {
-  const normalized = normalizeText(name);
+const normalizeProgressMatchText = (value: string | null | undefined) =>
+  normalizeText(value).replace(/[^a-z0-9]+/g, " ").trim();
+
+const readSubitemTypeText = (subitem: MigrationSourceSubitem) => {
+  const typeColumn = subitem.columnValues.find((column) => {
+    const normalizedId = normalizeText(column.id);
+    return normalizedId === "color_mm2x49t2" || normalizedId === "type";
+  });
+  return typeColumn?.text ?? null;
+};
+
+const classifySubitemForProgressColumn = (subitem: MigrationSourceSubitem): string | null => {
+  const candidateTexts = [
+    normalizeProgressMatchText(subitem.name),
+    normalizeProgressMatchText(readSubitemTypeText(subitem)),
+  ].filter((entry) => entry.length > 0);
+
+  if (candidateTexts.length === 0) return null;
+
   for (const rule of ONBOARDING_STEP_COLUMN_MAP) {
-    if (rule.patterns.some((p) => normalized.includes(p))) return rule.columnId;
+    for (const pattern of rule.patterns) {
+      const normalizedPattern = normalizeProgressMatchText(pattern);
+      if (!normalizedPattern) continue;
+      if (candidateTexts.some((candidate) => candidate.includes(normalizedPattern))) {
+        return rule.columnId;
+      }
+    }
   }
   return null;
+};
+
+const readExplicitSubitemStatusText = (subitem: MigrationSourceSubitem) => {
+  const explicitStatus = subitem.columnValues.find((column) => {
+    const normalizedId = normalizeText(column.id);
+    return normalizedId === "status9" || normalizedId === "status";
+  });
+  return normalizeText(explicitStatus?.text);
+};
+
+const toEpochFromDateTimeParts = (date: string, time?: string | null) => {
+  const normalizedTime = normalizeTimeOnly(time ?? undefined) ?? "00:00:00";
+  const parsed = Date.parse(`${date}T${normalizedTime}Z`);
+  if (Number.isNaN(parsed)) return null;
+  return parsed;
 };
 
 const updateProgressColumnOnTarget = async (args: {
@@ -822,6 +952,137 @@ const updateProgressColumnOnTarget = async (args: {
       value: "Done",
     },
   );
+};
+
+const updateLastInteractionOnTarget = async (args: {
+  boardId: string;
+  itemId: string;
+  date: string;
+  time: string;
+}) => {
+  interface Data {
+    change_multiple_column_values?: { id?: string | null };
+  }
+  await callMondayGraphQL<Data>(
+    `
+      mutation UpdateLastInteraction(
+        $boardId: ID!
+        $itemId: ID!
+        $columnValues: JSON!
+      ) {
+        change_multiple_column_values(
+          board_id: $boardId
+          item_id: $itemId
+          column_values: $columnValues
+        ) {
+          id
+        }
+      }
+    `,
+    {
+      boardId: args.boardId,
+      itemId: args.itemId,
+      columnValues: JSON.stringify({
+        [LAST_INTERACTION_DATE_COLUMN_ID]: {
+          date: args.date,
+          time: args.time,
+        },
+      }),
+    },
+  );
+};
+
+const deriveLatestSourceSubitemInteraction = (subitems: MigrationSourceSubitem[]) => {
+  let latest: { epochMs: number; date: string; time: string } | null = null;
+
+  for (const subitem of subitems) {
+    // Source subitem created_at is canonical datetime for migration recency.
+    const fromCreatedAt = parseDateTimeFromTimestamp(subitem.createdAt);
+    if (fromCreatedAt) {
+      const epochMs = toEpochFromDateTimeParts(fromCreatedAt.date, fromCreatedAt.time);
+      if (epochMs != null && (!latest || epochMs > latest.epochMs)) {
+        latest = {
+          epochMs,
+          date: fromCreatedAt.date,
+          time: fromCreatedAt.time,
+        };
+      }
+      continue;
+    }
+
+    // Fallback for edge cases where created_at is unavailable.
+    for (const column of subitem.columnValues) {
+      if (normalizeText(column.type) !== "date") continue;
+      const parsed = parseDateFromColumnValue(column.value, column.text);
+      if (!parsed) continue;
+      const epochMs = toEpochFromDateTimeParts(parsed.date, parsed.time);
+      if (epochMs != null && (!latest || epochMs > latest.epochMs)) {
+        latest = {
+          epochMs,
+          date: parsed.date,
+          time: normalizeTimeOnly(parsed.time) ?? "00:00:00",
+        };
+      }
+    }
+  }
+
+  return latest;
+};
+
+const isDateColumnPayload = (value: unknown): value is { date: string; time?: string } => {
+  if (!value || typeof value !== "object") return false;
+  const maybe = value as Record<string, unknown>;
+  if (typeof maybe.date !== "string") return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(maybe.date)) return false;
+  if (maybe.time !== undefined && typeof maybe.time !== "string") return false;
+  return true;
+};
+
+const updateSubitemDateColumnsOnTarget = async (args: {
+  boardIds: string[];
+  subitemId: string;
+  dateColumnValues: Record<string, { date: string; time?: string }>;
+}) => {
+  interface Data {
+    change_multiple_column_values?: { id?: string | null };
+  }
+  const attempted = new Set<string>();
+  let lastError: unknown = null;
+  for (const boardId of args.boardIds) {
+    const normalizedBoardId = boardId.trim();
+    if (!normalizedBoardId || attempted.has(normalizedBoardId)) continue;
+    attempted.add(normalizedBoardId);
+    try {
+      await callMondayGraphQL<Data>(
+        `
+          mutation UpdateSubitemDateColumns(
+            $boardId: ID!
+            $itemId: ID!
+            $columnValues: JSON!
+          ) {
+            change_multiple_column_values(
+              board_id: $boardId
+              item_id: $itemId
+              column_values: $columnValues
+            ) {
+              id
+            }
+          }
+        `,
+        {
+          boardId: normalizedBoardId,
+          itemId: args.subitemId,
+          columnValues: JSON.stringify(args.dateColumnValues),
+        },
+      );
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw (lastError instanceof Error
+    ? lastError
+    : new Error("Failed to update subitem date columns"));
 };
 
 // ---------------------------------------------------------------------------
@@ -949,6 +1210,7 @@ const getSourceItemValidator = () =>
       v.object({
         id: v.string(),
         name: v.string(),
+        createdAt: v.union(v.string(), v.null()),
         columnValues: v.array(
           v.object({
             id: v.string(),
@@ -1162,6 +1424,7 @@ export const migrateSourceItemAction = internalAction({
     let createdTouchRecords = 0;
     let errors = 0;
     const progressColumnsToUpdate = new Set<string>();
+    const progressDetectionLogs: string[] = [];
 
     if (args.includeParentUpdates) {
       for (const update of args.sourceItem.updates) {
@@ -1252,30 +1515,39 @@ export const migrateSourceItemAction = internalAction({
         );
 
         for (const sourceSubitem of args.sourceItem.subitems) {
-          if (!subitemDone.has(sourceSubitem.id)) {
-            const columnValues: Record<string, unknown> = {};
-            for (const sourceColumn of sourceSubitem.columnValues) {
-              const mappedColumnId = mapSourceToTargetSubitemColumnId({
-                sourceColumn,
-                sourceColumnTitleById,
-                targetColumns: targetSubitemBoardColumns.columns,
-                targetColumnsByTitle,
-              });
-              if (!mappedColumnId) continue;
-              const targetColumn = targetColumnById.get(mappedColumnId);
-              if (!targetColumn?.type) continue;
-              const mappedValue = mapSubitemColumnValueForTarget({
-                sourceColumn,
-                targetColumnType: targetColumn.type,
-              });
-              if (mappedValue.shouldSkip) continue;
-              columnValues[mappedColumnId] = mappedValue.value;
+          const columnValues: Record<string, unknown> = {};
+          const dateColumnValuesForOverwrite: Record<string, { date: string; time?: string }> = {};
+          for (const sourceColumn of sourceSubitem.columnValues) {
+            const mappedColumnId = mapSourceToTargetSubitemColumnId({
+              sourceColumn,
+              sourceColumnTitleById,
+              targetColumns: targetSubitemBoardColumns.columns,
+              targetColumnsByTitle,
+            });
+            if (!mappedColumnId) continue;
+            const targetColumn = targetColumnById.get(mappedColumnId);
+            if (!targetColumn?.type) continue;
+            const mappedValue = mapSubitemColumnValueForTarget({
+              sourceColumn,
+              targetColumnType: targetColumn.type,
+              sourceSubitemCreatedAt: sourceSubitem.createdAt,
+            });
+            if (mappedValue.shouldSkip) continue;
+            columnValues[mappedColumnId] = mappedValue.value;
+            if (
+              normalizeText(targetColumn.type) === "date" &&
+              isDateColumnPayload(mappedValue.value)
+            ) {
+              dateColumnValuesForOverwrite[mappedColumnId] = mappedValue.value;
             }
+          }
 
+          const subitemAlreadyExists = subitemDone.has(sourceSubitem.id);
+          let targetSubitemId = sourceSubitemToTargetSubitem.get(sourceSubitem.id) ?? null;
+          if (!subitemAlreadyExists) {
             const cleanSubitemName = sourceSubitem.name.trim() || `Migrated subitem ${sourceSubitem.id}`;
             const targetSubitemName = `${cleanSubitemName} [migrated:${args.sourceBoardId}:${sourceSubitem.id}]`;
             try {
-              let targetSubitemId: string | null = null;
               if (!args.dryRun) {
                 targetSubitemId = await createSubitemOnTarget({
                   parentItemId: targetItemId,
@@ -1305,21 +1577,40 @@ export const migrateSourceItemAction = internalAction({
             }
           }
 
-          if (args.updateProgressColumns) {
-            const progressColumnId = classifySubitemForProgressColumn(sourceSubitem.name);
-            if (progressColumnId) {
-              const statusCol = sourceSubitem.columnValues.find(
-                (col) => col.id === "status9" || col.type === "color",
+          if (
+            !args.dryRun &&
+            targetSubitemId &&
+            Object.keys(dateColumnValuesForOverwrite).length > 0
+          ) {
+            try {
+              await updateSubitemDateColumnsOnTarget({
+                boardIds: [targetSubitemBoardId, args.targetBoardId],
+                subitemId: targetSubitemId,
+                dateColumnValues: dateColumnValuesForOverwrite,
+              });
+            } catch (error) {
+              warnings.push(
+                `Failed to update date columns on subitem ${sourceSubitem.id} for source item ${args.sourceItem.id}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
               );
-              const isDone = normalizeText(statusCol?.text) === "done";
-              if (isDone) {
-                progressColumnsToUpdate.add(progressColumnId);
-              }
+            }
+          }
+
+          if (args.updateProgressColumns) {
+            const progressColumnId = classifySubitemForProgressColumn(sourceSubitem);
+            if (progressColumnId) {
+              const explicitStatusText = readExplicitSubitemStatusText(sourceSubitem);
+              progressColumnsToUpdate.add(progressColumnId);
+              progressDetectionLogs.push(
+                `${sourceSubitem.id} -> ${progressColumnId} (status: ${explicitStatusText || "none"})`,
+              );
             }
           }
 
           if (!args.includeSubitemUpdates) continue;
-          const targetSubitemId = sourceSubitemToTargetSubitem.get(sourceSubitem.id) ?? null;
+          targetSubitemId =
+            sourceSubitemToTargetSubitem.get(sourceSubitem.id) ?? targetSubitemId;
           if (!targetSubitemId) {
             if (!args.dryRun && sourceSubitem.updates.length > 0) {
               warnings.push(
@@ -1373,6 +1664,23 @@ export const migrateSourceItemAction = internalAction({
       }
     }
 
+    if (args.updateProgressColumns) {
+      if (progressDetectionLogs.length > 0) {
+        console.info("[MonthlyMigration] Progress columns detected from subitems", {
+          sourceItemId: args.sourceItem.id,
+          targetItemId,
+          detections: progressDetectionLogs,
+        });
+      } else if (args.sourceItem.subitems.length > 0) {
+        console.info("[MonthlyMigration] No progress columns detected", {
+          sourceItemId: args.sourceItem.id,
+          targetItemId,
+          subitemCount: args.sourceItem.subitems.length,
+          subitemNames: args.sourceItem.subitems.slice(0, 12).map((subitem) => subitem.name),
+        });
+      }
+    }
+
     if (args.updateProgressColumns && !args.dryRun && progressColumnsToUpdate.size > 0) {
       for (const columnId of progressColumnsToUpdate) {
         try {
@@ -1382,6 +1690,11 @@ export const migrateSourceItemAction = internalAction({
             columnId,
           });
           updatedProgressColumns += 1;
+          console.info("[MonthlyMigration] Progress column marked complete", {
+            sourceItemId: args.sourceItem.id,
+            targetItemId,
+            columnId,
+          });
         } catch (error) {
           warnings.push(
             `Failed to update progress column ${columnId} for target item ${targetItemId}: ${
@@ -1392,15 +1705,43 @@ export const migrateSourceItemAction = internalAction({
       }
     }
 
-    // Upsert a touchpoint record on the touch board (one per contact-employee-month).
-    // Only fires on a real run (not dryRun) when a monthKey and ownerId are available.
+    const latestInteraction = deriveLatestSourceSubitemInteraction(args.sourceItem.subitems);
+    if (!args.dryRun && latestInteraction) {
+      try {
+        await updateLastInteractionOnTarget({
+          boardId: args.targetBoardId,
+          itemId: targetItemId,
+          date: latestInteraction.date,
+          time: latestInteraction.time,
+        });
+      } catch (error) {
+        warnings.push(
+          `Failed to update ${LAST_INTERACTION_DATE_COLUMN_ID} for target item ${targetItemId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    // Legacy touchpoint-board writes are disabled by default. They can be
+    // explicitly re-enabled for recovery workflows with
+    // MONDAY_MIGRATION_ENABLE_TOUCH_UPSERT=true.
+    const isLegacyTouchUpsertEnabled =
+      (process.env.MONDAY_MIGRATION_ENABLE_TOUCH_UPSERT?.trim().toLowerCase() ?? "") ===
+      "true";
     const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
     const monthKey = args.monthKey?.trim() ?? "";
     const primaryOwnerId = args.sourceItem.ownerIds[0] ?? "";
-    if (!args.dryRun && touchBoardId && monthKey && primaryOwnerId) {
+    if (
+      isLegacyTouchUpsertEnabled &&
+      !args.dryRun &&
+      touchBoardId &&
+      monthKey &&
+      primaryOwnerId
+    ) {
       const touchDate = new Date().toISOString().slice(0, 10);
       try {
-        const result = await upsertTouchRecordForMigration({
+        await upsertTouchRecordForMigration({
           touchBoardId,
           contactItemId: targetItemId,
           contactName: args.sourceItem.name,
@@ -1416,6 +1757,10 @@ export const migrateSourceItemAction = internalAction({
           }`,
         );
       }
+    } else if (!args.dryRun && touchBoardId && monthKey && primaryOwnerId) {
+      warnings.push(
+        "Legacy touchpoint-board upsert skipped (MONDAY_MIGRATION_ENABLE_TOUCH_UPSERT is not true).",
+      );
     }
 
     return {

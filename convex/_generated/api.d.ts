@@ -340,6 +340,42 @@ export declare const api: {
         workflowId?: string;
       }
     >;
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType: "hire_event_backfill";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
+    >;
     startBackfill: FunctionReference<
       "mutation",
       "public",
@@ -389,6 +425,42 @@ export declare const api: {
         warningsCount: number;
         workflowId?: string;
       }
+    >;
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType: "monthly_migration";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
     >;
     startMigration: FunctionReference<
       "mutation",
@@ -537,6 +609,78 @@ export declare const api: {
         workflowId?: string;
       }
     >;
+    listRecentCsvExportJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType: "touch_backfill" | "touch_csv_export";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
+    >;
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType: "touch_backfill" | "touch_csv_export";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
+    >;
     startBackfill: FunctionReference<
       "mutation",
       "public",
@@ -583,6 +727,42 @@ export declare const api: {
         updatedTouches: number;
         workflowId?: string;
       }
+    >;
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType: "touch_range_backfill";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
     >;
     startRangeBackfill: FunctionReference<
       "mutation",
@@ -1546,6 +1726,7 @@ export declare const internal: {
               type: string;
               value: string | null;
             }>;
+            createdAt: string | null;
             id: string;
             name: string;
             updates: Array<{
@@ -1631,6 +1812,7 @@ export declare const internal: {
               type: string;
               value: string | null;
             }>;
+            createdAt: string | null;
             id: string;
             name: string;
             updates: Array<{

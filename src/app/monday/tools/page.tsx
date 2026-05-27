@@ -6,6 +6,8 @@ import type { ComponentProps } from "react";
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@launchthatapp/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@launchthatapp/ui/collapsible";
+import { EntityList, type ColumnDefinition } from "@launchthatapp/ui/entity-list";
 import { Input } from "@launchthatapp/ui/input";
 import { toast } from "@launchthatapp/ui/toast";
 
@@ -139,6 +141,47 @@ interface LastInteractionBackfillResult {
   errorSamples: string[];
 }
 
+type UnifiedMigrationJobToolType =
+  | "monthly_migration"
+  | "hire_event_backfill"
+  | "touch_range_backfill"
+  | "touch_backfill"
+  | "touch_csv_export";
+
+interface UnifiedMigrationJobRow extends Record<string, unknown> {
+  toolType: UnifiedMigrationJobToolType;
+  toolLabel: string;
+  legacy: boolean;
+  jobId: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  workflowId?: string | null;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number | null;
+  dryRun?: boolean;
+  sourceBoardId?: string | null;
+  sourceBoardName?: string | null;
+  targetBoardId?: string | null;
+  sourceTag?: string | null;
+  baselineDate?: string | null;
+  monthTag?: string | null;
+  monthKey?: string | null;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  pageSize?: number;
+  processedCount: number;
+  mappedCount: number;
+  skippedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  errorCount: number;
+  warningCount: number;
+  lastError?: string | null;
+  searchText: string;
+}
+
+type HistorySortKey = "startedAt" | "status" | "toolLabel" | "dryRun" | "createdCount";
+
 export default function MondayToolsPage() {
   const [job, setJob] = useState<BackfillJob | null>(null);
   const [csvJob, setCsvJob] = useState<CsvExportJob | null>(null);
@@ -196,6 +239,19 @@ export default function MondayToolsPage() {
   const [runningLastInteractionBackfill, setRunningLastInteractionBackfill] = useState(false);
   const [lastInteractionResult, setLastInteractionResult] =
     useState<LastInteractionBackfillResult | null>(null);
+  const [historyJobs, setHistoryJobs] = useState<UnifiedMigrationJobRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyToolTypeFilter, setHistoryToolTypeFilter] = useState<"all" | UnifiedMigrationJobToolType>("all");
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<
+    "all" | UnifiedMigrationJobRow["status"]
+  >("all");
+  const [historySortKey, setHistorySortKey] = useState<HistorySortKey>("startedAt");
+  const [historySortDirection, setHistorySortDirection] = useState<"asc" | "desc">("desc");
+  const [expandedHistoryJobIds, setExpandedHistoryJobIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [isLegacyToolsExpanded, setIsLegacyToolsExpanded] = useState(false);
 
   const refreshTouchRangeStatus = async () => {
     try {
@@ -238,6 +294,12 @@ export default function MondayToolsPage() {
   };
 
   const startTouchRangeBackfill = async () => {
+    if (!touchRangeDryRun) {
+      const confirmed = window.confirm(
+        "Run Touch Range Backfill in write mode? This will write records to Monday.",
+      );
+      if (!confirmed) return;
+    }
     setStartingTouchRange(true);
     try {
       const parsedPageSize = Number(touchRangePageSize);
@@ -256,6 +318,7 @@ export default function MondayToolsPage() {
       if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to start");
       toast.success("Touch range backfill started");
       await refreshTouchRangeStatus();
+      await refreshHistory();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to start touch range backfill");
     } finally {
@@ -274,6 +337,7 @@ export default function MondayToolsPage() {
       if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to cancel");
       toast.success("Touch range backfill cancelled");
       await refreshTouchRangeStatus();
+      await refreshHistory();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to cancel");
     } finally {
@@ -282,6 +346,12 @@ export default function MondayToolsPage() {
   };
 
   const startHireEventBackfill = async () => {
+    if (!hireEventDryRun) {
+      const confirmed = window.confirm(
+        "Run Hire Event Backfill in write mode? This will create missing Hire Event subitems.",
+      );
+      if (!confirmed) return;
+    }
     setStartingHireEventBackfill(true);
     try {
       const parsedPageSize = Number(hireEventPageSize);
@@ -301,6 +371,7 @@ export default function MondayToolsPage() {
       }
       toast.success("Hire event backfill started");
       await refreshHireEventBackfillStatus();
+      await refreshHistory();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to start hire event backfill",
@@ -323,6 +394,7 @@ export default function MondayToolsPage() {
       }
       toast.success("Hire event backfill cancelled");
       await refreshHireEventBackfillStatus();
+      await refreshHistory();
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Failed to cancel hire event backfill",
@@ -333,6 +405,12 @@ export default function MondayToolsPage() {
   };
 
   const runLastInteractionBackfill = async () => {
+    if (!lastInteractionDryRun) {
+      const confirmed = window.confirm(
+        "Run Last Interaction Backfill in write mode? This will update parent date_mm3jfsd1 values.",
+      );
+      if (!confirmed) return;
+    }
     setRunningLastInteractionBackfill(true);
     try {
       const parsedPageSize = Number(lastInteractionPageSize);
@@ -440,12 +518,36 @@ export default function MondayToolsPage() {
     }
   };
 
+  const refreshHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch("/api/monday/tools/history?limit=200", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        jobs?: UnifiedMigrationJobRow[];
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load tool history");
+      }
+      setHistoryJobs(data.jobs ?? []);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load tool history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     void refresh();
     void refreshCsvStatus();
     void refreshMonthlyMigrationStatus();
     void refreshTouchRangeStatus();
     void refreshHireEventBackfillStatus();
+    void refreshHistory();
   }, []);
 
   useEffect(() => {
@@ -469,6 +571,7 @@ export default function MondayToolsPage() {
       void refreshMonthlyMigrationStatus();
       void refreshTouchRangeStatus();
       void refreshHireEventBackfillStatus();
+      void refreshHistory();
     }, 5000);
     return () => clearInterval(timer);
   }, [
@@ -502,6 +605,7 @@ export default function MondayToolsPage() {
       }
       toast.success("Backfill started");
       await refresh();
+      await refreshHistory();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to start backfill";
@@ -529,6 +633,7 @@ export default function MondayToolsPage() {
       }
       toast.success("Backfill cancelled");
       await refresh();
+      await refreshHistory();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to cancel backfill";
@@ -539,6 +644,12 @@ export default function MondayToolsPage() {
   };
 
   const startMonthlyMigration = async () => {
+    if (!migrationDryRun) {
+      const confirmed = window.confirm(
+        "Run Monthly Migration in write mode? This will write updates and subitems to the API board.",
+      );
+      if (!confirmed) return;
+    }
     setStartingMonthlyMigration(true);
     try {
       const parsedPageSize = Number(migrationPageSize);
@@ -576,6 +687,7 @@ export default function MondayToolsPage() {
           : "Monthly migration started",
       );
       await refreshMonthlyMigrationStatus();
+      await refreshHistory();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to start monthly migration";
@@ -603,6 +715,7 @@ export default function MondayToolsPage() {
       }
       toast.success("Monthly migration cancelled");
       await refreshMonthlyMigrationStatus();
+      await refreshHistory();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to cancel monthly migration";
@@ -633,6 +746,7 @@ export default function MondayToolsPage() {
       }
       toast.success("CSV export workflow started");
       await refreshCsvStatus();
+      await refreshHistory();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to start CSV export";
@@ -748,191 +862,440 @@ export default function MondayToolsPage() {
     };
   }, []);
 
+  const activeJobs = useMemo(
+    () =>
+      [
+        monthlyJob
+          ? {
+              id: `monthly-${monthlyJob.jobId}`,
+              label: "Monthly Migration",
+              status: monthlyJob.status,
+              summary: `${monthlyJob.processedContacts.toLocaleString()} processed`,
+              jobId: monthlyJob.jobId,
+            }
+          : null,
+        hireEventJob
+          ? {
+              id: `hire-${hireEventJob.jobId}`,
+              label: "Hire Event Backfill",
+              status: hireEventJob.status,
+              summary: `${hireEventJob.processedContacts.toLocaleString()} processed`,
+              jobId: hireEventJob.jobId,
+            }
+          : null,
+        touchRangeJob
+          ? {
+              id: `range-${touchRangeJob.jobId}`,
+              label: "Touch Range Backfill (Legacy)",
+              status: touchRangeJob.status,
+              summary: `${touchRangeJob.processedContacts.toLocaleString()} processed`,
+              jobId: touchRangeJob.jobId,
+            }
+          : null,
+        csvJob
+          ? {
+              id: `csv-${csvJob.jobId}`,
+              label: "Touch CSV Export (Legacy)",
+              status: csvJob.status,
+              summary: `${csvJob.processedContacts.toLocaleString()} processed`,
+              jobId: csvJob.jobId,
+            }
+          : null,
+        job
+          ? {
+              id: `baseline-${job.jobId}`,
+              label: "Baseline Touch Backfill (Legacy)",
+              status: job.status,
+              summary: `${job.processedContacts.toLocaleString()} processed`,
+              jobId: job.jobId,
+            }
+          : null,
+      ].filter(
+        (
+          entry,
+        ): entry is {
+          id: string;
+          label: string;
+          status: "running" | "done" | "failed" | "cancelled";
+          summary: string;
+          jobId: string;
+        } => Boolean(entry && entry.status === "running"),
+      ),
+    [csvJob, hireEventJob, job, monthlyJob, touchRangeJob],
+  );
+
+  const historyToolTypeOptions = useMemo(() => {
+    const labels = new Map<UnifiedMigrationJobToolType, string>();
+    for (const entry of historyJobs) {
+      labels.set(entry.toolType, entry.toolLabel);
+    }
+    return Array.from(labels.entries()).map(([value, label]) => ({ value, label }));
+  }, [historyJobs]);
+
+  const filteredHistoryRows = useMemo(() => {
+    const normalizedSearch = historySearch.trim().toLowerCase();
+    const statusRank: Record<UnifiedMigrationJobRow["status"], number> = {
+      running: 0,
+      failed: 1,
+      cancelled: 2,
+      done: 3,
+    };
+
+    const rows = historyJobs.filter((entry) => {
+      if (historyToolTypeFilter !== "all" && entry.toolType !== historyToolTypeFilter) {
+        return false;
+      }
+      if (historyStatusFilter !== "all" && entry.status !== historyStatusFilter) {
+        return false;
+      }
+      if (
+        normalizedSearch.length > 0 &&
+        !entry.searchText.toLowerCase().includes(normalizedSearch)
+      ) {
+        return false;
+      }
+      return true;
+    });
+
+    rows.sort((a, b) => {
+      const direction = historySortDirection === "asc" ? 1 : -1;
+      if (historySortKey === "status") {
+        return (statusRank[a.status] - statusRank[b.status]) * direction;
+      }
+      if (historySortKey === "toolLabel") {
+        return a.toolLabel.localeCompare(b.toolLabel) * direction;
+      }
+      if (historySortKey === "dryRun") {
+        return (Number(Boolean(a.dryRun)) - Number(Boolean(b.dryRun))) * direction;
+      }
+      if (historySortKey === "createdCount") {
+        return (a.createdCount - b.createdCount) * direction;
+      }
+      return (a.startedAt - b.startedAt) * direction;
+    });
+
+    return rows;
+  }, [
+    historyJobs,
+    historySearch,
+    historySortDirection,
+    historySortKey,
+    historyStatusFilter,
+    historyToolTypeFilter,
+  ]);
+
+  const toggleHistorySort = (key: HistorySortKey) => {
+    setHistorySortKey((current) => {
+      if (current === key) {
+        setHistorySortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+        return current;
+      }
+      setHistorySortDirection("desc");
+      return key;
+    });
+  };
+
+  const toggleHistoryRowExpanded = (jobId: string) => {
+    setExpandedHistoryJobIds((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  };
+
+  const historyColumns = useMemo<ColumnDefinition<UnifiedMigrationJobRow>[]>(
+    () => [
+      {
+        id: "startedAt",
+        header: "Started",
+        accessorKey: "startedAt",
+        sortable: true,
+        cell: (item: UnifiedMigrationJobRow) => (
+          <span className="block px-2 py-2 text-xs">
+            {new Date(item.startedAt).toLocaleString()}
+          </span>
+        ),
+      },
+      {
+        id: "toolLabel",
+        header: "Tool",
+        accessorKey: "toolLabel",
+        sortable: true,
+        cell: (item: UnifiedMigrationJobRow) => (
+          <div className="px-2 py-2">
+            <p className="text-sm font-medium">{item.toolLabel}</p>
+            <p className="text-muted-foreground text-xs">{item.jobId}</p>
+          </div>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        accessorKey: "status",
+        sortable: true,
+        cell: (item: UnifiedMigrationJobRow) => (
+          <div className="space-y-1 px-2 py-2">
+            <Badge variant={getStatusBadgeVariant(item.status)}>{item.status}</Badge>
+            {item.legacy ? (
+              <div>
+                <Badge variant="outline" className="text-muted-foreground">
+                  legacy
+                </Badge>
+              </div>
+            ) : null}
+          </div>
+        ),
+      },
+      {
+        id: "counts",
+        header: "Counts",
+        accessorKey: "createdCount",
+        sortable: true,
+        cell: (item: UnifiedMigrationJobRow) => (
+          <div className="px-2 py-2 text-xs">
+            <p>
+              <span className="font-medium">Processed:</span>{" "}
+              {item.processedCount.toLocaleString()}
+            </p>
+            <p>
+              <span className="font-medium">Created:</span>{" "}
+              {item.createdCount.toLocaleString()}
+            </p>
+            <p>
+              <span className="font-medium">Errors:</span> {item.errorCount.toLocaleString()}
+            </p>
+          </div>
+        ),
+      },
+      {
+        id: "details",
+        header: "Details",
+        accessorKey: "jobId",
+        sortable: false,
+        cell: (item: UnifiedMigrationJobRow) => {
+          const isExpanded = expandedHistoryJobIds.has(item.jobId);
+          return (
+            <div className="max-w-md px-2 py-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => toggleHistoryRowExpanded(item.jobId)}
+              >
+                {isExpanded ? "Hide details" : "Show details"}
+              </Button>
+              {isExpanded ? (
+                <div className="bg-muted/30 mt-2 space-y-1 rounded border p-2 text-[11px]">
+                  <p>
+                    <span className="font-medium">Workflow:</span>{" "}
+                    {item.workflowId?.trim() || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Mode:</span>{" "}
+                    {item.dryRun ? "Dry run" : "Write mode"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Source/Target:</span>{" "}
+                    {item.sourceBoardId?.trim() || "—"} / {item.targetBoardId?.trim() || "—"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Range:</span>{" "}
+                    {item.monthKey?.trim() ||
+                      `${item.dateFrom?.trim() || "—"} → ${item.dateTo?.trim() || "—"}`}
+                  </p>
+                  {item.lastError ? (
+                    <p className="text-destructive">
+                      <span className="font-medium">Last Error:</span> {item.lastError}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
+      },
+    ],
+    [expandedHistoryJobIds, getStatusBadgeVariant],
+  );
+
   return (
-    <main className="container mx-auto max-w-3xl space-y-4 py-6">
+    <main className="container mx-auto max-w-6xl space-y-4 py-6">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold">Monday Tools</h1>
         <p className="text-muted-foreground text-sm">
-          Backfill baseline touch rows into the touch board using Convex workflow.
+          Subitem-first migration runbook, active jobs, and unified history.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Start Baseline Backfill</CardTitle>
+          <CardTitle className="text-base">Runbook: Which Tool Should I Use?</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Baseline Date</label>
-              <Input
-                type="date"
-                value={baselineDate}
-                onChange={(event) => setBaselineDate(event.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Source Tag</label>
-              <Input
-                value={sourceTag}
-                onChange={(event) => setSourceTag(event.target.value)}
-                placeholder="baseline_import"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Page Size</label>
-              <Input
-                value={pageSize}
-                onChange={(event) => setPageSize(event.target.value)}
-                placeholder="100"
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={() => void startBackfill()} disabled={starting}>
-              {starting ? "Starting..." : "Start Backfill"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => void exportBackfillCsv()}
-              disabled={exportingCsv}
-            >
-              {exportingCsv ? "Starting CSV Export..." : "Start CSV Export Workflow"}
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => void downloadCsvExport()}
-              disabled={downloadingCsv || csvJob?.status !== "done"}
-            >
-              {downloadingCsv ? "Downloading CSV..." : "Download Latest CSV"}
-            </Button>
-            <div className="flex items-center gap-2">
-              <Input
-                value={csvRowsPerFile}
-                onChange={(event) => setCsvRowsPerFile(event.target.value)}
-                placeholder="8000"
-                className="w-24"
-              />
-              <Button
-                variant="secondary"
-                onClick={() => void downloadCsvExportInParts()}
-                disabled={downloadingCsvParts || csvJob?.status !== "done"}
-              >
-                {downloadingCsvParts ? "Downloading Parts..." : "Download All Parts"}
-              </Button>
-            </div>
-            <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh Status"}
-            </Button>
-            <Button variant="outline" onClick={() => void refreshCsvStatus()}>
-              Refresh CSV Export
-            </Button>
-            {job?.status === "running" ? (
-              <Button
-                variant="destructive"
-                onClick={() => void cancelBackfill()}
-                disabled={cancelling}
-              >
-                {cancelling ? "Cancelling..." : "Cancel Running Job"}
-              </Button>
-            ) : null}
-          </div>
+        <CardContent className="space-y-3 text-sm">
+          <ol className="list-decimal space-y-2 pl-5">
+            <li>
+              <span className="font-medium">Monthly Migration</span>: copy records +
+              updates/subitems from a monthly board into the main API board.
+            </li>
+            <li>
+              <span className="font-medium">Hire Event Backfill</span>: regenerate
+              canonical hire-event subitems for one month.
+            </li>
+            <li>
+              <span className="font-medium">Last Interaction Backfill</span>: recompute
+              parent <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code>{" "}
+              from subitems.
+            </li>
+            <li>
+              <span className="font-medium">Legacy Touchpoint Tools</span>: deprecated,
+              only for historical recovery.
+            </li>
+          </ol>
+          <p className="text-muted-foreground text-xs">
+            Recommended order: Monthly Migration → Hire Event Backfill → Last
+            Interaction Backfill.
+          </p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Monthly Board Migration</CardTitle>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">Active Jobs</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void refresh();
+              void refreshCsvStatus();
+              void refreshMonthlyMigrationStatus();
+              void refreshTouchRangeStatus();
+              void refreshHireEventBackfillStatus();
+              void refreshHistory();
+            }}
+            disabled={loading || historyLoading}
+          >
+            Refresh All
+          </Button>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-muted-foreground text-sm">
-            Migrate a monthly board into the main API board by using each row&apos;s
-            <code className="mx-1">main_database_id</code>
-            and preserving updates/subitems.
-          </p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Source Board ID</label>
-              <Input
-                value={migrationSourceBoardId}
-                onChange={(event) => setMigrationSourceBoardId(event.target.value)}
-                placeholder="18406885282"
-              />
+        <CardContent>
+          {activeJobs.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No tools are currently running.</p>
+          ) : (
+            <div className="space-y-2">
+              {activeJobs.map((activeJob) => (
+                <div
+                  key={activeJob.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded border p-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium">{activeJob.label}</p>
+                    <p className="text-muted-foreground text-xs">{activeJob.summary}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={getStatusBadgeVariant(activeJob.status)}>
+                      {activeJob.status}
+                    </Badge>
+                    <span className="text-muted-foreground text-xs">{activeJob.jobId}</span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Target Board ID (optional)</label>
-              <Input
-                value={migrationTargetBoardId}
-                onChange={(event) => setMigrationTargetBoardId(event.target.value)}
-                placeholder="7241111668"
-              />
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Monthly Migration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-muted-foreground text-sm">
+              Primary tool for monthly board sync into the canonical API board.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Source Board ID</label>
+                <Input
+                  value={migrationSourceBoardId}
+                  onChange={(event) => setMigrationSourceBoardId(event.target.value)}
+                  placeholder="18406885282"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Target Board ID (optional)</label>
+                <Input
+                  value={migrationTargetBoardId}
+                  onChange={(event) => setMigrationTargetBoardId(event.target.value)}
+                  placeholder="7241111668"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Month Tag</label>
+                <Input
+                  value={migrationMonthTag}
+                  onChange={(event) => setMigrationMonthTag(event.target.value)}
+                  placeholder="april_2026"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Page Size</label>
+                <Input
+                  value={migrationPageSize}
+                  onChange={(event) => setMigrationPageSize(event.target.value)}
+                  placeholder="20"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Month Tag</label>
-              <Input
-                value={migrationMonthTag}
-                onChange={(event) => setMigrationMonthTag(event.target.value)}
-                placeholder="april_2026"
-              />
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={migrationDryRun}
+                  onChange={(event) => setMigrationDryRun(event.target.checked)}
+                />
+                Dry run
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={migrationIncludeParentUpdates}
+                  onChange={(event) =>
+                    setMigrationIncludeParentUpdates(event.target.checked)
+                  }
+                />
+                Include parent updates
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={migrationIncludeSubitems}
+                  onChange={(event) => setMigrationIncludeSubitems(event.target.checked)}
+                />
+                Include subitems
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={migrationIncludeSubitemUpdates}
+                  onChange={(event) =>
+                    setMigrationIncludeSubitemUpdates(event.target.checked)
+                  }
+                />
+                Include subitem updates
+              </label>
+              <label className="flex items-center gap-2 text-sm sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={migrationUpdateProgressColumns}
+                  onChange={(event) =>
+                    setMigrationUpdateProgressColumns(event.target.checked)
+                  }
+                />
+                Update progress columns
+              </label>
             </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Page Size</label>
-              <Input
-                value={migrationPageSize}
-                onChange={(event) => setMigrationPageSize(event.target.value)}
-                placeholder="20"
-              />
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={migrationDryRun}
-                onChange={(event) => setMigrationDryRun(event.target.checked)}
-              />
-              Dry run (no Monday writes)
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={migrationIncludeParentUpdates}
-                onChange={(event) =>
-                  setMigrationIncludeParentUpdates(event.target.checked)
-                }
-              />
-              Include parent updates
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={migrationIncludeSubitems}
-                onChange={(event) => setMigrationIncludeSubitems(event.target.checked)}
-              />
-              Include subitems
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={migrationIncludeSubitemUpdates}
-                onChange={(event) =>
-                  setMigrationIncludeSubitemUpdates(event.target.checked)
-                }
-              />
-              Include subitem updates
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={migrationUpdateProgressColumns}
-                onChange={(event) =>
-                  setMigrationUpdateProgressColumns(event.target.checked)
-                }
-              />
-              Update progress columns
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-2 text-sm">
               <span className="whitespace-nowrap text-muted-foreground">
                 Month key (YYYY-MM):
@@ -944,514 +1307,168 @@ export default function MondayToolsPage() {
                 value={migrationMonthKey}
                 onChange={(event) => setMigrationMonthKey(event.target.value)}
               />
+              <Badge variant={migrationDryRun ? "outline" : "secondary"}>
+                {migrationDryRun ? "Dry Run" : "Write Mode"}
+              </Badge>
             </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => void startMonthlyMigration()}
-              disabled={startingMonthlyMigration}
-            >
-              {startingMonthlyMigration
-                ? "Starting..."
-                : migrationDryRun
-                  ? "Start Dry Run"
-                  : "Start Migration"}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => void refreshMonthlyMigrationStatus()}
-            >
-              Refresh Migration Status
-            </Button>
-            {monthlyJob?.status === "running" ? (
+            <div className="flex flex-wrap items-center gap-2">
               <Button
-                variant="destructive"
-                onClick={() => void cancelMonthlyMigration()}
-                disabled={cancellingMonthlyMigration}
+                onClick={() => void startMonthlyMigration()}
+                disabled={startingMonthlyMigration}
               >
-                {cancellingMonthlyMigration ? "Cancelling..." : "Cancel Migration"}
+                {startingMonthlyMigration
+                  ? "Starting..."
+                  : migrationDryRun
+                    ? "Start Dry Run"
+                    : "Start Migration"}
               </Button>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Latest Monthly Migration Job</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!monthlyJob ? (
-            <p className="text-muted-foreground text-sm">
-              No monthly migration job found.
-            </p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Status:</span>
-                <Badge variant={getStatusBadgeVariant(monthlyJob.status)}>
-                  {monthlyJob.status}
-                </Badge>
-              </div>
-              <p>
-                <span className="font-medium">Job ID:</span> {monthlyJob.jobId}
-              </p>
-              <p>
-                <span className="font-medium">Workflow ID:</span>{" "}
-                {monthlyJob.workflowId ?? "—"}
-              </p>
-              <p>
-                <span className="font-medium">Source Board:</span>{" "}
-                {monthlyJob.sourceBoardId}
-                {monthlyJob.sourceBoardName ? ` (${monthlyJob.sourceBoardName})` : ""}
-              </p>
-              <p>
-                <span className="font-medium">Target Board:</span>{" "}
-                {monthlyJob.targetBoardId}
-              </p>
-              <p>
-                <span className="font-medium">Month Tag:</span> {monthlyJob.monthTag}
-              </p>
-              <p>
-                <span className="font-medium">Mode:</span>{" "}
-                {monthlyJob.dryRun ? "Dry run" : "Write mode"} ·{" "}
-                <span className="font-medium">Page Size:</span> {monthlyJob.pageSize}
-              </p>
-              <p>
-                <span className="font-medium">Processed Contacts:</span>{" "}
-                {monthlyJob.processedContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Mapped / Skipped:</span>{" "}
-                {monthlyJob.mappedContacts.toLocaleString()} /{" "}
-                {monthlyJob.skippedContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Created Parent Updates:</span>{" "}
-                {monthlyJob.createdParentUpdates.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Created Subitems:</span>{" "}
-                {monthlyJob.createdSubitems.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Created Subitem Updates:</span>{" "}
-                {monthlyJob.createdSubitemUpdates.toLocaleString()}
-              </p>
-              {monthlyJob.updateProgressColumns ? (
-                <p>
-                  <span className="font-medium">Updated Progress Columns:</span>{" "}
-                  {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()}
-                </p>
-              ) : null}
-              {monthlyJob.monthKey ? (
-                <p>
-                  <span className="font-medium">Month Key:</span>{" "}
-                  {monthlyJob.monthKey}
-                  {" · "}
-                  <span className="font-medium">Touch Records:</span>{" "}
-                  {(monthlyJob.createdTouchRecords ?? 0).toLocaleString()}
-                </p>
-              ) : null}
-              <p>
-                <span className="font-medium">Warnings / Errors:</span>{" "}
-                {monthlyJob.warningsCount.toLocaleString()} /{" "}
-                {monthlyJob.errorsCount.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Updated:</span>{" "}
-                {new Date(monthlyJob.updatedAt).toLocaleString()}
-              </p>
-              {monthlyJob.lastError ? (
-                <p className="text-destructive">
-                  <span className="font-medium">Last Error:</span>{" "}
-                  {monthlyJob.lastError}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Latest CSV Export Job</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!csvJob ? (
-            <p className="text-muted-foreground text-sm">No CSV export job found.</p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Status:</span>
-                <Badge variant={getStatusBadgeVariant(csvJob.status)}>
-                  {csvJob.status}
-                </Badge>
-              </div>
-              <p>
-                <span className="font-medium">Job ID:</span> {csvJob.jobId}
-              </p>
-              <p>
-                <span className="font-medium">Workflow ID:</span>{" "}
-                {csvJob.workflowId ?? "—"}
-              </p>
-              <p>
-                <span className="font-medium">Rows:</span>{" "}
-                {csvJob.rowCount.toLocaleString()} ·{" "}
-                <span className="font-medium">Chunks:</span>{" "}
-                {csvJob.chunkCount.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Processed Contacts:</span>{" "}
-                {csvJob.processedContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Updated:</span>{" "}
-                {new Date(csvJob.updatedAt).toLocaleString()}
-              </p>
-              {csvJob.lastError ? (
-                <p className="text-destructive">
-                  <span className="font-medium">Last Error:</span> {csvJob.lastError}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Latest Backfill Job</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {!job ? (
-            <p className="text-muted-foreground text-sm">No backfill job found.</p>
-          ) : (
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Status:</span>
-                <Badge variant={getStatusBadgeVariant(job.status)}>
-                  {job.status}
-                </Badge>
-              </div>
-              <p>
-                <span className="font-medium">Job ID:</span> {job.jobId}
-              </p>
-              <p>
-                <span className="font-medium">Workflow ID:</span>{" "}
-                {job.workflowId ?? "—"}
-              </p>
-              <p>
-                <span className="font-medium">Baseline Date:</span> {job.baselineDate}
-              </p>
-              <p>
-                <span className="font-medium">Source Tag:</span> {job.sourceTag}
-              </p>
-              <p>
-                <span className="font-medium">Processed Contacts:</span>{" "}
-                {job.processedContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Created Touches:</span>{" "}
-                {job.createdTouches.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Skipped:</span>{" "}
-                {job.skippedTouches.toLocaleString()} ·{" "}
-                <span className="font-medium">Errors:</span>{" "}
-                {job.errorsCount.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Started:</span>{" "}
-                {new Date(job.startedAt).toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Updated:</span>{" "}
-                {new Date(job.updatedAt).toLocaleString()}
-              </p>
-              {job.finishedAt ? (
-                <p>
-                  <span className="font-medium">Finished:</span>{" "}
-                  {new Date(job.finishedAt).toLocaleString()}
-                </p>
-              ) : null}
-              {job.lastError ? (
-                <p className="text-destructive">
-                  <span className="font-medium">Last Error:</span> {job.lastError}
-                </p>
-              ) : null}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Touch Range Backfill</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground text-sm">
-            Creates one touchpoint record per (contact, owner, month) for all contacts
-            whose Registration Date falls within the selected date range. Uses the{" "}
-            <code className="bg-muted rounded px-1 text-xs">date1__1</code> column for
-            efficient server-side filtering — no full board scan needed.
-          </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <span className="whitespace-nowrap text-muted-foreground">From:</span>
-              <input
-                type="date"
-                className="rounded border px-2 py-1 text-sm"
-                value={touchRangeDateFrom}
-                onChange={(e) => setTouchRangeDateFrom(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="whitespace-nowrap text-muted-foreground">To:</span>
-              <input
-                type="date"
-                className="rounded border px-2 py-1 text-sm"
-                value={touchRangeDateTo}
-                onChange={(e) => setTouchRangeDateTo(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
-              <input
-                type="number"
-                className="w-20 rounded border px-2 py-1 text-sm"
-                value={touchRangePageSize}
-                min={25}
-                max={200}
-                onChange={(e) => setTouchRangePageSize(e.target.value)}
-              />
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={touchRangeDryRun}
-                onChange={(e) => setTouchRangeDryRun(e.target.checked)}
-              />
-              <span>Dry Run</span>
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => void startTouchRangeBackfill()}
-              disabled={startingTouchRange}
-            >
-              {startingTouchRange
-                ? "Starting..."
-                : touchRangeDryRun
-                  ? "Start Dry Run"
-                  : "Start Backfill"}
-            </Button>
-            <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
-              Refresh Status
-            </Button>
-            {touchRangeJob?.status === "running" ? (
               <Button
-                variant="destructive"
-                onClick={() => void cancelTouchRangeBackfill()}
-                disabled={cancellingTouchRange}
+                variant="outline"
+                onClick={() => void refreshMonthlyMigrationStatus()}
               >
-                {cancellingTouchRange ? "Cancelling..." : "Cancel"}
+                Refresh Status
               </Button>
-            ) : null}
-          </div>
-          {touchRangeJob ? (
-            <div className="space-y-1 rounded border p-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Status:</span>
-                <Badge variant={getStatusBadgeVariant(touchRangeJob.status)}>
-                  {touchRangeJob.status}
-                </Badge>
-                {touchRangeJob.dryRun ? (
-                  <Badge variant="outline" className="text-muted-foreground">
-                    dry run
+              {monthlyJob?.status === "running" ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => void cancelMonthlyMigration()}
+                  disabled={cancellingMonthlyMigration}
+                >
+                  {cancellingMonthlyMigration ? "Cancelling..." : "Cancel"}
+                </Button>
+              ) : null}
+            </div>
+            {monthlyJob ? (
+              <div className="space-y-1 rounded border p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(monthlyJob.status)}>
+                    {monthlyJob.status}
                   </Badge>
+                  <span>{monthlyJob.jobId}</span>
+                </div>
+                <p>
+                  Processed {monthlyJob.processedContacts.toLocaleString()} · Mapped{" "}
+                  {monthlyJob.mappedContacts.toLocaleString()} · Skipped{" "}
+                  {monthlyJob.skippedContacts.toLocaleString()}
+                </p>
+                <p>
+                  Created updates/subitems:{" "}
+                  {(
+                    monthlyJob.createdParentUpdates +
+                    monthlyJob.createdSubitems +
+                    monthlyJob.createdSubitemUpdates
+                  ).toLocaleString()}
+                </p>
+                <p>
+                  Updated progress columns:{" "}
+                  {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()} · Errors:{" "}
+                  {monthlyJob.errorsCount.toLocaleString()}
+                </p>
+                {monthlyJob.lastError ? (
+                  <p className="text-destructive">{monthlyJob.lastError}</p>
                 ) : null}
               </div>
-              <p>
-                <span className="font-medium">Range:</span>{" "}
-                {touchRangeJob.dateFrom} → {touchRangeJob.dateTo}
-              </p>
-              <p>
-                <span className="font-medium">Scanned:</span>{" "}
-                {touchRangeJob.processedContacts.toLocaleString()} contacts ·{" "}
-                <span className="font-medium">In Range:</span>{" "}
-                {touchRangeJob.inRangeContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">
-                  {touchRangeJob.dryRun ? "Would Create:" : "Created:"}
-                </span>{" "}
-                {touchRangeJob.createdTouches.toLocaleString()} ·{" "}
-                <span className="font-medium">
-                  {touchRangeJob.dryRun ? "Would Update:" : "Updated:"}
-                </span>{" "}
-                {touchRangeJob.updatedTouches.toLocaleString()} ·{" "}
-                <span className="font-medium">Skipped:</span>{" "}
-                {touchRangeJob.skippedTouches.toLocaleString()} ·{" "}
-                <span className="font-medium">Errors:</span>{" "}
-                {touchRangeJob.errorsCount.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Started:</span>{" "}
-                {new Date(touchRangeJob.startedAt).toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Updated:</span>{" "}
-                {new Date(touchRangeJob.updatedAt).toLocaleString()}
-              </p>
-              {touchRangeJob.finishedAt ? (
-                <p>
-                  <span className="font-medium">Finished:</span>{" "}
-                  {new Date(touchRangeJob.finishedAt).toLocaleString()}
-                </p>
-              ) : null}
-              {touchRangeJob.lastError ? (
-                <p className="text-destructive">
-                  <span className="font-medium">Last Error:</span> {touchRangeJob.lastError}
-                </p>
+            ) : (
+              <p className="text-muted-foreground text-xs">No migration run yet.</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Hire Event Backfill (By Month)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-muted-foreground text-sm">
+              Rebuild canonical hire-event subitems month-by-month.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <span className="whitespace-nowrap text-muted-foreground">Month:</span>
+                <input
+                  type="month"
+                  className="rounded border px-2 py-1 text-sm"
+                  value={hireEventMonthKey}
+                  onChange={(event) => setHireEventMonthKey(event.target.value)}
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+                <input
+                  type="number"
+                  className="w-20 rounded border px-2 py-1 text-sm"
+                  value={hireEventPageSize}
+                  min={25}
+                  max={200}
+                  onChange={(event) => setHireEventPageSize(event.target.value)}
+                />
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hireEventDryRun}
+                  onChange={(event) => setHireEventDryRun(event.target.checked)}
+                />
+                <span>Dry Run</span>
+              </label>
+              <Badge variant={hireEventDryRun ? "outline" : "secondary"}>
+                {hireEventDryRun ? "Dry Run" : "Write Mode"}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => void startHireEventBackfill()}
+                disabled={startingHireEventBackfill}
+              >
+                {startingHireEventBackfill
+                  ? "Starting..."
+                  : hireEventDryRun
+                    ? "Start Dry Run"
+                    : "Start Backfill"}
+              </Button>
+              <Button variant="outline" onClick={() => void refreshHireEventBackfillStatus()}>
+                Refresh Status
+              </Button>
+              {hireEventJob?.status === "running" ? (
+                <Button
+                  variant="destructive"
+                  onClick={() => void cancelHireEventBackfill()}
+                  disabled={cancellingHireEventBackfill}
+                >
+                  {cancellingHireEventBackfill ? "Cancelling..." : "Cancel"}
+                </Button>
               ) : null}
             </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">No touch range backfill job found.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Hire Event Backfill (By Month)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-muted-foreground text-sm">
-            Creates missing <code className="bg-muted rounded px-1 text-xs">Hire Event</code>{" "}
-            subitems from contacts whose Hire Date falls in the selected month. Run manually
-            month-by-month as needed.
-          </p>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <span className="whitespace-nowrap text-muted-foreground">Month:</span>
-              <input
-                type="month"
-                className="rounded border px-2 py-1 text-sm"
-                value={hireEventMonthKey}
-                onChange={(event) => setHireEventMonthKey(event.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
-              <input
-                type="number"
-                className="w-20 rounded border px-2 py-1 text-sm"
-                value={hireEventPageSize}
-                min={25}
-                max={200}
-                onChange={(event) => setHireEventPageSize(event.target.value)}
-              />
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={hireEventDryRun}
-                onChange={(event) => setHireEventDryRun(event.target.checked)}
-              />
-              <span>Dry Run</span>
-            </label>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={() => void startHireEventBackfill()}
-              disabled={startingHireEventBackfill}
-            >
-              {startingHireEventBackfill
-                ? "Starting..."
-                : hireEventDryRun
-                  ? "Start Dry Run"
-                  : "Start Backfill"}
-            </Button>
-            <Button variant="outline" onClick={() => void refreshHireEventBackfillStatus()}>
-              Refresh Status
-            </Button>
-            {hireEventJob?.status === "running" ? (
-              <Button
-                variant="destructive"
-                onClick={() => void cancelHireEventBackfill()}
-                disabled={cancellingHireEventBackfill}
-              >
-                {cancellingHireEventBackfill ? "Cancelling..." : "Cancel"}
-              </Button>
-            ) : null}
-          </div>
-          {hireEventJob ? (
-            <div className="space-y-1 rounded border p-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Status:</span>
-                <Badge variant={getStatusBadgeVariant(hireEventJob.status)}>
-                  {hireEventJob.status}
-                </Badge>
-                {hireEventJob.dryRun ? (
-                  <Badge variant="outline" className="text-muted-foreground">
-                    dry run
+            {hireEventJob ? (
+              <div className="space-y-1 rounded border p-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <Badge variant={getStatusBadgeVariant(hireEventJob.status)}>
+                    {hireEventJob.status}
                   </Badge>
+                  <span>{hireEventJob.jobId}</span>
+                </div>
+                <p>
+                  Range: {hireEventJob.dateFrom} → {hireEventJob.dateTo}
+                </p>
+                <p>
+                  Processed {hireEventJob.processedContacts.toLocaleString()} · In range{" "}
+                  {hireEventJob.inRangeContacts.toLocaleString()}
+                </p>
+                <p>
+                  Created {hireEventJob.createdEvents.toLocaleString()} · Skipped{" "}
+                  {hireEventJob.skippedEvents.toLocaleString()} · Errors{" "}
+                  {hireEventJob.errorsCount.toLocaleString()}
+                </p>
+                {hireEventJob.lastError ? (
+                  <p className="text-destructive">{hireEventJob.lastError}</p>
                 ) : null}
               </div>
-              <p>
-                <span className="font-medium">Month:</span> {hireEventJob.monthKey} ·{" "}
-                <span className="font-medium">Range:</span> {hireEventJob.dateFrom} →{" "}
-                {hireEventJob.dateTo}
-              </p>
-              <p>
-                <span className="font-medium">Scanned:</span>{" "}
-                {hireEventJob.processedContacts.toLocaleString()} contacts ·{" "}
-                <span className="font-medium">In Range:</span>{" "}
-                {hireEventJob.inRangeContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">
-                  {hireEventJob.dryRun ? "Would Create:" : "Created:"}
-                </span>{" "}
-                {hireEventJob.createdEvents.toLocaleString()} ·{" "}
-                <span className="font-medium">Skipped:</span>{" "}
-                {hireEventJob.skippedEvents.toLocaleString()} ·{" "}
-                <span className="font-medium">Errors:</span>{" "}
-                {hireEventJob.errorsCount.toLocaleString()}
-              </p>
-              {hireEventJob.subitemBoardId ? (
-                <p>
-                  <span className="font-medium">Subitem Board ID:</span>{" "}
-                  {hireEventJob.subitemBoardId}
-                </p>
-              ) : null}
-              <p>
-                <span className="font-medium">Started:</span>{" "}
-                {new Date(hireEventJob.startedAt).toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Updated:</span>{" "}
-                {new Date(hireEventJob.updatedAt).toLocaleString()}
-              </p>
-              {hireEventJob.finishedAt ? (
-                <p>
-                  <span className="font-medium">Finished:</span>{" "}
-                  {new Date(hireEventJob.finishedAt).toLocaleString()}
-                </p>
-              ) : null}
-              {hireEventJob.lastError ? (
-                <p className="text-destructive">
-                  <span className="font-medium">Last Error:</span> {hireEventJob.lastError}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No hire event backfill job found.
-            </p>
-          )}
-        </CardContent>
-      </Card>
+            ) : (
+              <p className="text-muted-foreground text-xs">No hire-event run yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
@@ -1459,11 +1476,8 @@ export default function MondayToolsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            Backfills <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code> on
-            parent contacts for records whose{" "}
-            <code className="bg-muted rounded px-1 text-xs">date1__1</code> registration date is
-            in the selected month, then uses each matching contact&apos;s latest subitem date as
-            the last interaction date.
+            Recompute parent <code className="bg-muted rounded px-1 text-xs">date_mm3jfsd1</code>{" "}
+            from each contact&apos;s latest subitem interaction.
           </p>
           <div className="flex flex-wrap items-center gap-4">
             <label className="flex items-center gap-2 text-sm">
@@ -1494,6 +1508,9 @@ export default function MondayToolsPage() {
               />
               <span>Dry Run</span>
             </label>
+            <Badge variant={lastInteractionDryRun ? "outline" : "secondary"}>
+              {lastInteractionDryRun ? "Dry Run" : "Write Mode"}
+            </Badge>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -1526,18 +1543,10 @@ export default function MondayToolsPage() {
                 {lastInteractionResult.dateTo}
               </p>
               <p>
-                <span className="font-medium">Scanned Contacts:</span>{" "}
+                <span className="font-medium">Scanned:</span>{" "}
                 {lastInteractionResult.processedContacts.toLocaleString()} ·{" "}
-                <span className="font-medium">Registered In Month:</span>{" "}
+                <span className="font-medium">Registered:</span>{" "}
                 {lastInteractionResult.registeredContacts.toLocaleString()}
-              </p>
-              <p>
-                <span className="font-medium">Registered + Has Subitems:</span>{" "}
-                {lastInteractionResult.registeredWithInteraction.toLocaleString()} ·{" "}
-                <span className="font-medium">Registered + No Subitems:</span>{" "}
-                {lastInteractionResult.registeredWithoutInteraction.toLocaleString()} ·{" "}
-                <span className="font-medium">Already Current:</span>{" "}
-                {lastInteractionResult.contactsAlreadyCurrent.toLocaleString()}
               </p>
               <p>
                 <span className="font-medium">
@@ -1569,6 +1578,338 @@ export default function MondayToolsPage() {
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-base">Migration History</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refreshHistory()}
+            disabled={historyLoading}
+          >
+            {historyLoading ? "Refreshing..." : "Refresh History"}
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <Input
+              value={historySearch}
+              onChange={(event) => setHistorySearch(event.target.value)}
+              placeholder="Search job id, workflow, board, month..."
+            />
+            <select
+              value={historyToolTypeFilter}
+              onChange={(event) =>
+                setHistoryToolTypeFilter(
+                  event.target.value === "all"
+                    ? "all"
+                    : (event.target.value as UnifiedMigrationJobToolType),
+                )
+              }
+              className="rounded border bg-transparent px-2 py-2 text-sm"
+            >
+              <option value="all">All tools</option>
+              {historyToolTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={historyStatusFilter}
+              onChange={(event) =>
+                setHistoryStatusFilter(
+                  event.target.value === "all"
+                    ? "all"
+                    : (event.target.value as UnifiedMigrationJobRow["status"]),
+                )
+              }
+              className="rounded border bg-transparent px-2 py-2 text-sm"
+            >
+              <option value="all">All statuses</option>
+              <option value="running">Running</option>
+              <option value="done">Done</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <div className="flex items-center gap-2">
+              <select
+                value={historySortKey}
+                onChange={(event) => toggleHistorySort(event.target.value as HistorySortKey)}
+                className="w-full rounded border bg-transparent px-2 py-2 text-sm"
+              >
+                <option value="startedAt">Sort: Started</option>
+                <option value="status">Sort: Status</option>
+                <option value="toolLabel">Sort: Tool</option>
+                <option value="dryRun">Sort: Dry Run</option>
+                <option value="createdCount">Sort: Created</option>
+              </select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setHistorySortDirection((direction) =>
+                    direction === "asc" ? "desc" : "asc",
+                  )
+                }
+              >
+                {historySortDirection.toUpperCase()}
+              </Button>
+            </div>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            Showing {filteredHistoryRows.length.toLocaleString()}{" "}
+            {filteredHistoryRows.length === 1 ? "job" : "jobs"}.
+          </p>
+          <EntityList
+            data={filteredHistoryRows}
+            columns={historyColumns}
+            viewModes={["list"]}
+            defaultViewMode="list"
+            enableFooter={false}
+            showRowCount={false}
+            hideFilters
+            getRowId={(item) => String(item.jobId)}
+            isLoading={historyLoading}
+            emptyState={
+              <div className="text-muted-foreground py-6 text-sm">
+                No migration jobs match this filter.
+              </div>
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Collapsible open={isLegacyToolsExpanded} onOpenChange={setIsLegacyToolsExpanded}>
+        <Card>
+          <CardHeader className="flex flex-row items-start justify-between space-y-0">
+            <div>
+              <CardTitle className="text-base">Legacy Touchpoint Tools (Deprecated)</CardTitle>
+              <p className="text-muted-foreground mt-1 text-xs">
+                These tools target legacy touchpoint workflows and are no longer part of the
+                recommended subitem-first path.
+              </p>
+            </div>
+            <CollapsibleTrigger asChild>
+              <Button variant="outline" size="sm">
+                {isLegacyToolsExpanded ? "Hide Legacy Tools" : "Show Legacy Tools"}
+              </Button>
+            </CollapsibleTrigger>
+          </CardHeader>
+          <CollapsibleContent>
+            <CardContent className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Baseline Touch Backfill + CSV Export</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Baseline Date</label>
+                      <Input
+                        type="date"
+                        value={baselineDate}
+                        onChange={(event) => setBaselineDate(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Source Tag</label>
+                      <Input
+                        value={sourceTag}
+                        onChange={(event) => setSourceTag(event.target.value)}
+                        placeholder="baseline_import"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-sm font-medium">Page Size</label>
+                      <Input
+                        value={pageSize}
+                        onChange={(event) => setPageSize(event.target.value)}
+                        placeholder="100"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button onClick={() => void startBackfill()} disabled={starting}>
+                      {starting ? "Starting..." : "Start Backfill"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void exportBackfillCsv()}
+                      disabled={exportingCsv}
+                    >
+                      {exportingCsv ? "Starting CSV Export..." : "Start CSV Export"}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => void downloadCsvExport()}
+                      disabled={downloadingCsv || csvJob?.status !== "done"}
+                    >
+                      {downloadingCsv ? "Downloading..." : "Download Latest CSV"}
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={csvRowsPerFile}
+                        onChange={(event) => setCsvRowsPerFile(event.target.value)}
+                        placeholder="8000"
+                        className="w-24"
+                      />
+                      <Button
+                        variant="secondary"
+                        onClick={() => void downloadCsvExportInParts()}
+                        disabled={downloadingCsvParts || csvJob?.status !== "done"}
+                      >
+                        {downloadingCsvParts ? "Downloading..." : "Download Parts"}
+                      </Button>
+                    </div>
+                    {job?.status === "running" ? (
+                      <Button
+                        variant="destructive"
+                        onClick={() => void cancelBackfill()}
+                        disabled={cancelling}
+                      >
+                        {cancelling ? "Cancelling..." : "Cancel Running Job"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div className="rounded border p-2 text-xs">
+                      <p className="font-medium">Latest Touch Backfill</p>
+                      {job ? (
+                        <>
+                          <p>
+                            <Badge variant={getStatusBadgeVariant(job.status)}>{job.status}</Badge>
+                          </p>
+                          <p>Processed: {job.processedContacts.toLocaleString()}</p>
+                          <p>Created: {job.createdTouches.toLocaleString()}</p>
+                          <p>Errors: {job.errorsCount.toLocaleString()}</p>
+                        </>
+                      ) : (
+                        <p className="text-muted-foreground">No job found.</p>
+                      )}
+                    </div>
+                    <div className="rounded border p-2 text-xs">
+                      <p className="font-medium">Latest CSV Export</p>
+                      {csvJob ? (
+                        <>
+                          <p>
+                            <Badge variant={getStatusBadgeVariant(csvJob.status)}>
+                              {csvJob.status}
+                            </Badge>
+                          </p>
+                          <p>Rows: {csvJob.rowCount.toLocaleString()}</p>
+                          <p>Chunks: {csvJob.chunkCount.toLocaleString()}</p>
+                        </>
+                      ) : (
+                        <p className="text-muted-foreground">No CSV job found.</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Touch Range Backfill (Legacy)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="whitespace-nowrap text-muted-foreground">From:</span>
+                      <input
+                        type="date"
+                        className="rounded border px-2 py-1 text-sm"
+                        value={touchRangeDateFrom}
+                        onChange={(event) => setTouchRangeDateFrom(event.target.value)}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="whitespace-nowrap text-muted-foreground">To:</span>
+                      <input
+                        type="date"
+                        className="rounded border px-2 py-1 text-sm"
+                        value={touchRangeDateTo}
+                        onChange={(event) => setTouchRangeDateTo(event.target.value)}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+                      <input
+                        type="number"
+                        className="w-20 rounded border px-2 py-1 text-sm"
+                        value={touchRangePageSize}
+                        min={25}
+                        max={200}
+                        onChange={(event) => setTouchRangePageSize(event.target.value)}
+                      />
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={touchRangeDryRun}
+                        onChange={(event) => setTouchRangeDryRun(event.target.checked)}
+                      />
+                      <span>Dry Run</span>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() => void startTouchRangeBackfill()}
+                      disabled={startingTouchRange}
+                    >
+                      {startingTouchRange
+                        ? "Starting..."
+                        : touchRangeDryRun
+                          ? "Start Dry Run"
+                          : "Start Backfill"}
+                    </Button>
+                    <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
+                      Refresh Status
+                    </Button>
+                    {touchRangeJob?.status === "running" ? (
+                      <Button
+                        variant="destructive"
+                        onClick={() => void cancelTouchRangeBackfill()}
+                        disabled={cancellingTouchRange}
+                      >
+                        {cancellingTouchRange ? "Cancelling..." : "Cancel"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {touchRangeJob ? (
+                    <div className="space-y-1 rounded border p-3 text-xs">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={getStatusBadgeVariant(touchRangeJob.status)}>
+                          {touchRangeJob.status}
+                        </Badge>
+                        <span>{touchRangeJob.jobId}</span>
+                      </div>
+                      <p>
+                        Range: {touchRangeJob.dateFrom} → {touchRangeJob.dateTo}
+                      </p>
+                      <p>
+                        Processed {touchRangeJob.processedContacts.toLocaleString()} · In range{" "}
+                        {touchRangeJob.inRangeContacts.toLocaleString()}
+                      </p>
+                      <p>
+                        Created {touchRangeJob.createdTouches.toLocaleString()} · Updated{" "}
+                        {touchRangeJob.updatedTouches.toLocaleString()} · Skipped{" "}
+                        {touchRangeJob.skippedTouches.toLocaleString()}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-xs">
+                      No touch-range backfill job found.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </CardContent>
+          </CollapsibleContent>
+        </Card>
+      </Collapsible>
     </main>
   );
 }
