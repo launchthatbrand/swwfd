@@ -891,6 +891,55 @@ export const getRecordStepIndex = (
   return Math.floor(safeProgress / stepSize);
 };
 
+const normalizeStepText = (value: string | null | undefined) =>
+  (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const isDoneStepStatusValue = (value: string | null | undefined) => {
+  const normalized = normalizeStepText(value);
+  if (!normalized) return false;
+  return /\bdone\b/.test(normalized) || /\bcomplete(d)?\b/.test(normalized);
+};
+
+const readStepStatusValue = (record: MondayRecord, stepTitle: string) => {
+  const normalizedStepTitle = normalizeStepText(stepTitle);
+  if (!normalizedStepTitle) return null;
+  const exact = record.contactDetails.find(
+    (detail) => normalizeStepText(detail.label) === normalizedStepTitle,
+  );
+  if (exact) return exact.value;
+  const fuzzy = record.contactDetails.find((detail) => {
+    const normalizedLabel = normalizeStepText(detail.label);
+    return (
+      normalizedLabel.includes(normalizedStepTitle) ||
+      normalizedStepTitle.includes(normalizedLabel)
+    );
+  });
+  return fuzzy?.value ?? null;
+};
+
+export const getRecordStepIndexFromApprovalSteps = (
+  record: MondayRecord,
+  approvalSteps: ApprovalStepConfig[],
+) => {
+  if (approvalSteps.length === 0) return 0;
+  const stepValues = approvalSteps.map((step) => readStepStatusValue(record, step.title));
+  const hasAnyStepStatusValue = stepValues.some((value) => normalizeStepText(value).length > 0);
+  if (!hasAnyStepStatusValue) {
+    return getRecordStepIndex(record.batteryProgress, approvalSteps.length);
+  }
+  let furthestCompletedStepIndex = -1;
+  for (let index = 0; index < stepValues.length; index += 1) {
+    if (isDoneStepStatusValue(stepValues[index])) {
+      furthestCompletedStepIndex = index;
+    }
+  }
+  if (furthestCompletedStepIndex < 0) return 0;
+  return Math.min(approvalSteps.length, furthestCompletedStepIndex + 1);
+};
+
 export const buildKanbanColumns = (
   records: MondayRecord[],
   steps: ApprovalStepConfig[],
@@ -905,7 +954,7 @@ export const buildKanbanColumns = (
     })),
   ];
   for (const record of records) {
-    const stepIndex = getRecordStepIndex(record.batteryProgress, steps.length);
+    const stepIndex = getRecordStepIndexFromApprovalSteps(record, steps);
     const clampedIndex = Math.max(0, Math.min(columns.length - 1, stepIndex));
     columns[clampedIndex]!.records.push(record);
   }

@@ -22,7 +22,7 @@ import { Button } from "@launchthatapp/ui/button";
 import type { CSSProperties } from "react";
 import { STEP_ACTION_CONFIG } from "../constants";
 import { cn } from "~/lib/utils";
-import { getRecordStepIndex } from "../helpers";
+import { getRecordStepIndexFromApprovalSteps } from "../helpers";
 import { useState } from "react";
 
 export interface OnboardingStepperProps {
@@ -68,7 +68,7 @@ export const OnboardingStepper = ({
   const [overrideStepColumnId, setOverrideStepColumnId] = useState("");
 
   const stepCount = approvalSteps.length;
-  const currentStepIndex = getRecordStepIndex(record.batteryProgress, stepCount);
+  const currentStepIndex = getRecordStepIndexFromApprovalSteps(record, approvalSteps);
   const allComplete = currentStepIndex >= stepCount;
 
   type StepWithState = StepActionConfig & { title: string; completed: boolean; isCurrent: boolean };

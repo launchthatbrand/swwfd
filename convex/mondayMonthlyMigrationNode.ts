@@ -748,12 +748,26 @@ const mapSourceToTargetSubitemColumnId = (args: {
   return null;
 };
 
+const NON_WRITABLE_SUBITEM_COLUMN_TYPES = new Set([
+  "formula",
+  "mirror",
+  "creation_log",
+  "last_updated",
+  "auto_number",
+  "progress",
+  "item_id",
+  "subtasks",
+]);
+
 const mapSubitemColumnValueForTarget = (args: {
   sourceColumn: MigrationSourceColumnValue;
   targetColumnType: string;
   sourceSubitemCreatedAt?: string | null;
 }) => {
   const targetType = normalizeText(args.targetColumnType);
+  if (NON_WRITABLE_SUBITEM_COLUMN_TYPES.has(targetType)) {
+    return { shouldSkip: true as const, value: null };
+  }
   if (targetType === "file" || targetType === "files") {
     return { shouldSkip: true as const, value: null };
   }
@@ -1425,6 +1439,35 @@ export const migrateSourceItemAction = internalAction({
     let errors = 0;
     const progressColumnsToUpdate = new Set<string>();
     const progressDetectionLogs: string[] = [];
+    const logCountedError = (params: {
+      stage: "parent_update" | "subitem_create" | "subitem_update";
+      sourceEntityId: string;
+      error: unknown;
+      metadata?: Record<string, unknown>;
+    }) => {
+      const errorMessage = params.error instanceof Error ? params.error.message : String(params.error);
+      const stageLabel =
+        params.stage === "parent_update"
+          ? "parent update"
+          : params.stage === "subitem_create"
+            ? "create subitem"
+            : "subitem update";
+      const warningMessage = `Failed to ${stageLabel} ${params.sourceEntityId} for source item ${
+        args.sourceItem.id
+      }: ${errorMessage}`;
+      errors += 1;
+      warnings.push(warningMessage);
+      console.error("[MonthlyMigration] Counted migration error", {
+        stage: params.stage,
+        sourceItemId: args.sourceItem.id,
+        sourceItemName: args.sourceItem.name,
+        targetItemId,
+        sourceEntityId: params.sourceEntityId,
+        dryRun: args.dryRun,
+        errorMessage,
+        ...(params.metadata ?? {}),
+      });
+    };
 
     if (args.includeParentUpdates) {
       for (const update of args.sourceItem.updates) {
@@ -1459,12 +1502,11 @@ export const migrateSourceItemAction = internalAction({
             targetEntityId: createdUpdateId,
           });
         } catch (error) {
-          errors += 1;
-          warnings.push(
-            `Failed to migrate parent update ${update.id} for source item ${args.sourceItem.id}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+          logCountedError({
+            stage: "parent_update",
+            sourceEntityId: update.id,
+            error,
+          });
         }
       }
     }
@@ -1516,6 +1558,11 @@ export const migrateSourceItemAction = internalAction({
 
         for (const sourceSubitem of args.sourceItem.subitems) {
           const columnValues: Record<string, unknown> = {};
+          const attemptedSubitemColumnMappings: Array<{
+            targetColumnId: string;
+            targetColumnType: string;
+            sourceColumnId: string;
+          }> = [];
           const dateColumnValuesForOverwrite: Record<string, { date: string; time?: string }> = {};
           for (const sourceColumn of sourceSubitem.columnValues) {
             const mappedColumnId = mapSourceToTargetSubitemColumnId({
@@ -1527,15 +1574,21 @@ export const migrateSourceItemAction = internalAction({
             if (!mappedColumnId) continue;
             const targetColumn = targetColumnById.get(mappedColumnId);
             if (!targetColumn?.type) continue;
+            const normalizedTargetType = normalizeText(targetColumn.type);
             const mappedValue = mapSubitemColumnValueForTarget({
               sourceColumn,
-              targetColumnType: targetColumn.type,
+              targetColumnType: normalizedTargetType,
               sourceSubitemCreatedAt: sourceSubitem.createdAt,
             });
             if (mappedValue.shouldSkip) continue;
             columnValues[mappedColumnId] = mappedValue.value;
+            attemptedSubitemColumnMappings.push({
+              targetColumnId: mappedColumnId,
+              targetColumnType: normalizedTargetType,
+              sourceColumnId: sourceColumn.id,
+            });
             if (
-              normalizeText(targetColumn.type) === "date" &&
+              normalizedTargetType === "date" &&
               isDateColumnPayload(mappedValue.value)
             ) {
               dateColumnValuesForOverwrite[mappedColumnId] = mappedValue.value;
@@ -1568,12 +1621,15 @@ export const migrateSourceItemAction = internalAction({
                 targetEntityId: targetSubitemId,
               });
             } catch (error) {
-              errors += 1;
-              warnings.push(
-                `Failed to create subitem ${sourceSubitem.id} for source item ${args.sourceItem.id}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
+              logCountedError({
+                stage: "subitem_create",
+                sourceEntityId: sourceSubitem.id,
+                error,
+                metadata: {
+                  sourceSubitemName: sourceSubitem.name,
+                  attemptedSubitemColumnMappings,
+                },
+              });
             }
           }
 
@@ -1652,12 +1708,11 @@ export const migrateSourceItemAction = internalAction({
                 targetEntityId: createdUpdateId,
               });
             } catch (error) {
-              errors += 1;
-              warnings.push(
-                `Failed to migrate subitem update ${entityId} for source item ${args.sourceItem.id}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
+              logCountedError({
+                stage: "subitem_update",
+                sourceEntityId: entityId,
+                error,
+              });
             }
           }
         }
