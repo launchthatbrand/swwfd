@@ -100,6 +100,7 @@ export const ContactCard = ({
         </div>
 
       <ApprovalProgressIndicator
+        record={record}
         progressValue={record.batteryProgress}
         steps={approvalSteps}
         rawProgressValue={record.batteryRawValue}

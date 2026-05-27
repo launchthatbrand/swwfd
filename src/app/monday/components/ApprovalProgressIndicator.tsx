@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@launchthatapp/ui/popover";
-import type { ApprovalStepConfig } from "../types";
+import type { ApprovalStepConfig, MondayRecord } from "../types";
+import { getApprovalStepProgress } from "../helpers";
 import { cn } from "~/lib/utils";
 
 export const ApprovalProgressIndicator = (props: {
+  record: MondayRecord;
   progressValue: number | null;
   steps: ApprovalStepConfig[];
   rawProgressValue?: string | null;
@@ -20,10 +22,10 @@ export const ApprovalProgressIndicator = (props: {
     setOpen(next);
     props.onHoverChange?.(next);
   };
+  const stepProgress = getApprovalStepProgress(props.record, props.steps);
   const safeProgress = Math.max(0, Math.min(100, Math.round(props.progressValue ?? 0)));
-  const stepCount = Math.max(props.steps.length, 1);
-  const stepSize = 100 / stepCount;
-  const completedSteps = Math.floor(safeProgress / stepSize);
+  const completedSteps = stepProgress.completedCount;
+  const firstNotDoneStepIndex = stepProgress.states.findIndex((entry) => entry.state !== "done");
   const shouldShowRaw = props.rawProgressValue != null && hoverPopoversEnabled;
   const indicator = (
     <div className={cn("mt-1 space-y-1", props.className)}>
@@ -31,25 +33,27 @@ export const ApprovalProgressIndicator = (props: {
         <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
       </div>
       <div
-        className="relative h-2 cursor-default overflow-hidden rounded-full bg-muted/80"
+        className="flex cursor-default gap-0.5"
         onMouseEnter={hoverPopoversEnabled ? () => updateOpen(true) : undefined}
         onMouseLeave={hoverPopoversEnabled ? () => updateOpen(false) : undefined}
       >
-        <div
-          className="bg-primary h-full transition-all"
-          style={{ width: `${safeProgress}%` }}
-        />
-        {Array.from({ length: Math.max(props.steps.length - 1, 0) }, (_, index) => {
-          const dividerIndex = index + 1;
-          const left = (dividerIndex / Math.max(props.steps.length, 1)) * 100;
-          const completed = safeProgress >= dividerIndex * stepSize;
+        {stepProgress.states.map((step, index) => {
+          const isCurrentStep = firstNotDoneStepIndex >= 0 && index === firstNotDoneStepIndex;
+          const segmentClassName =
+            step.state === "done"
+              ? "bg-emerald-500"
+              : step.state === "skipped"
+                ? "bg-amber-400"
+                : isCurrentStep
+                  ? "bg-primary/40"
+                  : "bg-muted/80";
           return (
             <span
-              key={`divider-${dividerIndex}`}
-              className={`absolute top-0 z-10 h-full w-0.5 -translate-x-1/2 ${
-                completed ? "bg-background/90" : "bg-border/70"
-              }`}
-              style={{ left: `${left}%` }}
+              key={step.step.id}
+              className={cn(
+                "h-2 min-w-0 flex-1 rounded-[2px] transition-colors",
+                segmentClassName,
+              )}
             />
           );
         })}
@@ -81,12 +85,21 @@ export const ApprovalProgressIndicator = (props: {
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold">Onboarding Progress</p>
             <span className="text-muted-foreground text-xs">
-              {completedSteps}/{props.steps.length} steps
+              {completedSteps}/{props.steps.length} steps done
             </span>
           </div>
           <div className="space-y-1">
             {props.steps.map((step, index) => {
-              const completed = safeProgress >= (index + 1) * stepSize;
+              const resolvedStep = stepProgress.states[index];
+              const state = resolvedStep?.state ?? "pending";
+              const statusLabel =
+                state === "done" ? "Done" : state === "skipped" ? "Skipped" : "Pending";
+              const statusClassName =
+                state === "done"
+                  ? "bg-emerald-500/15 text-emerald-700"
+                  : state === "skipped"
+                    ? "bg-amber-500/15 text-amber-700"
+                    : "bg-muted text-muted-foreground";
               return (
                 <div
                   key={step.id}
@@ -96,12 +109,12 @@ export const ApprovalProgressIndicator = (props: {
                     {index + 1}. {step.title}
                   </span>
                   <span
-                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${completed
-                      ? "bg-emerald-500/15 text-emerald-700"
-                      : "bg-muted text-muted-foreground"
-                      }`}
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                      statusClassName,
+                    )}
                   >
-                    {completed ? "Done" : "Pending"}
+                    {statusLabel}
                   </span>
                 </div>
               );
