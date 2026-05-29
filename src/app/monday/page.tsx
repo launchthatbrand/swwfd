@@ -63,7 +63,7 @@ import { Calendar } from "@launchthatapp/ui/calendar";
 
 import { Input } from "@launchthatapp/ui/input";
 import type { MondayClientSdk } from "monday-sdk-js";
-import { MultiSelect } from "@launchthatapp/ui/multi-select";
+import { MultiSelect } from "~/components/ui/multi-select";
 import { Textarea } from "@launchthatapp/ui/textarea";
 import mondaySdkInitialize from "monday-sdk-js";
 import { toast } from "@launchthatapp/ui/toast";
@@ -8683,7 +8683,7 @@ export function MondayBoardView({
               }}
             >
               <DialogContent
-                className="max-w-lg"
+                className="max-w-lg overflow-visible"
                 onInteractOutside={(event) => {
                   event.preventDefault();
                 }}
