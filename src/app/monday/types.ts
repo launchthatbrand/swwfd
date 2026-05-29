@@ -130,6 +130,7 @@ export interface MondayRecordEditOptionsResponse {
     hiredWithContractor: string[];
     retentionPeriod: string[];
     tags: string[];
+    status: string[];
   };
 }
 

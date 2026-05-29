@@ -82,6 +82,7 @@ export interface MondayRecordEditOptions {
   hiredWithContractor: string[];
   retentionPeriod: string[];
   tags: string[];
+  status: string[];
 }
 
 export interface MondayApprovalStep {
@@ -2131,6 +2132,91 @@ export const getMondayUserProfile = async (userId: string) => {
   } satisfies MondayUserProfile;
 };
 
+export const getMondayUsersByIds = async (ids: string[]) => {
+  const usersById = await resolveMondayUsersByIds(ids);
+  return Array.from(usersById.values());
+};
+
+export const listMondayBoardUsers = async () => {
+  const mondayBoard = getMondayBoardEnv();
+  if (!mondayBoard.ok) {
+    throw new Error("Missing Monday configuration");
+  }
+
+  interface BoardUsersData {
+    boards?: Array<{
+      subscribers?: Array<{
+        id?: string | number | null;
+        name?: string | null;
+        email?: string | null;
+        photo_thumb?: string | null;
+      }>;
+      owners?: Array<{
+        id?: string | number | null;
+        name?: string | null;
+        email?: string | null;
+        photo_thumb?: string | null;
+      }>;
+    }>;
+  }
+
+  const data = await callMondayGraphQL<BoardUsersData>(
+    `
+      query ListMondayBoardUsers($boardId: ID!) {
+        boards(ids: [$boardId]) {
+          subscribers {
+            id
+            name
+            email
+            photo_thumb
+          }
+          owners {
+            id
+            name
+            email
+            photo_thumb
+          }
+        }
+      }
+    `,
+    { boardId: mondayBoard.boardId },
+  );
+
+  const users = [
+    ...(data.boards?.[0]?.owners ?? []),
+    ...(data.boards?.[0]?.subscribers ?? []),
+  ];
+
+  return Array.from(
+    new Map(
+      users
+        .map((user) => {
+          const rawId = user.id;
+          if (rawId == null) return null;
+          const id = String(rawId).trim();
+          if (!id) return null;
+          return [
+            id,
+            {
+              id,
+              name: user.name?.trim() || null,
+              email: user.email?.trim() || null,
+              photoThumb: user.photo_thumb?.trim() || null,
+            },
+          ] as const;
+        })
+        .filter(
+          (
+            entry,
+          ): entry is readonly [
+            string,
+            { id: string; name: string | null; email: string | null; photoThumb: string | null },
+          ] => !!entry,
+        ),
+    ).values(),
+  );
+};
+
 const parseDropdownLabelsFromSettings = (settingsStr: string | null | undefined) => {
   if (!settingsStr || settingsStr.trim().length === 0) return [];
   try {
@@ -2192,6 +2278,7 @@ export const getMondayRecordEditOptions = async () => {
       hiredWithContractor: [],
       retentionPeriod: [],
       tags: [],
+      status: [],
     } satisfies MondayRecordEditOptions;
   }
 
@@ -2219,6 +2306,7 @@ export const getMondayRecordEditOptions = async () => {
     boardId: mondayBoard.boardId,
   });
   const columns = data.boards?.[0]?.columns ?? [];
+  const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
   const getLabelsForColumn = (columnId: string) => {
     const column = columns.find((entry) => entry.id === columnId);
     return parseDropdownLabelsFromSettings(column?.settings_str);
@@ -2229,6 +2317,9 @@ export const getMondayRecordEditOptions = async () => {
     hiredWithContractor: getLabelsForColumn(RETENTION_HIRED_WITH_COLUMN_ID),
     retentionPeriod: getLabelsForColumn(RETENTION_PERIOD_COLUMN_ID),
     tags: getLabelsForColumn(TAGS_COLUMN_ID),
+    status: boardColumnIds.statusColumnId
+      ? getLabelsForColumn(boardColumnIds.statusColumnId)
+      : [],
   } satisfies MondayRecordEditOptions;
 };
 

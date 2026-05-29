@@ -560,6 +560,7 @@ export function MondayBoardView({
   const [activeMonth, setActiveMonth] = useState(
     () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)),
   );
+  const [isGlobalDateScope, setIsGlobalDateScope] = useState(false);
   const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
   const monday = useMemo<MondayClientSdk>(() => {
     const sdk: MondayClientSdk = mondaySdkInitialize();
@@ -875,8 +876,8 @@ export function MondayBoardView({
       "monday-records",
       viewMode,
       useUserRecordsEndpoint ? "user-records" : "records",
-      monthBounds.from,
-      monthBounds.to,
+      isGlobalDateScope ? "__global__" : monthBounds.from,
+      isGlobalDateScope ? "__global__" : monthBounds.to,
       debouncedSearch,
       ownerFilter,
       sessionToken,
@@ -898,7 +899,8 @@ export function MondayBoardView({
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
       if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
-      if (!isFullDbSearch) {
+      const shouldApplyDateWindow = !isGlobalDateScope && !isFullDbSearch;
+      if (shouldApplyDateWindow) {
         params.set("dateFrom", monthBounds.from);
         params.set("dateTo", monthBounds.to);
       }
@@ -921,7 +923,7 @@ export function MondayBoardView({
   });
 
   const shouldAutoLoadMore =
-    !staticMode && boardGeneralSettings.pageSize === 0;
+    !staticMode && (boardGeneralSettings.pageSize === 0 || isGlobalDateScope);
   const handleLoadMoreRecords = () => {
     if (recordsQuery.isFetchingNextPage) return;
     if (!recordsQuery.hasNextPage) return;
@@ -1030,6 +1032,33 @@ export function MondayBoardView({
         throw new Error(data.error ?? "Failed to load Monday user profile");
       }
       return data.user ?? null;
+    },
+    staleTime: 60_000,
+  });
+
+  const ownerDirectoryQuery = useQuery({
+    queryKey: ["monday-users", sessionToken],
+    enabled: !!sessionToken && !staticMode,
+    queryFn: async () => {
+      const response = await fetch("/api/monday/users", {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        users?: Array<{
+          id: string;
+          name: string | null;
+          email: string | null;
+          photoThumb: string | null;
+        }>;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load Monday users");
+      }
+      return data.users ?? [];
     },
     staleTime: 60_000,
   });
@@ -1671,6 +1700,21 @@ export function MondayBoardView({
     observer.observe(target);
     return () => observer.disconnect();
   }, [recordsQuery, shouldAutoLoadMore]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!isGlobalDateScope) return;
+    if (recordsQuery.isLoading || recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  }, [
+    isGlobalDateScope,
+    recordsQuery,
+    recordsQuery.hasNextPage,
+    recordsQuery.isFetchingNextPage,
+    recordsQuery.isLoading,
+    staticMode,
+  ]);
 
   const staticRecords = useMemo<MondayRecord[]>(() => {
     if (!staticMode) return [];
@@ -2717,25 +2761,52 @@ export function MondayBoardView({
     return map;
   }, [records]);
 
+  const ownerDirectoryProfileById = useMemo(() => {
+    const map = new Map<
+      string,
+      { id: string; name: string | null; photoThumb: string | null }
+    >();
+    for (const owner of ownerDirectoryQuery.data ?? []) {
+      if (!owner.id) continue;
+      map.set(owner.id, {
+        id: owner.id,
+        name: owner.name,
+        photoThumb: owner.photoThumb,
+      });
+    }
+    return map;
+  }, [ownerDirectoryQuery.data]);
+
   const ownerOptions = useMemo(() => {
+    const ownerIdsFromDirectory = uniqueSorted(
+      Array.from(ownerDirectoryProfileById.keys()).map((ownerId) => ownerId.trim()),
+    );
+    const ownerIdsFromRecords = uniqueSorted(
+      records.flatMap((record) =>
+        (Array.isArray(record.ownerIds) ? record.ownerIds : [])
+          .map((ownerId) => ownerId.trim())
+          .filter((ownerId) => ownerId.length > 0),
+      ),
+    );
+    const ownerIds = uniqueSorted([...ownerIdsFromDirectory, ...ownerIdsFromRecords]);
     return Array.from(
       new Map(
-        records
-          .flatMap((record) => {
-            const ids = Array.isArray(record.ownerIds) ? record.ownerIds : [];
-            return ids.map((id) => ({
+        ownerIds
+          .map((id) => {
+            const ownerProfile =
+              ownerDirectoryProfileById.get(id) ?? ownerProfileById.get(id);
+            const ownerName = ownerProfile?.name?.trim() ?? "";
+            return {
               value: id,
-              label:
-                record.peopleText && record.peopleText.trim().length > 0
-                  ? `${record.peopleText} (${id})`
-                  : `User ${id}`,
-            }));
+              label: ownerName ? `${ownerName} (${id})` : `User ${id}`,
+            };
           })
           .map((entry) => [entry.value, entry.label] as const),
       ),
     )
       .map(([value, label]) => {
-        const ownerProfile = ownerProfileById.get(value);
+        const ownerProfile =
+          ownerDirectoryProfileById.get(value) ?? ownerProfileById.get(value);
         return {
           value,
           label,
@@ -2744,7 +2815,11 @@ export function MondayBoardView({
         };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [ownerProfileById, records]);
+  }, [
+    ownerDirectoryProfileById,
+    ownerProfileById,
+    records,
+  ]);
   const addContactOwnerOptions = useMemo(() => {
     const base = ownerOptions.map((option) => ({ ...option }));
     if (identity?.userId) {
@@ -2833,11 +2908,15 @@ export function MondayBoardView({
   }, [records]);
 
   const statusOptions = useMemo(() => {
-    return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
+    const combinedStatusValues = uniqueSorted([
+      ...records.map((record) => record.statusText),
+      ...(editOptionsQuery.data?.status ?? []),
+    ]);
+    return combinedStatusValues.map((value) => ({
       label: value,
       value,
     }));
-  }, [records]);
+  }, [editOptionsQuery.data?.status, records]);
   const activeAdvancedFilterConditions = useMemo(
     () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
     [advancedFilterConditions],
@@ -2897,8 +2976,11 @@ export function MondayBoardView({
       return compareResult * directionFactor;
     });
   }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
-  const filteredRecordCountLabel = `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"
-    }`;
+  const isHydratingGlobalRecords =
+    !staticMode && isGlobalDateScope && !!recordsQuery.hasNextPage;
+  const filteredRecordCountLabel = isHydratingGlobalRecords
+    ? `${filteredRecords.length} loaded contact${filteredRecords.length === 1 ? "" : "s"} (loading all...)`
+    : `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"}`;
 
   const handleAddAdvancedFilterCondition = () => {
     setActiveSavedAdvancedFilterId(null);
@@ -6835,6 +6917,12 @@ export function MondayBoardView({
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
+                title={
+                  isGlobalDateScope
+                    ? "Global mode active. Click Global to return to month mode."
+                    : "Previous month"
+                }
+                disabled={isGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
@@ -6844,13 +6932,31 @@ export function MondayBoardView({
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
-                {monthBounds.label}
-              </Badge>
+              <Button
+                size="sm"
+                variant={isGlobalDateScope ? "secondary" : "outline"}
+                className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap"
+                title={
+                  isGlobalDateScope
+                    ? "Switch back to month mode"
+                    : "Switch to global mode (all records)"
+                }
+                onClick={() => {
+                  setIsGlobalDateScope((prev) => !prev);
+                }}
+              >
+                {isGlobalDateScope ? "Global" : monthBounds.label}
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
+                title={
+                  isGlobalDateScope
+                    ? "Global mode active. Click Global to return to month mode."
+                    : "Next month"
+                }
+                disabled={isGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
