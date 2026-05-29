@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { getMondayUsersByIds } from "~/server/monday/client";
+import { getMondayUsersByIds, listMondayBoardUsers } from "~/server/monday/client";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
@@ -30,7 +30,8 @@ export const GET = async (request: Request) => {
     ).slice(0, 250);
 
     if (ids.length === 0) {
-      return toJson({ ok: true, users: [] });
+      const users = await listMondayBoardUsers();
+      return toJson({ ok: true, users });
     }
 
     const users = await getMondayUsersByIds(ids);

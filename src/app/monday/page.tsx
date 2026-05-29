@@ -1034,22 +1034,11 @@ export function MondayBoardView({
     staleTime: 60_000,
   });
 
-  const scopedTeamOwnerIds = useMemo(
-    () =>
-      uniqueSorted([
-        ...platformSettingsNormalized.adminUserIds,
-        ...platformSettingsNormalized.employeeUserIds,
-      ]),
-    [platformSettingsNormalized.adminUserIds, platformSettingsNormalized.employeeUserIds],
-  );
-
   const ownerDirectoryQuery = useQuery({
-    queryKey: ["monday-users-by-ids", sessionToken, scopedTeamOwnerIds.join(",")],
-    enabled: !!sessionToken && !staticMode && scopedTeamOwnerIds.length > 0,
+    queryKey: ["monday-users", sessionToken],
+    enabled: !!sessionToken && !staticMode,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("ids", scopedTeamOwnerIds.join(","));
-      const response = await fetch(`/api/monday/users?${params.toString()}`, {
+      const response = await fetch("/api/monday/users", {
         method: "GET",
         cache: "no-store",
         headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
@@ -2772,10 +2761,9 @@ export function MondayBoardView({
   }, [ownerDirectoryQuery.data]);
 
   const ownerOptions = useMemo(() => {
-    const ownerIdsFromSettings = uniqueSorted([
-      ...platformSettingsNormalized.adminUserIds,
-      ...platformSettingsNormalized.employeeUserIds,
-    ]);
+    const ownerIdsFromDirectory = uniqueSorted(
+      Array.from(ownerDirectoryProfileById.keys()).map((ownerId) => ownerId.trim()),
+    );
     const ownerIdsFromRecords = uniqueSorted(
       records.flatMap((record) =>
         (Array.isArray(record.ownerIds) ? record.ownerIds : [])
@@ -2783,7 +2771,7 @@ export function MondayBoardView({
           .filter((ownerId) => ownerId.length > 0),
       ),
     );
-    const ownerIds = uniqueSorted([...ownerIdsFromSettings, ...ownerIdsFromRecords]);
+    const ownerIds = uniqueSorted([...ownerIdsFromDirectory, ...ownerIdsFromRecords]);
     return Array.from(
       new Map(
         ownerIds
@@ -2813,8 +2801,6 @@ export function MondayBoardView({
   }, [
     ownerDirectoryProfileById,
     ownerProfileById,
-    platformSettingsNormalized.adminUserIds,
-    platformSettingsNormalized.employeeUserIds,
     records,
   ]);
   const addContactOwnerOptions = useMemo(() => {
