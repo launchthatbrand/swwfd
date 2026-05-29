@@ -1075,7 +1075,7 @@ export default function MondayToolsPage() {
         sortable: false,
         cell: (item: UnifiedMigrationJobRow) => {
           const isExpanded = expandedHistoryJobIds.has(item.jobId);
-          return (
+  return (
             <div className="max-w-md px-2 py-2">
               <Button
                 type="button"
@@ -1162,7 +1162,7 @@ export default function MondayToolsPage() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">Active Jobs</CardTitle>
-          <Button
+            <Button
             variant="outline"
             size="sm"
             onClick={() => {
@@ -1176,7 +1176,7 @@ export default function MondayToolsPage() {
             disabled={loading || historyLoading}
           >
             Refresh All
-          </Button>
+            </Button>
         </CardHeader>
         <CardContent>
           {activeJobs.length === 0 ? (
@@ -1192,13 +1192,13 @@ export default function MondayToolsPage() {
                     <p className="font-medium">{activeJob.label}</p>
                     <p className="text-muted-foreground text-xs">{activeJob.summary}</p>
                   </div>
-                  <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
                     <Badge variant={getStatusBadgeVariant(activeJob.status)}>
                       {activeJob.status}
                     </Badge>
                     <span className="text-muted-foreground text-xs">{activeJob.jobId}</span>
-                  </div>
-                </div>
+            </div>
+          </div>
               ))}
             </div>
           )}
@@ -1206,96 +1206,96 @@ export default function MondayToolsPage() {
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
+      <Card>
+        <CardHeader>
             <CardTitle className="text-base">Monthly Migration</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-muted-foreground text-sm">
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-muted-foreground text-sm">
               Primary tool for monthly board sync into the canonical API board.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Source Board ID</label>
-                <Input
-                  value={migrationSourceBoardId}
-                  onChange={(event) => setMigrationSourceBoardId(event.target.value)}
-                  placeholder="18406885282"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Target Board ID (optional)</label>
-                <Input
-                  value={migrationTargetBoardId}
-                  onChange={(event) => setMigrationTargetBoardId(event.target.value)}
-                  placeholder="7241111668"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Month Tag</label>
-                <Input
-                  value={migrationMonthTag}
-                  onChange={(event) => setMigrationMonthTag(event.target.value)}
-                  placeholder="april_2026"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Page Size</label>
-                <Input
-                  value={migrationPageSize}
-                  onChange={(event) => setMigrationPageSize(event.target.value)}
-                  placeholder="20"
-                />
-              </div>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Source Board ID</label>
+              <Input
+                value={migrationSourceBoardId}
+                onChange={(event) => setMigrationSourceBoardId(event.target.value)}
+                placeholder="18406885282"
+              />
             </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={migrationDryRun}
-                  onChange={(event) => setMigrationDryRun(event.target.checked)}
-                />
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Target Board ID (optional)</label>
+              <Input
+                value={migrationTargetBoardId}
+                onChange={(event) => setMigrationTargetBoardId(event.target.value)}
+                placeholder="7241111668"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Month Tag</label>
+              <Input
+                value={migrationMonthTag}
+                onChange={(event) => setMigrationMonthTag(event.target.value)}
+                placeholder="april_2026"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Page Size</label>
+              <Input
+                value={migrationPageSize}
+                onChange={(event) => setMigrationPageSize(event.target.value)}
+                placeholder="20"
+              />
+            </div>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationDryRun}
+                onChange={(event) => setMigrationDryRun(event.target.checked)}
+              />
                 Dry run
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={migrationIncludeParentUpdates}
-                  onChange={(event) =>
-                    setMigrationIncludeParentUpdates(event.target.checked)
-                  }
-                />
-                Include parent updates
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={migrationIncludeSubitems}
-                  onChange={(event) => setMigrationIncludeSubitems(event.target.checked)}
-                />
-                Include subitems
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={migrationIncludeSubitemUpdates}
-                  onChange={(event) =>
-                    setMigrationIncludeSubitemUpdates(event.target.checked)
-                  }
-                />
-                Include subitem updates
-              </label>
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeParentUpdates}
+                onChange={(event) =>
+                  setMigrationIncludeParentUpdates(event.target.checked)
+                }
+              />
+              Include parent updates
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeSubitems}
+                onChange={(event) => setMigrationIncludeSubitems(event.target.checked)}
+              />
+              Include subitems
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={migrationIncludeSubitemUpdates}
+                onChange={(event) =>
+                  setMigrationIncludeSubitemUpdates(event.target.checked)
+                }
+              />
+              Include subitem updates
+            </label>
               <label className="flex items-center gap-2 text-sm sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={migrationUpdateProgressColumns}
-                  onChange={(event) =>
-                    setMigrationUpdateProgressColumns(event.target.checked)
-                  }
-                />
-                Update progress columns
-              </label>
-            </div>
+              <input
+                type="checkbox"
+                checked={migrationUpdateProgressColumns}
+                onChange={(event) =>
+                  setMigrationUpdateProgressColumns(event.target.checked)
+                }
+              />
+              Update progress columns
+            </label>
+          </div>
             <label className="flex items-center gap-2 text-sm">
               <span className="whitespace-nowrap text-muted-foreground">
                 Month key (YYYY-MM):
@@ -1311,73 +1311,73 @@ export default function MondayToolsPage() {
                 {migrationDryRun ? "Dry Run" : "Write Mode"}
               </Badge>
             </label>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                onClick={() => void startMonthlyMigration()}
-                disabled={startingMonthlyMigration}
-              >
-                {startingMonthlyMigration
-                  ? "Starting..."
-                  : migrationDryRun
-                    ? "Start Dry Run"
-                    : "Start Migration"}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => void refreshMonthlyMigrationStatus()}
-              >
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void startMonthlyMigration()}
+              disabled={startingMonthlyMigration}
+            >
+              {startingMonthlyMigration
+                ? "Starting..."
+                : migrationDryRun
+                  ? "Start Dry Run"
+                  : "Start Migration"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void refreshMonthlyMigrationStatus()}
+            >
                 Refresh Status
-              </Button>
-              {monthlyJob?.status === "running" ? (
-                <Button
-                  variant="destructive"
-                  onClick={() => void cancelMonthlyMigration()}
-                  disabled={cancellingMonthlyMigration}
-                >
+            </Button>
+            {monthlyJob?.status === "running" ? (
+              <Button
+                variant="destructive"
+                onClick={() => void cancelMonthlyMigration()}
+                disabled={cancellingMonthlyMigration}
+              >
                   {cancellingMonthlyMigration ? "Cancelling..." : "Cancel"}
-                </Button>
-              ) : null}
-            </div>
+              </Button>
+            ) : null}
+          </div>
             {monthlyJob ? (
               <div className="space-y-1 rounded border p-3 text-xs">
-                <div className="flex items-center gap-2">
-                  <Badge variant={getStatusBadgeVariant(monthlyJob.status)}>
-                    {monthlyJob.status}
-                  </Badge>
+              <div className="flex items-center gap-2">
+                <Badge variant={getStatusBadgeVariant(monthlyJob.status)}>
+                  {monthlyJob.status}
+                </Badge>
                   <span>{monthlyJob.jobId}</span>
-                </div>
-                <p>
+              </div>
+              <p>
                   Processed {monthlyJob.processedContacts.toLocaleString()} · Mapped{" "}
                   {monthlyJob.mappedContacts.toLocaleString()} · Skipped{" "}
-                  {monthlyJob.skippedContacts.toLocaleString()}
-                </p>
-                <p>
+                {monthlyJob.skippedContacts.toLocaleString()}
+              </p>
+              <p>
                   Created updates/subitems:{" "}
                   {(
                     monthlyJob.createdParentUpdates +
                     monthlyJob.createdSubitems +
                     monthlyJob.createdSubitemUpdates
                   ).toLocaleString()}
-                </p>
-                <p>
+              </p>
+              <p>
                   Updated progress columns:{" "}
                   {(monthlyJob.updatedProgressColumns ?? 0).toLocaleString()} · Errors:{" "}
-                  {monthlyJob.errorsCount.toLocaleString()}
-                </p>
-                {monthlyJob.lastError ? (
+                {monthlyJob.errorsCount.toLocaleString()}
+              </p>
+              {monthlyJob.lastError ? (
                   <p className="text-destructive">{monthlyJob.lastError}</p>
-                ) : null}
-              </div>
+              ) : null}
+            </div>
             ) : (
               <p className="text-muted-foreground text-xs">No migration run yet.</p>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
+      <Card>
+        <CardHeader>
             <CardTitle className="text-base">Hire Event Backfill (By Month)</CardTitle>
-          </CardHeader>
+        </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-muted-foreground text-sm">
               Rebuild canonical hire-event subitems month-by-month.
@@ -1413,8 +1413,8 @@ export default function MondayToolsPage() {
               </label>
               <Badge variant={hireEventDryRun ? "outline" : "secondary"}>
                 {hireEventDryRun ? "Dry Run" : "Write Mode"}
-              </Badge>
-            </div>
+                </Badge>
+              </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={() => void startHireEventBackfill()}
@@ -1441,33 +1441,33 @@ export default function MondayToolsPage() {
             </div>
             {hireEventJob ? (
               <div className="space-y-1 rounded border p-3 text-xs">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                   <Badge variant={getStatusBadgeVariant(hireEventJob.status)}>
                     {hireEventJob.status}
-                  </Badge>
+                </Badge>
                   <span>{hireEventJob.jobId}</span>
-                </div>
-                <p>
+              </div>
+              <p>
                   Range: {hireEventJob.dateFrom} → {hireEventJob.dateTo}
-                </p>
-                <p>
+              </p>
+              <p>
                   Processed {hireEventJob.processedContacts.toLocaleString()} · In range{" "}
                   {hireEventJob.inRangeContacts.toLocaleString()}
-                </p>
-                <p>
+              </p>
+              <p>
                   Created {hireEventJob.createdEvents.toLocaleString()} · Skipped{" "}
                   {hireEventJob.skippedEvents.toLocaleString()} · Errors{" "}
                   {hireEventJob.errorsCount.toLocaleString()}
                 </p>
                 {hireEventJob.lastError ? (
                   <p className="text-destructive">{hireEventJob.lastError}</p>
-                ) : null}
-              </div>
+              ) : null}
+            </div>
             ) : (
               <p className="text-muted-foreground text-xs">No hire-event run yet.</p>
-            )}
-          </CardContent>
-        </Card>
+          )}
+        </CardContent>
+      </Card>
       </div>
 
       <Card>
@@ -1772,8 +1772,8 @@ export default function MondayToolsPage() {
                       >
                         {cancelling ? "Cancelling..." : "Cancel Running Job"}
                       </Button>
-                    ) : null}
-                  </div>
+              ) : null}
+            </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     <div className="rounded border p-2 text-xs">
                       <p className="font-medium">Latest Touch Backfill</p>
@@ -1807,20 +1807,20 @@ export default function MondayToolsPage() {
                       )}
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+        </CardContent>
+      </Card>
 
-              <Card>
-                <CardHeader>
+      <Card>
+        <CardHeader>
                   <CardTitle className="text-sm">Touch Range Backfill (Legacy)</CardTitle>
-                </CardHeader>
+        </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <label className="flex items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
                       <span className="whitespace-nowrap text-muted-foreground">From:</span>
-                      <input
+              <input
                         type="date"
-                        className="rounded border px-2 py-1 text-sm"
+                className="rounded border px-2 py-1 text-sm"
                         value={touchRangeDateFrom}
                         onChange={(event) => setTouchRangeDateFrom(event.target.value)}
                       />
@@ -1832,80 +1832,80 @@ export default function MondayToolsPage() {
                         className="rounded border px-2 py-1 text-sm"
                         value={touchRangeDateTo}
                         onChange={(event) => setTouchRangeDateTo(event.target.value)}
-                      />
-                    </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
-                      <input
-                        type="number"
-                        className="w-20 rounded border px-2 py-1 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <span className="whitespace-nowrap text-muted-foreground">Page size:</span>
+              <input
+                type="number"
+                className="w-20 rounded border px-2 py-1 text-sm"
                         value={touchRangePageSize}
-                        min={25}
-                        max={200}
+                min={25}
+                max={200}
                         onChange={(event) => setTouchRangePageSize(event.target.value)}
-                      />
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
                         checked={touchRangeDryRun}
                         onChange={(event) => setTouchRangeDryRun(event.target.checked)}
-                      />
-                      <span>Dry Run</span>
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
+              />
+              <span>Dry Run</span>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
                       onClick={() => void startTouchRangeBackfill()}
                       disabled={startingTouchRange}
-                    >
+            >
                       {startingTouchRange
-                        ? "Starting..."
+                ? "Starting..."
                         : touchRangeDryRun
-                          ? "Start Dry Run"
-                          : "Start Backfill"}
-                    </Button>
+                  ? "Start Dry Run"
+                  : "Start Backfill"}
+            </Button>
                     <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
-                      Refresh Status
-                    </Button>
+              Refresh Status
+            </Button>
                     {touchRangeJob?.status === "running" ? (
-                      <Button
-                        variant="destructive"
+              <Button
+                variant="destructive"
                         onClick={() => void cancelTouchRangeBackfill()}
                         disabled={cancellingTouchRange}
-                      >
+              >
                         {cancellingTouchRange ? "Cancelling..." : "Cancel"}
-                      </Button>
-                    ) : null}
-                  </div>
+              </Button>
+            ) : null}
+          </div>
                   {touchRangeJob ? (
                     <div className="space-y-1 rounded border p-3 text-xs">
-                      <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                         <Badge variant={getStatusBadgeVariant(touchRangeJob.status)}>
                           {touchRangeJob.status}
-                        </Badge>
+                </Badge>
                         <span>{touchRangeJob.jobId}</span>
-                      </div>
-                      <p>
+              </div>
+              <p>
                         Range: {touchRangeJob.dateFrom} → {touchRangeJob.dateTo}
-                      </p>
-                      <p>
+              </p>
+              <p>
                         Processed {touchRangeJob.processedContacts.toLocaleString()} · In range{" "}
                         {touchRangeJob.inRangeContacts.toLocaleString()}
-                      </p>
-                      <p>
+              </p>
+              <p>
                         Created {touchRangeJob.createdTouches.toLocaleString()} · Updated{" "}
                         {touchRangeJob.updatedTouches.toLocaleString()} · Skipped{" "}
                         {touchRangeJob.skippedTouches.toLocaleString()}
                       </p>
-                    </div>
-                  ) : (
+            </div>
+          ) : (
                     <p className="text-muted-foreground text-xs">
                       No touch-range backfill job found.
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+            </p>
+          )}
+        </CardContent>
+      </Card>
             </CardContent>
           </CollapsibleContent>
         </Card>

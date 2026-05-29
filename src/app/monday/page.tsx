@@ -560,6 +560,7 @@ export function MondayBoardView({
   const [activeMonth, setActiveMonth] = useState(
     () => new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)),
   );
+  const [isGlobalDateScope, setIsGlobalDateScope] = useState(false);
   const loadMoreAnchorRef = useRef<HTMLDivElement | null>(null);
   const monday = useMemo<MondayClientSdk>(() => {
     const sdk: MondayClientSdk = mondaySdkInitialize();
@@ -875,8 +876,8 @@ export function MondayBoardView({
       "monday-records",
       viewMode,
       useUserRecordsEndpoint ? "user-records" : "records",
-      monthBounds.from,
-      monthBounds.to,
+      isGlobalDateScope ? "__global__" : monthBounds.from,
+      isGlobalDateScope ? "__global__" : monthBounds.to,
       debouncedSearch,
       ownerFilter,
       sessionToken,
@@ -898,7 +899,8 @@ export function MondayBoardView({
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
       if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
       if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
-      if (!isFullDbSearch) {
+      const shouldApplyDateWindow = !isGlobalDateScope && !isFullDbSearch;
+      if (shouldApplyDateWindow) {
         params.set("dateFrom", monthBounds.from);
         params.set("dateTo", monthBounds.to);
       }
@@ -921,7 +923,7 @@ export function MondayBoardView({
   });
 
   const shouldAutoLoadMore =
-    !staticMode && boardGeneralSettings.pageSize === 0;
+    !staticMode && (boardGeneralSettings.pageSize === 0 || isGlobalDateScope);
   const handleLoadMoreRecords = () => {
     if (recordsQuery.isFetchingNextPage) return;
     if (!recordsQuery.hasNextPage) return;
@@ -1698,6 +1700,21 @@ export function MondayBoardView({
     observer.observe(target);
     return () => observer.disconnect();
   }, [recordsQuery, shouldAutoLoadMore]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!isGlobalDateScope) return;
+    if (recordsQuery.isLoading || recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  }, [
+    isGlobalDateScope,
+    recordsQuery,
+    recordsQuery.hasNextPage,
+    recordsQuery.isFetchingNextPage,
+    recordsQuery.isLoading,
+    staticMode,
+  ]);
 
   const staticRecords = useMemo<MondayRecord[]>(() => {
     if (!staticMode) return [];
@@ -2959,8 +2976,11 @@ export function MondayBoardView({
       return compareResult * directionFactor;
     });
   }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
-  const filteredRecordCountLabel = `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"
-    }`;
+  const isHydratingGlobalRecords =
+    !staticMode && isGlobalDateScope && !!recordsQuery.hasNextPage;
+  const filteredRecordCountLabel = isHydratingGlobalRecords
+    ? `${filteredRecords.length} loaded contact${filteredRecords.length === 1 ? "" : "s"} (loading all...)`
+    : `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"}`;
 
   const handleAddAdvancedFilterCondition = () => {
     setActiveSavedAdvancedFilterId(null);
@@ -6897,6 +6917,12 @@ export function MondayBoardView({
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
+                title={
+                  isGlobalDateScope
+                    ? "Global mode active. Click Global to return to month mode."
+                    : "Previous month"
+                }
+                disabled={isGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
@@ -6906,13 +6932,31 @@ export function MondayBoardView({
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
-                {monthBounds.label}
-              </Badge>
+              <Button
+                size="sm"
+                variant={isGlobalDateScope ? "secondary" : "outline"}
+                className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap"
+                title={
+                  isGlobalDateScope
+                    ? "Switch back to month mode"
+                    : "Switch to global mode (all records)"
+                }
+                onClick={() => {
+                  setIsGlobalDateScope((prev) => !prev);
+                }}
+              >
+                {isGlobalDateScope ? "Global" : monthBounds.label}
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
+                title={
+                  isGlobalDateScope
+                    ? "Global mode active. Click Global to return to month mode."
+                    : "Next month"
+                }
+                disabled={isGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
