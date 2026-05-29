@@ -63,7 +63,7 @@ import { Calendar } from "@launchthatapp/ui/calendar";
 
 import { Input } from "@launchthatapp/ui/input";
 import type { MondayClientSdk } from "monday-sdk-js";
-import { MultiSelect } from "@launchthatapp/ui/multi-select";
+import { MultiSelect } from "~/components/ui/multi-select";
 import { Textarea } from "@launchthatapp/ui/textarea";
 import mondaySdkInitialize from "monday-sdk-js";
 import { toast } from "@launchthatapp/ui/toast";
@@ -799,15 +799,15 @@ export function MondayBoardView({
   );
   const hasUnsavedPlatformSettings =
     platformSettingsNormalized.adminUserIds.join(",") !==
-      platformSettingsDraftNormalized.adminUserIds.join(",") ||
+    platformSettingsDraftNormalized.adminUserIds.join(",") ||
     platformSettingsNormalized.employeeUserIds.join(",") !==
-      platformSettingsDraftNormalized.employeeUserIds.join(",") ||
+    platformSettingsDraftNormalized.employeeUserIds.join(",") ||
     platformSettingsNormalized.replyToEmails.join(",") !==
-      platformSettingsDraftNormalized.replyToEmails.join(",") ||
+    platformSettingsDraftNormalized.replyToEmails.join(",") ||
     emailSystemTagsSignature(platformSettingsNormalized.emailSystemTags) !==
-      emailSystemTagsSignature(platformSettingsDraftNormalized.emailSystemTags) ||
+    emailSystemTagsSignature(platformSettingsDraftNormalized.emailSystemTags) ||
     platformMappingsSignature(platformSettingsNormalized.monthlyBoardMappings) !==
-      platformMappingsSignature(platformSettingsDraftNormalized.monthlyBoardMappings);
+    platformMappingsSignature(platformSettingsDraftNormalized.monthlyBoardMappings);
   const canOverrideUserScopeOwner =
     viewMode === "userScoped" &&
     !hasForcedOwnerScope &&
@@ -857,12 +857,12 @@ export function MondayBoardView({
   const hasUnsavedBoardGeneralSettings =
     boardGeneralSettings.colorTheme !== boardGeneralSettingsDraft.colorTheme ||
     boardGeneralSettings.customTheme?.colorHex !==
-      boardGeneralSettingsDraft.customTheme?.colorHex ||
+    boardGeneralSettingsDraft.customTheme?.colorHex ||
     boardGeneralSettings.customTheme?.alpha !== boardGeneralSettingsDraft.customTheme?.alpha ||
     boardGeneralSettings.fontSize !== boardGeneralSettingsDraft.fontSize ||
     boardGeneralSettings.tableDensity !== boardGeneralSettingsDraft.tableDensity ||
     boardGeneralSettings.hoverPopoversEnabled !==
-      boardGeneralSettingsDraft.hoverPopoversEnabled ||
+    boardGeneralSettingsDraft.hoverPopoversEnabled ||
     boardGeneralSettings.pageSize !== boardGeneralSettingsDraft.pageSize ||
     boardGeneralSettings.displayMode !== boardGeneralSettingsDraft.displayMode ||
     boardGeneralSettings.recordSource !== boardGeneralSettingsDraft.recordSource;
@@ -2355,28 +2355,28 @@ export function MondayBoardView({
       (sendEmailContactColumnsQuery.data?.columns ?? []).map((column) => {
         const fallbackFromValue =
           typeof column.value === "string" &&
-          column.value.trim().startsWith("{") &&
-          column.value.trim().endsWith("}")
+            column.value.trim().startsWith("{") &&
+            column.value.trim().endsWith("}")
             ? (() => {
-                try {
-                  const parsed = JSON.parse(column.value) as {
-                    label?: { text?: unknown };
-                    labels?: unknown;
-                    text?: unknown;
-                  };
-                  if (typeof parsed.label?.text === "string") return parsed.label.text;
-                  if (Array.isArray(parsed.labels)) {
-                    const labels = parsed.labels.filter(
-                      (value): value is string => typeof value === "string",
-                    );
-                    if (labels.length > 0) return labels.join(", ");
-                  }
-                  if (typeof parsed.text === "string") return parsed.text;
-                } catch {
-                  // ignore parse errors
+              try {
+                const parsed = JSON.parse(column.value) as {
+                  label?: { text?: unknown };
+                  labels?: unknown;
+                  text?: unknown;
+                };
+                if (typeof parsed.label?.text === "string") return parsed.label.text;
+                if (Array.isArray(parsed.labels)) {
+                  const labels = parsed.labels.filter(
+                    (value): value is string => typeof value === "string",
+                  );
+                  if (labels.length > 0) return labels.join(", ");
                 }
-                return "";
-              })()
+                if (typeof parsed.text === "string") return parsed.text;
+              } catch {
+                // ignore parse errors
+              }
+              return "";
+            })()
             : "";
         return [column.id, (column.text?.trim() || fallbackFromValue || "").trim()];
       }),
@@ -2403,14 +2403,14 @@ export function MondayBoardView({
     const matchedTemplateId =
       preferredType === "welcome_email"
         ? emailTemplates.find((template) =>
-            template.name.toLowerCase().includes("welcome"),
-          )?.id
+          template.name.toLowerCase().includes("welcome"),
+        )?.id
         : preferredType === "followup"
           ? emailTemplates.find((template) => {
-              const name = template.name.toLowerCase();
-              return name.includes("questionnaire") || name.includes("questionaire");
-            })?.id
-        : null;
+            const name = template.name.toLowerCase();
+            return name.includes("questionnaire") || name.includes("questionaire");
+          })?.id
+          : null;
     setSendEmailTemplateId(matchedTemplateId ?? emailTemplates[0]?.id ?? null);
   }, [
     emailTemplates,
@@ -2566,21 +2566,21 @@ export function MondayBoardView({
         const sendProgressDateTime = new Date().toISOString();
         const updatePayload = sendEmailProgressUpdate
           ? {
-              body: sendEmailProgressUpdate.body,
-              updateType: sendEmailProgressUpdate.updateType as ContactUpdateType,
-              internalExternalStatus: sendEmailProgressUpdate.internalExternalStatus ?? "External",
-              methodOfCommunication: undefined as string | undefined,
-              suppressApprovalStepMarking: false,
-              fallbackErrorMessage: "Failed to track onboarding progress",
-            }
+            body: sendEmailProgressUpdate.body,
+            updateType: sendEmailProgressUpdate.updateType as ContactUpdateType,
+            internalExternalStatus: sendEmailProgressUpdate.internalExternalStatus ?? "External",
+            methodOfCommunication: undefined as string | undefined,
+            suppressApprovalStepMarking: false,
+            fallbackErrorMessage: "Failed to track onboarding progress",
+          }
           : {
-              body: emailUpdateSummary,
-              updateType: derivedGeneralEmailUpdateType,
-              internalExternalStatus: "External" as "Internal" | "External",
-              methodOfCommunication: "Email",
-              suppressApprovalStepMarking: derivedGeneralEmailUpdateType !== "general",
-              fallbackErrorMessage: "Failed to log email update",
-            };
+            body: emailUpdateSummary,
+            updateType: derivedGeneralEmailUpdateType,
+            internalExternalStatus: "External" as "Internal" | "External",
+            methodOfCommunication: "Email",
+            suppressApprovalStepMarking: derivedGeneralEmailUpdateType !== "general",
+            fallbackErrorMessage: "Failed to log email update",
+          };
         let updateData: MondayCreateRecordUpdateResponse;
 
         const syncViaServer = async () => {
@@ -2657,7 +2657,7 @@ export function MondayBoardView({
               ownerId: identity.userId,
               source: "update",
             }),
-          }).catch(() => {});
+          }).catch(() => { });
         }
 
         const [, refreshedRecordsResult] = await Promise.all([
@@ -2891,15 +2891,14 @@ export function MondayBoardView({
         typeof valueA === "number" && typeof valueB === "number"
           ? valueA - valueB
           : String(valueA).localeCompare(String(valueB), undefined, {
-              numeric: true,
-              sensitivity: "base",
-            });
+            numeric: true,
+            sensitivity: "base",
+          });
       return compareResult * directionFactor;
     });
   }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
-  const filteredRecordCountLabel = `${filteredRecords.length} total contact${
-    filteredRecords.length === 1 ? "" : "s"
-  }`;
+  const filteredRecordCountLabel = `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"
+    }`;
 
   const handleAddAdvancedFilterCondition = () => {
     setActiveSavedAdvancedFilterId(null);
@@ -3809,7 +3808,7 @@ export function MondayBoardView({
         ) ??
         (prevContactId
           ? findSingleMatch((candidate) => candidate.id.trim() === prevContactId) ??
-            findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === prevContactId)
+          findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === prevContactId)
           : null) ??
         findSingleMatch((candidate) => (candidate.contactId?.trim() ?? "") === previousRecordId);
       if (!matchedRecord) return prev;
@@ -4706,7 +4705,7 @@ export function MondayBoardView({
           ownerId: identity.userId,
           source: "update",
         }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     try {
@@ -5971,8 +5970,8 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => (
         <Tooltip>
           <TooltipTrigger asChild>
-          <button
-            type="button"
+            <button
+              type="button"
               className="flex h-full w-full items-center justify-center p-1 text-muted-foreground transition-colors hover:text-primary"
               onClick={(e) => {
                 e.stopPropagation();
@@ -5982,11 +5981,11 @@ export function MondayBoardView({
             >
               <CircleHelp className="h-3.5 w-3.5" />
             </button>
-                </TooltipTrigger>
+          </TooltipTrigger>
           <TooltipContent side="right" className="text-xs">
             Submit a support ticket for {item.name}
-                </TooltipContent>
-              </Tooltip>
+          </TooltipContent>
+        </Tooltip>
       ),
     },
     {
@@ -6033,12 +6032,12 @@ export function MondayBoardView({
       cell: (item: MondayRecord) => {
         const isCompactOwner = tableDensity === "compact";
         return (
-        <button
-          type="button"
-          onClick={() => openOwnerDialog(item)}
+          <button
+            type="button"
+            onClick={() => openOwnerDialog(item)}
             className={`hover:bg-accent/40 flex w-full cursor-pointer items-center rounded-md text-center ${isCompactOwner ? "justify-start gap-1.5 px-2 py-1" : "justify-center p-2"}`}
-        >
-          {item.ownerProfiles.length > 0 ? (
+          >
+            {item.ownerProfiles.length > 0 ? (
               isCompactOwner ? (
                 <div className="flex items-center gap-1.5">
                   <div className="flex items-center -space-x-1.5">
@@ -6063,33 +6062,33 @@ export function MondayBoardView({
                   </span>
                 </div>
               ) : (
-            <div className="flex flex-col items-center gap-1">
-              <div className="flex items-center justify-center -space-x-2">
-                {item.ownerProfiles.slice(0, 3).map((owner) => (
-                  <Avatar
-                    key={owner.id}
-                    className="size-8 border-2 border-background shadow-sm"
-                  >
-                    {owner.photoThumb ? (
-                      <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
-                    ) : null}
-                    <AvatarFallback className="text-xs font-semibold">
-                      {getNameInitials(owner.name ?? owner.id)}
-                    </AvatarFallback>
-                  </Avatar>
-                ))}
-              </div>
-              <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
-                {item.ownerProfiles
-                  .map((owner) => owner.name?.trim() ?? owner.id)
-                  .join(", ")}
-              </span>
-            </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="flex items-center justify-center -space-x-2">
+                    {item.ownerProfiles.slice(0, 3).map((owner) => (
+                      <Avatar
+                        key={owner.id}
+                        className="size-8 border-2 border-background shadow-sm"
+                      >
+                        {owner.photoThumb ? (
+                          <AvatarImage src={owner.photoThumb} alt={owner.name ?? owner.id} />
+                        ) : null}
+                        <AvatarFallback className="text-xs font-semibold">
+                          {getNameInitials(owner.name ?? owner.id)}
+                        </AvatarFallback>
+                      </Avatar>
+                    ))}
+                  </div>
+                  <span className="line-clamp-2 max-w-[180px] text-[11px] leading-tight">
+                    {item.ownerProfiles
+                      .map((owner) => owner.name?.trim() ?? owner.id)
+                      .join(", ")}
+                  </span>
+                </div>
               )
-          ) : (
-            <span className="text-xs">{item.peopleText ?? "—"}</span>
-          )}
-        </button>
+            ) : (
+              <span className="text-xs">{item.peopleText ?? "—"}</span>
+            )}
+          </button>
         );
       },
     },
@@ -6131,10 +6130,10 @@ export function MondayBoardView({
         const isCompact = tableDensity === "compact";
 
         if (isCompact) {
-        return (
-          <button
-            type="button"
-            onClick={() => openRetentionDialog(item)}
+          return (
+            <button
+              type="button"
+              onClick={() => openRetentionDialog(item)}
               title={[
                 referredValues.length > 0 ? `Referred: ${referredValues.join(", ")}` : null,
                 item.hiredWithContractor?.trim() ? `Hired: ${item.hiredWithContractor.trim()}` : null,
@@ -6221,8 +6220,8 @@ export function MondayBoardView({
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Hire Date:</span>
               <span className="truncate text-xs">
-              {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
-            </span>
+                {item.hireDate ? formatUpdatedAt(item.hireDate) : "—"}
+              </span>
             </div>
             <div className="flex w-full min-w-0 items-center gap-1 overflow-hidden">
               <span className="shrink-0 text-xs font-medium">Period:</span>
@@ -6301,19 +6300,19 @@ export function MondayBoardView({
             ) : (
               <span className="text-muted-foreground text-xs">—</span>
             )}
-              <input
+            <input
               id={fileInputId}
-                type="file"
+              type="file"
               className="hidden"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  void handleUploadResume(item, file);
-                  event.currentTarget.value = "";
-                }}
-                disabled={isUploading || staticMode}
-              />
-              {isUploading ? (
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleUploadResume(item, file);
+                event.currentTarget.value = "";
+              }}
+              disabled={isUploading || staticMode}
+            />
+            {isUploading ? (
               <span className="text-muted-foreground shrink-0 text-[10px]">Uploading…</span>
             ) : (
               <label
@@ -6377,17 +6376,17 @@ export function MondayBoardView({
     },
     ...(featureFlags.emailMarketingEnabled
       ? ([
-    {
-      id: "send-email",
-      label: "Send Email",
-      icon: <Mail className="h-4 w-4" />,
-      variant: "secondary",
+        {
+          id: "send-email",
+          label: "Send Email",
+          icon: <Mail className="h-4 w-4" />,
+          variant: "secondary",
           onClick: (record: MondayRecord) => {
-        openSendEmailDialog(record);
-      },
+            openSendEmailDialog(record);
+          },
           isDisabled: (record: MondayRecord) =>
             !record.email || !sessionToken || staticMode,
-    },
+        },
       ] satisfies EntityAction<MondayRecord>[])
       : []),
 
@@ -6395,33 +6394,33 @@ export function MondayBoardView({
 
   return (
     <GuidedTourProvider>
-    <UserSettingsProvider settings={boardGeneralSettings}>
-    <div className="monday-like-page mx-auto space-y-3 pb-10">
-      <div
-        data-board-filter-bar
-        className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
-        style={boardThemeInlineStyles.shellCardStyle}
-      >
-        <div className="flex min-w-0 items-center gap-1.5">
-          {/* Search */}
-          <div data-tour="search" className="relative min-w-0 flex-1">
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search (2+ chars)…"
-              className="bg-background h-8 w-full text-xs shadow-sm"
-              />
-              {search.trim().length > 0 && search.trim().length < 2 ? (
-              <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
-                2+ chars needed
-                </p>
-              ) : null}
-            </div>
+      <UserSettingsProvider settings={boardGeneralSettings}>
+        <div className="monday-like-page mx-auto space-y-3 pb-10">
+          <div
+            data-board-filter-bar
+            className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+            style={boardThemeInlineStyles.shellCardStyle}
+          >
+            <div className="flex min-w-0 items-center gap-1.5">
+              {/* Search */}
+              <div data-tour="search" className="relative min-w-0 flex-1">
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search (2+ chars)…"
+                  className="bg-background h-8 w-full text-xs shadow-sm"
+                />
+                {search.trim().length > 0 && search.trim().length < 2 ? (
+                  <p className="text-muted-foreground absolute -bottom-4 left-0 text-[10px]">
+                    2+ chars needed
+                  </p>
+                ) : null}
+              </div>
 
-          <div className="bg-border/60 h-5 w-px shrink-0" />
+              <div className="bg-border/60 h-5 w-px shrink-0" />
 
-          {/* Owner + district filters */}
-          <div data-tour="filters" className="flex items-center gap-1.5">
+              {/* Owner + district filters */}
+              <div data-tour="filters" className="flex items-center gap-1.5">
                 <select
                   value={ownerFilter || "__all_owner__"}
                   onChange={(event) => {
@@ -6429,16 +6428,16 @@ export function MondayBoardView({
                     const value = event.target.value;
                     setOwnerFilter(value === "__all_owner__" ? "" : value);
                   }}
-            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
-            style={{ maxWidth: "160px" }}
+                  className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+                  style={{ maxWidth: "160px" }}
                   disabled={!isOwnerFilterEditable}
                 >
                   {isOwnerFilterEditable ? (
                     <option value="__all_owner__">Owner: all</option>
                   ) : (
-              <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
-                {lockedOwnerLabel}
-              </option>
+                    <option value={ownerFilter || forcedOwnerId || "__all_owner__"}>
+                      {lockedOwnerLabel}
+                    </option>
                   )}
                   {!ownerOptionHasSelectedValue && ownerFilter.trim().length > 0 ? (
                     <option value={ownerFilter}>{`Owner ${ownerFilter} (selected)`}</option>
@@ -6455,8 +6454,8 @@ export function MondayBoardView({
                     const value = event.target.value;
                     setStatusFilter(value === "__all_status__" ? "" : value);
                   }}
-            className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
-            style={{ maxWidth: "150px" }}
+                  className="bg-background border-input h-8 shrink-0 rounded-md border px-2 text-xs shadow-sm"
+                  style={{ maxWidth: "150px" }}
                 >
                   <option value="__all_status__">District: all</option>
                   {statusOptions.map((option) => (
@@ -6466,409 +6465,409 @@ export function MondayBoardView({
                   ))}
                 </select>
               </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
-                <Filter className="h-3.5 w-3.5" />
-                {activeAdvancedFilterConditions.length > 0 && (
-                  <Badge variant="secondary" className="ml-1 h-4 px-1 py-0 leading-none text-[10px]">
-                    {activeAdvancedFilterConditions.length}
-                  </Badge>
-                )}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
-              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
-                <DialogTitle>Advanced Filters</DialogTitle>
-                <DialogDescription>
-                  Build multi-condition logic, preview result count, and save presets per
-                  owner board.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-5 overflow-y-auto px-6 py-5">
-                <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
-                      {activeAdvancedFilterConditions.length} active
-                    </Badge>
-                    <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
-                      {advancedFilterConditions.length} total
-                    </Badge>
-                    <span className="text-muted-foreground text-xs">
-                      Showing {filteredRecords.length} of {records.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label
-                      htmlFor="advanced-filter-match-mode"
-                      className="text-muted-foreground text-xs font-medium"
-                    >
-                      Match mode
-                    </label>
-                    <select
-                      id="advanced-filter-match-mode"
-                      value={advancedFilterMatchMode}
-                      onChange={(event) => {
-                        const value = event.target.value === "any" ? "any" : "all";
-                        setActiveSavedAdvancedFilterId(null);
-                        setAdvancedFilterMatchMode(value);
-                      }}
-                      className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
-                    >
-                      <option value="all">Match all conditions</option>
-                      <option value="any">Match any condition</option>
-                    </select>
-                  </div>
-                </div>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 shrink-0 px-2.5" title="Advanced Filters">
+                    <Filter className="h-3.5 w-3.5" />
+                    {activeAdvancedFilterConditions.length > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-4 px-1 py-0 leading-none text-[10px]">
+                        {activeAdvancedFilterConditions.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
+                  <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                    <DialogTitle>Advanced Filters</DialogTitle>
+                    <DialogDescription>
+                      Build multi-condition logic, preview result count, and save presets per
+                      owner board.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-5 overflow-y-auto px-6 py-5">
+                    <div className="grid gap-3 rounded-md border-2 border-border/70 bg-card/70 p-3 shadow-sm md:grid-cols-[1fr_auto] md:items-center">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="secondary" className="border border-border/60 bg-primary/10 text-xs">
+                          {activeAdvancedFilterConditions.length} active
+                        </Badge>
+                        <Badge variant="outline" className="border-border/70 bg-background/80 text-xs">
+                          {advancedFilterConditions.length} total
+                        </Badge>
+                        <span className="text-muted-foreground text-xs">
+                          Showing {filteredRecords.length} of {records.length}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label
+                          htmlFor="advanced-filter-match-mode"
+                          className="text-muted-foreground text-xs font-medium"
+                        >
+                          Match mode
+                        </label>
+                        <select
+                          id="advanced-filter-match-mode"
+                          value={advancedFilterMatchMode}
+                          onChange={(event) => {
+                            const value = event.target.value === "any" ? "any" : "all";
+                            setActiveSavedAdvancedFilterId(null);
+                            setAdvancedFilterMatchMode(value);
+                          }}
+                          className="border-input h-8 rounded-md border-2 bg-background px-2 text-sm shadow-sm"
+                        >
+                          <option value="all">Match all conditions</option>
+                          <option value="any">Match any condition</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-medium">Conditions</p>
-                      <p className="text-muted-foreground text-xs">
-                        Add or remove conditions that run against Monday board columns.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                        className="h-8 border-2 px-3 text-xs shadow-sm"
-                        onClick={handleAddAdvancedFilterCondition}
-                      >
-                        Add condition
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-8 px-3 text-xs"
-                        onClick={handleClearAdvancedFilters}
-                        disabled={advancedFilterConditions.length === 0}
-                      >
-                        Clear all
-                      </Button>
-                    </div>
-                  </div>
-
-                  {advancedFilterConditions.length === 0 ? (
-                    <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
-                      <p className="text-muted-foreground text-sm">
-                        No conditions yet. Add a condition to start filtering records.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-                      {advancedFilterConditions.map((condition, index) => {
-                        const conditionTarget = getBoardColumnTargetForCondition(condition);
-                        const boardColumnKind =
-                          boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
-                        const operatorOptions =
-                          boardColumnKind === "date"
-                            ? ADVANCED_DATE_OPERATORS
-                            : ADVANCED_TEXT_OPERATORS;
-                        const shouldHideValueInput =
-                          condition.operator === "is_empty" ||
-                          condition.operator === "is_not_empty";
-                        const isDateField = boardColumnKind === "date";
-                        const targetLabelLower = conditionTarget.toLowerCase();
-                        const usesOwnerOptions =
-                          targetLabelLower === "owner" && ownerOptions.length > 0;
-                        const selectedBoardColumnOptions = isDateField
-                          ? []
-                          : (boardColumnValueOptionsByLabel.get(conditionTarget) ?? []);
-                        const usesBoardColumnValueOptions =
-                          selectedBoardColumnOptions.length > 0 && !usesOwnerOptions;
-                        const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
-                        return (
-                          <div
-                            key={condition.id}
-                            className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
-                              ? "border-border/75 bg-background"
-                              : "border-border/75 bg-muted/25"
-                              }`}
+                    <div className="space-y-3 rounded-lg border-2 border-border/70 bg-muted/15 p-4 shadow-sm">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">Conditions</p>
+                          <p className="text-muted-foreground text-xs">
+                            Add or remove conditions that run against Monday board columns.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 border-2 px-3 text-xs shadow-sm"
+                            onClick={handleAddAdvancedFilterCondition}
                           >
-                            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
-                              <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
-                                Condition {index + 1}
-                              </p>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 text-xs"
-                                onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                            Add condition
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 px-3 text-xs"
+                            onClick={handleClearAdvancedFilters}
+                            disabled={advancedFilterConditions.length === 0}
+                          >
+                            Clear all
+                          </Button>
+                        </div>
+                      </div>
+
+                      {advancedFilterConditions.length === 0 ? (
+                        <div className="rounded-md border-2 border-dashed border-border/70 bg-background/70 p-4 text-center">
+                          <p className="text-muted-foreground text-sm">
+                            No conditions yet. Add a condition to start filtering records.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+                          {advancedFilterConditions.map((condition, index) => {
+                            const conditionTarget = getBoardColumnTargetForCondition(condition);
+                            const boardColumnKind =
+                              boardColumnFilterKindByLabel.get(conditionTarget) ?? "text";
+                            const operatorOptions =
+                              boardColumnKind === "date"
+                                ? ADVANCED_DATE_OPERATORS
+                                : ADVANCED_TEXT_OPERATORS;
+                            const shouldHideValueInput =
+                              condition.operator === "is_empty" ||
+                              condition.operator === "is_not_empty";
+                            const isDateField = boardColumnKind === "date";
+                            const targetLabelLower = conditionTarget.toLowerCase();
+                            const usesOwnerOptions =
+                              targetLabelLower === "owner" && ownerOptions.length > 0;
+                            const selectedBoardColumnOptions = isDateField
+                              ? []
+                              : (boardColumnValueOptionsByLabel.get(conditionTarget) ?? []);
+                            const usesBoardColumnValueOptions =
+                              selectedBoardColumnOptions.length > 0 && !usesOwnerOptions;
+                            const hasBoardColumnOptions = boardColumnFilterOptions.length > 0;
+                            return (
+                              <div
+                                key={condition.id}
+                                className={`space-y-2 overflow-hidden rounded-md border-2 shadow-sm ${index % 2 === 0
+                                  ? "border-border/75 bg-background"
+                                  : "border-border/75 bg-muted/25"
+                                  }`}
                               >
-                                Remove
-                              </Button>
-                            </div>
-                            <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
-                              <label className="space-y-1">
-                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                  Column
-                                </span>
-                                <select
-                                  value={conditionTarget}
-                                  onChange={(event) =>
-                                    handleChangeAdvancedFilterTarget(
-                                      condition.id,
-                                      event.target.value,
-                                    )
-                                  }
-                                  className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                >
-                                  {!hasBoardColumnOptions ? (
-                                    <option value="">No board columns loaded</option>
-                                  ) : null}
-                                  {hasBoardColumnOptions ? (
-                                    <option value="">Select board column</option>
-                                  ) : null}
-                                  {boardColumnFilterOptions.map((label) => (
-                                    <option key={label} value={label}>
-                                      {label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <label className="space-y-1">
-                                <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                  Operator
-                                </span>
-                                <select
-                                  value={condition.operator}
-                                  onChange={(event) => {
-                                    if (!isAdvancedFilterOperator(event.target.value)) return;
-                                    handleChangeAdvancedFilterOperator(
-                                      condition.id,
-                                      event.target.value,
-                                    );
-                                  }}
-                                  className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
-                                >
-                                  {operatorOptions.map((operator) => (
-                                    <option key={operator} value={operator}>
-                                      {ADVANCED_OPERATOR_LABELS[operator]}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              {!shouldHideValueInput ? (
-                                <label className="space-y-1">
-                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                    Value
-                                  </span>
-                                  {usesOwnerOptions ? (
+                                <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-muted/40 px-3 py-2">
+                                  <p className="text-[11px] font-semibold tracking-wide text-foreground/80 uppercase">
+                                    Condition {index + 1}
+                                  </p>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-7 px-2 text-xs"
+                                    onClick={() => handleRemoveAdvancedFilterCondition(condition.id)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
+                                <div className="flex flex-wrap items-end gap-2 px-3 pb-3">
+                                  <label className="space-y-1">
+                                    <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                      Column
+                                    </span>
                                     <select
-                                      value={condition.value}
+                                      value={conditionTarget}
                                       onChange={(event) =>
-                                        handleChangeAdvancedFilterValue(
+                                        handleChangeAdvancedFilterTarget(
                                           condition.id,
                                           event.target.value,
                                         )
                                       }
                                       className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
                                     >
-                                      <option value="">Select owner</option>
-                                      {!ownerOptions.some(
-                                        (option) => option.value === condition.value,
-                                      ) && condition.value.trim().length > 0 ? (
-                                        <option value={condition.value}>
-                                          {`Owner ${condition.value} (selected)`}
-                                        </option>
+                                      {!hasBoardColumnOptions ? (
+                                        <option value="">No board columns loaded</option>
                                       ) : null}
-                                      {ownerOptions.map((option) => (
-                                        <option key={option.value} value={option.value}>
-                                          {option.label}
+                                      {hasBoardColumnOptions ? (
+                                        <option value="">Select board column</option>
+                                      ) : null}
+                                      {boardColumnFilterOptions.map((label) => (
+                                        <option key={label} value={label}>
+                                          {label}
                                         </option>
                                       ))}
                                     </select>
-                                  ) : usesBoardColumnValueOptions ? (
+                                  </label>
+
+                                  <label className="space-y-1">
+                                    <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                      Operator
+                                    </span>
                                     <select
-                                      value={condition.value}
-                                      onChange={(event) =>
-                                        handleChangeAdvancedFilterValue(
+                                      value={condition.operator}
+                                      onChange={(event) => {
+                                        if (!isAdvancedFilterOperator(event.target.value)) return;
+                                        handleChangeAdvancedFilterOperator(
                                           condition.id,
                                           event.target.value,
-                                        )
-                                      }
-                                      className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                        );
+                                      }}
+                                      className="border-input h-8 rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
                                     >
-                                      <option value="">Select value</option>
-                                      {!selectedBoardColumnOptions.includes(condition.value) &&
-                                      condition.value.trim().length > 0 ? (
-                                        <option value={condition.value}>
-                                          {`${condition.value} (selected)`}
-                                        </option>
-                                      ) : null}
-                                      {selectedBoardColumnOptions.map((value) => (
-                                        <option key={value} value={value}>
-                                          {value}
+                                      {operatorOptions.map((operator) => (
+                                        <option key={operator} value={operator}>
+                                          {ADVANCED_OPERATOR_LABELS[operator]}
                                         </option>
                                       ))}
                                     </select>
+                                  </label>
+
+                                  {!shouldHideValueInput ? (
+                                    <label className="space-y-1">
+                                      <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                        Value
+                                      </span>
+                                      {usesOwnerOptions ? (
+                                        <select
+                                          value={condition.value}
+                                          onChange={(event) =>
+                                            handleChangeAdvancedFilterValue(
+                                              condition.id,
+                                              event.target.value,
+                                            )
+                                          }
+                                          className="border-input h-8 min-w-[220px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                        >
+                                          <option value="">Select owner</option>
+                                          {!ownerOptions.some(
+                                            (option) => option.value === condition.value,
+                                          ) && condition.value.trim().length > 0 ? (
+                                            <option value={condition.value}>
+                                              {`Owner ${condition.value} (selected)`}
+                                            </option>
+                                          ) : null}
+                                          {ownerOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                              {option.label}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : usesBoardColumnValueOptions ? (
+                                        <select
+                                          value={condition.value}
+                                          onChange={(event) =>
+                                            handleChangeAdvancedFilterValue(
+                                              condition.id,
+                                              event.target.value,
+                                            )
+                                          }
+                                          className="border-input h-8 min-w-[200px] rounded-md border-2 bg-background/95 px-2 text-sm shadow-sm"
+                                        >
+                                          <option value="">Select value</option>
+                                          {!selectedBoardColumnOptions.includes(condition.value) &&
+                                            condition.value.trim().length > 0 ? (
+                                            <option value={condition.value}>
+                                              {`${condition.value} (selected)`}
+                                            </option>
+                                          ) : null}
+                                          {selectedBoardColumnOptions.map((value) => (
+                                            <option key={value} value={value}>
+                                              {value}
+                                            </option>
+                                          ))}
+                                        </select>
+                                      ) : (
+                                        <Input
+                                          type={isDateField ? "date" : "text"}
+                                          value={condition.value}
+                                          onChange={(event) =>
+                                            handleChangeAdvancedFilterValue(
+                                              condition.id,
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder="Value"
+                                          className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                        />
+                                      )}
+                                    </label>
                                   ) : (
-                                    <Input
-                                      type={isDateField ? "date" : "text"}
-                                      value={condition.value}
-                                      onChange={(event) =>
-                                        handleChangeAdvancedFilterValue(
-                                          condition.id,
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Value"
-                                      className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
-                                    />
+                                    <div className="pb-1">
+                                      <p className="text-muted-foreground text-xs">
+                                        No value input required for this operator.
+                                      </p>
+                                    </div>
                                   )}
-                                </label>
-                              ) : (
-                                <div className="pb-1">
-                                  <p className="text-muted-foreground text-xs">
-                                    No value input required for this operator.
-                                  </p>
+
+                                  {condition.operator === "between" ? (
+                                    <label className="space-y-1">
+                                      <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
+                                        {isDateField ? "End date" : "Second value"}
+                                      </span>
+                                      <Input
+                                        type={isDateField ? "date" : "text"}
+                                        value={condition.valueTo}
+                                        onChange={(event) =>
+                                          handleChangeAdvancedFilterValueTo(
+                                            condition.id,
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder={isDateField ? "End date" : "Second value"}
+                                        className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
+                                      />
+                                    </label>
+                                  ) : null}
                                 </div>
-                              )}
-
-                              {condition.operator === "between" ? (
-                                <label className="space-y-1">
-                                  <span className="text-muted-foreground block text-[11px] font-medium tracking-wide uppercase">
-                                    {isDateField ? "End date" : "Second value"}
-                                  </span>
-                                  <Input
-                                    type={isDateField ? "date" : "text"}
-                                    value={condition.valueTo}
-                                    onChange={(event) =>
-                                      handleChangeAdvancedFilterValueTo(
-                                        condition.id,
-                                        event.target.value,
-                                      )
-                                    }
-                                    placeholder={isDateField ? "End date" : "Second value"}
-                                    className="h-8 min-w-[200px] border-2 bg-background/95 text-sm shadow-sm"
-                                  />
-                                </label>
-                              ) : null}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
-                  <div>
-                    <p className="text-sm font-medium">Saved Presets</p>
-                    <p className="text-muted-foreground text-xs">
-                      Save the active filter setup and reuse it for this owner board.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      value={pendingSavedAdvancedFilterName}
-                      onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
-                      placeholder="Saved filter name"
-                      className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-8 border-2 px-3 text-xs shadow-sm"
-                      onClick={handleSaveAdvancedFilterPreset}
-                      disabled={
-                        isSavingAdvancedFilterPreset ||
-                        !sessionToken ||
-                        presetScopeOwnerId.length === 0
-                      }
-                    >
-                      {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
-                    </Button>
-                  </div>
-                  {presetScopeOwnerId.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      Select an owner board to enable preset saving.
-                    </p>
-                  ) : null}
-
-                  {savedAdvancedFilterPresets.length > 0 ? (
-                    <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
-                      {savedAdvancedFilterPresets.map((preset) => (
-                        <div
-                          key={preset.id}
-                          className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
-                        >
-                          <Button
-                            size="sm"
-                            variant={
-                              activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
-                            }
-                            className="h-8 rounded-r-none px-2 text-xs"
-                            onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
-                          >
-                            {preset.name}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-muted-foreground h-8 px-1.5 text-xs"
-                            onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
-                            disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
-                          >
-                            {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
-                          </Button>
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-muted-foreground text-xs">
-                      No saved filter presets yet.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
 
-          <div className="bg-border/60 h-5 w-px shrink-0" />
+                    <div className="space-y-3 rounded-lg border-2 border-primary/25 bg-primary/5 p-4 shadow-sm">
+                      <div>
+                        <p className="text-sm font-medium">Saved Presets</p>
+                        <p className="text-muted-foreground text-xs">
+                          Save the active filter setup and reuse it for this owner board.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          value={pendingSavedAdvancedFilterName}
+                          onChange={(event) => setPendingSavedAdvancedFilterName(event.target.value)}
+                          placeholder="Saved filter name"
+                          className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 border-2 px-3 text-xs shadow-sm"
+                          onClick={handleSaveAdvancedFilterPreset}
+                          disabled={
+                            isSavingAdvancedFilterPreset ||
+                            !sessionToken ||
+                            presetScopeOwnerId.length === 0
+                          }
+                        >
+                          {isSavingAdvancedFilterPreset ? "Saving..." : "Save preset"}
+                        </Button>
+                      </div>
+                      {presetScopeOwnerId.length === 0 ? (
+                        <p className="text-muted-foreground text-xs">
+                          Select an owner board to enable preset saving.
+                        </p>
+                      ) : null}
 
-          {/* Month navigation */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 shrink-0 px-2"
-                  onClick={() => {
-              setActiveMonth(
-                (prev) =>
-                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
-              );
-            }}
-          >
-            <ChevronLeft className="h-4 w-4" />
-                </Button>
-          <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
-            {monthBounds.label}
-          </Badge>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 shrink-0 px-2"
-            onClick={() => {
-              setActiveMonth(
-                (prev) =>
-                  new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
-              );
-            }}
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+                      {savedAdvancedFilterPresets.length > 0 ? (
+                        <div className="flex max-h-40 flex-wrap items-center gap-1.5 overflow-y-auto pr-1">
+                          {savedAdvancedFilterPresets.map((preset) => (
+                            <div
+                              key={preset.id}
+                              className="bg-background/95 flex items-center rounded-md border-2 border-border/70 pr-1 shadow-sm"
+                            >
+                              <Button
+                                size="sm"
+                                variant={
+                                  activeSavedAdvancedFilterId === preset.id ? "default" : "ghost"
+                                }
+                                className="h-8 rounded-r-none px-2 text-xs"
+                                onClick={() => handleApplySavedAdvancedFilterPreset(preset)}
+                              >
+                                {preset.name}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-muted-foreground h-8 px-1.5 text-xs"
+                                onClick={() => handleDeleteSavedAdvancedFilterPreset(preset.id)}
+                                disabled={!!deletingAdvancedFilterPresetIds[preset.id]}
+                              >
+                                {deletingAdvancedFilterPresetIds[preset.id] ? "..." : "X"}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-muted-foreground text-xs">
+                          No saved filter presets yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
-                {viewMode === "userScoped" ? (
-            <>
               <div className="bg-border/60 h-5 w-px shrink-0" />
+
+              {/* Month navigation */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 px-2"
+                onClick={() => {
+                  setActiveMonth(
+                    (prev) =>
+                      new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() - 1, 1)),
+                  );
+                }}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Badge variant="outline" className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap">
+                {monthBounds.label}
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 px-2"
+                onClick={() => {
+                  setActiveMonth(
+                    (prev) =>
+                      new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)),
+                  );
+                }}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+
+              {viewMode === "userScoped" ? (
+                <>
+                  <div className="bg-border/60 h-5 w-px shrink-0" />
                   <Button
                     size="sm"
                     variant="default"
-                className="h-8 shrink-0 px-2.5"
+                    className="h-8 shrink-0 px-2.5"
                     onClick={() => {
                       resetAddContactDialog();
                       setAddContactOpen(true);
@@ -6876,1367 +6875,1367 @@ export function MondayBoardView({
                     disabled={authLoading || !identity?.userId}
                   >
                     <UserPlus className="mr-1.5 h-4 w-4" />
-                Add
+                    Add
                   </Button>
-              <div data-tour="view-toggle" className="flex overflow-hidden rounded-md border shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setUserScopedDisplayMode("table")}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-                  title="Table view"
-                >
-                  <List className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserScopedDisplayMode("grid")}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "grid" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-                  title="Grid view"
-                >
-                  <LayoutGrid className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserScopedDisplayMode("kanban")}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-                  title="Kanban view"
-                >
-                  <Columns3 className="h-4 w-4" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
+                  <div data-tour="view-toggle" className="flex overflow-hidden rounded-md border shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setUserScopedDisplayMode("table")}
+                      className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                      title="Table view"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserScopedDisplayMode("grid")}
+                      className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "grid" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                      title="Grid view"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserScopedDisplayMode("kanban")}
+                      className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                      title="Kanban view"
+                    >
+                      <Columns3 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="bg-border/60 h-5 w-px shrink-0" />
+                  <div className="flex overflow-hidden rounded-md border shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setUserScopedDisplayMode("table")}
+                      className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                      title="Table view"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUserScopedDisplayMode("kanban")}
+                      className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
+                      title="Kanban view"
+                    >
+                      <Columns3 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </>
+              )}
+
               <div className="bg-border/60 h-5 w-px shrink-0" />
-              <div className="flex overflow-hidden rounded-md border shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setUserScopedDisplayMode("table")}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "table" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-                  title="Table view"
+
+              {/* Reload */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 shrink-0 px-2"
+                title="Reload"
+                onClick={() => {
+                  if (staticMode) return;
+                  void recordsQuery.refetch();
+                }}
+                disabled={staticMode || recordsQuery.isFetching}
+              >
+                <RefreshCcw className="h-4 w-4" />
+              </Button>
+
+              {!staticMode && recordsQuery.hasNextPage && !shouldAutoLoadMore ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-8 shrink-0 px-2.5 text-xs"
+                  onClick={() => {
+                    handleLoadMoreRecords();
+                  }}
+                  disabled={recordsQuery.isFetchingNextPage}
                 >
-                  <List className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setUserScopedDisplayMode("kanban")}
-                  className={`flex h-8 w-8 items-center justify-center transition-colors ${userScopedDisplayMode === "kanban" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"}`}
-                  title="Kanban view"
+                  {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
+                </Button>
+              ) : null}
+
+              <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 shrink-0 px-2"
+                  title="Help Desk"
+                  onClick={() => {
+                    setHelpDeskLinkedContact(null);
+                    setHelpDeskOpen(true);
+                  }}
                 >
-                  <Columns3 className="h-4 w-4" />
-                </button>
-              </div>
-            </>
-          )}
-
-          <div className="bg-border/60 h-5 w-px shrink-0" />
-
-          {/* Reload */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 shrink-0 px-2"
-            title="Reload"
-            onClick={() => {
-              if (staticMode) return;
-              void recordsQuery.refetch();
-            }}
-            disabled={staticMode || recordsQuery.isFetching}
-          >
-            <RefreshCcw className="h-4 w-4" />
-          </Button>
-
-                {!staticMode && recordsQuery.hasNextPage && !shouldAutoLoadMore ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-              className="h-8 shrink-0 px-2.5 text-xs"
-                    onClick={() => {
-                      handleLoadMoreRecords();
-                    }}
-                    disabled={recordsQuery.isFetchingNextPage}
-                  >
-              {recordsQuery.isFetchingNextPage ? "Loading…" : "Load more"}
-                  </Button>
-                ) : null}
-
-          <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 shrink-0 px-2"
-            title="Help Desk"
-            onClick={() => {
-              setHelpDeskLinkedContact(null);
-              setHelpDeskOpen(true);
-            }}
-          >
-            <CircleHelp className="h-4 w-4" />
+                  <CircleHelp className="h-4 w-4" />
                 </Button>
 
                 <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
                   <DialogTrigger asChild>
-              <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
-                <Settings className="h-4 w-4" />
+                    <Button size="sm" variant="ghost" className="h-8 shrink-0 px-2" title="Settings">
+                      <Settings className="h-4 w-4" />
                     </Button>
                   </DialogTrigger>
-            <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
-              <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
+                  <DialogContent className="h-[88vh] max-w-4xl overflow-scroll border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl flex flex-col">
+                    <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
                       <DialogTitle>Monday Settings</DialogTitle>
                     </DialogHeader>
-              <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
-                <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
-                  <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
-                        <TabsTrigger
-                      value="general-settings"
-                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                      General Settings
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="email-settings"
-                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          Email Settings
-                        </TabsTrigger>
-                    <TabsTrigger
-                      value="email-templates"
-                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      Email Templates
-                        </TabsTrigger>
-                        <TabsTrigger
-                          value="user-zip-map"
-                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                        >
-                          User {"<->"} Zipcode map
-                        </TabsTrigger>
-                    <TabsTrigger
-                      value="feature-flags"
-                      className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                    >
-                      Feature Flags
-                        </TabsTrigger>
-                    {isMasterAdmin ? (
-                      <TabsTrigger
-                        value="monthly-board-mapping"
-                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                      >
-                        Monthly Board Mapping
-                      </TabsTrigger>
-                    ) : null}
-                    {isMasterAdmin ? (
-                      <TabsTrigger
-                        value="platform-settings"
-                        className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
-                      >
-                        Platform Settings
-                      </TabsTrigger>
-                    ) : null}
-                      </TabsList>
-                </div>
-                <div className="flex-1 overflow-y-auto px-6 py-5">
-                  <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
-                    <TabsContent value="general-settings" className="mt-0">
-                      <div className="space-y-0 divide-y divide-border/60">
-
-                        {/* Header row */}
-                        <div className="flex items-center justify-between pb-4">
-                          <div>
-                            <p className="text-sm font-semibold">Appearance</p>
-                            <p className="text-muted-foreground text-xs">
-                              Scope: {presetScopeOwnerId.length > 0 ? `Owner ${presetScopeOwnerId}` : "No owner selected"}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setBoardGeneralSettingsDraft(boardGeneralSettings);
-                              }}
-                              disabled={!hasUnsavedBoardGeneralSettings}
-                            >
-                              Reset
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => {
-                                void handleSaveBoardGeneralSettings();
-                              }}
-                              disabled={
-                                isSavingBoardGeneralSettings ||
-                                !sessionToken ||
-                                presetScopeOwnerId.length === 0 ||
-                                !hasUnsavedBoardGeneralSettings
-                              }
-                            >
-                              {isSavingBoardGeneralSettings ? "Saving…" : "Save"}
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Color Theme */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Color Theme</p>
-                            <p className="text-muted-foreground text-xs">
-                              {USER_BOARD_COLOR_THEME_OPTIONS.find(
-                                (o) => o.value === boardGeneralSettingsDraft.colorTheme,
-                              )?.description ?? "Board accent and filter bar styling."}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 gap-1.5">
-                            {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                title={option.label}
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    colorTheme: option.value,
-                                  }));
-                                }}
-                                className={`h-7 w-7 rounded-full transition-all ${option.swatchClassName} ${boardGeneralSettingsDraft.colorTheme === option.value
-                                  ? "ring-2 ring-offset-2 ring-primary scale-110"
-                                  : "opacity-60 hover:opacity-100 hover:scale-105"
-                                  }`}
-                                style={
-                                  option.value === "custom"
-                                    ? {
-                                      backgroundColor:
-                                        boardGeneralSettingsDraft.customTheme?.colorHex ??
-                                        "#0ea5e9",
-                                      opacity:
-                                        boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22,
-                                    }
-                                    : undefined
-                                }
-                              />
-                            ))}
-                          </div>
-                        </div>
-
-                        {boardGeneralSettingsDraft.colorTheme === "custom" ? (
-                          <div className="rounded-md border p-3">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <label className="space-y-1.5">
-                                <span className="text-sm font-medium">Custom Color</span>
-                                <input
-                                  type="color"
-                                  value={
-                                    boardGeneralSettingsDraft.customTheme?.colorHex ?? "#0ea5e9"
-                                  }
-                                  onChange={(event) => {
-                                    const nextHex = event.target.value;
-                                    setBoardGeneralSettingsDraft((prev) => ({
-                                      ...prev,
-                                      customTheme: parseUserBoardCustomTheme({
-                                        colorHex: nextHex,
-                                        alpha: prev.customTheme?.alpha,
-                                      }),
-                                    }));
-                                  }}
-                                  className="h-10 w-full cursor-pointer rounded border bg-transparent p-1"
-                                />
-                              </label>
-                              <label className="space-y-1.5">
-                                <span className="text-sm font-medium">Transparency</span>
-                                <input
-                                  type="range"
-                                  min={0}
-                                  max={100}
-                                  step={1}
-                                  value={Math.round(
-                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
-                                  )}
-                                  onChange={(event) => {
-                                    const nextAlpha = Number(event.target.value) / 100;
-                                    setBoardGeneralSettingsDraft((prev) => ({
-                                      ...prev,
-                                      customTheme: parseUserBoardCustomTheme({
-                                        colorHex: prev.customTheme?.colorHex,
-                                        alpha: nextAlpha,
-                                      }),
-                                    }));
-                                  }}
-                                  className="w-full"
-                                />
-                                <p className="text-muted-foreground text-xs">
-                                  {Math.round(
-                                    (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
-                                  )}
-                                  % opacity
-                                </p>
-                              </label>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {/* Font Size */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Font Size</p>
-                            <p className="text-muted-foreground text-xs">Scale the board text and action buttons.</p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    fontSize: option.value,
-                                  }));
-                                }}
-                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.fontSize === option.value
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                                  }`}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Table Density */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Row Density</p>
-                            <p className="text-muted-foreground text-xs">
-                              {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
-                                (o) => o.value === boardGeneralSettingsDraft.tableDensity,
-                              )?.description}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    tableDensity: option.value,
-                                  }));
-                                }}
-                                className={`flex h-8 items-center gap-2 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                                  }`}
-                              >
-                                <span className="flex flex-col gap-px">
-                                  {option.value === "expanded" ? (
-                                    <>
-                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-80" />
-                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
-                                      <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-80" />
-                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
-                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
-                                      <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
-                                    </>
-                                  )}
-                                </span>
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Hover Popovers */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Hover Popovers</p>
-                            <p className="text-muted-foreground text-xs">
-                              Show or hide hover details on contact name and progress bar columns.
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBoardGeneralSettingsDraft((prev) => ({
-                                  ...prev,
-                                  hoverPopoversEnabled: true,
-                                }));
-                              }}
-                              className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.hoverPopoversEnabled
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-background text-muted-foreground hover:bg-muted"
-                                }`}
-                            >
-                              Enabled
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBoardGeneralSettingsDraft((prev) => ({
-                                  ...prev,
-                                  hoverPopoversEnabled: false,
-                                }));
-                              }}
-                              className={`h-8 px-3 text-xs font-medium transition-colors ${!boardGeneralSettingsDraft.hoverPopoversEnabled
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-background text-muted-foreground hover:bg-muted"
-                                }`}
-                            >
-                              Disabled
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Records Per Page */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Records Per Page</p>
-                            <p className="text-muted-foreground text-xs">How many records to show per page.</p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            {USER_BOARD_PAGE_SIZE_OPTIONS.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    pageSize: option.value,
-                                  }));
-                                }}
-                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                                  }`}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Default View */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Default View</p>
-                            <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            {(["table", "grid", "kanban"] as UserBoardDisplayMode[]).map((mode) => (
-                              <button
-                                key={mode}
-                                type="button"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    displayMode: mode,
-                                  }));
-                                }}
-                                className={`flex h-8 items-center gap-1.5 px-3 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                                  }`}
-                              >
-                                {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
-                                {mode}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Monthly Records */}
-                        <div className="flex items-center justify-between py-3.5">
-                          <div className="min-w-0 flex-1 pr-6">
-                            <p className="text-sm font-medium">Monthly Records</p>
-                            <p className="text-muted-foreground text-xs">
-                              {USER_BOARD_RECORD_SOURCE_OPTIONS.find(
-                                (o) => o.value === boardGeneralSettingsDraft.recordSource,
-                              )?.description ??
-                                "Choose how monthly records are selected."}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 overflow-hidden rounded-md border">
-                            {USER_BOARD_RECORD_SOURCE_OPTIONS.map((option) => (
-                              <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => {
-                                  setBoardGeneralSettingsDraft((prev) => ({
-                                    ...prev,
-                                    recordSource: option.value,
-                                  }));
-                                }}
-                                className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.recordSource === option.value
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-background text-muted-foreground hover:bg-muted"
-                                  }`}
-                              >
-                                {option.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Preview strip */}
-                        <div
-                          className={`mt-3 flex items-center justify-between rounded-md px-4 py-3 ${boardDraftThemeStyles.previewClassName}`}
-                          style={boardDraftThemeInlineStyles.previewStyle}
-                        >
-                          <p className="text-xs text-muted-foreground">
-                            Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
-                            {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
-                          </p>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
-                            style={boardDraftThemeInlineStyles.actionButtonStyle}
-                            disabled
+                    <Tabs defaultValue="general-settings" className="flex h-full flex-1 flex-col">
+                      <div className="border-b-2 border-border/60 bg-card/70 px-6 py-3">
+                        <TabsList className="h-auto w-full justify-start gap-1.5 overflow-x-auto rounded-md border-2 border-border/70 bg-background/70 p-1">
+                          <TabsTrigger
+                            value="general-settings"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
                           >
-                            Quick Action
-                          </Button>
-                        </div>
-
+                            General Settings
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="email-settings"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            Email Settings
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="email-templates"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            Email Templates
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="user-zip-map"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            User {"<->"} Zipcode map
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="feature-flags"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            Feature Flags
+                          </TabsTrigger>
+                          {isMasterAdmin ? (
+                            <TabsTrigger
+                              value="monthly-board-mapping"
+                              className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                            >
+                              Monthly Board Mapping
+                            </TabsTrigger>
+                          ) : null}
+                          {isMasterAdmin ? (
+                            <TabsTrigger
+                              value="platform-settings"
+                              className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                            >
+                              Platform Settings
+                            </TabsTrigger>
+                          ) : null}
+                        </TabsList>
                       </div>
-                    </TabsContent>
+                      <div className="flex-1 overflow-y-auto px-6 py-5">
+                        <div className="min-h-80 flex-1 rounded-lg border-2 border-border/70 bg-background/90 p-4 shadow-sm">
+                          <TabsContent value="general-settings" className="mt-0">
+                            <div className="space-y-0 divide-y divide-border/60">
 
-                        <TabsContent value="email-templates" className="mt-0">
-                          <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">
-                                Templates ({emailTemplates.length})
-                              </p>
-                              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                                {emailTemplates.map((template) => {
-                                  const isActive = template.id === selectedTemplate?.id;
-                                  return (
-                                    <button
-                                      key={template.id}
-                                      type="button"
-                                      className={[
-                                        "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                                        isActive
-                                          ? "border-primary bg-primary/10"
-                                          : "hover:bg-muted/60",
-                                      ].join(" ")}
-                                      onClick={() => {
-                                        setSelectedTemplateId(template.id);
-                                      }}
-                                    >
-                                      <p className="line-clamp-1 font-medium">{template.name}</p>
-                                      <p className="text-muted-foreground mt-1 text-xs">
-                                        Updated {formatUpdatedAt(template.updatedAt)}
-                                      </p>
-                                    </button>
-                                  );
-                                })}
-                                {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    No templates found on board 18401299370.
+                              {/* Header row */}
+                              <div className="flex items-center justify-between pb-4">
+                                <div>
+                                  <p className="text-sm font-semibold">Appearance</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Scope: {presetScopeOwnerId.length > 0 ? `Owner ${presetScopeOwnerId}` : "No owner selected"}
                                   </p>
-                                ) : null}
-                                {emailTemplatesQuery.isLoading ? (
-                                  <p className="text-muted-foreground text-sm">
-                                    Loading templates...
-                                  </p>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="bg-background min-h-[420px] rounded-md border p-4">
-                              {selectedTemplate ? (
-                                <div className="space-y-4">
-                                  <div className="border-b pb-3">
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Subject
-                                    </p>
-                                    <p className="mt-1 text-base font-medium">
-                                      {selectedTemplate.name}
-                                    </p>
-                                  </div>
-                                  <div>
-                                    <p className="text-xs font-semibold tracking-wide uppercase">
-                                      Email Preview (Lead View)
-                                    </p>
-                                    <div className="bg-card mt-2 rounded-md border p-4">
-                                      {selectedTemplate.content.trim().length === 0 ? (
-                                        <p className="text-muted-foreground text-sm">
-                                          No content found in column doc_mm0wq4r.
-                                        </p>
-                                      ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
-                                        <div
-                                          className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                                          style={{ whiteSpace: "pre-wrap" }}
-                                          dangerouslySetInnerHTML={{
-                                            __html: selectedTemplate.renderedHtml,
-                                          }}
-                                        />
-                                      ) : (
-                                        <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                                          {selectedTemplate.content}
-                                        </div>
-                                      )}
-                                      {selectedTemplate.docLink ? (
-                                        <p className="mt-3 text-xs">
-                                          <a
-                                            href={selectedTemplate.docLink}
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            className="text-primary underline underline-offset-2"
-                                          >
-                                            Open source Monday Workdoc
-                                          </a>
-                                        </p>
-                                      ) : null}
-                                    </div>
-                                  </div>
                                 </div>
-                              ) : (
-                                <p className="text-muted-foreground text-sm">
-                                  Select an email template to preview.
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="user-zip-map" className="mt-0">
-                        <div className="space-y-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
-                            <p className="text-muted-foreground text-sm">
-                              Configure and monitor district routing for newly created contact
-                              records.
-                            </p>
-                          </div>
-
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                Routing Status
-                              </p>
-                              <p className="mt-1 text-sm font-medium">
-                                {routingStatusQuery.isLoading
-                                  ? "Loading..."
-                                  : routingStatusQuery.data?.enabled
-                                    ? routingStatusQuery.data.ok
-                                      ? "Configured"
-                                      : "Configured with issues"
-                                    : "Not configured"}
-                              </p>
-                            </div>
-                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                County Mappings
-                              </p>
-                              <p className="mt-1 text-sm font-medium">
-                                {routingStatusQuery.data?.countyMappingsCount ?? 0}
-                              </p>
-                            </div>
-                            <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
-                              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                                District Owner Mappings
-                              </p>
-                              <p className="mt-1 text-sm font-medium">
-                                {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
-                            <p className="text-sm font-medium">Routing boards</p>
-                            <div className="grid gap-3 md:grid-cols-3">
-                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                <p className="text-xs font-semibold uppercase">Contact board</p>
-                                <p className="text-muted-foreground mt-1 break-all text-xs">
-                                  {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
-                                </p>
-                                {routingStatusQuery.data?.contactBoardUrl ? (
-                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                    <a
-                                      href={routingStatusQuery.data.contactBoardUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      Open board
-                                    </a>
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                <p className="text-xs font-semibold uppercase">
-                                  County {"->"} District board
-                                </p>
-                                <p className="text-muted-foreground mt-1 break-all text-xs">
-                                  {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
-                                </p>
-                                {routingStatusQuery.data?.countyBoardUrl ? (
-                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                    <a
-                                      href={routingStatusQuery.data.countyBoardUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      Open board
-                                    </a>
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                                <p className="text-xs font-semibold uppercase">
-                                  District {"->"} Owner board
-                                </p>
-                                <p className="text-muted-foreground mt-1 break-all text-xs">
-                                  {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
-                                </p>
-                                {routingStatusQuery.data?.districtBoardUrl ? (
-                                  <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
-                                    <a
-                                      href={routingStatusQuery.data.districtBoardUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                    >
-                                      Open board
-                                    </a>
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-medium">Routing diagnostics</p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                onClick={() => {
-                                  void routingStatusQuery.refetch();
-                                }}
-                                disabled={routingStatusQuery.isFetching}
-                              >
-                                {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
-                              </Button>
-                            </div>
-                            {routingStatusQuery.error ? (
-                              <p className="text-destructive text-xs">
-                                {routingStatusQuery.error instanceof Error
-                                  ? routingStatusQuery.error.message
-                                  : "Failed to load routing diagnostics"}
-                              </p>
-                            ) : null}
-                            {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
-                              <ul className="list-disc space-y-1 pl-4 text-xs">
-                                {(routingStatusQuery.data?.issues ?? []).map((issue) => (
-                                  <li key={issue} className="text-destructive">
-                                    {issue}
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="text-muted-foreground text-xs">
-                                No routing issues detected.
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium">Manual rerun</p>
-                              <p className="text-muted-foreground text-xs">
-                                Re-run owner assignment for one contact item id.
-                              </p>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <Input
-                                value={routingRerunItemId}
-                                onChange={(event) => setRoutingRerunItemId(event.target.value)}
-                                placeholder="Item ID"
-                                className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
-                              />
-                              <Button
-                                size="sm"
-                                className="h-8 px-3 text-xs"
-                                onClick={() => {
-                                  void handleRunRoutingRerun();
-                                }}
-                                disabled={isRunningRoutingRerun}
-                              >
-                                {isRunningRoutingRerun ? "Running..." : "Run assignment"}
-                              </Button>
-                            </div>
-                          </div>
-                          </div>
-                        </TabsContent>
-                        <TabsContent value="email-settings" className="mt-0">
-                          <div className="space-y-4">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium">Email Settings</p>
-                              <p className="text-muted-foreground text-sm">
-                                Configure outbound email account settings for sending
-                                monday-designed templates.
-                              </p>
-                            </div>
-                            <div className="space-y-3 rounded-md border p-4">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge
-                                  variant={
-                                    outlookStatusQuery.data?.connected
-                                      ? "default"
-                                      : "secondary"
-                                  }
-                                >
-                                  {outlookStatusQuery.data?.connected
-                                    ? "Outlook connected"
-                                    : "Outlook not connected"}
-                                </Badge>
-                                <Button
-                                  size="sm"
-                                  onClick={() => {
-                                    void handleConnectOutlook();
-                                  }}
-                                  disabled={isConnectingOutlook}
-                                >
-                                  {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
-                                </Button>
-                                {outlookStatusQuery.data?.connected ? (
+                                <div className="flex items-center gap-2">
                                   <Button
                                     size="sm"
                                     variant="outline"
                                     onClick={() => {
-                                      void handleDisconnectOutlook();
+                                      setBoardGeneralSettingsDraft(boardGeneralSettings);
                                     }}
-                                    disabled={isDisconnectingOutlook}
+                                    disabled={!hasUnsavedBoardGeneralSettings}
                                   >
-                                    {isDisconnectingOutlook
-                                      ? "Disconnecting..."
-                                      : "Disconnect"}
+                                    Reset
                                   </Button>
-                                ) : null}
-                              </div>
-                              <div className="text-muted-foreground text-sm">
-                                {outlookStatusQuery.data?.connection?.email ? (
-                                  <p>
-                                    Connected mailbox:{" "}
-                                    {outlookStatusQuery.data.connection.email}
-                                  </p>
-                                ) : (
-                                  <p>
-                                    Use OAuth to connect Outlook, then use this account
-                                    for sending and engagement tracking.
-                                  </p>
-                                )}
-                                {outlookStatusQuery.data?.connection?.updatedAt ? (
-                                  <p className="mt-1">
-                                    Last updated:{" "}
-                                    {new Date(
-                                      outlookStatusQuery.data.connection.updatedAt,
-                                    ).toLocaleString()}
-                                  </p>
-                                ) : null}
-                              </div>
-                              <div className="rounded-md border bg-muted/30 p-3">
-                                <p className="text-xs font-semibold tracking-wide uppercase">
-                                  Callback URL
-                                </p>
-                                <p className="mt-1 break-all font-mono text-xs">
-                                  {callbackUrl}
-                                </p>
-                              </div>
-                              {isMasterAdmin ? (
-                                <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
-                                  <div className="space-y-1">
-                                    <p className="text-sm font-medium">Global Reply-To Addresses</p>
-                                    <p className="text-muted-foreground text-xs">
-                                      One email per line (or comma-separated). Every outbound message
-                                      includes the sender&apos;s mailbox plus these addresses in
-                                      Reply-To.
-                                    </p>
-                                  </div>
-                                  <Textarea
-                                    value={platformSettingsDraft.replyToEmails.join("\n")}
-                                    onChange={(event) => {
-                                      const nextReplyToEmails = parseDelimitedList(
-                                        event.target.value,
-                                      ).map((entry) => entry.toLowerCase());
-                                      setPlatformSettingsDraft((prev) => ({
-                                        ...prev,
-                                        replyToEmails: nextReplyToEmails,
-                                      }));
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      void handleSaveBoardGeneralSettings();
                                     }}
-                                    rows={4}
-                                    placeholder="info@floridaroadjobs.com"
-                                    className="font-mono text-xs"
-                                  />
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      disabled={
-                                        isSavingPlatformSettings ||
-                                        platformSettings.replyToEmails.join(",") ===
-                                          platformSettingsDraft.replyToEmails.join(",")
-                                      }
+                                    disabled={
+                                      isSavingBoardGeneralSettings ||
+                                      !sessionToken ||
+                                      presetScopeOwnerId.length === 0 ||
+                                      !hasUnsavedBoardGeneralSettings
+                                    }
+                                  >
+                                    {isSavingBoardGeneralSettings ? "Saving…" : "Save"}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              {/* Color Theme */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Color Theme</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    {USER_BOARD_COLOR_THEME_OPTIONS.find(
+                                      (o) => o.value === boardGeneralSettingsDraft.colorTheme,
+                                    )?.description ?? "Board accent and filter bar styling."}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 gap-1.5">
+                                  {USER_BOARD_COLOR_THEME_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      title={option.label}
                                       onClick={() => {
-                                        setPlatformSettingsDraft((prev) => ({
+                                        setBoardGeneralSettingsDraft((prev) => ({
                                           ...prev,
-                                          replyToEmails: [...platformSettings.replyToEmails],
+                                          colorTheme: option.value,
                                         }));
                                       }}
-                                    >
-                                      Reset
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      disabled={isSavingPlatformSettings}
-                                      onClick={() => {
-                                        void handleSavePlatformSettings(
-                                          "Reply-to settings updated",
-                                        );
-                                      }}
-                                    >
-                                      {isSavingPlatformSettings ? "Saving..." : "Save reply-to"}
-                                    </Button>
+                                      className={`h-7 w-7 rounded-full transition-all ${option.swatchClassName} ${boardGeneralSettingsDraft.colorTheme === option.value
+                                        ? "ring-2 ring-offset-2 ring-primary scale-110"
+                                        : "opacity-60 hover:opacity-100 hover:scale-105"
+                                        }`}
+                                      style={
+                                        option.value === "custom"
+                                          ? {
+                                            backgroundColor:
+                                              boardGeneralSettingsDraft.customTheme?.colorHex ??
+                                              "#0ea5e9",
+                                            opacity:
+                                              boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22,
+                                          }
+                                          : undefined
+                                      }
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              {boardGeneralSettingsDraft.colorTheme === "custom" ? (
+                                <div className="rounded-md border p-3">
+                                  <div className="grid gap-3 sm:grid-cols-2">
+                                    <label className="space-y-1.5">
+                                      <span className="text-sm font-medium">Custom Color</span>
+                                      <input
+                                        type="color"
+                                        value={
+                                          boardGeneralSettingsDraft.customTheme?.colorHex ?? "#0ea5e9"
+                                        }
+                                        onChange={(event) => {
+                                          const nextHex = event.target.value;
+                                          setBoardGeneralSettingsDraft((prev) => ({
+                                            ...prev,
+                                            customTheme: parseUserBoardCustomTheme({
+                                              colorHex: nextHex,
+                                              alpha: prev.customTheme?.alpha,
+                                            }),
+                                          }));
+                                        }}
+                                        className="h-10 w-full cursor-pointer rounded border bg-transparent p-1"
+                                      />
+                                    </label>
+                                    <label className="space-y-1.5">
+                                      <span className="text-sm font-medium">Transparency</span>
+                                      <input
+                                        type="range"
+                                        min={0}
+                                        max={100}
+                                        step={1}
+                                        value={Math.round(
+                                          (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                        )}
+                                        onChange={(event) => {
+                                          const nextAlpha = Number(event.target.value) / 100;
+                                          setBoardGeneralSettingsDraft((prev) => ({
+                                            ...prev,
+                                            customTheme: parseUserBoardCustomTheme({
+                                              colorHex: prev.customTheme?.colorHex,
+                                              alpha: nextAlpha,
+                                            }),
+                                          }));
+                                        }}
+                                        className="w-full"
+                                      />
+                                      <p className="text-muted-foreground text-xs">
+                                        {Math.round(
+                                          (boardGeneralSettingsDraft.customTheme?.alpha ?? 0.22) * 100,
+                                        )}
+                                        % opacity
+                                      </p>
+                                    </label>
                                   </div>
                                 </div>
                               ) : null}
-                            </div>
-                          </div>
-                        </TabsContent>
-                    <TabsContent value="feature-flags" className="mt-0">
-                        <div className="space-y-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Feature Flags</p>
-                            <p className="text-muted-foreground text-sm">
-                              Toggle app capabilities without code changes.
-                            </p>
-                          </div>
-                          <div className="space-y-3 rounded-md border p-4">
-                            <label className="flex items-start gap-3 text-sm">
-                              <input
-                                type="checkbox"
-                                checked={featureFlags.emailMarketingEnabled}
-                                disabled={isSavingFeatureFlags}
-                                onChange={(event) => {
-                                  void handleSetEmailMarketingEnabled(
-                                    event.target.checked,
-                                  );
-                                }}
-                              />
-                              <div className="space-y-1">
-                                <p className="font-medium">Email Marketing</p>
-                                <p className="text-muted-foreground text-xs">
-                                  Enables email marketing capabilities, including the
-                                  Email action in the table.
-                                </p>
-                                {isSavingFeatureFlags ? (
-                                  <p className="text-muted-foreground text-[11px]">
-                                    Saving...
-                                  </p>
-                                ) : null}
-                              </div>
-                            </label>
-                          </div>
-                        </div>
-                      </TabsContent>
-                    {isMasterAdmin ? (
-                      <TabsContent value="monthly-board-mapping" className="mt-0">
-                        <div className="space-y-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Monthly Board Mapping</p>
-                            <p className="text-muted-foreground text-sm">
-                              Configure which monthly board should sync by month/year.
-                            </p>
-                          </div>
-                          <div className="space-y-3 rounded-md border p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-sm font-medium">Mappings</p>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const currentMonthKey = new Date()
-                                    .toISOString()
-                                    .slice(0, 7);
-                                  setPlatformSettingsDraft((prev) => ({
-                                    ...prev,
-                                    monthlyBoardMappings: [
-                                      ...prev.monthlyBoardMappings,
-                                      { monthKey: currentMonthKey, boardId: "" },
-                                    ],
-                                  }));
-                                }}
-                              >
-                                Add row
-                              </Button>
-                            </div>
-                            {platformSettingsDraft.monthlyBoardMappings.length === 0 ? (
-                              <p className="text-muted-foreground text-xs">
-                                No mappings yet. Add at least one month/year to board ID mapping.
-                              </p>
-                            ) : (
-                              <div className="space-y-2">
-                                {platformSettingsDraft.monthlyBoardMappings.map(
-                                  (mapping, index) => (
-                                    <div
-                                      key={`${mapping.monthKey}-${mapping.boardId}-${index}`}
-                                      className="grid gap-2 md:grid-cols-[180px_1fr_auto]"
+
+                              {/* Font Size */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Font Size</p>
+                                  <p className="text-muted-foreground text-xs">Scale the board text and action buttons.</p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  {USER_BOARD_FONT_SIZE_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          fontSize: option.value,
+                                        }));
+                                      }}
+                                      className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.fontSize === option.value
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        }`}
                                     >
-                                      <Input
-                                        type="month"
-                                        value={mapping.monthKey}
-                                        onChange={(event) => {
-                                          const value = event.target.value;
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            monthlyBoardMappings:
-                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
-                                                entryIndex === index
-                                                  ? { ...entry, monthKey: value }
-                                                  : entry,
-                                              ),
-                                          }));
-                                        }}
-                                      />
-                                      <Input
-                                        value={mapping.boardId}
-                                        onChange={(event) => {
-                                          const value = event.target.value.trim();
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            monthlyBoardMappings:
-                                              prev.monthlyBoardMappings.map((entry, entryIndex) =>
-                                                entryIndex === index
-                                                  ? { ...entry, boardId: value }
-                                                  : entry,
-                                              ),
-                                          }));
-                                        }}
-                                        placeholder="Monthly board ID"
-                                      />
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={() => {
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            monthlyBoardMappings:
-                                              prev.monthlyBoardMappings.filter(
-                                                (_, entryIndex) => entryIndex !== index,
-                                              ),
-                                          }));
-                                        }}
-                                      >
-                                        Remove
-                                      </Button>
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
-                            <p className="text-xs font-semibold tracking-wide uppercase">
-                              Monthly Board Webhook URL
-                            </p>
-                            <p className="mt-1 break-all font-mono text-xs">
-                              {monthlyWebhookUrl}
-                            </p>
-                            <p className="text-muted-foreground mt-2 text-xs">
-                              Configure this URL as a webhook on each mapped monthly board.
-                              New monthly updates and subitem changes will sync to the linked
-                              contact in the API board.
-                            </p>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
-                              onClick={() => {
-                                setPlatformSettingsDraft(platformSettings);
-                              }}
-                            >
-                              Reset
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
-                              onClick={() => {
-                                void handleSavePlatformSettings(
-                                  "Monthly board mappings updated",
-                                );
-                              }}
-                            >
-                              {isSavingPlatformSettings ? "Saving..." : "Save mappings"}
-                            </Button>
-                          </div>
-                        </div>
-                      </TabsContent>
-                    ) : null}
-                    {isMasterAdmin ? (
-                      <TabsContent value="platform-settings" className="mt-0">
-                        <div className="space-y-4">
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium">Platform Settings</p>
-                            <p className="text-muted-foreground text-sm">
-                              Manage role assignments for settings access.
-                            </p>
-                          </div>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2 rounded-md border p-4">
-                              <p className="text-sm font-medium">Admin User IDs</p>
-                              <p className="text-muted-foreground text-xs">
-                                One user ID per line. Admins can modify feature flags and admin
-                                tools.
-                              </p>
-                              <Textarea
-                                value={platformSettingsDraft.adminUserIds.join("\n")}
-                                onChange={(event) => {
-                                  setPlatformSettingsDraft((prev) => ({
-                                    ...prev,
-                                    adminUserIds: parseDelimitedList(event.target.value),
-                                  }));
-                                }}
-                                rows={8}
-                                className="font-mono text-xs"
-                                placeholder={"53441186\n38959704"}
-                              />
-                            </div>
-                            <div className="space-y-2 rounded-md border p-4">
-                              <p className="text-sm font-medium">Employee User IDs</p>
-                              <p className="text-muted-foreground text-xs">
-                                Optional reference list for employee role assignments.
-                              </p>
-                              <Textarea
-                                value={platformSettingsDraft.employeeUserIds.join("\n")}
-                                onChange={(event) => {
-                                  setPlatformSettingsDraft((prev) => ({
-                                    ...prev,
-                                    employeeUserIds: parseDelimitedList(event.target.value),
-                                  }));
-                                }}
-                                rows={8}
-                                className="font-mono text-xs"
-                                placeholder={"49566535\n38959704"}
-                              />
-                            </div>
-                          </div>
-                          <div className="space-y-3 rounded-md border p-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium">Email Template System Tags</p>
-                              <p className="text-muted-foreground text-xs">
-                                Built-ins always available:{" "}
-                                <code>{"{{owner.name}}"}</code>,{" "}
-                                <code>{"{{owner.email}}"}</code>,{" "}
-                                <code>{"{{contact.name}}"}</code>,{" "}
-                                <code>{"{{contact.email}}"}</code>.
-                              </p>
-                              <p className="text-muted-foreground text-xs">
-                                Add custom tags mapped to any top-level API board column.
-                              </p>
-                            </div>
-                            <div className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]">
-                              <Input
-                                value={newEmailSystemTagKey}
-                                onChange={(event) => setNewEmailSystemTagKey(event.target.value)}
-                                placeholder="contact.city"
-                              />
-                              <Select
-                                value={newEmailSystemTagColumnId || "__none__"}
-                                onValueChange={(value) =>
-                                  setNewEmailSystemTagColumnId(
-                                    value === "__none__" ? "" : value,
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select contact column" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="__none__">Select contact column</SelectItem>
-                                  {platformBoardColumnOptions.map((column) => (
-                                    <SelectItem key={column.id} value={column.id}>
-                                      {column.label}
-                                    </SelectItem>
+                                      {option.label}
+                                    </button>
                                   ))}
-                                </SelectContent>
-                              </Select>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                  const tag = newEmailSystemTagKey.trim().toLowerCase();
-                                  const columnId = newEmailSystemTagColumnId.trim();
-                                  const selectedColumn = platformBoardColumnOptions.find(
-                                    (column) => column.id === columnId,
-                                  );
-                                  if (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag)) {
-                                    toast.error(
-                                      "Tag key must start with a letter and use letters, numbers, dots, dashes, or underscores.",
-                                    );
-                                    return;
-                                  }
-                                  if (!columnId) {
-                                    toast.error("Select a contact column for this tag.");
-                                    return;
-                                  }
-                                  setPlatformSettingsDraft((prev) => ({
-                                    ...prev,
-                                    emailSystemTags: normalizeEmailSystemTags([
-                                      ...prev.emailSystemTags,
-                                      {
-                                        tag,
-                                        columnId,
-                                        columnTitle: selectedColumn?.title ?? columnId,
-                                      },
-                                    ]),
-                                  }));
-                                  setNewEmailSystemTagKey("");
-                                  setNewEmailSystemTagColumnId("");
-                                }}
-                                disabled={platformBoardColumnsQuery.isLoading}
-                              >
-                                Add Tag
-                              </Button>
-                            </div>
-                            <div className="space-y-2">
-                              {platformSettingsDraft.emailSystemTags.length === 0 ? (
-                                <p className="text-muted-foreground text-xs">
-                                  No custom tags configured yet.
-                                </p>
-                              ) : (
-                                platformSettingsDraft.emailSystemTags.map((entry, index) => {
-                                  const selectedColumn = platformBoardColumnOptions.find(
-                                    (column) => column.id === entry.columnId,
-                                  );
-                                  return (
-                                    <div
-                                      key={`${entry.tag}:${entry.columnId}:${index}`}
-                                      className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]"
+                                </div>
+                              </div>
+
+                              {/* Table Density */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Row Density</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    {USER_BOARD_TABLE_DENSITY_OPTIONS.find(
+                                      (o) => o.value === boardGeneralSettingsDraft.tableDensity,
+                                    )?.description}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  {USER_BOARD_TABLE_DENSITY_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          tableDensity: option.value,
+                                        }));
+                                      }}
+                                      className={`flex h-8 items-center gap-2 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.tableDensity === option.value
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        }`}
                                     >
-                                      <Input
-                                        value={entry.tag}
-                                        onChange={(event) => {
-                                          const value = event.target.value;
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            emailSystemTags: prev.emailSystemTags.map(
-                                              (tagEntry, entryIndex) =>
-                                                entryIndex === index
-                                                  ? { ...tagEntry, tag: value }
-                                                  : tagEntry,
-                                            ),
-                                          }));
-                                        }}
-                                      />
-                                      <Select
-                                        value={entry.columnId}
-                                        onValueChange={(value) => {
-                                          const selected = platformBoardColumnOptions.find(
-                                            (column) => column.id === value,
-                                          );
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            emailSystemTags: prev.emailSystemTags.map(
-                                              (tagEntry, entryIndex) =>
-                                                entryIndex === index
-                                                  ? {
-                                                      ...tagEntry,
-                                                      columnId: value,
-                                                      columnTitle:
-                                                        selected?.title ??
-                                                        tagEntry.columnTitle,
-                                                    }
-                                                  : tagEntry,
-                                            ),
-                                          }));
-                                        }}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="Select contact column" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {platformBoardColumnOptions.map((column) => (
-                                            <SelectItem key={column.id} value={column.id}>
-                                              {column.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                      <Button
+                                      <span className="flex flex-col gap-px">
+                                        {option.value === "expanded" ? (
+                                          <>
+                                            <span className="block h-[3px] w-4 rounded-sm bg-current opacity-80" />
+                                            <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
+                                            <span className="block h-[3px] w-4 rounded-sm bg-current opacity-40" />
+                                          </>
+                                        ) : (
+                                          <>
+                                            <span className="block h-0.5 w-4 rounded-sm bg-current opacity-80" />
+                                            <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                            <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                            <span className="block h-0.5 w-4 rounded-sm bg-current opacity-40" />
+                                          </>
+                                        )}
+                                      </span>
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Hover Popovers */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Hover Popovers</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Show or hide hover details on contact name and progress bar columns.
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBoardGeneralSettingsDraft((prev) => ({
+                                        ...prev,
+                                        hoverPopoversEnabled: true,
+                                      }));
+                                    }}
+                                    className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.hoverPopoversEnabled
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-background text-muted-foreground hover:bg-muted"
+                                      }`}
+                                  >
+                                    Enabled
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setBoardGeneralSettingsDraft((prev) => ({
+                                        ...prev,
+                                        hoverPopoversEnabled: false,
+                                      }));
+                                    }}
+                                    className={`h-8 px-3 text-xs font-medium transition-colors ${!boardGeneralSettingsDraft.hoverPopoversEnabled
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-background text-muted-foreground hover:bg-muted"
+                                      }`}
+                                  >
+                                    Disabled
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Records Per Page */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Records Per Page</p>
+                                  <p className="text-muted-foreground text-xs">How many records to show per page.</p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  {USER_BOARD_PAGE_SIZE_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          pageSize: option.value,
+                                        }));
+                                      }}
+                                      className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.pageSize === option.value
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        }`}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Default View */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Default View</p>
+                                  <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  {(["table", "grid", "kanban"] as UserBoardDisplayMode[]).map((mode) => (
+                                    <button
+                                      key={mode}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          displayMode: mode,
+                                        }));
+                                      }}
+                                      className={`flex h-8 items-center gap-1.5 px-3 text-xs font-medium capitalize transition-colors ${boardGeneralSettingsDraft.displayMode === mode
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        }`}
+                                    >
+                                      {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
+                                      {mode}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Monthly Records */}
+                              <div className="flex items-center justify-between py-3.5">
+                                <div className="min-w-0 flex-1 pr-6">
+                                  <p className="text-sm font-medium">Monthly Records</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    {USER_BOARD_RECORD_SOURCE_OPTIONS.find(
+                                      (o) => o.value === boardGeneralSettingsDraft.recordSource,
+                                    )?.description ??
+                                      "Choose how monthly records are selected."}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 overflow-hidden rounded-md border">
+                                  {USER_BOARD_RECORD_SOURCE_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      onClick={() => {
+                                        setBoardGeneralSettingsDraft((prev) => ({
+                                          ...prev,
+                                          recordSource: option.value,
+                                        }));
+                                      }}
+                                      className={`h-8 px-3 text-xs font-medium transition-colors ${boardGeneralSettingsDraft.recordSource === option.value
+                                        ? "bg-primary text-primary-foreground"
+                                        : "bg-background text-muted-foreground hover:bg-muted"
+                                        }`}
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Preview strip */}
+                              <div
+                                className={`mt-3 flex items-center justify-between rounded-md px-4 py-3 ${boardDraftThemeStyles.previewClassName}`}
+                                style={boardDraftThemeInlineStyles.previewStyle}
+                              >
+                                <p className="text-xs text-muted-foreground">
+                                  Preview — {USER_BOARD_COLOR_THEME_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.colorTheme)?.label},{" "}
+                                  {USER_BOARD_FONT_SIZE_OPTIONS.find((o) => o.value === boardGeneralSettingsDraft.fontSize)?.label}
+                                </p>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  className={`justify-start rounded-md ${quickActionButtonDraftSizeClass} ${boardDraftThemeStyles.actionButtonClassName}`}
+                                  style={boardDraftThemeInlineStyles.actionButtonStyle}
+                                  disabled
+                                >
+                                  Quick Action
+                                </Button>
+                              </div>
+
+                            </div>
+                          </TabsContent>
+
+                          <TabsContent value="email-templates" className="mt-0">
+                            <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">
+                                  Templates ({emailTemplates.length})
+                                </p>
+                                <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+                                  {emailTemplates.map((template) => {
+                                    const isActive = template.id === selectedTemplate?.id;
+                                    return (
+                                      <button
+                                        key={template.id}
                                         type="button"
-                                        variant="outline"
+                                        className={[
+                                          "w-full rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                                          isActive
+                                            ? "border-primary bg-primary/10"
+                                            : "hover:bg-muted/60",
+                                        ].join(" ")}
                                         onClick={() => {
-                                          setPlatformSettingsDraft((prev) => ({
-                                            ...prev,
-                                            emailSystemTags: prev.emailSystemTags.filter(
-                                              (_, entryIndex) => entryIndex !== index,
-                                            ),
-                                          }));
+                                          setSelectedTemplateId(template.id);
                                         }}
                                       >
-                                        Remove
-                                      </Button>
-                                      <p className="text-muted-foreground text-xs md:col-span-3">
-                                        Token:{" "}
-                                        <code>{`{{${entry.tag.trim().toLowerCase()}}}`}</code>
-                                        {" · "}
-                                        Column: {selectedColumn?.title ?? entry.columnTitle} (
-                                        {entry.columnId})
+                                        <p className="line-clamp-1 font-medium">{template.name}</p>
+                                        <p className="text-muted-foreground mt-1 text-xs">
+                                          Updated {formatUpdatedAt(template.updatedAt)}
+                                        </p>
+                                      </button>
+                                    );
+                                  })}
+                                  {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                                    <p className="text-muted-foreground text-sm">
+                                      No templates found on board 18401299370.
+                                    </p>
+                                  ) : null}
+                                  {emailTemplatesQuery.isLoading ? (
+                                    <p className="text-muted-foreground text-sm">
+                                      Loading templates...
+                                    </p>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="bg-background min-h-[420px] rounded-md border p-4">
+                                {selectedTemplate ? (
+                                  <div className="space-y-4">
+                                    <div className="border-b pb-3">
+                                      <p className="text-xs font-semibold tracking-wide uppercase">
+                                        Subject
+                                      </p>
+                                      <p className="mt-1 text-base font-medium">
+                                        {selectedTemplate.name}
                                       </p>
                                     </div>
-                                  );
-                                })
-                              )}
+                                    <div>
+                                      <p className="text-xs font-semibold tracking-wide uppercase">
+                                        Email Preview (Lead View)
+                                      </p>
+                                      <div className="bg-card mt-2 rounded-md border p-4">
+                                        {selectedTemplate.content.trim().length === 0 ? (
+                                          <p className="text-muted-foreground text-sm">
+                                            No content found in column doc_mm0wq4r.
+                                          </p>
+                                        ) : selectedTemplate.renderedHtml.trim().length > 0 ? (
+                                          <div
+                                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                            style={{ whiteSpace: "pre-wrap" }}
+                                            dangerouslySetInnerHTML={{
+                                              __html: selectedTemplate.renderedHtml,
+                                            }}
+                                          />
+                                        ) : (
+                                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                            {selectedTemplate.content}
+                                          </div>
+                                        )}
+                                        {selectedTemplate.docLink ? (
+                                          <p className="mt-3 text-xs">
+                                            <a
+                                              href={selectedTemplate.docLink}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="text-primary underline underline-offset-2"
+                                            >
+                                              Open source Monday Workdoc
+                                            </a>
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-muted-foreground text-sm">
+                                    Select an email template to preview.
+                                  </p>
+                                )}
+                              </div>
                             </div>
-                            {platformBoardColumnsQuery.isLoading ? (
-                              <p className="text-muted-foreground text-xs">
-                                Loading API board columns...
-                              </p>
-                            ) : null}
-                            {platformBoardColumnsQuery.error ? (
-                              <p className="text-destructive text-xs">
-                                {platformBoardColumnsQuery.error instanceof Error
-                                  ? platformBoardColumnsQuery.error.message
-                                  : "Failed to load API board columns"}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="rounded-md border border-amber-300 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-100">
-                            Master admin ({masterAdminUserId}) is always included in admin IDs.
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
-                              onClick={() => {
-                                setPlatformSettingsDraft(platformSettings);
-                              }}
-                            >
-                              Reset
-                            </Button>
-                            <Button
-                              size="sm"
-                              disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
-                              onClick={() => {
-                                void handleSavePlatformSettings("Platform settings updated");
-                              }}
-                            >
-                              {isSavingPlatformSettings ? "Saving..." : "Save platform settings"}
-                            </Button>
-                          </div>
+                          </TabsContent>
+                          <TabsContent value="user-zip-map" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">User {"<->"} Zipcode map</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Configure and monitor district routing for newly created contact
+                                  records.
+                                </p>
+                              </div>
+
+                              <div className="grid gap-3 md:grid-cols-3">
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    Routing Status
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.isLoading
+                                      ? "Loading..."
+                                      : routingStatusQuery.data?.enabled
+                                        ? routingStatusQuery.data.ok
+                                          ? "Configured"
+                                          : "Configured with issues"
+                                        : "Not configured"}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    County Mappings
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.data?.countyMappingsCount ?? 0}
+                                  </p>
+                                </div>
+                                <div className="rounded-md border-2 border-border/70 bg-card/60 p-3 shadow-sm">
+                                  <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                                    District Owner Mappings
+                                  </p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {routingStatusQuery.data?.districtOwnerMappingsCount ?? 0}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="space-y-3 rounded-md border-2 border-border/70 bg-muted/20 p-4 shadow-sm">
+                                <p className="text-sm font-medium">Routing boards</p>
+                                <div className="grid gap-3 md:grid-cols-3">
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">Contact board</p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.contactBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.contactBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.contactBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">
+                                      County {"->"} District board
+                                    </p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.countyBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.countyBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.countyBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="rounded-md border border-border/60 bg-background/80 p-3">
+                                    <p className="text-xs font-semibold uppercase">
+                                      District {"->"} Owner board
+                                    </p>
+                                    <p className="text-muted-foreground mt-1 break-all text-xs">
+                                      {routingStatusQuery.data?.districtBoardId ?? "Not configured"}
+                                    </p>
+                                    {routingStatusQuery.data?.districtBoardUrl ? (
+                                      <Button asChild size="sm" variant="outline" className="mt-2 h-7 text-xs">
+                                        <a
+                                          href={routingStatusQuery.data.districtBoardUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                        >
+                                          Open board
+                                        </a>
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border-2 border-border/70 bg-background/80 p-4 shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-medium">Routing diagnostics</p>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 text-xs"
+                                    onClick={() => {
+                                      void routingStatusQuery.refetch();
+                                    }}
+                                    disabled={routingStatusQuery.isFetching}
+                                  >
+                                    {routingStatusQuery.isFetching ? "Refreshing..." : "Refresh"}
+                                  </Button>
+                                </div>
+                                {routingStatusQuery.error ? (
+                                  <p className="text-destructive text-xs">
+                                    {routingStatusQuery.error instanceof Error
+                                      ? routingStatusQuery.error.message
+                                      : "Failed to load routing diagnostics"}
+                                  </p>
+                                ) : null}
+                                {(routingStatusQuery.data?.issues ?? []).length > 0 ? (
+                                  <ul className="list-disc space-y-1 pl-4 text-xs">
+                                    {(routingStatusQuery.data?.issues ?? []).map((issue) => (
+                                      <li key={issue} className="text-destructive">
+                                        {issue}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-muted-foreground text-xs">
+                                    No routing issues detected.
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-4 shadow-sm">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">Manual rerun</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Re-run owner assignment for one contact item id.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Input
+                                    value={routingRerunItemId}
+                                    onChange={(event) => setRoutingRerunItemId(event.target.value)}
+                                    placeholder="Item ID"
+                                    className="h-8 w-full max-w-xs border-2 bg-background/95 text-sm shadow-sm"
+                                  />
+                                  <Button
+                                    size="sm"
+                                    className="h-8 px-3 text-xs"
+                                    onClick={() => {
+                                      void handleRunRoutingRerun();
+                                    }}
+                                    disabled={isRunningRoutingRerun}
+                                  >
+                                    {isRunningRoutingRerun ? "Running..." : "Run assignment"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </TabsContent>
+                          <TabsContent value="email-settings" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-2">
+                                <p className="text-sm font-medium">Email Settings</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Configure outbound email account settings for sending
+                                  monday-designed templates.
+                                </p>
+                              </div>
+                              <div className="space-y-3 rounded-md border p-4">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant={
+                                      outlookStatusQuery.data?.connected
+                                        ? "default"
+                                        : "secondary"
+                                    }
+                                  >
+                                    {outlookStatusQuery.data?.connected
+                                      ? "Outlook connected"
+                                      : "Outlook not connected"}
+                                  </Badge>
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      void handleConnectOutlook();
+                                    }}
+                                    disabled={isConnectingOutlook}
+                                  >
+                                    {isConnectingOutlook ? "Connecting..." : "Connect Outlook"}
+                                  </Button>
+                                  {outlookStatusQuery.data?.connected ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        void handleDisconnectOutlook();
+                                      }}
+                                      disabled={isDisconnectingOutlook}
+                                    >
+                                      {isDisconnectingOutlook
+                                        ? "Disconnecting..."
+                                        : "Disconnect"}
+                                    </Button>
+                                  ) : null}
+                                </div>
+                                <div className="text-muted-foreground text-sm">
+                                  {outlookStatusQuery.data?.connection?.email ? (
+                                    <p>
+                                      Connected mailbox:{" "}
+                                      {outlookStatusQuery.data.connection.email}
+                                    </p>
+                                  ) : (
+                                    <p>
+                                      Use OAuth to connect Outlook, then use this account
+                                      for sending and engagement tracking.
+                                    </p>
+                                  )}
+                                  {outlookStatusQuery.data?.connection?.updatedAt ? (
+                                    <p className="mt-1">
+                                      Last updated:{" "}
+                                      {new Date(
+                                        outlookStatusQuery.data.connection.updatedAt,
+                                      ).toLocaleString()}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="rounded-md border bg-muted/30 p-3">
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Callback URL
+                                  </p>
+                                  <p className="mt-1 break-all font-mono text-xs">
+                                    {callbackUrl}
+                                  </p>
+                                </div>
+                                {isMasterAdmin ? (
+                                  <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium">Global Reply-To Addresses</p>
+                                      <p className="text-muted-foreground text-xs">
+                                        One email per line (or comma-separated). Every outbound message
+                                        includes the sender&apos;s mailbox plus these addresses in
+                                        Reply-To.
+                                      </p>
+                                    </div>
+                                    <Textarea
+                                      value={platformSettingsDraft.replyToEmails.join("\n")}
+                                      onChange={(event) => {
+                                        const nextReplyToEmails = parseDelimitedList(
+                                          event.target.value,
+                                        ).map((entry) => entry.toLowerCase());
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          replyToEmails: nextReplyToEmails,
+                                        }));
+                                      }}
+                                      rows={4}
+                                      placeholder="info@floridaroadjobs.com"
+                                      className="font-mono text-xs"
+                                    />
+                                    <div className="flex flex-wrap gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        disabled={
+                                          isSavingPlatformSettings ||
+                                          platformSettings.replyToEmails.join(",") ===
+                                          platformSettingsDraft.replyToEmails.join(",")
+                                        }
+                                        onClick={() => {
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            replyToEmails: [...platformSettings.replyToEmails],
+                                          }));
+                                        }}
+                                      >
+                                        Reset
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        disabled={isSavingPlatformSettings}
+                                        onClick={() => {
+                                          void handleSavePlatformSettings(
+                                            "Reply-to settings updated",
+                                          );
+                                        }}
+                                      >
+                                        {isSavingPlatformSettings ? "Saving..." : "Save reply-to"}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </TabsContent>
+                          <TabsContent value="feature-flags" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Feature Flags</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Toggle app capabilities without code changes.
+                                </p>
+                              </div>
+                              <div className="space-y-3 rounded-md border p-4">
+                                <label className="flex items-start gap-3 text-sm">
+                                  <input
+                                    type="checkbox"
+                                    checked={featureFlags.emailMarketingEnabled}
+                                    disabled={isSavingFeatureFlags}
+                                    onChange={(event) => {
+                                      void handleSetEmailMarketingEnabled(
+                                        event.target.checked,
+                                      );
+                                    }}
+                                  />
+                                  <div className="space-y-1">
+                                    <p className="font-medium">Email Marketing</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Enables email marketing capabilities, including the
+                                      Email action in the table.
+                                    </p>
+                                    {isSavingFeatureFlags ? (
+                                      <p className="text-muted-foreground text-[11px]">
+                                        Saving...
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+                          </TabsContent>
+                          {isMasterAdmin ? (
+                            <TabsContent value="monthly-board-mapping" className="mt-0">
+                              <div className="space-y-4">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">Monthly Board Mapping</p>
+                                  <p className="text-muted-foreground text-sm">
+                                    Configure which monthly board should sync by month/year.
+                                  </p>
+                                </div>
+                                <div className="space-y-3 rounded-md border p-4">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm font-medium">Mappings</p>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() => {
+                                        const currentMonthKey = new Date()
+                                          .toISOString()
+                                          .slice(0, 7);
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          monthlyBoardMappings: [
+                                            ...prev.monthlyBoardMappings,
+                                            { monthKey: currentMonthKey, boardId: "" },
+                                          ],
+                                        }));
+                                      }}
+                                    >
+                                      Add row
+                                    </Button>
+                                  </div>
+                                  {platformSettingsDraft.monthlyBoardMappings.length === 0 ? (
+                                    <p className="text-muted-foreground text-xs">
+                                      No mappings yet. Add at least one month/year to board ID mapping.
+                                    </p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {platformSettingsDraft.monthlyBoardMappings.map(
+                                        (mapping, index) => (
+                                          <div
+                                            key={`${mapping.monthKey}-${mapping.boardId}-${index}`}
+                                            className="grid gap-2 md:grid-cols-[180px_1fr_auto]"
+                                          >
+                                            <Input
+                                              type="month"
+                                              value={mapping.monthKey}
+                                              onChange={(event) => {
+                                                const value = event.target.value;
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  monthlyBoardMappings:
+                                                    prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                      entryIndex === index
+                                                        ? { ...entry, monthKey: value }
+                                                        : entry,
+                                                    ),
+                                                }));
+                                              }}
+                                            />
+                                            <Input
+                                              value={mapping.boardId}
+                                              onChange={(event) => {
+                                                const value = event.target.value.trim();
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  monthlyBoardMappings:
+                                                    prev.monthlyBoardMappings.map((entry, entryIndex) =>
+                                                      entryIndex === index
+                                                        ? { ...entry, boardId: value }
+                                                        : entry,
+                                                    ),
+                                                }));
+                                              }}
+                                              placeholder="Monthly board ID"
+                                            />
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  monthlyBoardMappings:
+                                                    prev.monthlyBoardMappings.filter(
+                                                      (_, entryIndex) => entryIndex !== index,
+                                                    ),
+                                                }));
+                                              }}
+                                            >
+                                              Remove
+                                            </Button>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
+                                  <p className="text-xs font-semibold tracking-wide uppercase">
+                                    Monthly Board Webhook URL
+                                  </p>
+                                  <p className="mt-1 break-all font-mono text-xs">
+                                    {monthlyWebhookUrl}
+                                  </p>
+                                  <p className="text-muted-foreground mt-2 text-xs">
+                                    Configure this URL as a webhook on each mapped monthly board.
+                                    New monthly updates and subitem changes will sync to the linked
+                                    contact in the API board.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                                    onClick={() => {
+                                      setPlatformSettingsDraft(platformSettings);
+                                    }}
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                                    onClick={() => {
+                                      void handleSavePlatformSettings(
+                                        "Monthly board mappings updated",
+                                      );
+                                    }}
+                                  >
+                                    {isSavingPlatformSettings ? "Saving..." : "Save mappings"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </TabsContent>
+                          ) : null}
+                          {isMasterAdmin ? (
+                            <TabsContent value="platform-settings" className="mt-0">
+                              <div className="space-y-4">
+                                <div className="space-y-1">
+                                  <p className="text-sm font-medium">Platform Settings</p>
+                                  <p className="text-muted-foreground text-sm">
+                                    Manage role assignments for settings access.
+                                  </p>
+                                </div>
+                                <div className="grid gap-4 md:grid-cols-2">
+                                  <div className="space-y-2 rounded-md border p-4">
+                                    <p className="text-sm font-medium">Admin User IDs</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      One user ID per line. Admins can modify feature flags and admin
+                                      tools.
+                                    </p>
+                                    <Textarea
+                                      value={platformSettingsDraft.adminUserIds.join("\n")}
+                                      onChange={(event) => {
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          adminUserIds: parseDelimitedList(event.target.value),
+                                        }));
+                                      }}
+                                      rows={8}
+                                      className="font-mono text-xs"
+                                      placeholder={"53441186\n38959704"}
+                                    />
+                                  </div>
+                                  <div className="space-y-2 rounded-md border p-4">
+                                    <p className="text-sm font-medium">Employee User IDs</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Optional reference list for employee role assignments.
+                                    </p>
+                                    <Textarea
+                                      value={platformSettingsDraft.employeeUserIds.join("\n")}
+                                      onChange={(event) => {
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          employeeUserIds: parseDelimitedList(event.target.value),
+                                        }));
+                                      }}
+                                      rows={8}
+                                      className="font-mono text-xs"
+                                      placeholder={"49566535\n38959704"}
+                                    />
+                                  </div>
+                                </div>
+                                <div className="space-y-3 rounded-md border p-4">
+                                  <div className="space-y-1">
+                                    <p className="text-sm font-medium">Email Template System Tags</p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Built-ins always available:{" "}
+                                      <code>{"{{owner.name}}"}</code>,{" "}
+                                      <code>{"{{owner.email}}"}</code>,{" "}
+                                      <code>{"{{contact.name}}"}</code>,{" "}
+                                      <code>{"{{contact.email}}"}</code>.
+                                    </p>
+                                    <p className="text-muted-foreground text-xs">
+                                      Add custom tags mapped to any top-level API board column.
+                                    </p>
+                                  </div>
+                                  <div className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]">
+                                    <Input
+                                      value={newEmailSystemTagKey}
+                                      onChange={(event) => setNewEmailSystemTagKey(event.target.value)}
+                                      placeholder="contact.city"
+                                    />
+                                    <Select
+                                      value={newEmailSystemTagColumnId || "__none__"}
+                                      onValueChange={(value) =>
+                                        setNewEmailSystemTagColumnId(
+                                          value === "__none__" ? "" : value,
+                                        )
+                                      }
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select contact column" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="__none__">Select contact column</SelectItem>
+                                        {platformBoardColumnOptions.map((column) => (
+                                          <SelectItem key={column.id} value={column.id}>
+                                            {column.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        const tag = newEmailSystemTagKey.trim().toLowerCase();
+                                        const columnId = newEmailSystemTagColumnId.trim();
+                                        const selectedColumn = platformBoardColumnOptions.find(
+                                          (column) => column.id === columnId,
+                                        );
+                                        if (!EMAIL_TEMPLATE_TAG_PATTERN.test(tag)) {
+                                          toast.error(
+                                            "Tag key must start with a letter and use letters, numbers, dots, dashes, or underscores.",
+                                          );
+                                          return;
+                                        }
+                                        if (!columnId) {
+                                          toast.error("Select a contact column for this tag.");
+                                          return;
+                                        }
+                                        setPlatformSettingsDraft((prev) => ({
+                                          ...prev,
+                                          emailSystemTags: normalizeEmailSystemTags([
+                                            ...prev.emailSystemTags,
+                                            {
+                                              tag,
+                                              columnId,
+                                              columnTitle: selectedColumn?.title ?? columnId,
+                                            },
+                                          ]),
+                                        }));
+                                        setNewEmailSystemTagKey("");
+                                        setNewEmailSystemTagColumnId("");
+                                      }}
+                                      disabled={platformBoardColumnsQuery.isLoading}
+                                    >
+                                      Add Tag
+                                    </Button>
+                                  </div>
+                                  <div className="space-y-2">
+                                    {platformSettingsDraft.emailSystemTags.length === 0 ? (
+                                      <p className="text-muted-foreground text-xs">
+                                        No custom tags configured yet.
+                                      </p>
+                                    ) : (
+                                      platformSettingsDraft.emailSystemTags.map((entry, index) => {
+                                        const selectedColumn = platformBoardColumnOptions.find(
+                                          (column) => column.id === entry.columnId,
+                                        );
+                                        return (
+                                          <div
+                                            key={`${entry.tag}:${entry.columnId}:${index}`}
+                                            className="grid gap-2 md:grid-cols-[1fr_1.3fr_auto]"
+                                          >
+                                            <Input
+                                              value={entry.tag}
+                                              onChange={(event) => {
+                                                const value = event.target.value;
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  emailSystemTags: prev.emailSystemTags.map(
+                                                    (tagEntry, entryIndex) =>
+                                                      entryIndex === index
+                                                        ? { ...tagEntry, tag: value }
+                                                        : tagEntry,
+                                                  ),
+                                                }));
+                                              }}
+                                            />
+                                            <Select
+                                              value={entry.columnId}
+                                              onValueChange={(value) => {
+                                                const selected = platformBoardColumnOptions.find(
+                                                  (column) => column.id === value,
+                                                );
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  emailSystemTags: prev.emailSystemTags.map(
+                                                    (tagEntry, entryIndex) =>
+                                                      entryIndex === index
+                                                        ? {
+                                                          ...tagEntry,
+                                                          columnId: value,
+                                                          columnTitle:
+                                                            selected?.title ??
+                                                            tagEntry.columnTitle,
+                                                        }
+                                                        : tagEntry,
+                                                  ),
+                                                }));
+                                              }}
+                                            >
+                                              <SelectTrigger>
+                                                <SelectValue placeholder="Select contact column" />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                {platformBoardColumnOptions.map((column) => (
+                                                  <SelectItem key={column.id} value={column.id}>
+                                                    {column.label}
+                                                  </SelectItem>
+                                                ))}
+                                              </SelectContent>
+                                            </Select>
+                                            <Button
+                                              type="button"
+                                              variant="outline"
+                                              onClick={() => {
+                                                setPlatformSettingsDraft((prev) => ({
+                                                  ...prev,
+                                                  emailSystemTags: prev.emailSystemTags.filter(
+                                                    (_, entryIndex) => entryIndex !== index,
+                                                  ),
+                                                }));
+                                              }}
+                                            >
+                                              Remove
+                                            </Button>
+                                            <p className="text-muted-foreground text-xs md:col-span-3">
+                                              Token:{" "}
+                                              <code>{`{{${entry.tag.trim().toLowerCase()}}}`}</code>
+                                              {" · "}
+                                              Column: {selectedColumn?.title ?? entry.columnTitle} (
+                                              {entry.columnId})
+                                            </p>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                  {platformBoardColumnsQuery.isLoading ? (
+                                    <p className="text-muted-foreground text-xs">
+                                      Loading API board columns...
+                                    </p>
+                                  ) : null}
+                                  {platformBoardColumnsQuery.error ? (
+                                    <p className="text-destructive text-xs">
+                                      {platformBoardColumnsQuery.error instanceof Error
+                                        ? platformBoardColumnsQuery.error.message
+                                        : "Failed to load API board columns"}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <div className="rounded-md border border-amber-300 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-500/50 dark:bg-amber-950/30 dark:text-amber-100">
+                                  Master admin ({masterAdminUserId}) is always included in admin IDs.
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                                    onClick={() => {
+                                      setPlatformSettingsDraft(platformSettings);
+                                    }}
+                                  >
+                                    Reset
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    disabled={isSavingPlatformSettings || !hasUnsavedPlatformSettings}
+                                    onClick={() => {
+                                      void handleSavePlatformSettings("Platform settings updated");
+                                    }}
+                                  >
+                                    {isSavingPlatformSettings ? "Saving..." : "Save platform settings"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </TabsContent>
+                          ) : null}
                         </div>
-                      </TabsContent>
-                    ) : null}
-                  </div>
                       </div>
                     </Tabs>
                   </DialogContent>
@@ -8244,459 +8243,459 @@ export function MondayBoardView({
               </div>
             </div>
           </div>
-      <div className="max-w-[1600px] container">
+          <div className="max-w-[1600px] container">
 
-      <Dialog
-        open={addContactOpen}
-        onOpenChange={(open) => {
-          setAddContactOpen(open);
-          if (!open) {
-            resetAddContactDialog();
-          }
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Add New Contact</DialogTitle>
-          </DialogHeader>
-          {addContactStep === 1 ? (
-            <AddNewContactForm
-              values={addContactValues}
-              ownerOptions={addContactOwnerOptions}
-              isSubmitting={isCheckingDuplicates || isCreatingContact}
-              onChange={(key, value) => {
-                setAddContactValues((prev) => ({ ...prev, [key]: value }));
+            <Dialog
+              open={addContactOpen}
+              onOpenChange={(open) => {
+                setAddContactOpen(open);
+                if (!open) {
+                  resetAddContactDialog();
+                }
               }}
-              onSubmit={() => {
-                void handleCheckDuplicatesAndContinue();
-              }}
-            />
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <p className="text-sm font-medium">
-                  Before we create, we found these records with the same email.
-                </p>
-                <p className="text-muted-foreground text-sm">
-                  Do you want to use one of these existing records?
-                </p>
-              </div>
-              <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
-                {existingContactsByEmail.map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex items-center justify-between gap-3 rounded-md border p-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{record.name || record.id}</p>
-                      <p className="text-muted-foreground truncate text-xs">
-                        {record.email ?? "No email"} · {record.owner ?? "No owner"}
+            >
+              <DialogContent className="max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Add New Contact</DialogTitle>
+                </DialogHeader>
+                {addContactStep === 1 ? (
+                  <AddNewContactForm
+                    values={addContactValues}
+                    ownerOptions={addContactOwnerOptions}
+                    isSubmitting={isCheckingDuplicates || isCreatingContact}
+                    onChange={(key, value) => {
+                      setAddContactValues((prev) => ({ ...prev, [key]: value }));
+                    }}
+                    onSubmit={() => {
+                      void handleCheckDuplicatesAndContinue();
+                    }}
+                  />
+                ) : (
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        Before we create, we found these records with the same email.
                       </p>
-                      <p className="text-muted-foreground text-xs">
-                        Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                      <p className="text-muted-foreground text-sm">
+                        Do you want to use one of these existing records?
                       </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {record.url ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() =>
-                            window.open(record.url ?? "", "_blank", "noopener,noreferrer")
-                          }
+                    <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border p-2">
+                      {existingContactsByEmail.map((record) => (
+                        <div
+                          key={record.id}
+                          className="flex items-center justify-between gap-3 rounded-md border p-3"
                         >
-                          Open
-                        </Button>
-                      ) : null}
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{record.name || record.id}</p>
+                            <p className="text-muted-foreground truncate text-xs">
+                              {record.email ?? "No email"} · {record.owner ?? "No owner"}
+                            </p>
+                            <p className="text-muted-foreground text-xs">
+                              Updated: {record.updatedAt ? formatUpdatedAt(record.updatedAt) : "—"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {record.url ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  window.open(record.url ?? "", "_blank", "noopener,noreferrer")
+                                }
+                              >
+                                Open
+                              </Button>
+                            ) : null}
+                            <Button
+                              size="sm"
+                              onClick={() => {
+                                toast.success("Using existing contact");
+                                setAddContactOpen(false);
+                                resetAddContactDialog();
+                              }}
+                            >
+                              Use Existing
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex justify-between gap-2">
                       <Button
-                        size="sm"
-                        onClick={() => {
-                          toast.success("Using existing contact");
-                          setAddContactOpen(false);
-                          resetAddContactDialog();
-                        }}
+                        variant="outline"
+                        onClick={() => setAddContactStep(1)}
+                        disabled={isCreatingContact}
                       >
-                        Use Existing
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          void handleCreateContact();
+                        }}
+                        disabled={isCreatingContact}
+                      >
+                        {isCreatingContact ? "Creating..." : "Create New Anyway"}
                       </Button>
                     </div>
                   </div>
-                ))}
-              </div>
-              <div className="flex justify-between gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setAddContactStep(1)}
-                  disabled={isCreatingContact}
-                >
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    void handleCreateContact();
-                  }}
-                  disabled={isCreatingContact}
-                >
-                  {isCreatingContact ? "Creating..." : "Create New Anyway"}
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+                )}
+              </DialogContent>
+            </Dialog>
 
-      <Dialog
-        open={!!resumeReferralDialogState}
-        onOpenChange={(open) => {
-          if (!open) closeResumeReferralDialog();
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Resume Submitted to Contractor</DialogTitle>
-            <DialogDescription>
-              Choose which contractor(s) this contact was referred to. This updates the API board
-              referral column before completing the onboarding step.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <MultiSelect
-                key={`${resumeReferralDialogState?.targetRecordId ?? "no-item"}-${resumeReferralDialogState?.selectedContractors.join("|") ?? ""}`}
-                options={Array.from(
-                  new Set([
-                    ...retentionOptions.referredToContractors,
-                    ...(resumeReferralDialogState?.selectedContractors ?? []),
-                  ]),
-                )
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={resumeReferralDialogState?.selectedContractors ?? []}
-                onValueChange={(values) => {
-                  setResumeReferralDialogState((prev) =>
-                    prev ? { ...prev, selectedContractors: values } : prev,
-                  );
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={closeResumeReferralDialog}
-                disabled={isSavingResumeReferralStep}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleConfirmResumeReferralStep();
-                }}
-                disabled={
-                  isSavingResumeReferralStep ||
-                  (resumeReferralDialogState?.selectedContractors.length ?? 0) === 0
-                }
-              >
-                {isSavingResumeReferralStep ? "Saving..." : "Save and Continue"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!interviewingContractorDialogState}
-        onOpenChange={(open) => {
-          if (!open) closeInterviewingContractorDialog();
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Mark Interviewing</DialogTitle>
-            <DialogDescription>
-              Select the contractor(s) this contact is interviewing with. Options are limited to
-              contractors from Referred to Contractor.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Interviewing With Contractor(s)</label>
-              <MultiSelect
-                key={`${interviewingContractorDialogState?.targetRecordId ?? "no-item"}-${interviewingContractorDialogState?.selectedContractors.join("|") ?? ""}`}
-                options={(interviewingContractorDialogState?.availableContractors ?? [])
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={interviewingContractorDialogState?.selectedContractors ?? []}
-                onValueChange={(values) => {
-                  setInterviewingContractorDialogState((prev) =>
-                    prev ? { ...prev, selectedContractors: values } : prev,
-                  );
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={closeInterviewingContractorDialog}
-                disabled={isSavingInterviewingStep}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleConfirmInterviewingStep();
-                }}
-                disabled={
-                  isSavingInterviewingStep ||
-                  (interviewingContractorDialogState?.selectedContractors.length ?? 0) === 0
-                }
-              >
-                {isSavingInterviewingStep ? "Saving..." : "Save and Continue"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!hiredContractorDialogState}
-        onOpenChange={(open) => {
-          if (!open) closeHiredContractorDialog();
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Mark as Hired</DialogTitle>
-            <DialogDescription>
-              Select the contractor this contact was hired with. Options come from Interviewing
-              With Contractor.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hired With Contractor</label>
-              <Select
-                value={hiredContractorDialogState?.selectedContractor || "__none__"}
-                onValueChange={(value) => {
-                  setHiredContractorDialogState((prev) =>
-                    prev
-                      ? { ...prev, selectedContractor: value === "__none__" ? "" : value }
-                      : prev,
-                  );
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select contractor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">None</SelectItem>
-                  {(hiredContractorDialogState?.availableContractors ?? [])
-                    .filter((value) => value.trim().length > 0)
-                    .map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={closeHiredContractorDialog}
-                disabled={isSavingHiredStep}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleConfirmHiredStep();
-                }}
-                disabled={
-                  isSavingHiredStep ||
-                  !hiredContractorDialogState?.selectedContractor.trim()
-                }
-              >
-                {isSavingHiredStep ? "Saving..." : "Save and Continue"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!markAsHiredWorkflowDialogState}
-        onOpenChange={(open) => {
-          if (!open) closeMarkAsHiredWorkflowDialog();
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Mark as Hired Workflow</DialogTitle>
-            <DialogDescription>
-              Enter referred contractor(s), hired-with contractor, and hire date. This workflow
-              marks Resume Submitted, Interviewing, and Hired as done, and marks Screening Complete
-              as skipped when it is still incomplete.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <MultiSelect
-                key={`${markAsHiredWorkflowDialogState?.targetRecordId ?? "no-item"}-${markAsHiredWorkflowDialogState?.referredToContractors.join("|") ?? ""}`}
-                options={Array.from(
-                  new Set([
-                    ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
-                    ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
-                    markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
-                  ]),
-                )
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={markAsHiredWorkflowDialogState?.referredToContractors ?? []}
-                onValueChange={(values) => {
-                  setMarkAsHiredWorkflowDialogState((prev) =>
-                    prev ? { ...prev, referredToContractors: values } : prev,
-                  );
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hired With Contractor</label>
-              <Select
-                value={markAsHiredWorkflowDialogState?.hiredWithContractor || "__none__"}
-                onValueChange={(value) => {
-                  setMarkAsHiredWorkflowDialogState((prev) =>
-                    prev ? { ...prev, hiredWithContractor: value === "__none__" ? "" : value } : prev,
-                  );
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select contractor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Select contractor</SelectItem>
-                  {Array.from(
-                    new Set([
-                      ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
-                      ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
-                      markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
-                    ]),
-                  )
-                    .filter((value): value is string => !!value && value.trim().length > 0)
-                    .map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {value}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hire Date</label>
-              <div className="flex items-center gap-2">
-                <Popover
-                  open={markAsHiredHireDatePopoverOpen}
-                  onOpenChange={setMarkAsHiredHireDatePopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button type="button" variant="outline" className="h-9 flex-1 justify-start font-normal">
-                      {markAsHiredWorkflowDialogState?.hireDate || "Select date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                    <Calendar
-                      mode="single"
-                      selected={
-                        markAsHiredWorkflowDialogState?.hireDate
-                          ? new Date(`${markAsHiredWorkflowDialogState.hireDate}T00:00:00`)
-                          : undefined
-                      }
-                      onSelect={(date) => {
-                        if (!date) return;
-                        setMarkAsHiredWorkflowDialogState((prev) =>
-                          prev ? { ...prev, hireDate: toDateOnlyLocal(date) } : prev,
+            <Dialog
+              open={!!resumeReferralDialogState}
+              onOpenChange={(open) => {
+                if (!open) closeResumeReferralDialog();
+              }}
+            >
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Resume Submitted to Contractor</DialogTitle>
+                  <DialogDescription>
+                    Choose which contractor(s) this contact was referred to. This updates the API board
+                    referral column before completing the onboarding step.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Referred To Contractor(s)</label>
+                    <MultiSelect
+                      key={`${resumeReferralDialogState?.targetRecordId ?? "no-item"}-${resumeReferralDialogState?.selectedContractors.join("|") ?? ""}`}
+                      options={Array.from(
+                        new Set([
+                          ...retentionOptions.referredToContractors,
+                          ...(resumeReferralDialogState?.selectedContractors ?? []),
+                        ]),
+                      )
+                        .filter((value) => value.trim().length > 0)
+                        .map((value) => ({ label: value, value }))}
+                      defaultValue={resumeReferralDialogState?.selectedContractors ?? []}
+                      onValueChange={(values) => {
+                        setResumeReferralDialogState((prev) =>
+                          prev ? { ...prev, selectedContractors: values } : prev,
                         );
-                        setMarkAsHiredHireDatePopoverOpen(false);
                       }}
+                      placeholder="Select contractor(s)"
+                      disablePortal
+                      popoverSide="bottom"
+                      popoverAvoidCollisions={false}
                     />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setMarkAsHiredWorkflowDialogState((prev) =>
-                      prev ? { ...prev, hireDate: "" } : prev,
-                    );
-                  }}
-                  disabled={!markAsHiredWorkflowDialogState?.hireDate}
-                >
-                  Clear
-                </Button>
-              </div>
-            </div>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={closeResumeReferralDialog}
+                      disabled={isSavingResumeReferralStep}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmResumeReferralStep();
+                      }}
+                      disabled={
+                        isSavingResumeReferralStep ||
+                        (resumeReferralDialogState?.selectedContractors.length ?? 0) === 0
+                      }
+                    >
+                      {isSavingResumeReferralStep ? "Saving..." : "Save and Continue"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
 
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={closeMarkAsHiredWorkflowDialog}
-                disabled={isSavingMarkAsHiredWorkflow}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleConfirmMarkAsHiredWorkflow();
+            <Dialog
+              open={!!interviewingContractorDialogState}
+              onOpenChange={(open) => {
+                if (!open) closeInterviewingContractorDialog();
+              }}
+            >
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Mark Interviewing</DialogTitle>
+                  <DialogDescription>
+                    Select the contractor(s) this contact is interviewing with. Options are limited to
+                    contractors from Referred to Contractor.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Interviewing With Contractor(s)</label>
+                    <MultiSelect
+                      key={`${interviewingContractorDialogState?.targetRecordId ?? "no-item"}-${interviewingContractorDialogState?.selectedContractors.join("|") ?? ""}`}
+                      options={(interviewingContractorDialogState?.availableContractors ?? [])
+                        .filter((value) => value.trim().length > 0)
+                        .map((value) => ({ label: value, value }))}
+                      defaultValue={interviewingContractorDialogState?.selectedContractors ?? []}
+                      onValueChange={(values) => {
+                        setInterviewingContractorDialogState((prev) =>
+                          prev ? { ...prev, selectedContractors: values } : prev,
+                        );
+                      }}
+                      placeholder="Select contractor(s)"
+                      disablePortal
+                      popoverSide="bottom"
+                      popoverAvoidCollisions={false}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={closeInterviewingContractorDialog}
+                      disabled={isSavingInterviewingStep}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmInterviewingStep();
+                      }}
+                      disabled={
+                        isSavingInterviewingStep ||
+                        (interviewingContractorDialogState?.selectedContractors.length ?? 0) === 0
+                      }
+                    >
+                      {isSavingInterviewingStep ? "Saving..." : "Save and Continue"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!hiredContractorDialogState}
+              onOpenChange={(open) => {
+                if (!open) closeHiredContractorDialog();
+              }}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Mark as Hired</DialogTitle>
+                  <DialogDescription>
+                    Select the contractor this contact was hired with. Options come from Interviewing
+                    With Contractor.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Hired With Contractor</label>
+                    <Select
+                      value={hiredContractorDialogState?.selectedContractor || "__none__"}
+                      onValueChange={(value) => {
+                        setHiredContractorDialogState((prev) =>
+                          prev
+                            ? { ...prev, selectedContractor: value === "__none__" ? "" : value }
+                            : prev,
+                        );
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select contractor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">None</SelectItem>
+                        {(hiredContractorDialogState?.availableContractors ?? [])
+                          .filter((value) => value.trim().length > 0)
+                          .map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {value}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={closeHiredContractorDialog}
+                      disabled={isSavingHiredStep}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmHiredStep();
+                      }}
+                      disabled={
+                        isSavingHiredStep ||
+                        !hiredContractorDialogState?.selectedContractor.trim()
+                      }
+                    >
+                      {isSavingHiredStep ? "Saving..." : "Save and Continue"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!markAsHiredWorkflowDialogState}
+              onOpenChange={(open) => {
+                if (!open) closeMarkAsHiredWorkflowDialog();
+              }}
+            >
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Mark as Hired Workflow</DialogTitle>
+                  <DialogDescription>
+                    Enter referred contractor(s), hired-with contractor, and hire date. This workflow
+                    marks Resume Submitted, Interviewing, and Hired as done, and marks Screening Complete
+                    as skipped when it is still incomplete.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Referred To Contractor(s)</label>
+                    <MultiSelect
+                      key={`${markAsHiredWorkflowDialogState?.targetRecordId ?? "no-item"}-${markAsHiredWorkflowDialogState?.referredToContractors.join("|") ?? ""}`}
+                      options={Array.from(
+                        new Set([
+                          ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
+                          ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
+                          markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
+                        ]),
+                      )
+                        .filter((value) => value.trim().length > 0)
+                        .map((value) => ({ label: value, value }))}
+                      defaultValue={markAsHiredWorkflowDialogState?.referredToContractors ?? []}
+                      onValueChange={(values) => {
+                        setMarkAsHiredWorkflowDialogState((prev) =>
+                          prev ? { ...prev, referredToContractors: values } : prev,
+                        );
+                      }}
+                      placeholder="Select contractor(s)"
+                      disablePortal
+                      popoverSide="bottom"
+                      popoverAvoidCollisions={false}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Hired With Contractor</label>
+                    <Select
+                      value={markAsHiredWorkflowDialogState?.hiredWithContractor || "__none__"}
+                      onValueChange={(value) => {
+                        setMarkAsHiredWorkflowDialogState((prev) =>
+                          prev ? { ...prev, hiredWithContractor: value === "__none__" ? "" : value } : prev,
+                        );
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select contractor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Select contractor</SelectItem>
+                        {Array.from(
+                          new Set([
+                            ...(markAsHiredWorkflowDialogState?.referredToContractors ?? []),
+                            ...(markAsHiredWorkflowDialogState?.availableContractors ?? []),
+                            markAsHiredWorkflowDialogState?.hiredWithContractor ?? "",
+                          ]),
+                        )
+                          .filter((value): value is string => !!value && value.trim().length > 0)
+                          .map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {value}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Hire Date</label>
+                    <div className="flex items-center gap-2">
+                      <Popover
+                        open={markAsHiredHireDatePopoverOpen}
+                        onOpenChange={setMarkAsHiredHireDatePopoverOpen}
+                      >
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" className="h-9 flex-1 justify-start font-normal">
+                            {markAsHiredWorkflowDialogState?.hireDate || "Select date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                          <Calendar
+                            mode="single"
+                            selected={
+                              markAsHiredWorkflowDialogState?.hireDate
+                                ? new Date(`${markAsHiredWorkflowDialogState.hireDate}T00:00:00`)
+                                : undefined
+                            }
+                            onSelect={(date) => {
+                              if (!date) return;
+                              setMarkAsHiredWorkflowDialogState((prev) =>
+                                prev ? { ...prev, hireDate: toDateOnlyLocal(date) } : prev,
+                              );
+                              setMarkAsHiredHireDatePopoverOpen(false);
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setMarkAsHiredWorkflowDialogState((prev) =>
+                            prev ? { ...prev, hireDate: "" } : prev,
+                          );
+                        }}
+                        disabled={!markAsHiredWorkflowDialogState?.hireDate}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={closeMarkAsHiredWorkflowDialog}
+                      disabled={isSavingMarkAsHiredWorkflow}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleConfirmMarkAsHiredWorkflow();
+                      }}
+                      disabled={
+                        isSavingMarkAsHiredWorkflow ||
+                        (markAsHiredWorkflowDialogState?.referredToContractors.length ?? 0) === 0 ||
+                        !markAsHiredWorkflowDialogState?.hiredWithContractor.trim() ||
+                        !markAsHiredWorkflowDialogState?.hireDate.trim()
+                      }
+                    >
+                      {isSavingMarkAsHiredWorkflow ? "Saving..." : "Save and Advance"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!retentionDialogRecord}
+              onOpenChange={(open) => {
+                if (!open) setRetentionDialogRecord(null);
+              }}
+            >
+              <DialogContent
+                className="max-w-lg overflow-visible"
+                onInteractOutside={(event) => {
+                  event.preventDefault();
                 }}
-                disabled={
-                  isSavingMarkAsHiredWorkflow ||
-                  (markAsHiredWorkflowDialogState?.referredToContractors.length ?? 0) === 0 ||
-                  !markAsHiredWorkflowDialogState?.hiredWithContractor.trim() ||
-                  !markAsHiredWorkflowDialogState?.hireDate.trim()
-                }
+                onEscapeKeyDown={(event) => {
+                  event.preventDefault();
+                }}
               >
-                {isSavingMarkAsHiredWorkflow ? "Saving..." : "Save and Advance"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!retentionDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setRetentionDialogRecord(null);
-        }}
-      >
-          <DialogContent
-            className="max-w-lg"
-            onInteractOutside={(event) => {
-              event.preventDefault();
-            }}
-            onEscapeKeyDown={(event) => {
-              event.preventDefault();
-            }}
-          >
-          <DialogHeader>
-            <DialogTitle>Update Retention</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            {/* <div className="space-y-2 rounded-md border p-3">
+                <DialogHeader>
+                  <DialogTitle>Update Retention</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  {/* <div className="space-y-2 rounded-md border p-3">
               <div>
                 <p className="text-sm font-medium">Business Connections Overview</p>
                 <p className="text-muted-foreground text-xs">
@@ -8743,2145 +8742,2145 @@ export function MondayBoardView({
                 </div>
               </div>
             </div> */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Referred To Contractor(s)</label>
-              <MultiSelect
-                key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
-                options={Array.from(
-                  new Set([
-                    ...retentionOptions.referredToContractors,
-                    ...retentionDraft.referredToContractors,
-                  ]),
-                )
-                  .filter((value) => value.trim().length > 0)
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={retentionDraft.referredToContractors}
-                onValueChange={(values) => {
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    referredToContractors: values,
-                  }));
-                }}
-                placeholder="Select contractor(s)"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hired With Contractor</label>
-              <select
-                value={retentionDraft.hiredWithContractor || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    hiredWithContractor: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.hiredWithContractor,
-                    retentionDraft.hiredWithContractor,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Hire Date</label>
-              <div className="flex items-center gap-2">
-                <Popover
-                  open={retentionHireDatePopoverOpen}
-                  onOpenChange={setRetentionHireDatePopoverOpen}
-                >
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-9 flex-1 justify-start font-normal"
-                    >
-                      {retentionDraft.hireDate || "Select date"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-2" align="start" portal={false}>
-                    <Calendar
-                      mode="single"
-                      selected={
-                        retentionDraft.hireDate
-                          ? new Date(`${retentionDraft.hireDate}T00:00:00`)
-                          : undefined
-                      }
-                      onSelect={(date) => {
-                        if (!date) return;
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Referred To Contractor(s)</label>
+                    <MultiSelect
+                      key={`${retentionDialogRecord?.id ?? "no-item"}-${retentionDraft.referredToContractors.join("|")}`}
+                      options={Array.from(
+                        new Set([
+                          ...retentionOptions.referredToContractors,
+                          ...retentionDraft.referredToContractors,
+                        ]),
+                      )
+                        .filter((value) => value.trim().length > 0)
+                        .map((value) => ({ label: value, value }))}
+                      defaultValue={retentionDraft.referredToContractors}
+                      onValueChange={(values) => {
                         setRetentionDraft((prev) => ({
                           ...prev,
-                          hireDate: toDateOnlyLocal(date),
+                          referredToContractors: values,
                         }));
-                        setRetentionHireDatePopoverOpen(false);
                       }}
-                    />
-                  </PopoverContent>
-                </Popover>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
-                  }}
-                  disabled={!retentionDraft.hireDate}
-                >
-                  Clear
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Retention Period</label>
-              <select
-                value={retentionDraft.retentionPeriod || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setRetentionDraft((prev) => ({
-                    ...prev,
-                    retentionPeriod: value === "__none__" ? "" : value,
-                  }));
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(
-                  new Set([
-                    ...retentionOptions.retentionPeriod,
-                    retentionDraft.retentionPeriod,
-                  ]),
-                )
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setRetentionDialogRecord(null)}
-                disabled={isSavingRetention}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveRetention();
-                }}
-                disabled={isSavingRetention}
-              >
-                {isSavingRetention ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!statusDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setStatusDialogRecord(null);
-        }}
-      >
-          <DialogContent
-            className="max-w-lg"
-            onInteractOutside={(event) => {
-              event.preventDefault();
-            }}
-            onEscapeKeyDown={(event) => {
-              event.preventDefault();
-            }}
-          >
-          <DialogHeader>
-            <DialogTitle>Update Status</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Status</label>
-              <select
-                value={statusDraft || "__none__"}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setStatusDraft(value === "__none__" ? "" : value);
-                }}
-                className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
-              >
-                <option value="__none__">Select value</option>
-                {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
-                  .filter((value): value is string => !!value && value.trim().length > 0)
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-              </select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setStatusDialogRecord(null)}
-                disabled={isSavingStatus}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveStatus();
-                }}
-                disabled={isSavingStatus}
-              >
-                {isSavingStatus ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!ownerDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setOwnerDialogRecord(null);
-        }}
-      >
-          <DialogContent
-            className="max-w-lg"
-            onInteractOutside={(event) => {
-              event.preventDefault();
-            }}
-            onEscapeKeyDown={(event) => {
-              event.preventDefault();
-            }}
-          >
-          <DialogHeader>
-            <DialogTitle>Update Owner</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Owner</label>
-              <Select
-                value={ownerDraft || "__none__"}
-                onValueChange={(value) => {
-                  setOwnerDraft(value === "__none__" ? "" : value);
-                }}
-              >
-                <SelectTrigger className="h-9 w-full">
-                  <SelectValue placeholder="Select owner" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Select value</SelectItem>
-                  {Array.from(
-                    new Map(
-                      [
-                        ...ownerOptions.map((option) => [option.value, option] as const),
-                        ownerDraft.trim().length > 0
-                          ? [
-                            ownerDraft,
-                            {
-                              value: ownerDraft,
-                              label: `User ${ownerDraft}`,
-                              name: null,
-                              photoThumb: null,
-                            },
-                          ]
-                          : null,
-                      ].filter(
-                        (
-                          entry,
-                        ): entry is readonly [
-                          string,
-                          {
-                            value: string;
-                            label: string;
-                            name: string | null;
-                            photoThumb: string | null;
-                          },
-                        ] => !!entry,
-                      ),
-                    ),
-                  )
-                    .map(([, option]) => option)
-                    .map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="size-5">
-                            {option.photoThumb ? (
-                              <AvatarImage
-                                src={option.photoThumb}
-                                alt={option.name ?? option.value}
-                              />
-                            ) : null}
-                            <AvatarFallback className="text-[10px] font-semibold">
-                              {getNameInitials(option.name ?? option.value)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm">
-                            {option.name ?? option.label}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setOwnerDialogRecord(null)}
-                disabled={isSavingOwner}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveOwner();
-                }}
-                disabled={isSavingOwner}
-              >
-                {isSavingOwner ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!tagsDialogRecord}
-        onOpenChange={(open) => {
-          if (!open) setTagsDialogRecord(null);
-        }}
-      >
-          <DialogContent
-            className="max-w-lg overflow-visible"
-            onInteractOutside={(event) => {
-              event.preventDefault();
-            }}
-            onEscapeKeyDown={(event) => {
-              event.preventDefault();
-            }}
-          >
-          <DialogHeader>
-            <DialogTitle>Update Tags</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Tags</label>
-              <MultiSelect
-                key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
-                options={sortFiscalYearTagsDesc(
-                  Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
-                    (value) => value.trim().length > 0,
-                  ),
-                )
-                  .map((value) => ({ label: value, value }))}
-                defaultValue={tagsDraft}
-                onValueChange={(values) => setTagsDraft(values)}
-                placeholder="Select tags"
-                disablePortal
-                popoverSide="bottom"
-                popoverAvoidCollisions={false}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setTagsDialogRecord(null)}
-                disabled={isSavingTags}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  void handleSaveTags();
-                }}
-                disabled={isSavingTags}
-              >
-                {isSavingTags ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!contactHistoryDialogRecord}
-        onOpenChange={(open) => {
-            if (!open) setContactHistoryDialogRecord(null);
-          }}
-        >
-          <DialogContent
-            data-tour="contact-dialog"
-            className="flex h-[90vh] gap-0 max-h-[90vh] max-w-[90vw] flex-col overflow-hidden p-0"
-          >
-            <DialogHeader className="z-10 border-b bg-background p-4">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  disabled={contactDialogIndex <= 0}
-                  onClick={() => navigateContactDialog(-1)}
-                  title="Previous contact"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-7 w-7 shrink-0"
-                  disabled={contactDialogIndex < 0 || contactDialogIndex >= filteredRecords.length - 1}
-                  onClick={() => navigateContactDialog(1)}
-                  title="Next contact"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <DialogTitle className="min-w-0 max-w-[300px] shrink-0 truncate">
-              {contactHistoryDialogRecord?.name ?? "Contact"}
-            </DialogTitle>
-                {!staticMode && contactHistoryDialogRecord ? (
-                  <div data-tour="onboarding-stepper" className="mx-2 min-w-0 flex-1">
-                    <OnboardingStepper
-                      record={contactHistoryDialogRecord}
-                      approvalSteps={approvalSteps}
-                      isProcessing={
-                        isCreatingContactUpdate ||
-                        isSendingEmail ||
-                        !!pendingOnboardingActionsByTargetId[
-                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
-                        ]
-                      }
-                      layout="inline"
-                      emailMarketingEnabled={featureFlags.emailMarketingEnabled}
-                      onQuickAction={({ updateType, body, method }) => {
-                        const targetRecordId =
-                          resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                        if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
-                        setOnboardingActionPending(targetRecordId, true);
-                        setContactUpdateType(updateType);
-                        if (updateType === "resume") {
-                          setResumeReferralDialogState({
-                            targetRecordId,
-                            selectedContractors: parseContractorValues(
-                              contactHistoryDialogRecord.referredToContractors,
-                              retentionOptions.referredToContractors,
-                            ),
-                          });
-                          return;
-                        }
-                        if (
-                          (updateType === "welcome_email" || updateType === "followup") &&
-                          featureFlags.emailMarketingEnabled &&
-                          method === "platform"
-                        ) {
-                          openSendEmailDialog(contactHistoryDialogRecord, {
-                            progressUpdate: {
-                              updateType,
-                              body,
-                              internalExternalStatus: "External",
-                            },
-                            autoAdvanceToPreview: true,
-                            preferredTemplateType: updateType,
-                          });
-                          return;
-                        }
-                        void (async () => {
-                          try {
-                            const internalExternalStatus =
-                              method === "platform"
-                                ? "External"
-                                : updateType === "welcome_email" || updateType === "followup"
-                                  ? "Internal"
-                                  : undefined;
-                            await handleCreateContactUpdate({
-                              updateType,
-                              body,
-                              keepSelectedType: true,
-                              internalExternalStatus,
-                            });
-                          } finally {
-                            setOnboardingActionPending(targetRecordId, false);
-                          }
-                        })();
-                      }}
-                      onQuestionnaireAction={(record) => {
-                        openQuestionnaireDialogForRecords([record]);
-                      }}
-                      onGenericStepAction={({ body, stepColumnId }) => {
-                        void (async () => {
-                          if (!sessionToken) return;
-                          const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                          if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
-                          setOnboardingActionPending(targetRecordId, true);
-
-                          if (stepColumnId === INTERVIEWING_STEP_COLUMN_ID) {
-                            const referredContractors = parseContractorValues(
-                              contactHistoryDialogRecord.referredToContractors,
-                              retentionOptions.referredToContractors,
-                            );
-                            if (referredContractors.length === 0) {
-                              toast.error(
-                                "No referred contractors found. Complete Resume Submitted first.",
-                              );
-                              setOnboardingActionPending(targetRecordId, false);
-                              return;
-                            }
-
-                            const selectedInterviewingContractors = parseContractorValues(
-                              contactHistoryDialogRecord.interviewingWithContractors,
-                              referredContractors,
-                            ).filter((value) => referredContractors.includes(value));
-
-                            setInterviewingContractorDialogState({
-                              targetRecordId,
-                              stepColumnId,
-                              selectedContractors: selectedInterviewingContractors,
-                              availableContractors: referredContractors,
-                            });
-                            return;
-                          }
-
-                          if (stepColumnId === HIRED_STEP_COLUMN_ID) {
-                            const interviewingContractors = parseContractorValues(
-                              contactHistoryDialogRecord.interviewingWithContractors,
-                              retentionOptions.referredToContractors,
-                            );
-                            if (interviewingContractors.length === 0) {
-                              toast.error(
-                                "No interviewing contractors found. Mark Interviewing first.",
-                              );
-                              setOnboardingActionPending(targetRecordId, false);
-                              return;
-                            }
-
-                            const currentHiredContractor =
-                              contactHistoryDialogRecord.hiredWithContractor?.trim() ?? "";
-                            const selectedContractor = interviewingContractors.includes(
-                              currentHiredContractor,
-                            )
-                              ? currentHiredContractor
-                              : interviewingContractors[0] ?? "";
-
-                            setHiredContractorDialogState({
-                              targetRecordId,
-                              stepColumnId,
-                              selectedContractor,
-                              availableContractors: interviewingContractors,
-                            });
-                            return;
-                          }
-
-                          try {
-                            await completeGenericOnboardingStep({
-                              targetRecordId,
-                              body,
-                              stepColumnId,
-                            });
-                          } catch (error) {
-                            const message =
-                              error instanceof Error ? error.message : "Failed to mark step complete";
-                            toast.error(message);
-                          } finally {
-                            setOnboardingActionPending(targetRecordId, false);
-                          }
-                        })();
-                      }}
-                      actionButtonClassName={boardThemeStyles.actionButtonClassName}
-                      actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
-                      buttonSizeClassName={quickActionButtonSizeClass}
+                      placeholder="Select contractor(s)"
+                      disablePortal
+                      popoverSide="bottom"
+                      popoverAvoidCollisions={false}
                     />
                   </div>
-                ) : null}
-                {contactDialogIndex >= 0 ? (
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {contactDialogIndex + 1} / {filteredRecords.length}
-                  </span>
-                ) : null}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      className="ml-2 h-8 w-8 shrink-0"
-                      title="More actions"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      disabled={!contactHistoryDialogRecord?.url}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        if (!contactHistoryDialogRecord?.url) return;
-                        window.open(contactHistoryDialogRecord.url, "_blank", "noopener,noreferrer");
-                      }}
-                    >
-                      Open
-                    </DropdownMenuItem>
-                    {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
-                      <DropdownMenuItem
-                        disabled={
-                          isCreatingContactUpdate ||
-                          syncingContactIds.has(contactHistoryDialogRecord.id)
-                        }
-                        onSelect={(event) => {
-                          event.preventDefault();
-                          openSyncContactBoardPicker(contactHistoryDialogRecord);
-                        }}
-                      >
-                        {syncingContactIds.has(contactHistoryDialogRecord.id)
-                          ? "Syncing..."
-                          : "Sync User"}
-                      </DropdownMenuItem>
-                    ) : null}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="ml-1 h-8 w-8 shrink-0"
-                  onClick={() => setContactHistoryDialogRecord(null)}
-                  title="Close contact dialog"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-          </DialogHeader>
-            <div className="flex min-h-0 flex-1 p-4">
-          {contactHistoryDialogRecord ? (
-            <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2fr)]">
-              <div
-                data-tour="contact-header"
-                className="min-h-0 space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold">
-                    {contactHistoryDialogRecord.name ?? "Contact"}
-                  </p>
-                  <p className="text-muted-foreground truncate text-sm">
-                    {contactHistoryDialogRecord.email ?? "—"}
-                  </p>
-                  <p className="text-muted-foreground truncate text-sm">
-                    {contactHistoryDialogRecord.phone ?? "—"}
-                  </p>
-                </div>
-                {!staticMode ? (
-                  <>
-                    <input
-                      id={contactDialogResumeInputId}
-                      type="file"
-                      className="hidden"
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Hired With Contractor</label>
+                    <select
+                      value={retentionDraft.hiredWithContractor || "__none__"}
                       onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (!file || !contactHistoryDialogRecord) return;
-                        void handleUploadResume(contactHistoryDialogRecord, file);
-                        event.currentTarget.value = "";
+                        const value = event.target.value;
+                        setRetentionDraft((prev) => ({
+                          ...prev,
+                          hiredWithContractor: value === "__none__" ? "" : value,
+                        }));
                       }}
-                      disabled={isContactDialogUploadingResume || !sessionToken}
-                    />
-                    <div className="space-y-1.5">
-                      <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-                        Communication
-                      </p>
-                      <div className="space-y-1.5">
-                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
-                          Resume
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={isContactDialogUploadingResume || !sessionToken}
-                            onClick={() => {
-                              const input = document.getElementById(contactDialogResumeInputId);
-                              if (input instanceof HTMLInputElement) {
-                                input.click();
-                              }
-                            }}
-                          >
-                            <Upload className="mr-1.5 h-3.5 w-3.5" />
-                            {isContactDialogUploadingResume
-                              ? "Uploading..."
-                              : contactDialogResumeFile
-                                ? "Add Resume"
-                                : "Upload Resume"}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
-                          Outreach
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {COMMUNICATION_QUICK_ACTIONS.map((action) => {
-                            const Icon = action.icon;
-                            return (
-                              <Button
-                                key={action.id}
-                                type="button"
-                                size="sm"
-                                className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                                style={boardThemeInlineStyles.actionButtonStyle}
-                                disabled={isCreatingContactUpdate || !sessionToken}
-                                onClick={() => {
-                                  setCommunicationQuickAction(action);
-                                }}
-                              >
-                                <Icon className="mr-1.5 h-3.5 w-3.5" />
-                                {action.label}
-                              </Button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
-                          Hiring Workflow
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                            style={boardThemeInlineStyles.actionButtonStyle}
-                            disabled={(() => {
-                              if (!contactHistoryDialogRecord || !sessionToken) return true;
-                              const targetRecordId =
-                                resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                              return (
-                                isCreatingContactUpdate ||
-                                isSavingMarkAsHiredWorkflow ||
-                                pendingOnboardingActionsByTargetId[targetRecordId]
-                              );
-                            })()}
-                            onClick={() => {
-                              if (!contactHistoryDialogRecord) return;
-                              const targetRecordId =
-                                resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
-                              if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
-                              openMarkAsHiredWorkflowDialog(contactHistoryDialogRecord);
-                            }}
-                          >
-                            <BriefcaseBusiness className="mr-1.5 h-3.5 w-3.5" />
-                            Mark as Hired
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </>
-                ) : null}
-              </div>
-              <div className="flex min-h-0 flex-col">
-                <Tabs
-                  value={contactDialogTab}
-                  onValueChange={setContactDialogTab}
-                  className="flex min-h-0 flex-1 flex-col"
-                >
-                  <TabsList data-tour="contact-tabs">
-                    <TabsTrigger value="updates">Updates</TabsTrigger>
-                    <TabsTrigger value="info">Additional Information</TabsTrigger>
-                    <TabsTrigger value="resume">Resume</TabsTrigger>
-                    <TabsTrigger value="jobs">Jobs</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
-                    <ContactUpdates
-                      subitems={contactUpdatesQuery.data?.subitems ?? []}
-                      isLoading={contactUpdatesQuery.isLoading}
-                      isEmpty={(contactUpdatesQuery.data?.subitems?.length ?? 0) === 0}
-                      isStaticMode={staticMode}
-                      draft={contactUpdateDraft}
-                      onDraftChange={setContactUpdateDraft}
-                      onSubmit={({ updateType, date }) => {
-                        setContactUpdateType(updateType);
-                        void handleCreateContactUpdate({ updateType, date });
-                      }}
-                      onDeleteSubitem={async (subitemId) => {
-                        if (!sessionToken) return;
-                        const res = await fetch("/api/monday/subitems", {
-                          method: "DELETE",
-                          headers: {
-                            "content-type": "application/json",
-                            "x-monday-session-token": sessionToken,
-                          },
-                          body: JSON.stringify({ subitemId }),
-                        });
-                        const json = (await res.json()) as { ok: boolean; error?: string };
-                        if (!json.ok) throw new Error(json.error ?? "Delete failed");
-                        toast.success("Update deleted");
-                        await contactUpdatesQuery.refetch();
-                      }}
-                      onUpdateSubitemDate={async (subitemId, date) => {
-                        if (!sessionToken) return;
-                        const res = await fetch("/api/monday/subitems", {
-                          method: "PATCH",
-                          headers: {
-                            "content-type": "application/json",
-                            "x-monday-session-token": sessionToken,
-                          },
-                          body: JSON.stringify({ subitemId, date }),
-                        });
-                        const json = (await res.json()) as { ok: boolean; error?: string };
-                        if (!json.ok) throw new Error(json.error ?? "Date update failed");
-                        toast.success("Date updated");
-                        await contactUpdatesQuery.refetch();
-                      }}
-                      isSubmitting={isCreatingContactUpdate}
-                      currentUserId={forcedOwnerId || identity?.userId || null}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="info" className="mt-3 min-h-0 flex-1">
-                    {contactColumnsQuery.isLoading ? (
-                      <div className="space-y-2 p-3">
-                        {Array.from({ length: 10 }).map((_, i) => (
-                          <div key={i} className="grid grid-cols-[140px_1fr] gap-3">
-                            <Skeleton className="h-4 w-full" />
-                            <Skeleton className="h-4 w-3/4" />
-                    </div>
+                      className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                    >
+                      <option value="__none__">Select value</option>
+                      {Array.from(
+                        new Set([
+                          ...retentionOptions.hiredWithContractor,
+                          retentionDraft.hiredWithContractor,
+                        ]),
+                      )
+                        .filter((value): value is string => !!value && value.trim().length > 0)
+                        .map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
                         ))}
+                    </select>
                   </div>
-                    ) : contactColumnsQuery.error ? (
-                  <div className="rounded-md border p-3">
-                        <p className="text-destructive text-sm">
-                          {contactColumnsQuery.error instanceof Error
-                            ? contactColumnsQuery.error.message
-                            : "Failed to load contact details"}
-                        </p>
-                        </div>
-                    ) : (
-                      <div className="h-full max-w-full overflow-x-hidden overflow-y-auto rounded-md border">
-                        <table className="w-full table-fixed text-sm">
-                          <tbody>
-                            {(contactColumnsQuery.data?.columns ?? []).map((col) => (
-                              <tr
-                                key={col.id}
-                                className="border-b last:border-b-0"
-                              >
-                                <td className="text-muted-foreground bg-muted/30 w-[180px] max-w-[180px] border-r px-3 py-2 text-xs font-medium align-top truncate">
-                                  {col.title}
-                                </td>
-                                <td className="group relative min-w-0 max-w-0 overflow-hidden px-3 py-2 pr-10 text-xs align-top">
-                                  {editingContactColumnId === col.id ? (
-                                    <div className="space-y-2">
-                                      {(() => {
-                                        const normalizedType = col.type.toLowerCase();
-                                        if (
-                                          normalizedType === "status" ||
-                                          normalizedType === "dropdown"
-                                        ) {
-                                          const options = Array.from(
-                                            new Set((col.options ?? []).filter(Boolean)),
-                                          );
-                                          return (
-                                            <Select
-                                              value={
-                                                editingContactColumnDraft.length > 0
-                                                  ? editingContactColumnDraft
-                                                  : "__clear__"
-                                              }
-                                              onValueChange={(value) => {
-                                                setEditingContactColumnDraft(
-                                                  value === "__clear__" ? "" : value,
-                                                );
-                                              }}
-                                            >
-                                              <SelectTrigger className="h-8 text-xs">
-                                                <SelectValue placeholder="Select value" />
-                                              </SelectTrigger>
-                                              <SelectContent>
-                                                <SelectItem value="__clear__">Clear</SelectItem>
-                                                {options.map((option) => (
-                                                  <SelectItem key={option} value={option}>
-                                                    {option}
-                                                  </SelectItem>
-                                                ))}
-                                              </SelectContent>
-                                            </Select>
-                                          );
-                                        }
-                                        if (normalizedType === "date") {
-                                          return (
-                                            <Input
-                                              type="date"
-                                              className="h-8 text-xs"
-                                              value={editingContactColumnDraft}
-                                              onChange={(event) =>
-                                                setEditingContactColumnDraft(
-                                                  event.target.value,
-                                                )
-                                              }
-                                            />
-                                          );
-                                        }
-                                        if (
-                                          normalizedType === "long_text" ||
-                                          normalizedType === "long-text"
-                                        ) {
-                                          return (
-                                            <Textarea
-                                              className="min-h-[72px] text-xs"
-                                              value={editingContactColumnDraft}
-                                              onChange={(event) =>
-                                                setEditingContactColumnDraft(
-                                                  event.target.value,
-                                                )
-                                              }
-                                            />
-                                          );
-                                        }
-                                        if (
-                                          normalizedType === "numbers" ||
-                                          normalizedType === "numeric"
-                                        ) {
-                                          return (
-                                            <Input
-                                              type="number"
-                                              className="h-8 text-xs"
-                                              value={editingContactColumnDraft}
-                                              onChange={(event) =>
-                                                setEditingContactColumnDraft(
-                                                  event.target.value,
-                                                )
-                                              }
-                                            />
-                                          );
-                                        }
-                                        return (
-                                          <Input
-                                            type="text"
-                                            className="h-8 text-xs"
-                                            value={editingContactColumnDraft}
-                                            onChange={(event) =>
-                                              setEditingContactColumnDraft(
-                                                event.target.value,
-                                              )
-                                            }
-                                          />
-                                        );
-                                      })()}
-                                      <div className="flex items-center gap-1">
-                                        <Button
-                                          type="button"
-                                          size="icon"
-                                          variant="outline"
-                                          className="h-6 w-6"
-                                          onClick={() => {
-                                            void saveEditingContactColumn();
-                                          }}
-                                          disabled={isSavingContactColumn}
-                                        >
-                                          <Check className="h-3.5 w-3.5" />
-                                        </Button>
-                                        <Button
-                                          type="button"
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-6 w-6"
-                                          onClick={cancelEditingContactColumn}
-                                          disabled={isSavingContactColumn}
-                                        >
-                                          <X className="h-3.5 w-3.5" />
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      {col.text ? (
-                                        <span className="block max-w-full truncate" title={col.text}>
-                                          {col.text}
-                                        </span>
-                                      ) : (
-                                        <span className="text-muted-foreground">—</span>
-                                      )}
-                                      {col.isEditable ? (
-                                        <Button
-                                          type="button"
-                                          size="icon"
-                                          variant="ghost"
-                                          className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2"
-                                          onClick={() => {
-                                            startEditingContactColumn(col);
-                                          }}
-                                          title={`Edit ${col.title}`}
-                                        >
-                                          <Pencil className="h-3.5 w-3.5" />
-                                        </Button>
-                                      ) : null}
-                                    </>
-                                  )}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                    </div>
-                    )}
-                  </TabsContent>
-                  <TabsContent value="resume" className="mt-3 min-h-0 flex-1">
-                    {contactDialogResumeFiles.length > 0 ? (
-                      <div className="flex h-full min-h-0 flex-col gap-3">
-                        <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
-                          <p className="text-muted-foreground text-xs">
-                            Resume {contactDialogSelectedResumeIndex + 1} of {contactDialogResumeFiles.length}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8"
-                              disabled={contactDialogSelectedResumeIndex <= 0}
-                              onClick={() => {
-                                const previousIndex = contactDialogSelectedResumeIndex - 1;
-                                const previousFile = contactDialogResumeFiles[previousIndex];
-                                if (!previousFile) return;
-                                setContactDialogSelectedResumeKey(
-                                  getResumeFileKey(previousFile, previousIndex),
-                                );
-                              }}
-                            >
-                              <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
-                              Previous
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8"
-                              disabled={
-                                contactDialogSelectedResumeIndex < 0 ||
-                                contactDialogSelectedResumeIndex >= contactDialogResumeFiles.length - 1
-                              }
-                              onClick={() => {
-                                const nextIndex = contactDialogSelectedResumeIndex + 1;
-                                const nextFile = contactDialogResumeFiles[nextIndex];
-                                if (!nextFile) return;
-                                setContactDialogSelectedResumeKey(
-                                  getResumeFileKey(nextFile, nextIndex),
-                                );
-                              }}
-                            >
-                              Next
-                              <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
-                            </Button>
-                            {!staticMode ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8"
-                                disabled={isContactDialogUploadingResume || !sessionToken}
-                                onClick={() => {
-                                  const input = document.getElementById(contactDialogResumeInputId);
-                                  if (input instanceof HTMLInputElement) {
-                                    input.click();
-                                  }
-                                }}
-                              >
-                                <Upload className="mr-1.5 h-3.5 w-3.5" />
-                                {isContactDialogUploadingResume ? "Uploading..." : "Add Resume"}
-                              </Button>
-                            ) : null}
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
-                          {contactDialogResumeFiles.map((file, index) => {
-                            const optionLabel =
-                              file.name?.trim().length > 0 ? file.name.trim() : `Resume ${index + 1}`;
-                            const isSelected = index === contactDialogSelectedResumeIndex;
-                            return (
-                              <Button
-                                key={getResumeFileKey(file, index)}
-                                type="button"
-                                variant={isSelected ? "secondary" : "ghost"}
-                                size="sm"
-                                className="max-w-[240px] justify-start truncate"
-                                title={optionLabel}
-                                onClick={() => {
-                                  setContactDialogSelectedResumeKey(getResumeFileKey(file, index));
-                                }}
-                              >
-                                <span className="truncate">{optionLabel}</span>
-                              </Button>
-                            );
-                          })}
-                        </div>
-                        {contactDialogResumeHref ? (
-                          renderResumePreviewContent(
-                            contactDialogResumeFileName,
-                            contactDialogResumeHref,
-                            "h-[60vh]",
-                          )
-                        ) : (
-                          <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
-                            <p className="text-sm font-medium">
-                              This resume is attached but could not be previewed.
-                            </p>
-                            <p className="text-muted-foreground mt-1 text-xs">
-                              Try opening it in a new tab from the selected resume card.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
-                        <p className="text-sm font-medium">No resume attached yet.</p>
-                        {!staticMode ? (
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Hire Date</label>
+                    <div className="flex items-center gap-2">
+                      <Popover
+                        open={retentionHireDatePopoverOpen}
+                        onOpenChange={setRetentionHireDatePopoverOpen}
+                      >
+                        <PopoverTrigger asChild>
                           <Button
                             type="button"
                             variant="outline"
-                            size="sm"
-                            className="mt-3"
-                            disabled={isContactDialogUploadingResume || !sessionToken}
-                            onClick={() => {
-                              const input = document.getElementById(contactDialogResumeInputId);
-                              if (input instanceof HTMLInputElement) {
-                                input.click();
-                              }
-                            }}
+                            className="h-9 flex-1 justify-start font-normal"
                           >
-                            <Upload className="mr-1.5 h-3.5 w-3.5" />
-                            Upload Resume
+                            {retentionDraft.hireDate || "Select date"}
                           </Button>
-                        ) : null}
-                      </div>
-                    )}
-                  </TabsContent>
-                  <TabsContent value="jobs" className="mt-3 min-h-0 flex-1">
-                    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-                      <div className="rounded-md border p-3">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium">
-                            Referred Jobs ({referredJobsHistory.length})
-                          </p>
-                        </div>
-                        {contactUpdatesQuery.isLoading ? (
-                          <div className="space-y-2">
-                            {Array.from({ length: 2 }).map((_, index) => (
-                              <Skeleton key={index} className="h-8 w-full" />
-                            ))}
-                          </div>
-                        ) : referredJobsHistory.length === 0 ? (
-                          <p className="text-muted-foreground text-xs">
-                            No job referrals logged for this contact yet.
-                          </p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {referredJobsHistory.slice(0, 6).map((entry) => (
-                              <div
-                                key={entry.id}
-                                className="bg-muted/20 flex items-center justify-between gap-2 rounded-md px-2 py-1.5"
-                              >
-                                <div className="min-w-0">
-                                  <p className="truncate text-xs font-medium">{entry.title}</p>
-                                  <p className="text-muted-foreground text-[11px]">
-                                    {entry.jobId ? `Job ID ${entry.jobId}` : "Job ID unavailable"}
-                                  </p>
-                                </div>
-                                <span className="text-muted-foreground shrink-0 text-[11px]">
-                                  {entry.referredAt ? formatUpdatedAt(entry.referredAt) : "—"}
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-2" align="start" portal={false}>
+                          <Calendar
+                            mode="single"
+                            selected={
+                              retentionDraft.hireDate
+                                ? new Date(`${retentionDraft.hireDate}T00:00:00`)
+                                : undefined
+                            }
+                            onSelect={(date) => {
+                              if (!date) return;
+                              setRetentionDraft((prev) => ({
+                                ...prev,
+                                hireDate: toDateOnlyLocal(date),
+                              }));
+                              setRetentionHireDatePopoverOpen(false);
+                            }}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setRetentionDraft((prev) => ({ ...prev, hireDate: "" }));
+                        }}
+                        disabled={!retentionDraft.hireDate}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Retention Period</label>
+                    <select
+                      value={retentionDraft.retentionPeriod || "__none__"}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setRetentionDraft((prev) => ({
+                          ...prev,
+                          retentionPeriod: value === "__none__" ? "" : value,
+                        }));
+                      }}
+                      className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                    >
+                      <option value="__none__">Select value</option>
+                      {Array.from(
+                        new Set([
+                          ...retentionOptions.retentionPeriod,
+                          retentionDraft.retentionPeriod,
+                        ]),
+                      )
+                        .filter((value): value is string => !!value && value.trim().length > 0)
+                        .map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setRetentionDialogRecord(null)}
+                      disabled={isSavingRetention}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleSaveRetention();
+                      }}
+                      disabled={isSavingRetention}
+                    >
+                      {isSavingRetention ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!statusDialogRecord}
+              onOpenChange={(open) => {
+                if (!open) setStatusDialogRecord(null);
+              }}
+            >
+              <DialogContent
+                className="max-w-lg"
+                onInteractOutside={(event) => {
+                  event.preventDefault();
+                }}
+                onEscapeKeyDown={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>Update Status</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Status</label>
+                    <select
+                      value={statusDraft || "__none__"}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setStatusDraft(value === "__none__" ? "" : value);
+                      }}
+                      className="bg-background border-input h-9 w-full rounded-md border px-3 text-sm"
+                    >
+                      <option value="__none__">Select value</option>
+                      {Array.from(new Set([...statusOptions.map((entry) => entry.value), statusDraft]))
+                        .filter((value): value is string => !!value && value.trim().length > 0)
+                        .map((value) => (
+                          <option key={value} value={value}>
+                            {value}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setStatusDialogRecord(null)}
+                      disabled={isSavingStatus}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleSaveStatus();
+                      }}
+                      disabled={isSavingStatus}
+                    >
+                      {isSavingStatus ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!ownerDialogRecord}
+              onOpenChange={(open) => {
+                if (!open) setOwnerDialogRecord(null);
+              }}
+            >
+              <DialogContent
+                className="max-w-lg"
+                onInteractOutside={(event) => {
+                  event.preventDefault();
+                }}
+                onEscapeKeyDown={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>Update Owner</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Owner</label>
+                    <Select
+                      value={ownerDraft || "__none__"}
+                      onValueChange={(value) => {
+                        setOwnerDraft(value === "__none__" ? "" : value);
+                      }}
+                    >
+                      <SelectTrigger className="h-9 w-full">
+                        <SelectValue placeholder="Select owner" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Select value</SelectItem>
+                        {Array.from(
+                          new Map(
+                            [
+                              ...ownerOptions.map((option) => [option.value, option] as const),
+                              ownerDraft.trim().length > 0
+                                ? [
+                                  ownerDraft,
+                                  {
+                                    value: ownerDraft,
+                                    label: `User ${ownerDraft}`,
+                                    name: null,
+                                    photoThumb: null,
+                                  },
+                                ]
+                                : null,
+                            ].filter(
+                              (
+                                entry,
+                              ): entry is readonly [
+                                string,
+                                {
+                                  value: string;
+                                  label: string;
+                                  name: string | null;
+                                  photoThumb: string | null;
+                                },
+                              ] => !!entry,
+                            ),
+                          ),
+                        )
+                          .map(([, option]) => option)
+                          .map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <div className="flex items-center gap-2">
+                                <Avatar className="size-5">
+                                  {option.photoThumb ? (
+                                    <AvatarImage
+                                      src={option.photoThumb}
+                                      alt={option.name ?? option.value}
+                                    />
+                                  ) : null}
+                                  <AvatarFallback className="text-[10px] font-semibold">
+                                    {getNameInitials(option.name ?? option.value)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <span className="text-sm">
+                                  {option.name ?? option.label}
                                 </span>
                               </div>
-                            ))}
-                            {referredJobsHistory.length > 6 ? (
-                              <p className="text-muted-foreground text-[11px]">
-                                +{referredJobsHistory.length - 6} more referrals
-                              </p>
-                            ) : null}
-                          </div>
-                        )}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setOwnerDialogRecord(null)}
+                      disabled={isSavingOwner}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleSaveOwner();
+                      }}
+                      disabled={isSavingOwner}
+                    >
+                      {isSavingOwner ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!tagsDialogRecord}
+              onOpenChange={(open) => {
+                if (!open) setTagsDialogRecord(null);
+              }}
+            >
+              <DialogContent
+                className="max-w-lg overflow-visible"
+                onInteractOutside={(event) => {
+                  event.preventDefault();
+                }}
+                onEscapeKeyDown={(event) => {
+                  event.preventDefault();
+                }}
+              >
+                <DialogHeader>
+                  <DialogTitle>Update Tags</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Tags</label>
+                    <MultiSelect
+                      key={`${tagsDialogRecord?.id ?? "no-item"}-${splitCsvValues(tagsDialogRecord?.tags).join("|")}`}
+                      options={sortFiscalYearTagsDesc(
+                        Array.from(new Set([...retentionOptions.tags, ...tagsDraft])).filter(
+                          (value) => value.trim().length > 0,
+                        ),
+                      )
+                        .map((value) => ({ label: value, value }))}
+                      defaultValue={tagsDraft}
+                      onValueChange={(values) => setTagsDraft(values)}
+                      placeholder="Select tags"
+                      disablePortal
+                      popoverSide="bottom"
+                      popoverAvoidCollisions={false}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => setTagsDialogRecord(null)}
+                      disabled={isSavingTags}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        void handleSaveTags();
+                      }}
+                      disabled={isSavingTags}
+                    >
+                      {isSavingTags ? "Saving..." : "Save"}
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!contactHistoryDialogRecord}
+              onOpenChange={(open) => {
+                if (!open) setContactHistoryDialogRecord(null);
+              }}
+            >
+              <DialogContent
+                data-tour="contact-dialog"
+                className="flex h-[90vh] gap-0 max-h-[90vh] max-w-[90vw] flex-col overflow-hidden p-0"
+              >
+                <DialogHeader className="z-10 border-b bg-background p-4">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      disabled={contactDialogIndex <= 0}
+                      onClick={() => navigateContactDialog(-1)}
+                      title="Previous contact"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-7 w-7 shrink-0"
+                      disabled={contactDialogIndex < 0 || contactDialogIndex >= filteredRecords.length - 1}
+                      onClick={() => navigateContactDialog(1)}
+                      title="Next contact"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <DialogTitle className="min-w-0 max-w-[300px] shrink-0 truncate">
+                      {contactHistoryDialogRecord?.name ?? "Contact"}
+                    </DialogTitle>
+                    {!staticMode && contactHistoryDialogRecord ? (
+                      <div data-tour="onboarding-stepper" className="mx-2 min-w-0 flex-1">
+                        <OnboardingStepper
+                          record={contactHistoryDialogRecord}
+                          approvalSteps={approvalSteps}
+                          isProcessing={
+                            isCreatingContactUpdate ||
+                            isSendingEmail ||
+                            !!pendingOnboardingActionsByTargetId[
+                            resolveContactUpdateTargetRecordId(contactHistoryDialogRecord)
+                            ]
+                          }
+                          layout="inline"
+                          emailMarketingEnabled={featureFlags.emailMarketingEnabled}
+                          onQuickAction={({ updateType, body, method }) => {
+                            const targetRecordId =
+                              resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                            if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                            setOnboardingActionPending(targetRecordId, true);
+                            setContactUpdateType(updateType);
+                            if (updateType === "resume") {
+                              setResumeReferralDialogState({
+                                targetRecordId,
+                                selectedContractors: parseContractorValues(
+                                  contactHistoryDialogRecord.referredToContractors,
+                                  retentionOptions.referredToContractors,
+                                ),
+                              });
+                              return;
+                            }
+                            if (
+                              (updateType === "welcome_email" || updateType === "followup") &&
+                              featureFlags.emailMarketingEnabled &&
+                              method === "platform"
+                            ) {
+                              openSendEmailDialog(contactHistoryDialogRecord, {
+                                progressUpdate: {
+                                  updateType,
+                                  body,
+                                  internalExternalStatus: "External",
+                                },
+                                autoAdvanceToPreview: true,
+                                preferredTemplateType: updateType,
+                              });
+                              return;
+                            }
+                            void (async () => {
+                              try {
+                                const internalExternalStatus =
+                                  method === "platform"
+                                    ? "External"
+                                    : updateType === "welcome_email" || updateType === "followup"
+                                      ? "Internal"
+                                      : undefined;
+                                await handleCreateContactUpdate({
+                                  updateType,
+                                  body,
+                                  keepSelectedType: true,
+                                  internalExternalStatus,
+                                });
+                              } finally {
+                                setOnboardingActionPending(targetRecordId, false);
+                              }
+                            })();
+                          }}
+                          onQuestionnaireAction={(record) => {
+                            openQuestionnaireDialogForRecords([record]);
+                          }}
+                          onGenericStepAction={({ body, stepColumnId }) => {
+                            void (async () => {
+                              if (!sessionToken) return;
+                              const targetRecordId = resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                              if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                              setOnboardingActionPending(targetRecordId, true);
+
+                              if (stepColumnId === INTERVIEWING_STEP_COLUMN_ID) {
+                                const referredContractors = parseContractorValues(
+                                  contactHistoryDialogRecord.referredToContractors,
+                                  retentionOptions.referredToContractors,
+                                );
+                                if (referredContractors.length === 0) {
+                                  toast.error(
+                                    "No referred contractors found. Complete Resume Submitted first.",
+                                  );
+                                  setOnboardingActionPending(targetRecordId, false);
+                                  return;
+                                }
+
+                                const selectedInterviewingContractors = parseContractorValues(
+                                  contactHistoryDialogRecord.interviewingWithContractors,
+                                  referredContractors,
+                                ).filter((value) => referredContractors.includes(value));
+
+                                setInterviewingContractorDialogState({
+                                  targetRecordId,
+                                  stepColumnId,
+                                  selectedContractors: selectedInterviewingContractors,
+                                  availableContractors: referredContractors,
+                                });
+                                return;
+                              }
+
+                              if (stepColumnId === HIRED_STEP_COLUMN_ID) {
+                                const interviewingContractors = parseContractorValues(
+                                  contactHistoryDialogRecord.interviewingWithContractors,
+                                  retentionOptions.referredToContractors,
+                                );
+                                if (interviewingContractors.length === 0) {
+                                  toast.error(
+                                    "No interviewing contractors found. Mark Interviewing first.",
+                                  );
+                                  setOnboardingActionPending(targetRecordId, false);
+                                  return;
+                                }
+
+                                const currentHiredContractor =
+                                  contactHistoryDialogRecord.hiredWithContractor?.trim() ?? "";
+                                const selectedContractor = interviewingContractors.includes(
+                                  currentHiredContractor,
+                                )
+                                  ? currentHiredContractor
+                                  : interviewingContractors[0] ?? "";
+
+                                setHiredContractorDialogState({
+                                  targetRecordId,
+                                  stepColumnId,
+                                  selectedContractor,
+                                  availableContractors: interviewingContractors,
+                                });
+                                return;
+                              }
+
+                              try {
+                                await completeGenericOnboardingStep({
+                                  targetRecordId,
+                                  body,
+                                  stepColumnId,
+                                });
+                              } catch (error) {
+                                const message =
+                                  error instanceof Error ? error.message : "Failed to mark step complete";
+                                toast.error(message);
+                              } finally {
+                                setOnboardingActionPending(targetRecordId, false);
+                              }
+                            })();
+                          }}
+                          actionButtonClassName={boardThemeStyles.actionButtonClassName}
+                          actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
+                          buttonSizeClassName={quickActionButtonSizeClass}
+                        />
                       </div>
-                      <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
-                        <div>
-                          <p className="text-sm font-medium">Available Jobs</p>
-                          <p className="text-muted-foreground text-xs">
-                            Search and switch list/grid view. Referred jobs are automatically
-                            disabled.
-                          </p>
-                        </div>
+                    ) : null}
+                    {contactDialogIndex >= 0 ? (
+                      <span className="text-muted-foreground shrink-0 text-xs">
+                        {contactDialogIndex + 1} / {filteredRecords.length}
+                      </span>
+                    ) : null}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
                         <Button
                           type="button"
                           variant="outline"
-                          size="sm"
-                          disabled={jobsQuery.isFetching}
-                          onClick={() => {
-                            void jobsQuery.refetch();
+                          size="icon"
+                          className="ml-2 h-8 w-8 shrink-0"
+                          title="More actions"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          disabled={!contactHistoryDialogRecord?.url}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            if (!contactHistoryDialogRecord?.url) return;
+                            window.open(contactHistoryDialogRecord.url, "_blank", "noopener,noreferrer");
                           }}
                         >
-                          <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
-                          Refresh
-                        </Button>
-                      </div>
-                      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                        {jobsQuery.error ? (
-                          <div className="rounded-md border p-3">
-                            <p className="text-destructive text-sm">
-                              {jobsQuery.error instanceof Error
-                                ? jobsQuery.error.message
-                                : "Failed to load jobs"}
-                            </p>
-                          </div>
-                        ) : (
-                          <EntityList
-                            data={contactJobRows}
-                            columns={contactJobColumns}
-                            entityActions={contactJobActions}
-                            getRowId={(item) => item.id}
-                            isLoading={jobsQuery.isLoading}
-                            enableSearch
-                            viewModes={["list", "grid"]}
-                            defaultViewMode="list"
-                            enableFooter={false}
-                            showRowCount={false}
-                            hideFilters
-                            emptyState={
-                              <div className="text-muted-foreground py-6 text-sm">
-                                No available jobs found.
-                              </div>
+                          Open
+                        </DropdownMenuItem>
+                        {!staticMode && isMondaySettingsAdmin && contactHistoryDialogRecord ? (
+                          <DropdownMenuItem
+                            disabled={
+                              isCreatingContactUpdate ||
+                              syncingContactIds.has(contactHistoryDialogRecord.id)
                             }
-                          />
-                        )}
+                            onSelect={(event) => {
+                              event.preventDefault();
+                              openSyncContactBoardPicker(contactHistoryDialogRecord);
+                            }}
+                          >
+                            {syncingContactIds.has(contactHistoryDialogRecord.id)
+                              ? "Syncing..."
+                              : "Sync User"}
+                          </DropdownMenuItem>
+                        ) : null}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="ml-1 h-8 w-8 shrink-0"
+                      onClick={() => setContactHistoryDialogRecord(null)}
+                      title="Close contact dialog"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </DialogHeader>
+                <div className="flex min-h-0 flex-1 p-4">
+                  {contactHistoryDialogRecord ? (
+                    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(320px,1fr)_minmax(0,2fr)]">
+                      <div
+                        data-tour="contact-header"
+                        className="min-h-0 space-y-4 overflow-y-auto rounded-md border bg-muted/20 p-4"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-base font-semibold">
+                            {contactHistoryDialogRecord.name ?? "Contact"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {contactHistoryDialogRecord.email ?? "—"}
+                          </p>
+                          <p className="text-muted-foreground truncate text-sm">
+                            {contactHistoryDialogRecord.phone ?? "—"}
+                          </p>
+                        </div>
+                        {!staticMode ? (
+                          <>
+                            <input
+                              id={contactDialogResumeInputId}
+                              type="file"
+                              className="hidden"
+                              onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (!file || !contactHistoryDialogRecord) return;
+                                void handleUploadResume(contactHistoryDialogRecord, file);
+                                event.currentTarget.value = "";
+                              }}
+                              disabled={isContactDialogUploadingResume || !sessionToken}
+                            />
+                            <div className="space-y-1.5">
+                              <p className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                                Communication
+                              </p>
+                              <div className="space-y-1.5">
+                                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                                  Resume
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isContactDialogUploadingResume || !sessionToken}
+                                    onClick={() => {
+                                      const input = document.getElementById(contactDialogResumeInputId);
+                                      if (input instanceof HTMLInputElement) {
+                                        input.click();
+                                      }
+                                    }}
+                                  >
+                                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                    {isContactDialogUploadingResume
+                                      ? "Uploading..."
+                                      : contactDialogResumeFile
+                                        ? "Add Resume"
+                                        : "Upload Resume"}
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                                  Outreach
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {COMMUNICATION_QUICK_ACTIONS.map((action) => {
+                                    const Icon = action.icon;
+                                    return (
+                                      <Button
+                                        key={action.id}
+                                        type="button"
+                                        size="sm"
+                                        className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                                        style={boardThemeInlineStyles.actionButtonStyle}
+                                        disabled={isCreatingContactUpdate || !sessionToken}
+                                        onClick={() => {
+                                          setCommunicationQuickAction(action);
+                                        }}
+                                      >
+                                        <Icon className="mr-1.5 h-3.5 w-3.5" />
+                                        {action.label}
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="space-y-1.5">
+                                <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+                                  Hiring Workflow
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                                    style={boardThemeInlineStyles.actionButtonStyle}
+                                    disabled={(() => {
+                                      if (!contactHistoryDialogRecord || !sessionToken) return true;
+                                      const targetRecordId =
+                                        resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                                      return (
+                                        isCreatingContactUpdate ||
+                                        isSavingMarkAsHiredWorkflow ||
+                                        pendingOnboardingActionsByTargetId[targetRecordId]
+                                      );
+                                    })()}
+                                    onClick={() => {
+                                      if (!contactHistoryDialogRecord) return;
+                                      const targetRecordId =
+                                        resolveContactUpdateTargetRecordId(contactHistoryDialogRecord);
+                                      if (pendingOnboardingActionsByTargetId[targetRecordId]) return;
+                                      openMarkAsHiredWorkflowDialog(contactHistoryDialogRecord);
+                                    }}
+                                  >
+                                    <BriefcaseBusiness className="mr-1.5 h-3.5 w-3.5" />
+                                    Mark as Hired
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
+                      </div>
+                      <div className="flex min-h-0 flex-col">
+                        <Tabs
+                          value={contactDialogTab}
+                          onValueChange={setContactDialogTab}
+                          className="flex min-h-0 flex-1 flex-col"
+                        >
+                          <TabsList data-tour="contact-tabs">
+                            <TabsTrigger value="updates">Updates</TabsTrigger>
+                            <TabsTrigger value="info">Additional Information</TabsTrigger>
+                            <TabsTrigger value="resume">Resume</TabsTrigger>
+                            <TabsTrigger value="jobs">Jobs</TabsTrigger>
+                          </TabsList>
+
+                          <TabsContent value="updates" className="mt-3 flex min-h-0 flex-1 flex-col">
+                            <ContactUpdates
+                              subitems={contactUpdatesQuery.data?.subitems ?? []}
+                              isLoading={contactUpdatesQuery.isLoading}
+                              isEmpty={(contactUpdatesQuery.data?.subitems?.length ?? 0) === 0}
+                              isStaticMode={staticMode}
+                              draft={contactUpdateDraft}
+                              onDraftChange={setContactUpdateDraft}
+                              onSubmit={({ updateType, date }) => {
+                                setContactUpdateType(updateType);
+                                void handleCreateContactUpdate({ updateType, date });
+                              }}
+                              onDeleteSubitem={async (subitemId) => {
+                                if (!sessionToken) return;
+                                const res = await fetch("/api/monday/subitems", {
+                                  method: "DELETE",
+                                  headers: {
+                                    "content-type": "application/json",
+                                    "x-monday-session-token": sessionToken,
+                                  },
+                                  body: JSON.stringify({ subitemId }),
+                                });
+                                const json = (await res.json()) as { ok: boolean; error?: string };
+                                if (!json.ok) throw new Error(json.error ?? "Delete failed");
+                                toast.success("Update deleted");
+                                await contactUpdatesQuery.refetch();
+                              }}
+                              onUpdateSubitemDate={async (subitemId, date) => {
+                                if (!sessionToken) return;
+                                const res = await fetch("/api/monday/subitems", {
+                                  method: "PATCH",
+                                  headers: {
+                                    "content-type": "application/json",
+                                    "x-monday-session-token": sessionToken,
+                                  },
+                                  body: JSON.stringify({ subitemId, date }),
+                                });
+                                const json = (await res.json()) as { ok: boolean; error?: string };
+                                if (!json.ok) throw new Error(json.error ?? "Date update failed");
+                                toast.success("Date updated");
+                                await contactUpdatesQuery.refetch();
+                              }}
+                              isSubmitting={isCreatingContactUpdate}
+                              currentUserId={forcedOwnerId || identity?.userId || null}
+                            />
+                          </TabsContent>
+
+                          <TabsContent value="info" className="mt-3 min-h-0 flex-1">
+                            {contactColumnsQuery.isLoading ? (
+                              <div className="space-y-2 p-3">
+                                {Array.from({ length: 10 }).map((_, i) => (
+                                  <div key={i} className="grid grid-cols-[140px_1fr] gap-3">
+                                    <Skeleton className="h-4 w-full" />
+                                    <Skeleton className="h-4 w-3/4" />
+                                  </div>
+                                ))}
+                              </div>
+                            ) : contactColumnsQuery.error ? (
+                              <div className="rounded-md border p-3">
+                                <p className="text-destructive text-sm">
+                                  {contactColumnsQuery.error instanceof Error
+                                    ? contactColumnsQuery.error.message
+                                    : "Failed to load contact details"}
+                                </p>
+                              </div>
+                            ) : (
+                              <div className="h-full max-w-full overflow-x-hidden overflow-y-auto rounded-md border">
+                                <table className="w-full table-fixed text-sm">
+                                  <tbody>
+                                    {(contactColumnsQuery.data?.columns ?? []).map((col) => (
+                                      <tr
+                                        key={col.id}
+                                        className="border-b last:border-b-0"
+                                      >
+                                        <td className="text-muted-foreground bg-muted/30 w-[180px] max-w-[180px] border-r px-3 py-2 text-xs font-medium align-top truncate">
+                                          {col.title}
+                                        </td>
+                                        <td className="group relative min-w-0 max-w-0 overflow-hidden px-3 py-2 pr-10 text-xs align-top">
+                                          {editingContactColumnId === col.id ? (
+                                            <div className="space-y-2">
+                                              {(() => {
+                                                const normalizedType = col.type.toLowerCase();
+                                                if (
+                                                  normalizedType === "status" ||
+                                                  normalizedType === "dropdown"
+                                                ) {
+                                                  const options = Array.from(
+                                                    new Set((col.options ?? []).filter(Boolean)),
+                                                  );
+                                                  return (
+                                                    <Select
+                                                      value={
+                                                        editingContactColumnDraft.length > 0
+                                                          ? editingContactColumnDraft
+                                                          : "__clear__"
+                                                      }
+                                                      onValueChange={(value) => {
+                                                        setEditingContactColumnDraft(
+                                                          value === "__clear__" ? "" : value,
+                                                        );
+                                                      }}
+                                                    >
+                                                      <SelectTrigger className="h-8 text-xs">
+                                                        <SelectValue placeholder="Select value" />
+                                                      </SelectTrigger>
+                                                      <SelectContent>
+                                                        <SelectItem value="__clear__">Clear</SelectItem>
+                                                        {options.map((option) => (
+                                                          <SelectItem key={option} value={option}>
+                                                            {option}
+                                                          </SelectItem>
+                                                        ))}
+                                                      </SelectContent>
+                                                    </Select>
+                                                  );
+                                                }
+                                                if (normalizedType === "date") {
+                                                  return (
+                                                    <Input
+                                                      type="date"
+                                                      className="h-8 text-xs"
+                                                      value={editingContactColumnDraft}
+                                                      onChange={(event) =>
+                                                        setEditingContactColumnDraft(
+                                                          event.target.value,
+                                                        )
+                                                      }
+                                                    />
+                                                  );
+                                                }
+                                                if (
+                                                  normalizedType === "long_text" ||
+                                                  normalizedType === "long-text"
+                                                ) {
+                                                  return (
+                                                    <Textarea
+                                                      className="min-h-[72px] text-xs"
+                                                      value={editingContactColumnDraft}
+                                                      onChange={(event) =>
+                                                        setEditingContactColumnDraft(
+                                                          event.target.value,
+                                                        )
+                                                      }
+                                                    />
+                                                  );
+                                                }
+                                                if (
+                                                  normalizedType === "numbers" ||
+                                                  normalizedType === "numeric"
+                                                ) {
+                                                  return (
+                                                    <Input
+                                                      type="number"
+                                                      className="h-8 text-xs"
+                                                      value={editingContactColumnDraft}
+                                                      onChange={(event) =>
+                                                        setEditingContactColumnDraft(
+                                                          event.target.value,
+                                                        )
+                                                      }
+                                                    />
+                                                  );
+                                                }
+                                                return (
+                                                  <Input
+                                                    type="text"
+                                                    className="h-8 text-xs"
+                                                    value={editingContactColumnDraft}
+                                                    onChange={(event) =>
+                                                      setEditingContactColumnDraft(
+                                                        event.target.value,
+                                                      )
+                                                    }
+                                                  />
+                                                );
+                                              })()}
+                                              <div className="flex items-center gap-1">
+                                                <Button
+                                                  type="button"
+                                                  size="icon"
+                                                  variant="outline"
+                                                  className="h-6 w-6"
+                                                  onClick={() => {
+                                                    void saveEditingContactColumn();
+                                                  }}
+                                                  disabled={isSavingContactColumn}
+                                                >
+                                                  <Check className="h-3.5 w-3.5" />
+                                                </Button>
+                                                <Button
+                                                  type="button"
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="h-6 w-6"
+                                                  onClick={cancelEditingContactColumn}
+                                                  disabled={isSavingContactColumn}
+                                                >
+                                                  <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              {col.text ? (
+                                                <span className="block max-w-full truncate" title={col.text}>
+                                                  {col.text}
+                                                </span>
+                                              ) : (
+                                                <span className="text-muted-foreground">—</span>
+                                              )}
+                                              {col.isEditable ? (
+                                                <Button
+                                                  type="button"
+                                                  size="icon"
+                                                  variant="ghost"
+                                                  className="absolute right-2 top-1/2 h-6 w-6 -translate-y-1/2"
+                                                  onClick={() => {
+                                                    startEditingContactColumn(col);
+                                                  }}
+                                                  title={`Edit ${col.title}`}
+                                                >
+                                                  <Pencil className="h-3.5 w-3.5" />
+                                                </Button>
+                                              ) : null}
+                                            </>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            )}
+                          </TabsContent>
+                          <TabsContent value="resume" className="mt-3 min-h-0 flex-1">
+                            {contactDialogResumeFiles.length > 0 ? (
+                              <div className="flex h-full min-h-0 flex-col gap-3">
+                                <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                                  <p className="text-muted-foreground text-xs">
+                                    Resume {contactDialogSelectedResumeIndex + 1} of {contactDialogResumeFiles.length}
+                                  </p>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8"
+                                      disabled={contactDialogSelectedResumeIndex <= 0}
+                                      onClick={() => {
+                                        const previousIndex = contactDialogSelectedResumeIndex - 1;
+                                        const previousFile = contactDialogResumeFiles[previousIndex];
+                                        if (!previousFile) return;
+                                        setContactDialogSelectedResumeKey(
+                                          getResumeFileKey(previousFile, previousIndex),
+                                        );
+                                      }}
+                                    >
+                                      <ChevronLeft className="mr-1.5 h-3.5 w-3.5" />
+                                      Previous
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8"
+                                      disabled={
+                                        contactDialogSelectedResumeIndex < 0 ||
+                                        contactDialogSelectedResumeIndex >= contactDialogResumeFiles.length - 1
+                                      }
+                                      onClick={() => {
+                                        const nextIndex = contactDialogSelectedResumeIndex + 1;
+                                        const nextFile = contactDialogResumeFiles[nextIndex];
+                                        if (!nextFile) return;
+                                        setContactDialogSelectedResumeKey(
+                                          getResumeFileKey(nextFile, nextIndex),
+                                        );
+                                      }}
+                                    >
+                                      Next
+                                      <ChevronRight className="ml-1.5 h-3.5 w-3.5" />
+                                    </Button>
+                                    {!staticMode ? (
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-8"
+                                        disabled={isContactDialogUploadingResume || !sessionToken}
+                                        onClick={() => {
+                                          const input = document.getElementById(contactDialogResumeInputId);
+                                          if (input instanceof HTMLInputElement) {
+                                            input.click();
+                                          }
+                                        }}
+                                      >
+                                        <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                        {isContactDialogUploadingResume ? "Uploading..." : "Add Resume"}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 rounded-md border p-2">
+                                  {contactDialogResumeFiles.map((file, index) => {
+                                    const optionLabel =
+                                      file.name?.trim().length > 0 ? file.name.trim() : `Resume ${index + 1}`;
+                                    const isSelected = index === contactDialogSelectedResumeIndex;
+                                    return (
+                                      <Button
+                                        key={getResumeFileKey(file, index)}
+                                        type="button"
+                                        variant={isSelected ? "secondary" : "ghost"}
+                                        size="sm"
+                                        className="max-w-[240px] justify-start truncate"
+                                        title={optionLabel}
+                                        onClick={() => {
+                                          setContactDialogSelectedResumeKey(getResumeFileKey(file, index));
+                                        }}
+                                      >
+                                        <span className="truncate">{optionLabel}</span>
+                                      </Button>
+                                    );
+                                  })}
+                                </div>
+                                {contactDialogResumeHref ? (
+                                  renderResumePreviewContent(
+                                    contactDialogResumeFileName,
+                                    contactDialogResumeHref,
+                                    "h-[60vh]",
+                                  )
+                                ) : (
+                                  <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                                    <p className="text-sm font-medium">
+                                      This resume is attached but could not be previewed.
+                                    </p>
+                                    <p className="text-muted-foreground mt-1 text-xs">
+                                      Try opening it in a new tab from the selected resume card.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="bg-muted/10 flex h-full flex-col items-center justify-center rounded-md border border-dashed p-6 text-center">
+                                <p className="text-sm font-medium">No resume attached yet.</p>
+                                {!staticMode ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    className="mt-3"
+                                    disabled={isContactDialogUploadingResume || !sessionToken}
+                                    onClick={() => {
+                                      const input = document.getElementById(contactDialogResumeInputId);
+                                      if (input instanceof HTMLInputElement) {
+                                        input.click();
+                                      }
+                                    }}
+                                  >
+                                    <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                    Upload Resume
+                                  </Button>
+                                ) : null}
+                              </div>
+                            )}
+                          </TabsContent>
+                          <TabsContent value="jobs" className="mt-3 min-h-0 flex-1">
+                            <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+                              <div className="rounded-md border p-3">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium">
+                                    Referred Jobs ({referredJobsHistory.length})
+                                  </p>
+                                </div>
+                                {contactUpdatesQuery.isLoading ? (
+                                  <div className="space-y-2">
+                                    {Array.from({ length: 2 }).map((_, index) => (
+                                      <Skeleton key={index} className="h-8 w-full" />
+                                    ))}
+                                  </div>
+                                ) : referredJobsHistory.length === 0 ? (
+                                  <p className="text-muted-foreground text-xs">
+                                    No job referrals logged for this contact yet.
+                                  </p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {referredJobsHistory.slice(0, 6).map((entry) => (
+                                      <div
+                                        key={entry.id}
+                                        className="bg-muted/20 flex items-center justify-between gap-2 rounded-md px-2 py-1.5"
+                                      >
+                                        <div className="min-w-0">
+                                          <p className="truncate text-xs font-medium">{entry.title}</p>
+                                          <p className="text-muted-foreground text-[11px]">
+                                            {entry.jobId ? `Job ID ${entry.jobId}` : "Job ID unavailable"}
+                                          </p>
+                                        </div>
+                                        <span className="text-muted-foreground shrink-0 text-[11px]">
+                                          {entry.referredAt ? formatUpdatedAt(entry.referredAt) : "—"}
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {referredJobsHistory.length > 6 ? (
+                                      <p className="text-muted-foreground text-[11px]">
+                                        +{referredJobsHistory.length - 6} more referrals
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="bg-muted/10 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2">
+                                <div>
+                                  <p className="text-sm font-medium">Available Jobs</p>
+                                  <p className="text-muted-foreground text-xs">
+                                    Search and switch list/grid view. Referred jobs are automatically
+                                    disabled.
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={jobsQuery.isFetching}
+                                  onClick={() => {
+                                    void jobsQuery.refetch();
+                                  }}
+                                >
+                                  <RefreshCcw className="mr-1.5 h-3.5 w-3.5" />
+                                  Refresh
+                                </Button>
+                              </div>
+                              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                                {jobsQuery.error ? (
+                                  <div className="rounded-md border p-3">
+                                    <p className="text-destructive text-sm">
+                                      {jobsQuery.error instanceof Error
+                                        ? jobsQuery.error.message
+                                        : "Failed to load jobs"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <EntityList
+                                    data={contactJobRows}
+                                    columns={contactJobColumns}
+                                    entityActions={contactJobActions}
+                                    getRowId={(item) => item.id}
+                                    isLoading={jobsQuery.isLoading}
+                                    enableSearch
+                                    viewModes={["list", "grid"]}
+                                    defaultViewMode="list"
+                                    enableFooter={false}
+                                    showRowCount={false}
+                                    hideFilters
+                                    emptyState={
+                                      <div className="text-muted-foreground py-6 text-sm">
+                                        No available jobs found.
+                                      </div>
+                                    }
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          </TabsContent>
+                        </Tabs>
                       </div>
                     </div>
-                  </TabsContent>
-                </Tabs>
-              </div>
-            </div>
-          ) : null}
-        </div>
-        </DialogContent>
-      </Dialog>
+                  ) : null}
+                </div>
+              </DialogContent>
+            </Dialog>
 
-      <CommunicationQuickActionDialog
-        open={!!communicationQuickAction}
-        onOpenChange={(open) => {
-          if (!open) setCommunicationQuickAction(null);
-        }}
-        actionLabel={communicationQuickAction?.label ?? "Communication Update"}
-        defaultMethod={communicationQuickAction?.method ?? "Email"}
-        isSubmitting={isCreatingContactUpdate}
-        onSubmit={handleSubmitCommunicationQuickAction}
-      />
+            <CommunicationQuickActionDialog
+              open={!!communicationQuickAction}
+              onOpenChange={(open) => {
+                if (!open) setCommunicationQuickAction(null);
+              }}
+              actionLabel={communicationQuickAction?.label ?? "Communication Update"}
+              defaultMethod={communicationQuickAction?.method ?? "Email"}
+              isSubmitting={isCreatingContactUpdate}
+              onSubmit={handleSubmitCommunicationQuickAction}
+            />
 
-      <Dialog
-        open={!!syncContactBoardPickerRecord}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSyncContactBoardPickerRecord(null);
-            setSyncContactBoardSelection("");
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Sync User</DialogTitle>
-            <DialogDescription>
-              Choose which monthly board to scrape for{" "}
-              {syncContactBoardPickerRecord?.name ?? "this contact"}.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Select
-              value={syncContactBoardSelection}
-              onValueChange={setSyncContactBoardSelection}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select monthly board" />
-              </SelectTrigger>
-              <SelectContent>
-                {syncMonthlyBoardOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label} · {option.boardId}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {syncMonthlyBoardOptions.length === 0 ? (
-              <p className="text-muted-foreground text-xs">
-                No monthly board mappings are configured in platform settings.
-              </p>
-            ) : null}
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setSyncContactBoardPickerRecord(null);
-                setSyncContactBoardSelection("");
+            <Dialog
+              open={!!syncContactBoardPickerRecord}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setSyncContactBoardPickerRecord(null);
+                  setSyncContactBoardSelection("");
+                }
               }}
             >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={confirmSyncContactFromSelectedBoard}
-              disabled={
-                !syncContactBoardSelection ||
-                !syncContactBoardPickerRecord ||
-                syncingContactIds.has(syncContactBoardPickerRecord?.id ?? "")
-              }
-            >
-              {syncContactBoardPickerRecord &&
-              syncingContactIds.has(syncContactBoardPickerRecord.id)
-                ? "Syncing..."
-                : "Start Sync"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Sync User</DialogTitle>
+                  <DialogDescription>
+                    Choose which monthly board to scrape for{" "}
+                    {syncContactBoardPickerRecord?.name ?? "this contact"}.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3">
+                  <Select
+                    value={syncContactBoardSelection}
+                    onValueChange={setSyncContactBoardSelection}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select monthly board" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {syncMonthlyBoardOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label} · {option.boardId}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {syncMonthlyBoardOptions.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      No monthly board mappings are configured in platform settings.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSyncContactBoardPickerRecord(null);
+                      setSyncContactBoardSelection("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={confirmSyncContactFromSelectedBoard}
+                    disabled={
+                      !syncContactBoardSelection ||
+                      !syncContactBoardPickerRecord ||
+                      syncingContactIds.has(syncContactBoardPickerRecord?.id ?? "")
+                    }
+                  >
+                    {syncContactBoardPickerRecord &&
+                      syncingContactIds.has(syncContactBoardPickerRecord.id)
+                      ? "Syncing..."
+                      : "Start Sync"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
 
-        <QuestionnaireFormDialog
-          open={questionnaireDialogRecords.length > 0}
-          onOpenChange={(next) => {
-            if (!next) setQuestionnaireDialogRecords([]);
-          }}
-          records={questionnaireDialogRecords}
-          sessionToken={sessionToken ?? ""}
-          staticMode={staticMode}
-          resolveItemId={resolveContactUpdateTargetRecordId}
-          onSaved={handleQuestionnaireSaved}
-        />
-
-        <p className="text-muted-foreground px-1 text-xs font-medium">
-          {filteredRecordCountLabel}
-        </p>
-
-        {isTouchScopedView && userScopedDisplayMode === "grid" ? (
-          <div className="flex items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
-            <span className="text-muted-foreground shrink-0 text-[11px] font-medium tracking-wide uppercase">
-              Grid Sort
-            </span>
-            <select
-              value={gridSort.field}
-              onChange={(event) => {
-                const selectedField = event.target.value as GridSortField;
-                setGridSort((prev) => ({ ...prev, field: selectedField }));
+            <QuestionnaireFormDialog
+              open={questionnaireDialogRecords.length > 0}
+              onOpenChange={(next) => {
+                if (!next) setQuestionnaireDialogRecords([]);
               }}
-              className="bg-background border-input h-7 rounded-md border px-2 text-xs shadow-sm"
-            >
-              {GRID_SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="bg-background border-input hover:bg-accent h-7 rounded-md border px-2 text-xs font-medium transition-colors"
-              onClick={() => {
-                setGridSort((prev) => ({
-                  ...prev,
-                  direction: prev.direction === "asc" ? "desc" : "asc",
-                }));
-              }}
-              title="Toggle sort direction"
-            >
-              {gridSort.direction === "asc" ? "Asc" : "Desc"}
-            </button>
-          </div>
-        ) : null}
+              records={questionnaireDialogRecords}
+              sessionToken={sessionToken ?? ""}
+              staticMode={staticMode}
+              resolveItemId={resolveContactUpdateTargetRecordId}
+              onSaved={handleQuestionnaireSaved}
+            />
 
-        {userScopedDisplayMode === "kanban" ? (
-          <KanbanBoard
-            records={filteredRecords}
-            approvalSteps={approvalSteps}
-            isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-            onMoveRequest={setKanbanMoveConfirmation}
-            onRecordClick={openContactHistoryDialog}
-            onHelpDesk={(r) => {
-              setHelpDeskLinkedContact(r);
-              setHelpDeskOpen(true);
-            }}
-          />
-        ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {(authLoading || (!staticMode && recordsQuery.isLoading))
-              ? Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
-              ))
-              : sortedGridRecords.map((record) => (
-                <ContactCard
-                  key={record.id}
-                  record={record}
-                  approvalSteps={approvalSteps}
-                  onClick={openContactHistoryDialog}
-                  onHelpDesk={(r) => {
-                    setHelpDeskLinkedContact(r);
-                    setHelpDeskOpen(true);
+            <p className="text-muted-foreground px-1 text-xs font-medium">
+              {filteredRecordCountLabel}
+            </p>
+
+            {isTouchScopedView && userScopedDisplayMode === "grid" ? (
+              <div className="flex items-center gap-2 rounded-md border bg-background/80 px-2 py-1.5">
+                <span className="text-muted-foreground shrink-0 text-[11px] font-medium tracking-wide uppercase">
+                  Grid Sort
+                </span>
+                <select
+                  value={gridSort.field}
+                  onChange={(event) => {
+                    const selectedField = event.target.value as GridSortField;
+                    setGridSort((prev) => ({ ...prev, field: selectedField }));
                   }}
-                />
-              ))}
-          </div>
-        ) : (
-          <BoardTable
-            data={filteredRecords}
-        columns={columns}
-        isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-        initialSort={{ id: "createdAt", direction: "desc" }}
-        getRowId={(item) => item.id}
-        entityActions={entityActions}
-            enableInfiniteScroll={shouldAutoLoadMore}
-            hasNextPage={!!recordsQuery.hasNextPage}
-            isFetchingNextPage={recordsQuery.isFetchingNextPage}
-            onLoadMore={handleLoadMoreRecords}
-            bulkActions={({ selectedItems, clearSelection }) => {
-              const eligibleByAction = new Map<string, MondayRecord[]>();
-              for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
-                const stepConfig = STEP_ACTION_CONFIG.find((s) => s.updateType === action.type);
-                if (!stepConfig) {
-                  eligibleByAction.set(action.type, [...selectedItems]);
-                  continue;
-                }
-                eligibleByAction.set(
-                  action.type,
-                  selectedItems.filter((item) => {
-                    const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
-                    return currentStep === stepConfig.stepIndex;
-                  }),
-                );
-              }
-              const questionnaireStepIndex = STEP_ACTION_CONFIG.find(
-                (s) => s.actionVariant === "questionnaire",
-              )?.stepIndex ?? -1;
-              const questionnaireEligible = selectedItems.filter((item) => {
-                const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
-                return currentStep === questionnaireStepIndex;
-              });
-              const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
-              for (const item of selectedItems) {
-                const targetRecordId = getMergeTargetRecordId(item);
-                if (!targetRecordId) continue;
-                if (!mergeCandidatesByTargetId.has(targetRecordId)) {
-                  mergeCandidatesByTargetId.set(targetRecordId, item);
-                }
-              }
-              const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
-              const canMergeSelection =
-                mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
-              const bulkSyncProgressPercent =
-                latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
-                  ? Math.round(
-                      (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
-                        100,
-                    )
-                  : 0;
+                  className="bg-background border-input h-7 rounded-md border px-2 text-xs shadow-sm"
+                >
+                  {GRID_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="bg-background border-input hover:bg-accent h-7 rounded-md border px-2 text-xs font-medium transition-colors"
+                  onClick={() => {
+                    setGridSort((prev) => ({
+                      ...prev,
+                      direction: prev.direction === "asc" ? "desc" : "asc",
+                    }));
+                  }}
+                  title="Toggle sort direction"
+                >
+                  {gridSort.direction === "asc" ? "Asc" : "Desc"}
+                </button>
+              </div>
+            ) : null}
 
-              return (
-                <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                  <p className="text-muted-foreground text-xs">
-                    {selectedItems.length} selected
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => {
-                      const eligible = eligibleByAction.get(action.type) ?? [];
-                      const hasEligible = eligible.length > 0;
-                      return (
+            {userScopedDisplayMode === "kanban" ? (
+              <KanbanBoard
+                records={filteredRecords}
+                approvalSteps={approvalSteps}
+                isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+                onMoveRequest={setKanbanMoveConfirmation}
+                onRecordClick={openContactHistoryDialog}
+                onHelpDesk={(r) => {
+                  setHelpDeskLinkedContact(r);
+                  setHelpDeskOpen(true);
+                }}
+              />
+            ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {(authLoading || (!staticMode && recordsQuery.isLoading))
+                  ? Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
+                  ))
+                  : sortedGridRecords.map((record) => (
+                    <ContactCard
+                      key={record.id}
+                      record={record}
+                      approvalSteps={approvalSteps}
+                      onClick={openContactHistoryDialog}
+                      onHelpDesk={(r) => {
+                        setHelpDeskLinkedContact(r);
+                        setHelpDeskOpen(true);
+                      }}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <BoardTable
+                data={filteredRecords}
+                columns={columns}
+                isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+                initialSort={{ id: "createdAt", direction: "desc" }}
+                getRowId={(item) => item.id}
+                entityActions={entityActions}
+                enableInfiniteScroll={shouldAutoLoadMore}
+                hasNextPage={!!recordsQuery.hasNextPage}
+                isFetchingNextPage={recordsQuery.isFetchingNextPage}
+                onLoadMore={handleLoadMoreRecords}
+                bulkActions={({ selectedItems, clearSelection }) => {
+                  const eligibleByAction = new Map<string, MondayRecord[]>();
+                  for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
+                    const stepConfig = STEP_ACTION_CONFIG.find((s) => s.updateType === action.type);
+                    if (!stepConfig) {
+                      eligibleByAction.set(action.type, [...selectedItems]);
+                      continue;
+                    }
+                    eligibleByAction.set(
+                      action.type,
+                      selectedItems.filter((item) => {
+                        const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
+                        return currentStep === stepConfig.stepIndex;
+                      }),
+                    );
+                  }
+                  const questionnaireStepIndex = STEP_ACTION_CONFIG.find(
+                    (s) => s.actionVariant === "questionnaire",
+                  )?.stepIndex ?? -1;
+                  const questionnaireEligible = selectedItems.filter((item) => {
+                    const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
+                    return currentStep === questionnaireStepIndex;
+                  });
+                  const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
+                  for (const item of selectedItems) {
+                    const targetRecordId = getMergeTargetRecordId(item);
+                    if (!targetRecordId) continue;
+                    if (!mergeCandidatesByTargetId.has(targetRecordId)) {
+                      mergeCandidatesByTargetId.set(targetRecordId, item);
+                    }
+                  }
+                  const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
+                  const canMergeSelection =
+                    mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
+                  const bulkSyncProgressPercent =
+                    latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
+                      ? Math.round(
+                        (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
+                        100,
+                      )
+                      : 0;
+
+                  return (
+                    <div className="flex w-full flex-wrap items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-xs">
+                        {selectedItems.length} selected
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => {
+                          const eligible = eligibleByAction.get(action.type) ?? [];
+                          const hasEligible = eligible.length > 0;
+                          return (
+                            <Button
+                              key={action.type}
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                              style={boardThemeInlineStyles.actionButtonStyle}
+                              disabled={!!bulkQuickActionType || !hasEligible}
+                              onClick={() => {
+                                bulkClearSelectionRef.current = clearSelection;
+                                setBulkQuickActionConfirmation({
+                                  action,
+                                  selectedItems: eligible,
+                                });
+                                if (eligible.length < selectedItems.length) {
+                                  toast(
+                                    `${selectedItems.length - eligible.length} contact${selectedItems.length - eligible.length === 1 ? "" : "s"} skipped (not at this step)`,
+                                  );
+                                }
+                              }}
+                            >
+                              {bulkQuickActionType === action.type
+                                ? "Applying..."
+                                : `${action.label} (${eligible.length})`}
+                            </Button>
+                          );
+                        })}
                         <Button
-                          key={action.type}
                           type="button"
                           size="sm"
                           variant="secondary"
                           className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
                           style={boardThemeInlineStyles.actionButtonStyle}
-                          disabled={!!bulkQuickActionType || !hasEligible}
+                          disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
                           onClick={() => {
-                            bulkClearSelectionRef.current = clearSelection;
-                            setBulkQuickActionConfirmation({
-                              action,
-                              selectedItems: eligible,
-                            });
-                            if (eligible.length < selectedItems.length) {
+                            openQuestionnaireDialogForRecords([...questionnaireEligible]);
+                            if (questionnaireEligible.length < selectedItems.length) {
                               toast(
-                                `${selectedItems.length - eligible.length} contact${selectedItems.length - eligible.length === 1 ? "" : "s"} skipped (not at this step)`,
+                                `${selectedItems.length - questionnaireEligible.length} contact${selectedItems.length - questionnaireEligible.length === 1 ? "" : "s"} skipped (not at questionnaire step)`,
                               );
                             }
                           }}
                         >
-                          {bulkQuickActionType === action.type
-                            ? "Applying..."
-                            : `${action.label} (${eligible.length})`}
+                          {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
                         </Button>
-                      );
-                    })}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                      style={boardThemeInlineStyles.actionButtonStyle}
-                      disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
-                      onClick={() => {
-                        openQuestionnaireDialogForRecords([...questionnaireEligible]);
-                        if (questionnaireEligible.length < selectedItems.length) {
-                          toast(
-                            `${selectedItems.length - questionnaireEligible.length} contact${selectedItems.length - questionnaireEligible.length === 1 ? "" : "s"} skipped (not at questionnaire step)`,
-                          );
-                        }
-                      }}
-                    >
-                      {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                      disabled={!!bulkQuickActionType || isMergingRecords || !canMergeSelection}
-                      onClick={() => {
-                        mergeClearSelectionRef.current = clearSelection;
-                        openMergeDialogForRecords(mergeEligibleRecords);
-                        if (mergeEligibleRecords.length < selectedItems.length) {
-                          toast(
-                            `${selectedItems.length - mergeEligibleRecords.length} contact${selectedItems.length - mergeEligibleRecords.length === 1 ? "" : "s"} skipped (duplicate contact ids in selection)`,
-                          );
-                        }
-                      }}
-                    >
-                      {isMergingRecords
-                        ? "Merging..."
-                        : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
-                    </Button>
-                    {isMondaySettingsAdmin && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                        disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const items = [...selectedItems];
-                              const job = await startBulkSyncJob(items);
-                              clearSelection();
-                              toast.success(
-                                `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
-                              );
-                            } catch (error) {
-                              toast.error(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Failed to start bulk sync",
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                          disabled={!!bulkQuickActionType || isMergingRecords || !canMergeSelection}
+                          onClick={() => {
+                            mergeClearSelectionRef.current = clearSelection;
+                            openMergeDialogForRecords(mergeEligibleRecords);
+                            if (mergeEligibleRecords.length < selectedItems.length) {
+                              toast(
+                                `${selectedItems.length - mergeEligibleRecords.length} contact${selectedItems.length - mergeEligibleRecords.length === 1 ? "" : "s"} skipped (duplicate contact ids in selection)`,
                               );
                             }
-                          })();
-                        }}
-                      >
-                        {syncingContactIds.has("__bulk_sync__")
-                          ? latestBulkSyncJob
-                            ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
-                            : "Syncing..."
-                          : `Sync Users (${selectedItems.length})`}
-                      </Button>
-                    )}
-                    {isMondaySettingsAdmin &&
-                    latestBulkSyncJob &&
-                    latestBulkSyncJob.status === "running" ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              await cancelBulkSyncJob(latestBulkSyncJob.jobId);
-                            } catch (error) {
-                              toast.error(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Failed to cancel bulk sync",
-                              );
-                            }
-                          })();
-                        }}
-                      >
-                        Cancel Bulk Sync
-                      </Button>
-                    ) : null}
-                    {isMondaySettingsAdmin &&
-                    latestBulkSyncJob &&
-                    latestBulkSyncJob.status !== "running" &&
-                    latestBulkSyncJob.failedContacts > 0 ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                        disabled={syncingContactIds.has("__bulk_sync__")}
-                        onClick={() => {
-                          void (async () => {
-                            try {
-                              const result = await retryFailedBulkSyncJob(
-                                latestBulkSyncJob.jobId,
-                              );
-                              toast.success(
-                                `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
-                              );
-                            } catch (error) {
-                              toast.error(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Failed to retry failed bulk sync contacts",
-                              );
-                            }
-                          })();
-                        }}
-                      >
-                        Retry Failed ({latestBulkSyncJob.failedContacts})
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={clearSelection}
-                      disabled={!!bulkQuickActionType}
-                    >
-                      Clear
-                    </Button>
-                  </div>
-                  {isMondaySettingsAdmin && latestBulkSyncJob ? (
-                    <div className="w-full rounded-md border px-2 py-1">
-                      <div className="mb-1 flex items-center justify-between text-[11px]">
-                        <span className="text-muted-foreground">
-                          Bulk Sync {latestBulkSyncJob.status}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
-                        </span>
-                      </div>
-                      <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-                        <div
-                          className="bg-primary h-full transition-[width] duration-300 ease-out"
-                          style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
-                        />
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              );
-            }}
-          />
-        )}
-
-        <p className="text-muted-foreground px-1 text-xs font-medium">
-          {filteredRecordCountLabel}
-        </p>
-
-        <Dialog
-          open={!!bulkQuickActionConfirmation}
-          onOpenChange={(open) => {
-            if (open) return;
-            if (bulkQuickActionType) return;
-            setBulkQuickActionConfirmation(null);
-          }}
-        >
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
-              <DialogDescription>
-                {bulkQuickActionConfirmation
-                  ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
-                  : "Confirm this bulk action."}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setBulkQuickActionConfirmation(null)}
-                disabled={!!bulkQuickActionType}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  const confirmation = bulkQuickActionConfirmation;
-                  if (!confirmation) return;
-                  setBulkQuickActionConfirmation(null);
-                  void handleBulkQuickActionUpdates(
-                    confirmation.selectedItems,
-                    () => bulkClearSelectionRef.current?.(),
-                    confirmation.action,
-                  );
-                }}
-                disabled={!!bulkQuickActionType}
-              >
-                {bulkQuickActionType ? "Applying..." : "Confirm"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={!!mergeDialogState}
-          onOpenChange={(open) => {
-            if (open) return;
-            if (isMergingRecords) return;
-            setMergeDialogState(null);
-          }}
-        >
-          <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>Merge / De-duplicate Contacts</DialogTitle>
-              <DialogDescription>
-                Choose a master contact, pick field sources, then merge updates from duplicate
-                contacts. Exact same action on the same day is kept once.
-              </DialogDescription>
-            </DialogHeader>
-            {mergeDialogState ? (
-              <div className="space-y-4">
-                <div className="grid gap-2">
-                  <p className="text-xs font-medium">Master contact</p>
-                  <Select
-                    value={mergeDialogState.masterRecordId}
-                    onValueChange={(value) => {
-                      setMergeDialogState((prev) => {
-                        if (!prev) return prev;
-                        const nextFieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
-                          (acc, field) => {
-                            acc[field.key] = value;
-                            return acc;
-                          },
-                          {} as Record<MergeFieldKey, string>,
-                        );
-                        return {
-                          ...prev,
-                          masterRecordId: value,
-                          fieldSourceByKey: nextFieldSourceByKey,
-                        };
-                      });
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select master contact" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {mergeDialogState.records.map((record) => {
-                        const targetRecordId = getMergeTargetRecordId(record);
-                        return (
-                          <SelectItem key={targetRecordId} value={targetRecordId}>
-                            {record.name} · {record.email ?? "No email"}
-                          </SelectItem>
-                        );
-                      })}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="rounded-md border bg-amber-50/40 p-3 text-xs text-amber-900">
-                  Source contacts will be deleted after merge. Name and email stay from the selected
-                  master contact.
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-xs font-medium">Choose source record for each mergeable field</p>
-                  <div className="max-h-[42vh] space-y-3 overflow-y-auto rounded-md border p-3">
-                    {MERGE_FIELD_CONFIG.map((field) => (
-                      <div
-                        key={field.key}
-                        className="grid gap-2 rounded-md border p-2 md:grid-cols-[220px_1fr]"
-                      >
-                        <div>
-                          <p className="text-sm font-medium">{field.label}</p>
-                        </div>
-                        <Select
-                          value={mergeDialogState.fieldSourceByKey[field.key]}
-                          onValueChange={(value) => {
-                            setMergeDialogState((prev) => {
-                              if (!prev) return prev;
-                              return {
-                                ...prev,
-                                fieldSourceByKey: {
-                                  ...prev.fieldSourceByKey,
-                                  [field.key]: value,
-                                },
-                              };
-                            });
                           }}
                         >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {mergeDialogState.records.map((record) => {
-                              const targetRecordId = getMergeTargetRecordId(record);
-                              return (
-                                <SelectItem key={targetRecordId} value={targetRecordId}>
-                                  {record.name} · {getMergeFieldDisplayValue(record, field.key)}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setMergeDialogState(null)}
-                disabled={isMergingRecords}
-              >
-                Cancel
-              </Button>
-              <Button onClick={() => void handleConfirmMergeRecords()} disabled={isMergingRecords}>
-                {isMergingRecords ? "Merging..." : "Merge Contacts"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog
-          open={!!kanbanMoveConfirmation}
-          onOpenChange={(open) => {
-            if (open) return;
-            if (isExecutingKanbanMove) return;
-            setKanbanMoveConfirmation(null);
-          }}
-        >
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Confirm Move</DialogTitle>
-              <DialogDescription>
-                {kanbanMoveConfirmation
-                  ? `Move "${kanbanMoveConfirmation.record.name}" ${kanbanMoveConfirmation.direction === "forward" ? "forward to" : "back to"} "${kanbanMoveConfirmation.toStepIndex === 0
-                    ? "Not Started"
-                    : approvalSteps[kanbanMoveConfirmation.toStepIndex - 1]?.title ?? `Step ${kanbanMoveConfirmation.toStepIndex}`
-                  }"?`
-                  : "Confirm this move."}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setKanbanMoveConfirmation(null)}
-                disabled={isExecutingKanbanMove}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!kanbanMoveConfirmation) return;
-                  void handleKanbanStepMove(kanbanMoveConfirmation);
-                }}
-                disabled={isExecutingKanbanMove}
-              >
-                {isExecutingKanbanMove ? "Moving..." : "Confirm"}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-      <Dialog
-        open={!!resumePreview}
-        onOpenChange={(open) => {
-          if (!open) setResumePreview(null);
-        }}
-      >
-        <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>
-              Resume · {resumePreview?.recordName ?? "Contact"}
-            </DialogTitle>
-            <DialogDescription className="sr-only">
-              Resume preview dialog with open in new tab fallback.
-            </DialogDescription>
-          </DialogHeader>
-          {resumePreview ? (
-            renderResumePreviewContent(resumePreview.fileName, resumePreview.href)
-          ) : null}
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={!!sendEmailRecord}
-        onOpenChange={(open) => {
-          if (!open) closeSendEmailDialog();
-        }}
-      >
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
-          <DialogHeader>
-            <DialogTitle>
-              {sendEmailProgressUpdate?.updateType === "followup"
-                ? "Send Questionnaire Email"
-                : sendEmailProgressUpdate?.updateType === "welcome_email"
-                  ? "Send Welcome Email"
-                  : "Send Email"}
-            </DialogTitle>
-          </DialogHeader>
-          {sendEmailRecord ? (
-            <div className="space-y-4">
-              <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
-                Recipient:{" "}
-                <span className="font-medium text-slate-900">
-                  {sendEmailRecord.name}
-                  {" · "}
-                  {sendEmailRecord.email ?? "No email"}
-                </span>
-              </div>
-              {sendEmailStep === 1 ? (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    Step 1: Choose an email template
-                  </p>
-                  <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {emailTemplates.map((template) => {
-                        const isActive = template.id === sendEmailTemplateId;
-                        const resolvedTemplateName = interpolateTemplateVariables(
-                          template.name,
-                          sendEmailTemplateVariables,
-                        );
-                        const resolvedRenderedHtml = interpolateTemplateVariables(
-                          template.renderedHtml,
-                          sendEmailTemplateVariables,
-                        );
-                        const resolvedContent = interpolateTemplateVariables(
-                          template.content,
-                          sendEmailTemplateVariables,
-                        );
-                        const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
-                        const hasPlainContent = resolvedContent.trim().length > 0;
-                        return (
-                          <button
-                            key={template.id}
+                          {isMergingRecords
+                            ? "Merging..."
+                            : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
+                        </Button>
+                        {isMondaySettingsAdmin && (
+                          <Button
                             type="button"
-                            className={[
-                              "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
-                              isActive
-                                ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
-                                : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
-                            ].join(" ")}
+                            size="sm"
+                            variant="outline"
+                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                            disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
                             onClick={() => {
-                              setSendEmailTemplateId(template.id);
+                              void (async () => {
+                                try {
+                                  const items = [...selectedItems];
+                                  const job = await startBulkSyncJob(items);
+                                  clearSelection();
+                                  toast.success(
+                                    `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
+                                  );
+                                } catch (error) {
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : "Failed to start bulk sync",
+                                  );
+                                }
+                              })();
                             }}
                           >
-                            <p className="line-clamp-1 font-medium text-slate-900">
-                              {resolvedTemplateName}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Updated {formatUpdatedAt(template.updatedAt)}
-                            </p>
-                            <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
-                              {hasRenderedHtml ? (
-                                <div
-                                  className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
-                                  style={{ whiteSpace: "pre-wrap" }}
-                                  dangerouslySetInnerHTML={{
-                                    __html: resolvedRenderedHtml,
-                                  }}
-                                />
-                              ) : hasPlainContent ? (
-                                <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
-                                  {resolvedContent}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-slate-500">No preview content.</p>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">
-                        No templates found.
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={closeSendEmailDialog}>
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={() => setSendEmailStep(2)}
-                      disabled={!sendEmailTemplate}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {sendEmailStep === 2 ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 2: Preview template</p>
-                  <div className="rounded-md border p-4">
-                    {sendEmailTemplate ? (
-                      <>
-                        <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
-                        <p className="mt-1 text-base font-medium">
-                          {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
-                        </p>
-                        <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
-                          Email Preview (Lead View)
-                        </p>
-                        <div className="bg-card mt-2 rounded-md border p-4">
-                          {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
-                            <p className="text-muted-foreground text-sm">
-                              No content found in template.
-                            </p>
-                          ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                            {syncingContactIds.has("__bulk_sync__")
+                              ? latestBulkSyncJob
+                                ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
+                                : "Syncing..."
+                              : `Sync Users (${selectedItems.length})`}
+                          </Button>
+                        )}
+                        {isMondaySettingsAdmin &&
+                          latestBulkSyncJob &&
+                          latestBulkSyncJob.status === "running" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  await cancelBulkSyncJob(latestBulkSyncJob.jobId);
+                                } catch (error) {
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : "Failed to cancel bulk sync",
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            Cancel Bulk Sync
+                          </Button>
+                        ) : null}
+                        {isMondaySettingsAdmin &&
+                          latestBulkSyncJob &&
+                          latestBulkSyncJob.status !== "running" &&
+                          latestBulkSyncJob.failedContacts > 0 ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                            disabled={syncingContactIds.has("__bulk_sync__")}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  const result = await retryFailedBulkSyncJob(
+                                    latestBulkSyncJob.jobId,
+                                  );
+                                  toast.success(
+                                    `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
+                                  );
+                                } catch (error) {
+                                  toast.error(
+                                    error instanceof Error
+                                      ? error.message
+                                      : "Failed to retry failed bulk sync contacts",
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            Retry Failed ({latestBulkSyncJob.failedContacts})
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={clearSelection}
+                          disabled={!!bulkQuickActionType}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                      {isMondaySettingsAdmin && latestBulkSyncJob ? (
+                        <div className="w-full rounded-md border px-2 py-1">
+                          <div className="mb-1 flex items-center justify-between text-[11px]">
+                            <span className="text-muted-foreground">
+                              Bulk Sync {latestBulkSyncJob.status}
+                            </span>
+                            <span className="text-muted-foreground">
+                              {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
+                            </span>
+                          </div>
+                          <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
                             <div
-                              className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
-                              style={{ whiteSpace: "pre-wrap" }}
-                              dangerouslySetInnerHTML={{
-                                __html: sendEmailResolvedTemplate?.html ?? "",
-                              }}
+                              className="bg-primary h-full transition-[width] duration-300 ease-out"
+                              style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
                             />
-                          ) : (
-                            <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                              {sendEmailResolvedTemplate?.text ?? ""}
-                            </div>
-                          )}
+                          </div>
                         </div>
-                      </>
-                    ) : emailTemplatesQuery.isLoading ? (
-                      <p className="text-muted-foreground text-sm">Loading templates…</p>
-                    ) : (
-                      <p className="text-muted-foreground text-sm">
-                        No templates found. Choose another action or add templates in settings.
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(1)}>
-                      Back
-                    </Button>
-                    <Button
-                      onClick={() => setSendEmailStep(3)}
-                      disabled={!sendEmailTemplate}
-                    >
-                      Next
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-
-              {sendEmailStep === 3 && sendEmailTemplate ? (
-                <div className="space-y-3">
-                  <p className="text-sm font-medium">Step 3: Confirm send</p>
-                  <div className="space-y-3 rounded-md border p-4 text-sm">
-                    <p>Are you sure you want to send this email?</p>
-                    <div className="space-y-1">
-                      <p className="text-xs font-semibold tracking-wide uppercase">
-                        From mailbox
-                      </p>
-                      {outlookTeamMailboxesQuery.isLoading ||
-                      outlookTeamMailboxesQuery.isFetching ? (
-                        <p className="text-muted-foreground text-xs">
-                          Loading mailbox options…
-                        </p>
-                      ) : sendEmailMailboxOptions.length === 0 ? (
-                        <p className="text-muted-foreground text-xs">
-                          No team sender mailboxes are configured for this workspace.
-                        </p>
-                      ) : (
-                        <select
-                          value={sendEmailOwnerUserId}
-                          onChange={(event) => {
-                            setSendEmailOwnerUserId(event.target.value);
-                          }}
-                          className="bg-background border-input h-9 w-full rounded-md border px-2 text-xs shadow-sm"
-                          disabled={
-                            isSendingEmail ||
-                            outlookTeamMailboxesQuery.isLoading ||
-                            outlookTeamMailboxesQuery.isFetching
-                          }
-                        >
-                          <option value="">Select sender mailbox</option>
-                          {sendEmailMailboxOptions.map((mailbox) => {
-                            const displayName =
-                              mailbox.name?.trim() ||
-                              mailbox.mailboxDisplayName?.trim() ||
-                              mailbox.userEmail?.trim() ||
-                              mailbox.mondayUserId;
-                            const mailboxEmail =
-                              mailbox.mailboxEmail?.trim() ||
-                              mailbox.userEmail?.trim() ||
-                              "no mailbox email";
-                            return (
-                              <option
-                                key={mailbox.mondayUserId}
-                                value={mailbox.mondayUserId}
-                              >
-                                {`${displayName} • ${mailboxEmail} • ${mailbox.connected ? "connected" : "not connected"}`}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      )}
-                      {selectedSendEmailMailbox ? (
-                        <p
-                          className={`text-xs ${selectedSendEmailMailbox.connected ? "text-emerald-700" : "text-rose-600"}`}
-                        >
-                          {selectedSendEmailMailbox.connected
-                            ? "Selected mailbox is connected and ready."
-                            : "Selected mailbox is not connected. Connect Outlook before sending."}
-                        </p>
                       ) : null}
                     </div>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <Button variant="outline" onClick={() => setSendEmailStep(2)}>
-                      Back
-                    </Button>
-                    <Button
-                      onClick={() => {
-                        void handleConfirmSendEmail();
-                      }}
-                      disabled={!sendEmailCanSubmit}
-                    >
-                      {isSendingEmail ? "Sending..." : "Send Email"}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-      </div>
-      <HelpDeskDialog
-        open={helpDeskOpen}
-        onOpenChange={(v) => {
-          setHelpDeskOpen(v);
-          if (!v) setHelpDeskLinkedContact(null);
-        }}
-        linkedContact={helpDeskLinkedContact}
-        sessionToken={sessionToken}
-        currentUserId={forcedOwnerId || identity?.userId || null}
-      />
+                  );
+                }}
+              />
+            )}
 
-      {!staticMode && recordsQuery.hasNextPage && shouldAutoLoadMore ? (
-        <div ref={loadMoreAnchorRef} className="h-2" />
-      ) : null}
-    </div>
-    </UserSettingsProvider>
+            <p className="text-muted-foreground px-1 text-xs font-medium">
+              {filteredRecordCountLabel}
+            </p>
+
+            <Dialog
+              open={!!bulkQuickActionConfirmation}
+              onOpenChange={(open) => {
+                if (open) return;
+                if (bulkQuickActionType) return;
+                setBulkQuickActionConfirmation(null);
+              }}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Confirm Bulk Quick Action</DialogTitle>
+                  <DialogDescription>
+                    {bulkQuickActionConfirmation
+                      ? `Apply "${bulkQuickActionConfirmation.action.label}" to ${bulkQuickActionConfirmation.selectedItems.length} selected record${bulkQuickActionConfirmation.selectedItems.length === 1 ? "" : "s"}?`
+                      : "Confirm this bulk action."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setBulkQuickActionConfirmation(null)}
+                    disabled={!!bulkQuickActionType}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const confirmation = bulkQuickActionConfirmation;
+                      if (!confirmation) return;
+                      setBulkQuickActionConfirmation(null);
+                      void handleBulkQuickActionUpdates(
+                        confirmation.selectedItems,
+                        () => bulkClearSelectionRef.current?.(),
+                        confirmation.action,
+                      );
+                    }}
+                    disabled={!!bulkQuickActionType}
+                  >
+                    {bulkQuickActionType ? "Applying..." : "Confirm"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!mergeDialogState}
+              onOpenChange={(open) => {
+                if (open) return;
+                if (isMergingRecords) return;
+                setMergeDialogState(null);
+              }}
+            >
+              <DialogContent className="max-h-[90vh] max-w-3xl overflow-hidden">
+                <DialogHeader>
+                  <DialogTitle>Merge / De-duplicate Contacts</DialogTitle>
+                  <DialogDescription>
+                    Choose a master contact, pick field sources, then merge updates from duplicate
+                    contacts. Exact same action on the same day is kept once.
+                  </DialogDescription>
+                </DialogHeader>
+                {mergeDialogState ? (
+                  <div className="space-y-4">
+                    <div className="grid gap-2">
+                      <p className="text-xs font-medium">Master contact</p>
+                      <Select
+                        value={mergeDialogState.masterRecordId}
+                        onValueChange={(value) => {
+                          setMergeDialogState((prev) => {
+                            if (!prev) return prev;
+                            const nextFieldSourceByKey = MERGE_FIELD_CONFIG.reduce(
+                              (acc, field) => {
+                                acc[field.key] = value;
+                                return acc;
+                              },
+                              {} as Record<MergeFieldKey, string>,
+                            );
+                            return {
+                              ...prev,
+                              masterRecordId: value,
+                              fieldSourceByKey: nextFieldSourceByKey,
+                            };
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select master contact" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mergeDialogState.records.map((record) => {
+                            const targetRecordId = getMergeTargetRecordId(record);
+                            return (
+                              <SelectItem key={targetRecordId} value={targetRecordId}>
+                                {record.name} · {record.email ?? "No email"}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="rounded-md border bg-amber-50/40 p-3 text-xs text-amber-900">
+                      Source contacts will be deleted after merge. Name and email stay from the selected
+                      master contact.
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium">Choose source record for each mergeable field</p>
+                      <div className="max-h-[42vh] space-y-3 overflow-y-auto rounded-md border p-3">
+                        {MERGE_FIELD_CONFIG.map((field) => (
+                          <div
+                            key={field.key}
+                            className="grid gap-2 rounded-md border p-2 md:grid-cols-[220px_1fr]"
+                          >
+                            <div>
+                              <p className="text-sm font-medium">{field.label}</p>
+                            </div>
+                            <Select
+                              value={mergeDialogState.fieldSourceByKey[field.key]}
+                              onValueChange={(value) => {
+                                setMergeDialogState((prev) => {
+                                  if (!prev) return prev;
+                                  return {
+                                    ...prev,
+                                    fieldSourceByKey: {
+                                      ...prev.fieldSourceByKey,
+                                      [field.key]: value,
+                                    },
+                                  };
+                                });
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {mergeDialogState.records.map((record) => {
+                                  const targetRecordId = getMergeTargetRecordId(record);
+                                  return (
+                                    <SelectItem key={targetRecordId} value={targetRecordId}>
+                                      {record.name} · {getMergeFieldDisplayValue(record, field.key)}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setMergeDialogState(null)}
+                    disabled={isMergingRecords}
+                  >
+                    Cancel
+                  </Button>
+                  <Button onClick={() => void handleConfirmMergeRecords()} disabled={isMergingRecords}>
+                    {isMergingRecords ? "Merging..." : "Merge Contacts"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!kanbanMoveConfirmation}
+              onOpenChange={(open) => {
+                if (open) return;
+                if (isExecutingKanbanMove) return;
+                setKanbanMoveConfirmation(null);
+              }}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Confirm Move</DialogTitle>
+                  <DialogDescription>
+                    {kanbanMoveConfirmation
+                      ? `Move "${kanbanMoveConfirmation.record.name}" ${kanbanMoveConfirmation.direction === "forward" ? "forward to" : "back to"} "${kanbanMoveConfirmation.toStepIndex === 0
+                        ? "Not Started"
+                        : approvalSteps[kanbanMoveConfirmation.toStepIndex - 1]?.title ?? `Step ${kanbanMoveConfirmation.toStepIndex}`
+                      }"?`
+                      : "Confirm this move."}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setKanbanMoveConfirmation(null)}
+                    disabled={isExecutingKanbanMove}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      if (!kanbanMoveConfirmation) return;
+                      void handleKanbanStepMove(kanbanMoveConfirmation);
+                    }}
+                    disabled={isExecutingKanbanMove}
+                  >
+                    {isExecutingKanbanMove ? "Moving..." : "Confirm"}
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!resumePreview}
+              onOpenChange={(open) => {
+                if (!open) setResumePreview(null);
+              }}
+            >
+              <DialogContent className="max-h-[85vh] max-w-4xl overflow-hidden">
+                <DialogHeader>
+                  <DialogTitle>
+                    Resume · {resumePreview?.recordName ?? "Contact"}
+                  </DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Resume preview dialog with open in new tab fallback.
+                  </DialogDescription>
+                </DialogHeader>
+                {resumePreview ? (
+                  renderResumePreviewContent(resumePreview.fileName, resumePreview.href)
+                ) : null}
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={!!sendEmailRecord}
+              onOpenChange={(open) => {
+                if (!open) closeSendEmailDialog();
+              }}
+            >
+              <DialogContent className="max-w-4xl max-h-[85vh] overflow-scroll border-slate-200 bg-[#f8faff]">
+                <DialogHeader>
+                  <DialogTitle>
+                    {sendEmailProgressUpdate?.updateType === "followup"
+                      ? "Send Questionnaire Email"
+                      : sendEmailProgressUpdate?.updateType === "welcome_email"
+                        ? "Send Welcome Email"
+                        : "Send Email"}
+                  </DialogTitle>
+                </DialogHeader>
+                {sendEmailRecord ? (
+                  <div className="space-y-4">
+                    <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                      Recipient:{" "}
+                      <span className="font-medium text-slate-900">
+                        {sendEmailRecord.name}
+                        {" · "}
+                        {sendEmailRecord.email ?? "No email"}
+                      </span>
+                    </div>
+                    {sendEmailStep === 1 ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">
+                          Step 1: Choose an email template
+                        </p>
+                        <div className="max-h-[420px] overflow-y-auto rounded-md border border-blue-100 bg-[#f3f7ff] p-2">
+                          <div className="grid gap-2 md:grid-cols-2">
+                            {emailTemplates.map((template) => {
+                              const isActive = template.id === sendEmailTemplateId;
+                              const resolvedTemplateName = interpolateTemplateVariables(
+                                template.name,
+                                sendEmailTemplateVariables,
+                              );
+                              const resolvedRenderedHtml = interpolateTemplateVariables(
+                                template.renderedHtml,
+                                sendEmailTemplateVariables,
+                              );
+                              const resolvedContent = interpolateTemplateVariables(
+                                template.content,
+                                sendEmailTemplateVariables,
+                              );
+                              const hasRenderedHtml = resolvedRenderedHtml.trim().length > 0;
+                              const hasPlainContent = resolvedContent.trim().length > 0;
+                              return (
+                                <button
+                                  key={template.id}
+                                  type="button"
+                                  className={[
+                                    "w-full rounded-md border p-3 text-left text-sm shadow-sm transition-all",
+                                    isActive
+                                      ? "border-blue-400 bg-blue-50 ring-2 ring-blue-200"
+                                      : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60",
+                                  ].join(" ")}
+                                  onClick={() => {
+                                    setSendEmailTemplateId(template.id);
+                                  }}
+                                >
+                                  <p className="line-clamp-1 font-medium text-slate-900">
+                                    {resolvedTemplateName}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    Updated {formatUpdatedAt(template.updatedAt)}
+                                  </p>
+                                  <div className="mt-2 h-28 overflow-hidden rounded-md border border-slate-200 bg-[#fcfdff] p-2">
+                                    {hasRenderedHtml ? (
+                                      <div
+                                        className="prose prose-sm max-w-none scale-[0.92] origin-top-left **:wrap-break-word"
+                                        style={{ whiteSpace: "pre-wrap" }}
+                                        dangerouslySetInnerHTML={{
+                                          __html: resolvedRenderedHtml,
+                                        }}
+                                      />
+                                    ) : hasPlainContent ? (
+                                      <p className="line-clamp-6 whitespace-pre-wrap text-xs leading-snug text-slate-600">
+                                        {resolvedContent}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-slate-500">No preview content.</p>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {emailTemplates.length === 0 && !emailTemplatesQuery.isLoading ? (
+                            <p className="text-muted-foreground text-sm">
+                              No templates found.
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="outline" onClick={closeSendEmailDialog}>
+                            Cancel
+                          </Button>
+                          <Button
+                            onClick={() => setSendEmailStep(2)}
+                            disabled={!sendEmailTemplate}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {sendEmailStep === 2 ? (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium">Step 2: Preview template</p>
+                        <div className="rounded-md border p-4">
+                          {sendEmailTemplate ? (
+                            <>
+                              <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                              <p className="mt-1 text-base font-medium">
+                                {sendEmailResolvedTemplate?.subject ?? sendEmailTemplate.name}
+                              </p>
+                              <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                                Email Preview (Lead View)
+                              </p>
+                              <div className="bg-card mt-2 rounded-md border p-4">
+                                {(sendEmailResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                                  <p className="text-muted-foreground text-sm">
+                                    No content found in template.
+                                  </p>
+                                ) : (sendEmailResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                                  <div
+                                    className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                                    style={{ whiteSpace: "pre-wrap" }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: sendEmailResolvedTemplate?.html ?? "",
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                                    {sendEmailResolvedTemplate?.text ?? ""}
+                                  </div>
+                                )}
+                              </div>
+                            </>
+                          ) : emailTemplatesQuery.isLoading ? (
+                            <p className="text-muted-foreground text-sm">Loading templates…</p>
+                          ) : (
+                            <p className="text-muted-foreground text-sm">
+                              No templates found. Choose another action or add templates in settings.
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <Button variant="outline" onClick={() => setSendEmailStep(1)}>
+                            Back
+                          </Button>
+                          <Button
+                            onClick={() => setSendEmailStep(3)}
+                            disabled={!sendEmailTemplate}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {sendEmailStep === 3 && sendEmailTemplate ? (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium">Step 3: Confirm send</p>
+                        <div className="space-y-3 rounded-md border p-4 text-sm">
+                          <p>Are you sure you want to send this email?</p>
+                          <div className="space-y-1">
+                            <p className="text-xs font-semibold tracking-wide uppercase">
+                              From mailbox
+                            </p>
+                            {outlookTeamMailboxesQuery.isLoading ||
+                              outlookTeamMailboxesQuery.isFetching ? (
+                              <p className="text-muted-foreground text-xs">
+                                Loading mailbox options…
+                              </p>
+                            ) : sendEmailMailboxOptions.length === 0 ? (
+                              <p className="text-muted-foreground text-xs">
+                                No team sender mailboxes are configured for this workspace.
+                              </p>
+                            ) : (
+                              <select
+                                value={sendEmailOwnerUserId}
+                                onChange={(event) => {
+                                  setSendEmailOwnerUserId(event.target.value);
+                                }}
+                                className="bg-background border-input h-9 w-full rounded-md border px-2 text-xs shadow-sm"
+                                disabled={
+                                  isSendingEmail ||
+                                  outlookTeamMailboxesQuery.isLoading ||
+                                  outlookTeamMailboxesQuery.isFetching
+                                }
+                              >
+                                <option value="">Select sender mailbox</option>
+                                {sendEmailMailboxOptions.map((mailbox) => {
+                                  const displayName =
+                                    mailbox.name?.trim() ||
+                                    mailbox.mailboxDisplayName?.trim() ||
+                                    mailbox.userEmail?.trim() ||
+                                    mailbox.mondayUserId;
+                                  const mailboxEmail =
+                                    mailbox.mailboxEmail?.trim() ||
+                                    mailbox.userEmail?.trim() ||
+                                    "no mailbox email";
+                                  return (
+                                    <option
+                                      key={mailbox.mondayUserId}
+                                      value={mailbox.mondayUserId}
+                                    >
+                                      {`${displayName} • ${mailboxEmail} • ${mailbox.connected ? "connected" : "not connected"}`}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            )}
+                            {selectedSendEmailMailbox ? (
+                              <p
+                                className={`text-xs ${selectedSendEmailMailbox.connected ? "text-emerald-700" : "text-rose-600"}`}
+                              >
+                                {selectedSendEmailMailbox.connected
+                                  ? "Selected mailbox is connected and ready."
+                                  : "Selected mailbox is not connected. Connect Outlook before sending."}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <Button variant="outline" onClick={() => setSendEmailStep(2)}>
+                            Back
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              void handleConfirmSendEmail();
+                            }}
+                            disabled={!sendEmailCanSubmit}
+                          >
+                            {isSendingEmail ? "Sending..." : "Send Email"}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </DialogContent>
+            </Dialog>
+          </div>
+          <HelpDeskDialog
+            open={helpDeskOpen}
+            onOpenChange={(v) => {
+              setHelpDeskOpen(v);
+              if (!v) setHelpDeskLinkedContact(null);
+            }}
+            linkedContact={helpDeskLinkedContact}
+            sessionToken={sessionToken}
+            currentUserId={forcedOwnerId || identity?.userId || null}
+          />
+
+          {!staticMode && recordsQuery.hasNextPage && shouldAutoLoadMore ? (
+            <div ref={loadMoreAnchorRef} className="h-2" />
+          ) : null}
+        </div>
+      </UserSettingsProvider>
     </GuidedTourProvider>
   );
 }
