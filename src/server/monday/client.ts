@@ -82,6 +82,7 @@ export interface MondayRecordEditOptions {
   hiredWithContractor: string[];
   retentionPeriod: string[];
   tags: string[];
+  status: string[];
 }
 
 export interface MondayApprovalStep {
@@ -2131,6 +2132,11 @@ export const getMondayUserProfile = async (userId: string) => {
   } satisfies MondayUserProfile;
 };
 
+export const getMondayUsersByIds = async (ids: string[]) => {
+  const usersById = await resolveMondayUsersByIds(ids);
+  return Array.from(usersById.values());
+};
+
 const parseDropdownLabelsFromSettings = (settingsStr: string | null | undefined) => {
   if (!settingsStr || settingsStr.trim().length === 0) return [];
   try {
@@ -2192,6 +2198,7 @@ export const getMondayRecordEditOptions = async () => {
       hiredWithContractor: [],
       retentionPeriod: [],
       tags: [],
+      status: [],
     } satisfies MondayRecordEditOptions;
   }
 
@@ -2219,6 +2226,7 @@ export const getMondayRecordEditOptions = async () => {
     boardId: mondayBoard.boardId,
   });
   const columns = data.boards?.[0]?.columns ?? [];
+  const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
   const getLabelsForColumn = (columnId: string) => {
     const column = columns.find((entry) => entry.id === columnId);
     return parseDropdownLabelsFromSettings(column?.settings_str);
@@ -2229,6 +2237,9 @@ export const getMondayRecordEditOptions = async () => {
     hiredWithContractor: getLabelsForColumn(RETENTION_HIRED_WITH_COLUMN_ID),
     retentionPeriod: getLabelsForColumn(RETENTION_PERIOD_COLUMN_ID),
     tags: getLabelsForColumn(TAGS_COLUMN_ID),
+    status: boardColumnIds.statusColumnId
+      ? getLabelsForColumn(boardColumnIds.statusColumnId)
+      : [],
   } satisfies MondayRecordEditOptions;
 };
 

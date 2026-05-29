@@ -1034,6 +1034,44 @@ export function MondayBoardView({
     staleTime: 60_000,
   });
 
+  const scopedTeamOwnerIds = useMemo(
+    () =>
+      uniqueSorted([
+        ...platformSettingsNormalized.adminUserIds,
+        ...platformSettingsNormalized.employeeUserIds,
+      ]),
+    [platformSettingsNormalized.adminUserIds, platformSettingsNormalized.employeeUserIds],
+  );
+
+  const ownerDirectoryQuery = useQuery({
+    queryKey: ["monday-users-by-ids", sessionToken, scopedTeamOwnerIds.join(",")],
+    enabled: !!sessionToken && !staticMode && scopedTeamOwnerIds.length > 0,
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("ids", scopedTeamOwnerIds.join(","));
+      const response = await fetch(`/api/monday/users?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      });
+      const data = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        users?: Array<{
+          id: string;
+          name: string | null;
+          email: string | null;
+          photoThumb: string | null;
+        }>;
+      };
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load Monday users");
+      }
+      return data.users ?? [];
+    },
+    staleTime: 60_000,
+  });
+
   const editOptionsQuery = useQuery({
     queryKey: ["monday-record-edit-options", sessionToken],
     enabled: !!sessionToken && !staticMode,
@@ -2717,25 +2755,53 @@ export function MondayBoardView({
     return map;
   }, [records]);
 
+  const ownerDirectoryProfileById = useMemo(() => {
+    const map = new Map<
+      string,
+      { id: string; name: string | null; photoThumb: string | null }
+    >();
+    for (const owner of ownerDirectoryQuery.data ?? []) {
+      if (!owner.id) continue;
+      map.set(owner.id, {
+        id: owner.id,
+        name: owner.name,
+        photoThumb: owner.photoThumb,
+      });
+    }
+    return map;
+  }, [ownerDirectoryQuery.data]);
+
   const ownerOptions = useMemo(() => {
+    const ownerIdsFromSettings = uniqueSorted([
+      ...platformSettingsNormalized.adminUserIds,
+      ...platformSettingsNormalized.employeeUserIds,
+    ]);
+    const ownerIdsFromRecords = uniqueSorted(
+      records.flatMap((record) =>
+        (Array.isArray(record.ownerIds) ? record.ownerIds : [])
+          .map((ownerId) => ownerId.trim())
+          .filter((ownerId) => ownerId.length > 0),
+      ),
+    );
+    const ownerIds = uniqueSorted([...ownerIdsFromSettings, ...ownerIdsFromRecords]);
     return Array.from(
       new Map(
-        records
-          .flatMap((record) => {
-            const ids = Array.isArray(record.ownerIds) ? record.ownerIds : [];
-            return ids.map((id) => ({
+        ownerIds
+          .map((id) => {
+            const ownerProfile =
+              ownerDirectoryProfileById.get(id) ?? ownerProfileById.get(id);
+            const ownerName = ownerProfile?.name?.trim() ?? "";
+            return {
               value: id,
-              label:
-                record.peopleText && record.peopleText.trim().length > 0
-                  ? `${record.peopleText} (${id})`
-                  : `User ${id}`,
-            }));
+              label: ownerName ? `${ownerName} (${id})` : `User ${id}`,
+            };
           })
           .map((entry) => [entry.value, entry.label] as const),
       ),
     )
       .map(([value, label]) => {
-        const ownerProfile = ownerProfileById.get(value);
+        const ownerProfile =
+          ownerDirectoryProfileById.get(value) ?? ownerProfileById.get(value);
         return {
           value,
           label,
@@ -2744,7 +2810,13 @@ export function MondayBoardView({
         };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [ownerProfileById, records]);
+  }, [
+    ownerDirectoryProfileById,
+    ownerProfileById,
+    platformSettingsNormalized.adminUserIds,
+    platformSettingsNormalized.employeeUserIds,
+    records,
+  ]);
   const addContactOwnerOptions = useMemo(() => {
     const base = ownerOptions.map((option) => ({ ...option }));
     if (identity?.userId) {
@@ -2833,11 +2905,15 @@ export function MondayBoardView({
   }, [records]);
 
   const statusOptions = useMemo(() => {
-    return uniqueSorted(records.map((record) => record.statusText)).map((value) => ({
+    const combinedStatusValues = uniqueSorted([
+      ...records.map((record) => record.statusText),
+      ...(editOptionsQuery.data?.status ?? []),
+    ]);
+    return combinedStatusValues.map((value) => ({
       label: value,
       value,
     }));
-  }, [records]);
+  }, [editOptionsQuery.data?.status, records]);
   const activeAdvancedFilterConditions = useMemo(
     () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
     [advancedFilterConditions],
