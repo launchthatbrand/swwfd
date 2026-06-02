@@ -78,7 +78,8 @@ export default async function RootLayout(props: {
     if (
       firstSegment === "sign-in" ||
       firstSegment === "sign-up" ||
-      firstSegment === "checkout"
+      firstSegment === "checkout" ||
+      firstSegment === "forms"
     ) {
       showHeader = false;
       showSidebar = false;

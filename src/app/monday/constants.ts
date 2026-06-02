@@ -39,11 +39,6 @@ export const CONTACT_UPDATE_ACTION_BUTTONS: {
       defaultBody: "Questionnaire Sent",
     },
     {
-      type: "questionnaire",
-      label: "Questionnaire Sent",
-      defaultBody: "Questionnaire Sent",
-    },
-    {
       type: "resume",
       label: "Resume Submitted",
       defaultBody: "Resume Submitted",
