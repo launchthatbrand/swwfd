@@ -2,6 +2,7 @@
 
 import { CircleHelp } from "lucide-react";
 import { Badge } from "@launchthatapp/ui/badge";
+import { Checkbox } from "@launchthatapp/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import type { ApprovalStepConfig, MondayRecord } from "../types";
 import {
@@ -19,11 +20,17 @@ export const ContactCard = ({
   approvalSteps,
   onClick,
   onHelpDesk,
+  selectable,
+  selected,
+  onToggleSelect,
 }: {
   record: MondayRecord;
   approvalSteps: ApprovalStepConfig[];
   onClick: (record: MondayRecord) => void;
   onHelpDesk?: (record: MondayRecord) => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (record: MondayRecord) => void;
 }) => {
   const addressDisplay = getAddressDisplayParts(record.address);
   const owner = record.ownerProfiles[0];
@@ -31,13 +38,37 @@ export const ContactCard = ({
   const lastTouchpointRecency = getLastTouchpointRecency(record.lastTouchpointAt ?? null);
   const lastTouchpointParts = formatDateTimeParts(lastTouchpointRecency.parsedAt);
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       data-record-id={record.id}
       onClick={() => onClick(record)}
-      className="hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md"
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onClick(record);
+        }
+      }}
+      className={`hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md ${selected ? "ring-primary border-primary/60 ring-2" : ""}`}
     >
       <div className="flex items-start gap-3">
+        {selectable ? (
+          <div
+            className="mr-1 mt-0.5"
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <Checkbox
+              checked={!!selected}
+              onCheckedChange={() => onToggleSelect?.(record)}
+              aria-label={`Select ${record.name}`}
+            />
+          </div>
+        ) : null}
         <Avatar className="size-10 shrink-0">
           <AvatarFallback className="text-sm font-semibold">
             {getNameInitials(record.name)}
@@ -130,6 +161,6 @@ export const ContactCard = ({
           </span>
         ) : null}
       </div>
-    </button>
+    </div>
   );
 };

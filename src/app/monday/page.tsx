@@ -238,6 +238,22 @@ interface CommunicationQuickActionDefinition {
   method: CommunicationQuickActionMethod;
   icon: typeof Mail;
 }
+interface BulkCommunicationQuickActionState {
+  action: CommunicationQuickActionDefinition;
+  selectedItems: MondayRecord[];
+  clearSelection: () => void;
+}
+interface BulkUniqueCommunicationSession {
+  action: CommunicationQuickActionDefinition;
+  targets: Array<{ targetRecordId: string; record: MondayRecord }>;
+  clearSelection: () => void;
+}
+
+const toTimeOnly = (value: Date) => {
+  const hour = String(value.getHours()).padStart(2, "0");
+  const minute = String(value.getMinutes()).padStart(2, "0");
+  return `${hour}:${minute}`;
+};
 const COMMUNICATION_QUICK_ACTIONS: CommunicationQuickActionDefinition[] = [
   {
     id: "email",
@@ -438,6 +454,36 @@ export function MondayBoardView({
   const [isCreatingContactUpdate, setIsCreatingContactUpdate] = useState(false);
   const [communicationQuickAction, setCommunicationQuickAction] =
     useState<CommunicationQuickActionDefinition | null>(null);
+  const [bulkCommunicationModePrompt, setBulkCommunicationModePrompt] =
+    useState<BulkCommunicationQuickActionState | null>(null);
+  const [bulkCommunicationQuickAction, setBulkCommunicationQuickAction] =
+    useState<BulkCommunicationQuickActionState | null>(null);
+  const [isCreatingBulkCommunicationUpdate, setIsCreatingBulkCommunicationUpdate] = useState(false);
+  const [bulkUniqueCommunicationSession, setBulkUniqueCommunicationSession] =
+    useState<BulkUniqueCommunicationSession | null>(null);
+  const [bulkUniqueCommunicationIndex, setBulkUniqueCommunicationIndex] = useState(0);
+  const [bulkUniqueCommunicationSubmittedTargetIds, setBulkUniqueCommunicationSubmittedTargetIds] =
+    useState<Set<string>>(() => new Set());
+  const bulkUniqueDraftValuesByTargetIdRef = useRef<
+    Map<
+      string,
+      {
+        body: string;
+        methodOfCommunication: CommunicationQuickActionMethod;
+        date: string;
+        time: string;
+      }
+    >
+  >(new Map());
+  const [bulkUniqueCommunicationBody, setBulkUniqueCommunicationBody] = useState("");
+  const [bulkUniqueCommunicationMethod, setBulkUniqueCommunicationMethod] =
+    useState<CommunicationQuickActionMethod>("Email");
+  const [bulkUniqueCommunicationDate, setBulkUniqueCommunicationDate] = useState(
+    toDateOnly(new Date()),
+  );
+  const [bulkUniqueCommunicationTime, setBulkUniqueCommunicationTime] = useState(
+    toTimeOnly(new Date()),
+  );
   const [contactDialogTab, setContactDialogTab] = useState("updates");
   const [referringJobId, setReferringJobId] = useState<string | null>(null);
   const [contactDialogSelectedResumeKey, setContactDialogSelectedResumeKey] = useState<string | null>(null);
@@ -468,6 +514,9 @@ export function MondayBoardView({
   const [questionnaireDialogRecords, setQuestionnaireDialogRecords] = useState<
     MondayRecord[]
   >([]);
+  const [crossViewSelectedRecordIds, setCrossViewSelectedRecordIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [bulkQuestionnaireEmailRecords, setBulkQuestionnaireEmailRecords] = useState<
     MondayRecord[]
   >([]);
@@ -3131,6 +3180,63 @@ export function MondayBoardView({
       return compareResult * directionFactor;
     });
   }, [filteredRecords, gridSort.direction, gridSort.field, isTouchScopedView, userScopedDisplayMode]);
+  const selectedCrossViewRecords = useMemo(
+    () => filteredRecords.filter((record) => crossViewSelectedRecordIds.has(record.id)),
+    [crossViewSelectedRecordIds, filteredRecords],
+  );
+  const clearCrossViewSelection = useCallback(() => {
+    setCrossViewSelectedRecordIds(new Set());
+  }, []);
+  useEffect(() => {
+    setCrossViewSelectedRecordIds((prev) => {
+      const next = new Set(
+        [...prev].filter((recordId) => filteredRecords.some((record) => record.id === recordId)),
+      );
+      if (next.size === prev.size) return prev;
+      return next;
+    });
+  }, [filteredRecords]);
+  useEffect(() => {
+    setCrossViewSelectedRecordIds(new Set());
+  }, [userScopedDisplayMode]);
+  const toggleGridRecordSelection = useCallback((record: MondayRecord) => {
+    setCrossViewSelectedRecordIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(record.id)) {
+        next.delete(record.id);
+      } else {
+        next.add(record.id);
+      }
+      return next;
+    });
+  }, []);
+  const toggleKanbanRecordSelection = useCallback(
+    (record: MondayRecord) => {
+      setCrossViewSelectedRecordIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(record.id)) {
+          next.delete(record.id);
+          return next;
+        }
+        const targetStepIndex = getRecordStepIndexFromApprovalSteps(record, approvalSteps);
+        const selectedRecords = filteredRecords.filter((entry) => next.has(entry.id));
+        const hasMixedSteps = selectedRecords.some(
+          (entry) => getRecordStepIndexFromApprovalSteps(entry, approvalSteps) !== targetStepIndex,
+        );
+        if (hasMixedSteps) {
+          toast("Kanban bulk selection must stay within the same column");
+          return prev;
+        }
+        next.add(record.id);
+        return next;
+      });
+    },
+    [approvalSteps, filteredRecords],
+  );
+  const selectedKanbanStepIndex = useMemo(() => {
+    if (selectedCrossViewRecords.length === 0) return null;
+    return getRecordStepIndexFromApprovalSteps(selectedCrossViewRecords[0], approvalSteps);
+  }, [approvalSteps, selectedCrossViewRecords]);
   const isHydratingGlobalRecords =
     !staticMode && isGlobalDateScope && !!recordsQuery.hasNextPage;
   const filteredRecordCountLabel = isHydratingGlobalRecords
@@ -5052,6 +5158,313 @@ export function MondayBoardView({
     });
     setCommunicationQuickAction(null);
   };
+  const resolveBulkCommunicationTargets = useCallback((selectedItems: MondayRecord[]) => {
+    const targetsByRecordId = new Map<string, MondayRecord>();
+    for (const record of selectedItems) {
+      const targetRecordId = resolveContactUpdateTargetRecordId(record);
+      if (!targetRecordId.trim()) continue;
+      if (!targetsByRecordId.has(targetRecordId)) {
+        targetsByRecordId.set(targetRecordId, record);
+      }
+    }
+    return Array.from(targetsByRecordId.entries()).map(([targetRecordId, record]) => ({
+      targetRecordId,
+      record,
+    }));
+  }, []);
+  const createCommunicationUpdateForTarget = useCallback(
+    async (args: {
+      targetRecordId: string;
+      values: {
+        body: string;
+        methodOfCommunication: CommunicationQuickActionMethod;
+        date: string;
+        time: string;
+      };
+    }) => {
+      const { targetRecordId, values } = args;
+      const dateOnly = values.date.trim();
+      const timeOnly = values.time.trim();
+      const dateTime =
+        dateOnly && timeOnly ? `${dateOnly}T${timeOnly}:00` : undefined;
+
+      let data: MondayCreateRecordUpdateResponse;
+      if (canCreateUpdatesAsLoggedInMondayUser) {
+        const update = await createMondayRecordUpdateAsContextUser({
+          itemId: targetRecordId,
+          body: values.body,
+          updateType: "general",
+          date: dateOnly || undefined,
+          dateTime,
+          methodOfCommunication: values.methodOfCommunication,
+        });
+        data = { ok: true, update };
+      } else {
+        const response = await fetch(
+          `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-monday-session-token": sessionToken ?? "",
+            },
+            body: JSON.stringify({
+              body: values.body,
+              updateType: "general",
+              date: dateOnly || undefined,
+              dateTime,
+              methodOfCommunication: values.methodOfCommunication,
+            }),
+          },
+        );
+        data = (await response.json()) as MondayCreateRecordUpdateResponse;
+        if (!response.ok || !data.ok) {
+          throw new Error(data.error ?? "Failed to post Monday update");
+        }
+      }
+      return data;
+    },
+    [canCreateUpdatesAsLoggedInMondayUser, createMondayRecordUpdateAsContextUser, sessionToken],
+  );
+  const handleSubmitBulkCommunicationQuickAction = async (values: {
+    body: string;
+    methodOfCommunication: CommunicationQuickActionMethod;
+    date: string;
+    time: string;
+  }) => {
+    if (staticMode) {
+      toast.error("Bulk updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session token");
+      return;
+    }
+    if (!bulkCommunicationQuickAction) {
+      toast.error("Missing bulk communication context");
+      return;
+    }
+    const selectedItems = bulkCommunicationQuickAction.selectedItems;
+    if (selectedItems.length === 0) {
+      toast.error("Select at least one record");
+      return;
+    }
+    const targets = resolveBulkCommunicationTargets(selectedItems);
+    if (targets.length === 0) {
+      toast.error("No valid contact records in selection");
+      return;
+    }
+
+    setIsCreatingBulkCommunicationUpdate(true);
+    try {
+      const results = await Promise.all(
+        targets.map(async ({ targetRecordId }) => {
+          try {
+            const data = await createCommunicationUpdateForTarget({ targetRecordId, values });
+            return { ok: true, warning: data.update?.warning ?? null, error: "" };
+          } catch (error) {
+            return {
+              ok: false,
+              warning: null,
+              error: error instanceof Error ? error.message : "Failed to post Monday update",
+            };
+          }
+        }),
+      );
+
+      const successCount = results.filter((result) => result.ok).length;
+      const warningCount = results.filter((result) => result.warning).length;
+      const failed = results.filter((result) => !result.ok);
+      const failedCount = failed.length;
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      bulkCommunicationQuickAction.clearSelection();
+      setBulkCommunicationQuickAction(null);
+
+      if (successCount > 0) {
+        toast.success(
+          `Applied "${bulkCommunicationQuickAction.action.label}" to ${successCount} record${successCount === 1 ? "" : "s"}.`,
+        );
+      }
+      if (warningCount > 0) {
+        toast.error(
+          `${warningCount} record${warningCount === 1 ? "" : "s"} had onboarding sync warnings.`,
+        );
+      }
+      if (failedCount > 0) {
+        const firstError = failed[0]?.error ?? "Unknown error";
+        toast.error(
+          `Failed to apply update to ${failedCount} record${failedCount === 1 ? "" : "s"}: ${firstError}`,
+        );
+      }
+    } finally {
+      setIsCreatingBulkCommunicationUpdate(false);
+    }
+  };
+  const openBulkCommunicationModePrompt = useCallback(
+    (payload: BulkCommunicationQuickActionState) => {
+      setBulkCommunicationModePrompt(payload);
+    },
+    [],
+  );
+  const openBulkUniqueCommunicationSession = useCallback(
+    (payload: BulkCommunicationQuickActionState) => {
+      const targets = resolveBulkCommunicationTargets(payload.selectedItems);
+      if (targets.length === 0) {
+        toast.error("No valid contact records in selection");
+        return;
+      }
+      const now = new Date();
+      setBulkUniqueCommunicationSession({
+        action: payload.action,
+        targets,
+        clearSelection: payload.clearSelection,
+      });
+      setBulkUniqueCommunicationIndex(0);
+      setBulkUniqueCommunicationSubmittedTargetIds(new Set());
+      bulkUniqueDraftValuesByTargetIdRef.current = new Map();
+      setBulkUniqueCommunicationBody(payload.action.defaultBody);
+      setBulkUniqueCommunicationMethod(payload.action.method);
+      setBulkUniqueCommunicationDate(toDateOnly(now));
+      setBulkUniqueCommunicationTime(toTimeOnly(now));
+    },
+    [resolveBulkCommunicationTargets],
+  );
+  const closeBulkUniqueCommunicationSession = useCallback(() => {
+    if (isCreatingBulkCommunicationUpdate) return;
+    setBulkUniqueCommunicationSession(null);
+    setBulkUniqueCommunicationIndex(0);
+    setBulkUniqueCommunicationSubmittedTargetIds(new Set());
+    bulkUniqueDraftValuesByTargetIdRef.current = new Map();
+  }, [isCreatingBulkCommunicationUpdate]);
+  const bulkUniqueActiveTarget = bulkUniqueCommunicationSession?.targets[bulkUniqueCommunicationIndex] ?? null;
+  const persistBulkUniqueDraft = useCallback(() => {
+    if (!bulkUniqueActiveTarget) return;
+    bulkUniqueDraftValuesByTargetIdRef.current.set(bulkUniqueActiveTarget.targetRecordId, {
+      body: bulkUniqueCommunicationBody,
+      methodOfCommunication: bulkUniqueCommunicationMethod,
+      date: bulkUniqueCommunicationDate,
+      time: bulkUniqueCommunicationTime,
+    });
+  }, [
+    bulkUniqueActiveTarget,
+    bulkUniqueCommunicationBody,
+    bulkUniqueCommunicationDate,
+    bulkUniqueCommunicationMethod,
+    bulkUniqueCommunicationTime,
+  ]);
+  const loadBulkUniqueDraftForIndex = useCallback(
+    (nextIndex: number) => {
+      const target = bulkUniqueCommunicationSession?.targets[nextIndex];
+      if (!target) return;
+      const stored = bulkUniqueDraftValuesByTargetIdRef.current.get(target.targetRecordId);
+      if (stored) {
+        setBulkUniqueCommunicationBody(stored.body);
+        setBulkUniqueCommunicationMethod(stored.methodOfCommunication);
+        setBulkUniqueCommunicationDate(stored.date);
+        setBulkUniqueCommunicationTime(stored.time);
+        return;
+      }
+      const now = new Date();
+      setBulkUniqueCommunicationBody(bulkUniqueCommunicationSession?.action.defaultBody ?? "");
+      setBulkUniqueCommunicationMethod(bulkUniqueCommunicationSession?.action.method ?? "Email");
+      setBulkUniqueCommunicationDate(toDateOnly(now));
+      setBulkUniqueCommunicationTime(toTimeOnly(now));
+    },
+    [bulkUniqueCommunicationSession],
+  );
+  const navigateBulkUniqueCommunication = useCallback(
+    (nextIndex: number) => {
+      if (!bulkUniqueCommunicationSession) return;
+      if (nextIndex < 0 || nextIndex >= bulkUniqueCommunicationSession.targets.length) return;
+      persistBulkUniqueDraft();
+      setBulkUniqueCommunicationIndex(nextIndex);
+      loadBulkUniqueDraftForIndex(nextIndex);
+    },
+    [bulkUniqueCommunicationSession, loadBulkUniqueDraftForIndex, persistBulkUniqueDraft],
+  );
+  const submitBulkUniqueCommunicationForActiveTarget = async () => {
+    if (staticMode) {
+      toast.error("Bulk updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session token");
+      return;
+    }
+    if (!bulkUniqueCommunicationSession || !bulkUniqueActiveTarget) {
+      toast.error("Missing bulk communication context");
+      return;
+    }
+    if (!bulkUniqueCommunicationBody.trim()) {
+      toast.error("Comments are required");
+      return;
+    }
+
+    setIsCreatingBulkCommunicationUpdate(true);
+    try {
+      await createCommunicationUpdateForTarget({
+        targetRecordId: bulkUniqueActiveTarget.targetRecordId,
+        values: {
+          body: bulkUniqueCommunicationBody.trim(),
+          methodOfCommunication: bulkUniqueCommunicationMethod,
+          date: bulkUniqueCommunicationDate,
+          time: bulkUniqueCommunicationTime,
+        },
+      });
+      const nextSubmitted = new Set(bulkUniqueCommunicationSubmittedTargetIds);
+      nextSubmitted.add(bulkUniqueActiveTarget.targetRecordId);
+      setBulkUniqueCommunicationSubmittedTargetIds(nextSubmitted);
+      persistBulkUniqueDraft();
+
+      const nextIndex = bulkUniqueCommunicationSession.targets.findIndex(
+        (target, index) =>
+          index > bulkUniqueCommunicationIndex && !nextSubmitted.has(target.targetRecordId),
+      );
+      if (nextIndex >= 0) {
+        setBulkUniqueCommunicationIndex(nextIndex);
+        loadBulkUniqueDraftForIndex(nextIndex);
+        return;
+      }
+
+      const firstRemainingIndex = bulkUniqueCommunicationSession.targets.findIndex(
+        (target) => !nextSubmitted.has(target.targetRecordId),
+      );
+      if (firstRemainingIndex >= 0) {
+        setBulkUniqueCommunicationIndex(firstRemainingIndex);
+        loadBulkUniqueDraftForIndex(firstRemainingIndex);
+        return;
+      }
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+      bulkUniqueCommunicationSession.clearSelection();
+      closeBulkUniqueCommunicationSession();
+      toast.success(
+        `Applied "${bulkUniqueCommunicationSession.action.label}" to ${nextSubmitted.size} record${nextSubmitted.size === 1 ? "" : "s"}.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to post Monday update";
+      toast.error(message);
+    } finally {
+      setIsCreatingBulkCommunicationUpdate(false);
+    }
+  };
 
   const handleReferContactToJob = async (job: MondayJobListing) => {
     if (!contactHistoryDialogRecord) {
@@ -5219,6 +5632,285 @@ export function MondayBoardView({
     } finally {
       setBulkQuickActionType(null);
     }
+  };
+
+  const renderBulkActionsBar = (
+    selectedItems: MondayRecord[],
+    clearSelection: () => void,
+  ) => {
+    const eligibleByAction = new Map<string, MondayRecord[]>();
+    for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
+      const stepConfig = STEP_ACTION_CONFIG.find((s) => s.updateType === action.type);
+      if (!stepConfig) {
+        eligibleByAction.set(action.type, [...selectedItems]);
+        continue;
+      }
+      eligibleByAction.set(
+        action.type,
+        selectedItems.filter((item) => {
+          const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
+          return currentStep === stepConfig.stepIndex;
+        }),
+      );
+    }
+    const questionnaireStepIndex =
+      STEP_ACTION_CONFIG.find((s) => s.actionVariant === "questionnaire")?.stepIndex ?? -1;
+    const questionnaireEligible = selectedItems.filter((item) => {
+      const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
+      return currentStep === questionnaireStepIndex;
+    });
+    const onboardingActions = CONTACT_UPDATE_ACTION_BUTTONS.filter((action) => {
+      const eligible = eligibleByAction.get(action.type) ?? [];
+      return eligible.length === selectedItems.length && selectedItems.length > 0;
+    });
+    const showQuestionnaireOnboardingAction =
+      questionnaireEligible.length === selectedItems.length && selectedItems.length > 0;
+    const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
+    for (const item of selectedItems) {
+      const targetRecordId = getMergeTargetRecordId(item);
+      if (!targetRecordId) continue;
+      if (!mergeCandidatesByTargetId.has(targetRecordId)) {
+        mergeCandidatesByTargetId.set(targetRecordId, item);
+      }
+    }
+    const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
+    const canMergeSelection =
+      mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
+    const bulkSyncProgressPercent =
+      latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
+        ? Math.round(
+          (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
+            100,
+        )
+        : 0;
+
+    return (
+      <div className="flex w-full flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-muted-foreground text-xs">{selectedItems.length} selected</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="justify-start rounded-md"
+              disabled={
+                !!bulkQuickActionType || isCreatingBulkCommunicationUpdate || isMergingRecords || !canMergeSelection
+              }
+              onClick={() => {
+                mergeClearSelectionRef.current = clearSelection;
+                openMergeDialogForRecords(mergeEligibleRecords);
+              }}
+            >
+              {isMergingRecords
+                ? "Merging..."
+                : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
+            </Button>
+            {isMondaySettingsAdmin && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="justify-start rounded-md"
+                disabled={
+                  !!bulkQuickActionType ||
+                  isCreatingBulkCommunicationUpdate ||
+                  syncingContactIds.size > 0
+                }
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      const items = [...selectedItems];
+                      const job = await startBulkSyncJob(items);
+                      clearSelection();
+                      toast.success(
+                        `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
+                      );
+                    } catch (error) {
+                      toast.error(
+                        error instanceof Error
+                          ? error.message
+                          : "Failed to start bulk sync",
+                      );
+                    }
+                  })();
+                }}
+              >
+                {syncingContactIds.has("__bulk_sync__")
+                  ? latestBulkSyncJob
+                    ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
+                    : "Syncing..."
+                  : `Sync Users (${selectedItems.length})`}
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={clearSelection}
+              disabled={!!bulkQuickActionType || isCreatingBulkCommunicationUpdate}
+            >
+              Clear
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+            Onboarding Steps
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {onboardingActions.map((action) => (
+              <Button
+                key={action.type}
+                type="button"
+                size="sm"
+                variant="secondary"
+                className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                style={boardThemeInlineStyles.actionButtonStyle}
+                disabled={!!bulkQuickActionType || isCreatingBulkCommunicationUpdate}
+                onClick={() => {
+                  bulkClearSelectionRef.current = clearSelection;
+                  setBulkQuickActionConfirmation({
+                    action,
+                    selectedItems,
+                  });
+                }}
+              >
+                {bulkQuickActionType === action.type ? "Applying..." : action.label}
+              </Button>
+            ))}
+            {showQuestionnaireOnboardingAction ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                style={boardThemeInlineStyles.actionButtonStyle}
+                disabled={!!bulkQuickActionType || isCreatingBulkCommunicationUpdate}
+                onClick={() => {
+                  openQuestionnaireDialogForRecords([...selectedItems]);
+                }}
+              >
+                {QUESTIONNAIRE_UPDATE_ACTION.label}
+              </Button>
+            ) : null}
+            {onboardingActions.length === 0 && !showQuestionnaireOnboardingAction ? (
+              <p className="text-muted-foreground text-xs">
+                No common onboarding action for this selection.
+              </p>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-1">
+          <p className="text-muted-foreground text-[10px] font-medium uppercase tracking-wide">
+            Outreach Steps
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {COMMUNICATION_QUICK_ACTIONS.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Button
+                  key={action.id}
+                  type="button"
+                  size="sm"
+                  className={`rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
+                  style={boardThemeInlineStyles.actionButtonStyle}
+                  disabled={!!bulkQuickActionType || isCreatingBulkCommunicationUpdate}
+                  onClick={() => {
+                    openBulkCommunicationModePrompt({
+                      action,
+                      selectedItems,
+                      clearSelection,
+                    });
+                  }}
+                >
+                  <Icon className="mr-1.5 h-3.5 w-3.5" />
+                  {action.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {isMondaySettingsAdmin &&
+          latestBulkSyncJob &&
+          latestBulkSyncJob.status === "running" ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+              onClick={() => {
+                void (async () => {
+                  try {
+                    await cancelBulkSyncJob(latestBulkSyncJob.jobId);
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to cancel bulk sync",
+                    );
+                  }
+                })();
+              }}
+            >
+              Cancel Bulk Sync
+            </Button>
+          ) : null}
+          {isMondaySettingsAdmin &&
+          latestBulkSyncJob &&
+          latestBulkSyncJob.status !== "running" &&
+          latestBulkSyncJob.failedContacts > 0 ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+              disabled={syncingContactIds.has("__bulk_sync__")}
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const result = await retryFailedBulkSyncJob(latestBulkSyncJob.jobId);
+                    toast.success(
+                      `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
+                    );
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : "Failed to retry failed bulk sync contacts",
+                    );
+                  }
+                })();
+              }}
+            >
+              Retry Failed ({latestBulkSyncJob.failedContacts})
+            </Button>
+          ) : null}
+        </div>
+        {isMondaySettingsAdmin && latestBulkSyncJob ? (
+          <div className="w-full rounded-md border px-2 py-1">
+            <div className="mb-1 flex items-center justify-between text-[11px]">
+              <span className="text-muted-foreground">
+                Bulk Sync {latestBulkSyncJob.status}
+              </span>
+              <span className="text-muted-foreground">
+                {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
+              </span>
+            </div>
+            <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
+              <div
+                className="bg-primary h-full transition-[width] duration-300 ease-out"
+                style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const resolveBulkQuestionnaireTemplateForRecord = useCallback(
@@ -5819,6 +6511,105 @@ export function MondayBoardView({
     } finally {
       setIsExecutingKanbanMove(false);
       setKanbanMoveConfirmation(null);
+    }
+  };
+
+  const handleKanbanBulkMoveForward = async () => {
+    if (staticMode) {
+      toast.error("Updates are unavailable in static mode");
+      return;
+    }
+    if (!sessionToken) {
+      toast.error("Missing monday session context");
+      return;
+    }
+    if (selectedCrossViewRecords.length === 0 || selectedKanbanStepIndex === null) {
+      toast.error("Select at least one record in the same column");
+      return;
+    }
+
+    const toStepIndex = selectedKanbanStepIndex + 1;
+    const stepConfig = KANBAN_STEP_CONFIG[toStepIndex - 1];
+    if (!stepConfig) {
+      toast.error("Selected records are already at the final step");
+      return;
+    }
+
+    if (stepConfig.updateType === "questionnaire") {
+      openQuestionnaireDialogForRecords(selectedCrossViewRecords);
+      clearCrossViewSelection();
+      return;
+    }
+
+    if (stepConfig.updateType) {
+      const mappedAction = CONTACT_UPDATE_ACTION_BUTTONS.find(
+        (action) => action.type === stepConfig.updateType,
+      );
+      if (mappedAction) {
+        await handleBulkQuickActionUpdates(
+          selectedCrossViewRecords,
+          clearCrossViewSelection,
+          mappedAction,
+        );
+        return;
+      }
+    }
+
+    setIsExecutingKanbanMove(true);
+    try {
+      const results = await Promise.all(
+        selectedCrossViewRecords.map(async (record) => {
+          const targetRecordId = resolveContactUpdateTargetRecordId(record);
+          if (!targetRecordId) {
+            return { ok: false, error: "Missing record id" };
+          }
+          try {
+            const response = await fetch(
+              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
+              {
+                method: "POST",
+                cache: "no-store",
+                headers: {
+                  "content-type": "application/json",
+                  "x-monday-session-token": sessionToken,
+                },
+                body: JSON.stringify({
+                  stepColumnId: stepConfig.stepColumnId,
+                  action: "done",
+                }),
+              },
+            );
+            const data = (await response.json()) as { ok?: boolean; error?: string };
+            if (!response.ok || !data.ok) {
+              throw new Error(data.error ?? "Failed to move record");
+            }
+            return { ok: true, error: "" };
+          } catch (error) {
+            return {
+              ok: false,
+              error: error instanceof Error ? error.message : "Failed to move record",
+            };
+          }
+        }),
+      );
+
+      const successCount = results.filter((result) => result.ok).length;
+      const failedCount = results.length - successCount;
+      await recordsQuery.refetch();
+      if (successCount > 0) {
+        toast.success(
+          `Moved ${successCount} record${successCount === 1 ? "" : "s"} forward`,
+        );
+      }
+      if (failedCount > 0) {
+        const firstError = results.find((result) => !result.ok)?.error ?? "Unknown error";
+        toast.error(
+          `Failed to move ${failedCount} record${failedCount === 1 ? "" : "s"}: ${firstError}`,
+        );
+      }
+      clearCrossViewSelection();
+    } finally {
+      setIsExecutingKanbanMove(false);
     }
   };
 
@@ -10594,6 +11385,205 @@ export function MondayBoardView({
               isSubmitting={isCreatingContactUpdate}
               onSubmit={handleSubmitCommunicationQuickAction}
             />
+            <Dialog
+              open={!!bulkCommunicationModePrompt}
+              onOpenChange={(open) => {
+                if (!open) setBulkCommunicationModePrompt(null);
+              }}
+            >
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Bulk Outreach Update</DialogTitle>
+                  <DialogDescription>
+                    Apply one message to all selected contacts, or write a unique message per
+                    contact.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      if (!bulkCommunicationModePrompt) return;
+                      setBulkCommunicationQuickAction(bulkCommunicationModePrompt);
+                      setBulkCommunicationModePrompt(null);
+                    }}
+                  >
+                    Same message for all
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (!bulkCommunicationModePrompt) return;
+                      openBulkUniqueCommunicationSession(bulkCommunicationModePrompt);
+                      setBulkCommunicationModePrompt(null);
+                    }}
+                  >
+                    Unique message per contact
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <CommunicationQuickActionDialog
+              open={!!bulkCommunicationQuickAction}
+              onOpenChange={(open) => {
+                if (!open) setBulkCommunicationQuickAction(null);
+              }}
+              actionLabel={bulkCommunicationQuickAction?.action.label ?? "Bulk Communication Update"}
+              defaultMethod={bulkCommunicationQuickAction?.action.method ?? "Email"}
+              isSubmitting={isCreatingBulkCommunicationUpdate}
+              onSubmit={handleSubmitBulkCommunicationQuickAction}
+            />
+            <Dialog
+              open={!!bulkUniqueCommunicationSession}
+              onOpenChange={(open) => {
+                if (!open) closeBulkUniqueCommunicationSession();
+              }}
+            >
+              <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+                <DialogHeader className="border-b bg-background pb-3">
+                  {bulkUniqueCommunicationSession && bulkUniqueActiveTarget ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7 shrink-0"
+                          disabled={bulkUniqueCommunicationIndex <= 0 || isCreatingBulkCommunicationUpdate}
+                          onClick={() => navigateBulkUniqueCommunication(bulkUniqueCommunicationIndex - 1)}
+                          title="Previous contact"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="outline"
+                          className="h-7 w-7 shrink-0"
+                          disabled={
+                            bulkUniqueCommunicationIndex >= bulkUniqueCommunicationSession.targets.length - 1 ||
+                            isCreatingBulkCommunicationUpdate
+                          }
+                          onClick={() => navigateBulkUniqueCommunication(bulkUniqueCommunicationIndex + 1)}
+                          title="Next contact"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <DialogTitle className="min-w-0 truncate">
+                          {bulkUniqueActiveTarget.record.name}
+                        </DialogTitle>
+                      </div>
+                      <DialogDescription>
+                        Contact {bulkUniqueCommunicationIndex + 1} of {bulkUniqueCommunicationSession.targets.length}
+                      </DialogDescription>
+                    </>
+                  ) : (
+                    <>
+                      <DialogTitle>
+                        {bulkUniqueCommunicationSession?.action.label ?? "Bulk Communication Update"}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Submit separate updates per contact and move through the selection.
+                      </DialogDescription>
+                    </>
+                  )}
+                </DialogHeader>
+                {bulkUniqueCommunicationSession && bulkUniqueActiveTarget ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Method</label>
+                      <Select
+                        value={bulkUniqueCommunicationMethod}
+                        onValueChange={(value) =>
+                          setBulkUniqueCommunicationMethod(value as CommunicationQuickActionMethod)}
+                        disabled={isCreatingBulkCommunicationUpdate}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Email">Email</SelectItem>
+                          <SelectItem value="Text">Text</SelectItem>
+                          <SelectItem value="Phone Call">Phone Call</SelectItem>
+                          <SelectItem value="In Person">In Person</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Date</label>
+                        <Input
+                          type="date"
+                          value={bulkUniqueCommunicationDate}
+                          max={toDateOnly(new Date())}
+                          onChange={(event) => setBulkUniqueCommunicationDate(event.target.value)}
+                          disabled={isCreatingBulkCommunicationUpdate}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium">Time</label>
+                        <Input
+                          type="time"
+                          value={bulkUniqueCommunicationTime}
+                          onChange={(event) => setBulkUniqueCommunicationTime(event.target.value)}
+                          disabled={isCreatingBulkCommunicationUpdate}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Comments</label>
+                      <Textarea
+                        rows={4}
+                        value={bulkUniqueCommunicationBody}
+                        onChange={(event) => setBulkUniqueCommunicationBody(event.target.value)}
+                        placeholder="Add notes about this communication..."
+                        disabled={isCreatingBulkCommunicationUpdate}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="text-muted-foreground text-xs">
+                        {bulkUniqueCommunicationSubmittedTargetIds.has(
+                          bulkUniqueActiveTarget.targetRecordId,
+                        ) ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Check className="h-3.5 w-3.5 text-emerald-600" />
+                            Already submitted
+                          </span>
+                        ) : (
+                          "Not submitted yet"
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={closeBulkUniqueCommunicationSession}
+                          disabled={isCreatingBulkCommunicationUpdate}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            void submitBulkUniqueCommunicationForActiveTarget();
+                          }}
+                          disabled={
+                            isCreatingBulkCommunicationUpdate ||
+                            bulkUniqueCommunicationBody.trim().length === 0
+                          }
+                        >
+                          {isCreatingBulkCommunicationUpdate ? "Saving..." : "Save & Next"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </DialogContent>
+            </Dialog>
 
             <Dialog
               open={!!syncContactBoardPickerRecord}
@@ -10715,36 +11705,83 @@ export function MondayBoardView({
             ) : null}
 
             {userScopedDisplayMode === "kanban" ? (
-              <KanbanBoard
-                records={filteredRecords}
-                approvalSteps={approvalSteps}
-                isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
-                onMoveRequest={setKanbanMoveConfirmation}
-                onRecordClick={openContactHistoryDialog}
-                onHelpDesk={(r) => {
-                  setHelpDeskLinkedContact(r);
-                  setHelpDeskOpen(true);
-                }}
-              />
+              <>
+                {selectedCrossViewRecords.length > 0 ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-background/90 px-3 py-2">
+                    <p className="text-muted-foreground text-xs">
+                      {selectedCrossViewRecords.length} selected in{" "}
+                      {selectedKanbanStepIndex === null
+                        ? "this column"
+                        : (approvalSteps[selectedKanbanStepIndex - 1]?.title ??
+                          `Step ${selectedKanbanStepIndex}`)}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={isExecutingKanbanMove}
+                        onClick={() => {
+                          void handleKanbanBulkMoveForward();
+                        }}
+                      >
+                        {isExecutingKanbanMove ? "Moving..." : "Move Forward"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={clearCrossViewSelection}
+                        disabled={isExecutingKanbanMove}
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+                <KanbanBoard
+                  records={filteredRecords}
+                  approvalSteps={approvalSteps}
+                  isLoading={authLoading || (!staticMode && recordsQuery.isLoading)}
+                  onMoveRequest={setKanbanMoveConfirmation}
+                  onRecordClick={openContactHistoryDialog}
+                  onHelpDesk={(r) => {
+                    setHelpDeskLinkedContact(r);
+                    setHelpDeskOpen(true);
+                  }}
+                  selectedRecordIds={crossViewSelectedRecordIds}
+                  onToggleSelectRecord={toggleKanbanRecordSelection}
+                />
+              </>
             ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                {(authLoading || (!staticMode && recordsQuery.isLoading))
-                  ? Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
-                  ))
-                  : sortedGridRecords.map((record) => (
-                    <ContactCard
-                      key={record.id}
-                      record={record}
-                      approvalSteps={approvalSteps}
-                      onClick={openContactHistoryDialog}
-                      onHelpDesk={(r) => {
-                        setHelpDeskLinkedContact(r);
-                        setHelpDeskOpen(true);
-                      }}
-                    />
-                  ))}
-              </div>
+              <>
+                {selectedCrossViewRecords.length > 0 ? (
+                  <div className="bg-muted/40 border-input mb-2 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+                    {renderBulkActionsBar(selectedCrossViewRecords, clearCrossViewSelection)}
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {(authLoading || (!staticMode && recordsQuery.isLoading))
+                    ? Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="h-44 animate-pulse rounded-xl border bg-muted" />
+                    ))
+                    : sortedGridRecords.map((record) => (
+                      <ContactCard
+                        key={record.id}
+                        record={record}
+                        approvalSteps={approvalSteps}
+                        onClick={openContactHistoryDialog}
+                        onHelpDesk={(r) => {
+                          setHelpDeskLinkedContact(r);
+                          setHelpDeskOpen(true);
+                        }}
+                        selectable
+                        selected={crossViewSelectedRecordIds.has(record.id)}
+                        onToggleSelect={toggleGridRecordSelection}
+                      />
+                    ))}
+                </div>
+              </>
             ) : (
               <BoardTable
                 data={filteredRecords}
@@ -10758,242 +11795,7 @@ export function MondayBoardView({
                 isFetchingNextPage={recordsQuery.isFetchingNextPage}
                 onLoadMore={handleLoadMoreRecords}
                 bulkActions={({ selectedItems, clearSelection }) => {
-                  const eligibleByAction = new Map<string, MondayRecord[]>();
-                  for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
-                    const stepConfig = STEP_ACTION_CONFIG.find((s) => s.updateType === action.type);
-                    if (!stepConfig) {
-                      eligibleByAction.set(action.type, [...selectedItems]);
-                      continue;
-                    }
-                    eligibleByAction.set(
-                      action.type,
-                      selectedItems.filter((item) => {
-                        const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
-                        return currentStep === stepConfig.stepIndex;
-                      }),
-                    );
-                  }
-                  const questionnaireStepIndex = STEP_ACTION_CONFIG.find(
-                    (s) => s.actionVariant === "questionnaire",
-                  )?.stepIndex ?? -1;
-                  const questionnaireEligible = selectedItems.filter((item) => {
-                    const currentStep = getRecordStepIndexFromApprovalSteps(item, approvalSteps);
-                    return currentStep === questionnaireStepIndex;
-                  });
-                  const mergeCandidatesByTargetId = new Map<string, MondayRecord>();
-                  for (const item of selectedItems) {
-                    const targetRecordId = getMergeTargetRecordId(item);
-                    if (!targetRecordId) continue;
-                    if (!mergeCandidatesByTargetId.has(targetRecordId)) {
-                      mergeCandidatesByTargetId.set(targetRecordId, item);
-                    }
-                  }
-                  const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
-                  const canMergeSelection =
-                    mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
-                  const bulkSyncProgressPercent =
-                    latestBulkSyncJob && latestBulkSyncJob.totalContacts > 0
-                      ? Math.round(
-                        (latestBulkSyncJob.processedContacts / latestBulkSyncJob.totalContacts) *
-                        100,
-                      )
-                      : 0;
-
-                  return (
-                    <div className="flex w-full flex-wrap items-center justify-between gap-2">
-                      <p className="text-muted-foreground text-xs">
-                        {selectedItems.length} selected
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        {CONTACT_UPDATE_ACTION_BUTTONS.map((action) => {
-                          const eligible = eligibleByAction.get(action.type) ?? [];
-                          const hasEligible = eligible.length > 0;
-                          return (
-                            <Button
-                              key={action.type}
-                              type="button"
-                              size="sm"
-                              variant="secondary"
-                              className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                              style={boardThemeInlineStyles.actionButtonStyle}
-                              disabled={!!bulkQuickActionType || !hasEligible}
-                              onClick={() => {
-                                bulkClearSelectionRef.current = clearSelection;
-                                setBulkQuickActionConfirmation({
-                                  action,
-                                  selectedItems: eligible,
-                                });
-                                if (eligible.length < selectedItems.length) {
-                                  toast(
-                                    `${selectedItems.length - eligible.length} contact${selectedItems.length - eligible.length === 1 ? "" : "s"} skipped (not at this step)`,
-                                  );
-                                }
-                              }}
-                            >
-                              {bulkQuickActionType === action.type
-                                ? "Applying..."
-                                : `${action.label} (${eligible.length})`}
-                            </Button>
-                          );
-                        })}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          className={`justify-start rounded-md ${quickActionButtonSizeClass} ${boardThemeStyles.actionButtonClassName}`}
-                          style={boardThemeInlineStyles.actionButtonStyle}
-                          disabled={!!bulkQuickActionType || questionnaireEligible.length === 0}
-                          onClick={() => {
-                            openQuestionnaireDialogForRecords([...questionnaireEligible]);
-                            if (questionnaireEligible.length < selectedItems.length) {
-                              toast(
-                                `${selectedItems.length - questionnaireEligible.length} contact${selectedItems.length - questionnaireEligible.length === 1 ? "" : "s"} skipped (not at questionnaire step)`,
-                              );
-                            }
-                          }}
-                        >
-                          {`${QUESTIONNAIRE_UPDATE_ACTION.label} (${questionnaireEligible.length})`}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                          disabled={!!bulkQuickActionType || isMergingRecords || !canMergeSelection}
-                          onClick={() => {
-                            mergeClearSelectionRef.current = clearSelection;
-                            openMergeDialogForRecords(mergeEligibleRecords);
-                            if (mergeEligibleRecords.length < selectedItems.length) {
-                              toast(
-                                `${selectedItems.length - mergeEligibleRecords.length} contact${selectedItems.length - mergeEligibleRecords.length === 1 ? "" : "s"} skipped (duplicate contact ids in selection)`,
-                              );
-                            }
-                          }}
-                        >
-                          {isMergingRecords
-                            ? "Merging..."
-                            : `Merge / De-duplicate (${mergeEligibleRecords.length})`}
-                        </Button>
-                        {isMondaySettingsAdmin && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                            disabled={!!bulkQuickActionType || syncingContactIds.size > 0}
-                            onClick={() => {
-                              void (async () => {
-                                try {
-                                  const items = [...selectedItems];
-                                  const job = await startBulkSyncJob(items);
-                                  clearSelection();
-                                  toast.success(
-                                    `Bulk sync started for ${job.totalContacts} contact${job.totalContacts === 1 ? "" : "s"}`,
-                                  );
-                                } catch (error) {
-                                  toast.error(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "Failed to start bulk sync",
-                                  );
-                                }
-                              })();
-                            }}
-                          >
-                            {syncingContactIds.has("__bulk_sync__")
-                              ? latestBulkSyncJob
-                                ? `Syncing ${latestBulkSyncJob.processedContacts}/${latestBulkSyncJob.totalContacts}...`
-                                : "Syncing..."
-                              : `Sync Users (${selectedItems.length})`}
-                          </Button>
-                        )}
-                        {isMondaySettingsAdmin &&
-                          latestBulkSyncJob &&
-                          latestBulkSyncJob.status === "running" ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                            onClick={() => {
-                              void (async () => {
-                                try {
-                                  await cancelBulkSyncJob(latestBulkSyncJob.jobId);
-                                } catch (error) {
-                                  toast.error(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "Failed to cancel bulk sync",
-                                  );
-                                }
-                              })();
-                            }}
-                          >
-                            Cancel Bulk Sync
-                          </Button>
-                        ) : null}
-                        {isMondaySettingsAdmin &&
-                          latestBulkSyncJob &&
-                          latestBulkSyncJob.status !== "running" &&
-                          latestBulkSyncJob.failedContacts > 0 ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                            disabled={syncingContactIds.has("__bulk_sync__")}
-                            onClick={() => {
-                              void (async () => {
-                                try {
-                                  const result = await retryFailedBulkSyncJob(
-                                    latestBulkSyncJob.jobId,
-                                  );
-                                  toast.success(
-                                    `Retry started for ${result.retriedContacts ?? 0} failed contact${result.retriedContacts === 1 ? "" : "s"}`,
-                                  );
-                                } catch (error) {
-                                  toast.error(
-                                    error instanceof Error
-                                      ? error.message
-                                      : "Failed to retry failed bulk sync contacts",
-                                  );
-                                }
-                              })();
-                            }}
-                          >
-                            Retry Failed ({latestBulkSyncJob.failedContacts})
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={clearSelection}
-                          disabled={!!bulkQuickActionType}
-                        >
-                          Clear
-                        </Button>
-                      </div>
-                      {isMondaySettingsAdmin && latestBulkSyncJob ? (
-                        <div className="w-full rounded-md border px-2 py-1">
-                          <div className="mb-1 flex items-center justify-between text-[11px]">
-                            <span className="text-muted-foreground">
-                              Bulk Sync {latestBulkSyncJob.status}
-                            </span>
-                            <span className="text-muted-foreground">
-                              {latestBulkSyncJob.processedContacts}/{latestBulkSyncJob.totalContacts}
-                            </span>
-                          </div>
-                          <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
-                            <div
-                              className="bg-primary h-full transition-[width] duration-300 ease-out"
-                              style={{ width: `${Math.max(0, Math.min(100, bulkSyncProgressPercent))}%` }}
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  );
+                  return renderBulkActionsBar(selectedItems, clearSelection);
                 }}
               />
             )}
