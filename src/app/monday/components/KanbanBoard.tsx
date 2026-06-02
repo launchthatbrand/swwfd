@@ -10,7 +10,7 @@ import {
 import { DragOverlay } from "@dnd-kit/core";
 import type { Active, DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import type { ApprovalStepConfig, KanbanMoveConfirmation, MondayRecord } from "../types";
-import { buildKanbanColumns, getNameInitials } from "../helpers";
+import { buildKanbanColumns } from "../helpers";
 import { ContactCard } from "./ContactCard";
 
 export const KanbanBoard = ({
@@ -20,6 +20,8 @@ export const KanbanBoard = ({
   onMoveRequest,
   onRecordClick,
   onHelpDesk,
+  selectedRecordIds,
+  onToggleSelectRecord,
 }: {
   records: MondayRecord[];
   approvalSteps: ApprovalStepConfig[];
@@ -27,6 +29,8 @@ export const KanbanBoard = ({
   onMoveRequest: (confirmation: KanbanMoveConfirmation) => void;
   onRecordClick: (record: MondayRecord) => void;
   onHelpDesk?: (record: MondayRecord) => void;
+  selectedRecordIds?: Set<string>;
+  onToggleSelectRecord?: (record: MondayRecord) => void;
 }) => {
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -189,6 +193,9 @@ export const KanbanBoard = ({
                       approvalSteps={approvalSteps}
                       onClick={onRecordClick}
                       onHelpDesk={onHelpDesk}
+                      selectable={!!onToggleSelectRecord}
+                      selected={!!selectedRecordIds?.has(record.id)}
+                      onToggleSelect={onToggleSelectRecord}
                     />
                   </DraggableItem>
                 ))
