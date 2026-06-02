@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { findMondayContactsByEmail } from "~/server/monday/client";
 import {
+  getQuestionnaireForContact,
   parseQuestionnaireBody,
   saveQuestionnaireToContact,
 } from "~/server/monday/questionnaire";
@@ -47,6 +48,7 @@ export const GET = async (request: Request) => {
         name: match.name,
         email: match.email,
       },
+      questionnaire: await getQuestionnaireForContact(match.id),
     });
   } catch (error) {
     const message =
@@ -69,6 +71,10 @@ export const POST = async (request: Request) => {
 
   const payload = rawBody as Record<string, unknown>;
   const email = typeof payload.email === "string" ? payload.email.trim() : "";
+  const submissionMode =
+    payload.submissionMode === "partial" || payload.submissionMode === "complete"
+      ? payload.submissionMode
+      : "complete";
   if (!email) {
     return toJson({ ok: false, error: "Email is required" }, 400);
   }
@@ -83,9 +89,11 @@ export const POST = async (request: Request) => {
       itemId: match.id,
       body,
       actorMondayUserId: null,
+      markComplete: submissionMode === "complete",
     });
     return toJson({
       ok: true,
+      mode: submissionMode,
       contact: {
         id: match.id,
         name: match.name,

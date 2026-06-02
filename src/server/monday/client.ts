@@ -83,6 +83,18 @@ export interface MondayRecordEditOptions {
   retentionPeriod: string[];
   tags: string[];
   status: string[];
+  questionnaireGender: string[];
+  questionnaireEntryLevel: string[];
+  questionnaireSkilled: string[];
+  questionnaireEthnicity: string[];
+  questionnaireEducationLevel: string[];
+  questionnaireUsWorkEligible: string[];
+  questionnaireVeteran: string[];
+  questionnaireSecondChance: string[];
+  questionnaireTransportation: string[];
+  questionnaireWorkSchedule: string[];
+  questionnaireCandidateEducation: string[];
+  questionnaireDesiredHourlyWage: string[];
 }
 
 export interface MondayApprovalStep {
@@ -2279,6 +2291,18 @@ export const getMondayRecordEditOptions = async () => {
       retentionPeriod: [],
       tags: [],
       status: [],
+      questionnaireGender: [],
+      questionnaireEntryLevel: [],
+      questionnaireSkilled: [],
+      questionnaireEthnicity: [],
+      questionnaireEducationLevel: [],
+      questionnaireUsWorkEligible: [],
+      questionnaireVeteran: [],
+      questionnaireSecondChance: [],
+      questionnaireTransportation: [],
+      questionnaireWorkSchedule: [],
+      questionnaireCandidateEducation: [],
+      questionnaireDesiredHourlyWage: [],
     } satisfies MondayRecordEditOptions;
   }
 
@@ -2288,6 +2312,14 @@ export const getMondayRecordEditOptions = async () => {
         id?: string | null;
         settings_str?: string | null;
       }>;
+      items_page?: {
+        items?: Array<{
+          column_values?: Array<{
+            id?: string | null;
+            text?: string | null;
+          }>;
+        }>;
+      };
     }>;
   }
 
@@ -2298,6 +2330,14 @@ export const getMondayRecordEditOptions = async () => {
           id
           settings_str
         }
+        items_page(limit: 500) {
+          items {
+            column_values {
+              id
+              text
+            }
+          }
+        }
       }
     }
   `;
@@ -2306,10 +2346,20 @@ export const getMondayRecordEditOptions = async () => {
     boardId: mondayBoard.boardId,
   });
   const columns = data.boards?.[0]?.columns ?? [];
+  const boardItems = data.boards?.[0]?.items_page?.items ?? [];
   const boardColumnIds = await resolveBoardColumnIds(mondayBoard.boardId);
   const getLabelsForColumn = (columnId: string) => {
     const column = columns.find((entry) => entry.id === columnId);
     return parseDropdownLabelsFromSettings(column?.settings_str);
+  };
+  const getSuggestedTextValuesForColumn = (columnId: string) => {
+    const values = new Set<string>();
+    for (const item of boardItems) {
+      const text =
+        item.column_values?.find((column) => column.id === columnId)?.text?.trim() ?? "";
+      if (text.length > 0) values.add(text);
+    }
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
   };
 
   return {
@@ -2320,6 +2370,18 @@ export const getMondayRecordEditOptions = async () => {
     status: boardColumnIds.statusColumnId
       ? getLabelsForColumn(boardColumnIds.statusColumnId)
       : [],
+    questionnaireGender: getSuggestedTextValuesForColumn("text95__1"),
+    questionnaireEntryLevel: getLabelsForColumn("dropdown__1"),
+    questionnaireSkilled: getLabelsForColumn("dropdown7__1"),
+    questionnaireEthnicity: getSuggestedTextValuesForColumn("text2__1"),
+    questionnaireEducationLevel: getSuggestedTextValuesForColumn("text0__1"),
+    questionnaireUsWorkEligible: getLabelsForColumn("dropdown3__1"),
+    questionnaireVeteran: getLabelsForColumn("dropdown32__1"),
+    questionnaireSecondChance: getLabelsForColumn("dropdown9__1"),
+    questionnaireTransportation: getLabelsForColumn("dropdown8__1"),
+    questionnaireWorkSchedule: getLabelsForColumn("dropdown0__1"),
+    questionnaireCandidateEducation: getSuggestedTextValuesForColumn("text5__1"),
+    questionnaireDesiredHourlyWage: getSuggestedTextValuesForColumn("text16__1"),
   } satisfies MondayRecordEditOptions;
 };
 
