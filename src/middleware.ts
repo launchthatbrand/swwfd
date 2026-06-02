@@ -11,8 +11,14 @@ const isProtectedAdminRoute = createRouteMatcher(["/admin(.*)"]);
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {
+    const nextWithPathnameHeader = () => {
+      const response = NextResponse.next();
+      response.headers.set("x-pathname", request.nextUrl.pathname);
+      return response;
+    };
+
     if (request.nextUrl.pathname === "/api/monday/email/outlook/callback") {
-      return NextResponse.next();
+      return nextWithPathnameHeader();
     }
 
     const isAuthed = await convexAuth.isAuthenticated();
@@ -39,6 +45,8 @@ export default convexAuthNextjsMiddleware(
       url.searchParams.set("return_to", returnTo);
       return NextResponse.redirect(url);
     }
+
+    return nextWithPathnameHeader();
   },
   { cookieConfig: { maxAge: 60 * 60 * 24 * 30 } },
 );

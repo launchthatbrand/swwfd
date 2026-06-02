@@ -468,6 +468,18 @@ export function MondayBoardView({
   const [questionnaireDialogRecords, setQuestionnaireDialogRecords] = useState<
     MondayRecord[]
   >([]);
+  const [bulkQuestionnaireEmailRecords, setBulkQuestionnaireEmailRecords] = useState<
+    MondayRecord[]
+  >([]);
+  const [bulkQuickEmailAction, setBulkQuickEmailAction] = useState<QuickContactActionButton | null>(
+    null,
+  );
+  const [bulkQuestionnaireEmailIndex, setBulkQuestionnaireEmailIndex] = useState(0);
+  const [bulkQuestionnaireTemplateId, setBulkQuestionnaireTemplateId] = useState<string | null>(null);
+  const [bulkQuestionnaireSentTargetIds, setBulkQuestionnaireSentTargetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [isSendingBulkQuestionnaireEmail, setIsSendingBulkQuestionnaireEmail] = useState(false);
   const bulkClearSelectionRef = useRef<(() => void) | null>(null);
   const mergeClearSelectionRef = useRef<(() => void) | null>(null);
   const [kanbanMoveConfirmation, setKanbanMoveConfirmation] =
@@ -997,7 +1009,7 @@ export function MondayBoardView({
     enabled:
       !!sessionToken &&
       !staticMode &&
-      (!!sendEmailRecord || settingsOpen),
+      (!!sendEmailRecord || settingsOpen || bulkQuestionnaireEmailRecords.length > 0),
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("boardId", "18401299370");
@@ -2379,6 +2391,41 @@ export function MondayBoardView({
     },
     staleTime: 60_000,
   });
+  const bulkQuestionnaireActiveRecord =
+    bulkQuestionnaireEmailRecords[bulkQuestionnaireEmailIndex] ?? null;
+  const bulkQuestionnaireTargetRecordId = bulkQuestionnaireActiveRecord
+    ? resolveContactUpdateTargetRecordId(bulkQuestionnaireActiveRecord)
+    : "";
+  const bulkQuestionnaireContactColumnsQuery = useQuery({
+    queryKey: [
+      "monday-bulk-questionnaire-columns",
+      sessionToken,
+      bulkQuestionnaireTargetRecordId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !staticMode &&
+      bulkQuestionnaireEmailRecords.length > 0 &&
+      bulkQuestionnaireTargetRecordId.length > 0,
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(bulkQuestionnaireTargetRecordId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: sessionToken
+            ? { "x-monday-session-token": sessionToken }
+            : undefined,
+        },
+      );
+      const data = (await response.json()) as ContactColumnsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact template values");
+      }
+      return data;
+    },
+    staleTime: 60_000,
+  });
   const sendEmailOwnerVars = useMemo(() => {
     const primaryOwner = sendEmailRecord?.ownerProfiles[0] ?? null;
     const ownerName =
@@ -2437,6 +2484,114 @@ export function MondayBoardView({
     sendEmailRecord?.email,
     sendEmailRecord?.name,
   ]);
+  const preferredBulkQuickEmailTemplateId = useMemo(() => {
+    if (emailTemplates.length === 0) return null;
+    const actionType = bulkQuickEmailAction?.type ?? "followup";
+    const matchedTemplate = emailTemplates.find((template) => {
+      const name = template.name.toLowerCase();
+      if (actionType === "welcome_email") {
+        return name.includes("welcome");
+      }
+      return name.includes("questionnaire") || name.includes("questionaire");
+    });
+    return matchedTemplate?.id ?? emailTemplates[0]?.id ?? null;
+  }, [bulkQuickEmailAction?.type, emailTemplates]);
+  const bulkQuestionnaireTemplate = useMemo(() => {
+    if (!bulkQuestionnaireTemplateId) return null;
+    return (
+      emailTemplates.find((template) => template.id === bulkQuestionnaireTemplateId) ?? null
+    );
+  }, [bulkQuestionnaireTemplateId, emailTemplates]);
+  useEffect(() => {
+    if (bulkQuestionnaireEmailRecords.length === 0) return;
+    if (
+      bulkQuestionnaireTemplateId &&
+      emailTemplates.some((template) => template.id === bulkQuestionnaireTemplateId)
+    ) {
+      return;
+    }
+    setBulkQuestionnaireTemplateId(preferredBulkQuickEmailTemplateId);
+  }, [
+    bulkQuestionnaireEmailRecords.length,
+    bulkQuestionnaireTemplateId,
+    emailTemplates,
+    preferredBulkQuickEmailTemplateId,
+  ]);
+  const bulkQuestionnaireOwnerVars = useMemo(() => {
+    const primaryOwner = bulkQuestionnaireActiveRecord?.ownerProfiles[0] ?? null;
+    const ownerName =
+      primaryOwner?.name?.trim() ??
+      bulkQuestionnaireActiveRecord?.peopleText?.trim() ??
+      "";
+    const ownerEmail = primaryOwner?.email?.trim() ?? "";
+    return { ownerName, ownerEmail };
+  }, [bulkQuestionnaireActiveRecord]);
+  const bulkQuestionnaireTemplateVariables = useMemo(() => {
+    const vars: Record<string, string> = {
+      "owner.name": bulkQuestionnaireOwnerVars.ownerName,
+      "owner.email": bulkQuestionnaireOwnerVars.ownerEmail,
+      "contact.name": bulkQuestionnaireActiveRecord?.name?.trim() ?? "",
+      "contact.email": bulkQuestionnaireActiveRecord?.email?.trim() ?? "",
+    };
+    const columnValues = new Map(
+      (bulkQuestionnaireContactColumnsQuery.data?.columns ?? []).map((column) => {
+        const fallbackFromValue =
+          typeof column.value === "string" &&
+            column.value.trim().startsWith("{") &&
+            column.value.trim().endsWith("}")
+            ? (() => {
+              try {
+                const parsed = JSON.parse(column.value) as {
+                  label?: { text?: unknown };
+                  labels?: unknown;
+                  text?: unknown;
+                };
+                if (typeof parsed.label?.text === "string") return parsed.label.text;
+                if (Array.isArray(parsed.labels)) {
+                  const labels = parsed.labels.filter(
+                    (value): value is string => typeof value === "string",
+                  );
+                  if (labels.length > 0) return labels.join(", ");
+                }
+                if (typeof parsed.text === "string") return parsed.text;
+              } catch {
+                // ignore parse errors
+              }
+              return "";
+            })()
+            : "";
+        return [column.id, (column.text?.trim() || fallbackFromValue || "").trim()];
+      }),
+    );
+    for (const entry of platformSettings.emailSystemTags) {
+      vars[entry.tag] = columnValues.get(entry.columnId) ?? "";
+    }
+    return vars;
+  }, [
+    bulkQuestionnaireActiveRecord?.email,
+    bulkQuestionnaireActiveRecord?.name,
+    bulkQuestionnaireContactColumnsQuery.data?.columns,
+    bulkQuestionnaireOwnerVars.ownerEmail,
+    bulkQuestionnaireOwnerVars.ownerName,
+    platformSettings.emailSystemTags,
+  ]);
+  const bulkQuestionnaireResolvedTemplate = useMemo(() => {
+    if (!bulkQuestionnaireTemplate) return null;
+    const subject = interpolateTemplateVariables(
+      bulkQuestionnaireTemplate.name,
+      bulkQuestionnaireTemplateVariables,
+    );
+    const htmlSource =
+      bulkQuestionnaireTemplate.renderedHtml.trim().length > 0
+        ? bulkQuestionnaireTemplate.renderedHtml
+        : bulkQuestionnaireTemplate.content;
+    const html = interpolateTemplateVariables(htmlSource, bulkQuestionnaireTemplateVariables);
+    const text = interpolateTemplateVariables(
+      bulkQuestionnaireTemplate.content,
+      bulkQuestionnaireTemplateVariables,
+    );
+    return { subject, html, text };
+  }, [bulkQuestionnaireTemplate, bulkQuestionnaireTemplateVariables]);
   useEffect(() => {
     if (!sendEmailRecord) return;
     if (sendEmailStep !== 2) return;
@@ -3761,11 +3916,11 @@ export function MondayBoardView({
     [contactDialogIndex, filteredRecords],
   );
 
-  const resolveContactUpdateTargetRecordId = (record: MondayRecord) => {
+  function resolveContactUpdateTargetRecordId(record: MondayRecord) {
     const contactId = record.contactId?.trim();
     if (contactId && contactId.length > 0) return contactId;
     return record.id;
-  };
+  }
 
   const normalizeEditableColumnDraft = useCallback((column: ContactColumnEntry) => {
     const normalizedType = column.type.toLowerCase();
@@ -4304,6 +4459,47 @@ export function MondayBoardView({
     await contactUpdatesQuery.refetch();
     toast.success("Questionnaire updated");
   }, [contactUpdatesQuery, recordsQuery, syncContactHistoryDialogFromRecords]);
+
+  const openBulkQuickEmailDialog = useCallback(
+    (action: QuickContactActionButton, items: MondayRecord[]) => {
+      if (staticMode) {
+        toast.error("Unavailable in static mode");
+        return;
+      }
+      if (!sessionToken) {
+        toast.error("Missing monday session token");
+        return;
+      }
+      const map = new Map<string, MondayRecord>();
+      for (const record of items) {
+        const id = resolveContactUpdateTargetRecordId(record);
+        if (!id.trim()) continue;
+        if (!map.has(id)) {
+          map.set(id, record);
+        }
+      }
+      const list = [...map.values()];
+      if (list.length === 0) {
+        toast.error("No valid contact records");
+        return;
+      }
+      setBulkQuickEmailAction(action);
+      setBulkQuestionnaireEmailRecords(list);
+      setBulkQuestionnaireEmailIndex(0);
+      setBulkQuestionnaireTemplateId(null);
+      setBulkQuestionnaireSentTargetIds(new Set());
+    },
+    [sessionToken, staticMode],
+  );
+
+  const closeBulkQuestionnaireEmailDialog = useCallback(() => {
+    if (isSendingBulkQuestionnaireEmail) return;
+    setBulkQuickEmailAction(null);
+    setBulkQuestionnaireEmailRecords([]);
+    setBulkQuestionnaireEmailIndex(0);
+    setBulkQuestionnaireTemplateId(null);
+    setBulkQuestionnaireSentTargetIds(new Set());
+  }, [isSendingBulkQuestionnaireEmail]);
 
   const callMondayContextApi = async <TData,>(
     query: string,
@@ -5024,6 +5220,318 @@ export function MondayBoardView({
       setBulkQuickActionType(null);
     }
   };
+
+  const resolveBulkQuestionnaireTemplateForRecord = useCallback(
+    async (record: MondayRecord) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const targetRecordId = resolveContactUpdateTargetRecordId(record);
+      if (!targetRecordId.trim()) {
+        throw new Error("Missing monday update target");
+      }
+      const templateId = bulkQuestionnaireTemplateId ?? preferredBulkQuickEmailTemplateId;
+      if (!templateId) {
+        throw new Error("No email templates found");
+      }
+      const template =
+        emailTemplates.find((entry) => entry.id === templateId) ?? emailTemplates[0] ?? null;
+      if (!template) {
+        throw new Error("No email templates found");
+      }
+
+      const response = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
+        {
+          method: "GET",
+          cache: "no-store",
+          headers: { "x-monday-session-token": sessionToken },
+        },
+      );
+      const data = (await response.json()) as ContactColumnsResponse;
+      if (!response.ok || !data.ok) {
+        throw new Error(data.error ?? "Failed to load contact template values");
+      }
+
+      const primaryOwner = record.ownerProfiles[0] ?? null;
+      const ownerName = primaryOwner?.name?.trim() ?? record.peopleText?.trim() ?? "";
+      const ownerEmail = primaryOwner?.email?.trim() ?? "";
+      const vars: Record<string, string> = {
+        "owner.name": ownerName,
+        "owner.email": ownerEmail,
+        "contact.name": record.name?.trim() ?? "",
+        "contact.email": record.email?.trim() ?? "",
+      };
+      const columnValues = new Map(
+        (data.columns ?? []).map((column) => {
+          const fallbackFromValue =
+            typeof column.value === "string" &&
+              column.value.trim().startsWith("{") &&
+              column.value.trim().endsWith("}")
+              ? (() => {
+                try {
+                  const parsed = JSON.parse(column.value) as {
+                    label?: { text?: unknown };
+                    labels?: unknown;
+                    text?: unknown;
+                  };
+                  if (typeof parsed.label?.text === "string") return parsed.label.text;
+                  if (Array.isArray(parsed.labels)) {
+                    const labels = parsed.labels.filter(
+                      (value): value is string => typeof value === "string",
+                    );
+                    if (labels.length > 0) return labels.join(", ");
+                  }
+                  if (typeof parsed.text === "string") return parsed.text;
+                } catch {
+                  // ignore parse errors
+                }
+                return "";
+              })()
+              : "";
+          return [column.id, (column.text?.trim() || fallbackFromValue || "").trim()];
+        }),
+      );
+      for (const entry of platformSettings.emailSystemTags) {
+        vars[entry.tag] = columnValues.get(entry.columnId) ?? "";
+      }
+
+      const subject = interpolateTemplateVariables(template.name, vars);
+      const htmlSource =
+        template.renderedHtml.trim().length > 0 ? template.renderedHtml : template.content;
+      const html = interpolateTemplateVariables(htmlSource, vars);
+
+      return { html, subject, targetRecordId };
+    },
+    [
+      bulkQuestionnaireTemplateId,
+      emailTemplates,
+      platformSettings.emailSystemTags,
+      preferredBulkQuickEmailTemplateId,
+      sessionToken,
+    ],
+  );
+
+  const sendBulkQuestionnaireEmailForRecord = useCallback(
+    async (record: MondayRecord) => {
+      if (!sessionToken) {
+        throw new Error("Missing monday session token");
+      }
+      const recipient = record.email?.trim() ?? "";
+      if (!recipient) {
+        throw new Error("This contact does not have an email address");
+      }
+
+      const { subject, html, targetRecordId } =
+        await resolveBulkQuestionnaireTemplateForRecord(record);
+
+      const senderMailboxUserId =
+        record.ownerIds[0]?.trim() || identity?.userId?.trim() || "";
+      if (!senderMailboxUserId) {
+        throw new Error("Contact has no owner mailbox to send from");
+      }
+
+      const sendResponse = await fetch("/api/monday/email/send", {
+        method: "POST",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          "x-monday-session-token": sessionToken,
+        },
+        body: JSON.stringify({
+          to: recipient,
+          subject,
+          html,
+          contactItemId: targetRecordId,
+          ownerMondayUserId: senderMailboxUserId,
+        }),
+      });
+      const sendData = (await sendResponse.json()) as MondaySendEmailResponse;
+      if (!sendResponse.ok || !sendData.ok) {
+        throw new Error(sendData.error ?? "Failed to send email");
+      }
+
+      const actionType = bulkQuickEmailAction?.type ?? "followup";
+      const updateBody = bulkQuickEmailAction?.defaultBody?.trim() || "Questionnaire Sent";
+      const updateResponse = await fetch(
+        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            body: updateBody,
+            updateType: actionType,
+            dateTime: new Date().toISOString(),
+            internalExternalStatus: "External",
+          }),
+        },
+      );
+      const updateData = (await updateResponse.json()) as MondayCreateRecordUpdateResponse;
+      if (!updateResponse.ok || !updateData.ok) {
+        throw new Error(updateData.error ?? "Failed to mark questionnaire step");
+      }
+
+      if (identity?.userId) {
+        fetch("/api/monday/touches", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-monday-session-token": sessionToken,
+          },
+          body: JSON.stringify({
+            contactItemId: targetRecordId,
+            contactName: record.name ?? "",
+            ownerId: identity.userId,
+            source: "update",
+          }),
+        }).catch(() => { });
+      }
+
+      return targetRecordId;
+    },
+    [bulkQuickEmailAction, identity?.userId, resolveBulkQuestionnaireTemplateForRecord, sessionToken],
+  );
+
+  const handleSendBulkQuestionnaireToActiveRecord = async () => {
+    const activeRecord = bulkQuestionnaireEmailRecords[bulkQuestionnaireEmailIndex];
+    if (!activeRecord) return;
+    setIsSendingBulkQuestionnaireEmail(true);
+    try {
+      const targetRecordId = await sendBulkQuestionnaireEmailForRecord(activeRecord);
+      const nextSentSet = new Set(bulkQuestionnaireSentTargetIds);
+      nextSentSet.add(targetRecordId);
+      setBulkQuestionnaireSentTargetIds(nextSentSet);
+
+      const [, refreshedRecordsResult] = await Promise.all([
+        contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+        recordsQuery.refetch(),
+      ]);
+      const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+        (page) => page.records ?? [],
+      );
+      syncContactHistoryDialogFromRecords(refreshedRecords);
+
+      const findNextUnsentIndex = () => {
+        for (
+          let index = bulkQuestionnaireEmailIndex + 1;
+          index < bulkQuestionnaireEmailRecords.length;
+          index += 1
+        ) {
+          const record = bulkQuestionnaireEmailRecords[index];
+          if (!record) continue;
+          const id = resolveContactUpdateTargetRecordId(record);
+          if (id && !nextSentSet.has(id)) return index;
+        }
+        for (let index = 0; index <= bulkQuestionnaireEmailIndex; index += 1) {
+          const record = bulkQuestionnaireEmailRecords[index];
+          if (!record) continue;
+          const id = resolveContactUpdateTargetRecordId(record);
+          if (id && !nextSentSet.has(id)) return index;
+        }
+        return -1;
+      };
+      const nextIndex = findNextUnsentIndex();
+
+      if (nextIndex >= 0) {
+        setBulkQuestionnaireEmailIndex(nextIndex);
+        toast.success(`Email sent to ${activeRecord.email?.trim() ?? activeRecord.name}`);
+      } else {
+        toast.success(
+          `${bulkQuickEmailAction?.label ?? "Bulk email"} sent to all selected contacts`,
+        );
+        bulkClearSelectionRef.current?.();
+        setBulkQuestionnaireEmailRecords([]);
+        setBulkQuestionnaireEmailIndex(0);
+        setBulkQuestionnaireTemplateId(null);
+        setBulkQuestionnaireSentTargetIds(new Set());
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Failed to send ${bulkQuickEmailAction?.label ?? "bulk email"}`;
+      toast.error(message);
+    } finally {
+      setIsSendingBulkQuestionnaireEmail(false);
+    }
+  };
+
+  const handleSendBulkQuestionnaireToAll = async () => {
+    if (bulkQuestionnaireEmailRecords.length === 0) return;
+    setIsSendingBulkQuestionnaireEmail(true);
+    const nextSentSet = new Set(bulkQuestionnaireSentTargetIds);
+    let successCount = 0;
+    let failedCount = 0;
+    let firstError = "";
+    try {
+      for (const record of bulkQuestionnaireEmailRecords) {
+        const targetRecordId = resolveContactUpdateTargetRecordId(record);
+        if (!targetRecordId || nextSentSet.has(targetRecordId)) continue;
+        try {
+          const sentTargetRecordId = await sendBulkQuestionnaireEmailForRecord(record);
+          nextSentSet.add(sentTargetRecordId);
+          successCount += 1;
+        } catch (error) {
+          failedCount += 1;
+          if (!firstError) {
+            firstError =
+              error instanceof Error
+                ? error.message
+                : `Failed to send ${bulkQuickEmailAction?.label ?? "bulk email"}`;
+          }
+        }
+      }
+      setBulkQuestionnaireSentTargetIds(nextSentSet);
+
+      if (successCount > 0) {
+        const [, refreshedRecordsResult] = await Promise.all([
+          contactHistoryDialogRecord ? contactUpdatesQuery.refetch() : Promise.resolve(null),
+          recordsQuery.refetch(),
+        ]);
+        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
+          (page) => page.records ?? [],
+        );
+        syncContactHistoryDialogFromRecords(refreshedRecords);
+      }
+
+      if (failedCount === 0) {
+        toast.success(
+          `${bulkQuickEmailAction?.label ?? "Bulk email"} sent to ${successCount} contact${successCount === 1 ? "" : "s"}`,
+        );
+        bulkClearSelectionRef.current?.();
+        setBulkQuestionnaireEmailRecords([]);
+        setBulkQuestionnaireEmailIndex(0);
+        setBulkQuestionnaireTemplateId(null);
+        setBulkQuestionnaireSentTargetIds(new Set());
+        return;
+      }
+
+      toast.error(
+        `Failed for ${failedCount} contact${failedCount === 1 ? "" : "s"}${firstError ? `: ${firstError}` : ""}`,
+      );
+      const nextIndex = bulkQuestionnaireEmailRecords.findIndex((record) => {
+        const id = resolveContactUpdateTargetRecordId(record);
+        return !!id && !nextSentSet.has(id);
+      });
+      if (nextIndex >= 0) {
+        setBulkQuestionnaireEmailIndex(nextIndex);
+      }
+    } finally {
+      setIsSendingBulkQuestionnaireEmail(false);
+    }
+  };
+  const bulkQuestionnaireDialogOpen = bulkQuestionnaireEmailRecords.length > 0;
+  const bulkQuestionnairePendingCount = bulkQuestionnaireEmailRecords.filter((record) => {
+    const id = resolveContactUpdateTargetRecordId(record);
+    return !!id && !bulkQuestionnaireSentTargetIds.has(id);
+  }).length;
+  const bulkQuestionnaireActiveAlreadySent =
+    !!bulkQuestionnaireTargetRecordId &&
+    bulkQuestionnaireSentTargetIds.has(bulkQuestionnaireTargetRecordId);
 
   const handleConfirmMergeRecords = async () => {
     if (staticMode) {
@@ -10524,17 +11032,190 @@ export function MondayBoardView({
                       const confirmation = bulkQuickActionConfirmation;
                       if (!confirmation) return;
                       setBulkQuickActionConfirmation(null);
+                      if (
+                        confirmation.action.type === "followup" ||
+                        confirmation.action.type === "welcome_email"
+                      ) {
+                        openBulkQuickEmailDialog(
+                          confirmation.action,
+                          confirmation.selectedItems,
+                        );
+                        return;
+                      }
                       void handleBulkQuickActionUpdates(
                         confirmation.selectedItems,
                         () => bulkClearSelectionRef.current?.(),
                         confirmation.action,
                       );
                     }}
-                    disabled={!!bulkQuickActionType}
+                    disabled={!!bulkQuickActionType || isSendingBulkQuestionnaireEmail}
                   >
                     {bulkQuickActionType ? "Applying..." : "Confirm"}
                   </Button>
                 </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog
+              open={bulkQuestionnaireDialogOpen}
+              onOpenChange={(open) => {
+                if (open) return;
+                closeBulkQuestionnaireEmailDialog();
+              }}
+            >
+              <DialogContent className="max-h-[85vh] max-w-4xl overflow-scroll border-slate-200 bg-[#f8faff]">
+                <DialogHeader>
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <DialogTitle>
+                        {bulkQuickEmailAction?.type === "welcome_email"
+                          ? "Bulk Welcome Email Preview"
+                          : "Bulk Questionnaire Email Preview"}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Review and send questionnaire emails one-by-one or all at once.
+                      </DialogDescription>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() =>
+                          setBulkQuestionnaireEmailIndex((prev) =>
+                            prev > 0 ? prev - 1 : prev,
+                          )}
+                        disabled={isSendingBulkQuestionnaireEmail || bulkQuestionnaireEmailIndex <= 0}
+                        aria-label="Previous contact preview"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="text-muted-foreground min-w-[120px] text-center text-xs font-medium">
+                        {bulkQuestionnaireEmailRecords.length === 0
+                          ? "0 / 0"
+                          : `${bulkQuestionnaireEmailIndex + 1} / ${bulkQuestionnaireEmailRecords.length}`}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() =>
+                          setBulkQuestionnaireEmailIndex((prev) =>
+                            prev < bulkQuestionnaireEmailRecords.length - 1 ? prev + 1 : prev,
+                          )}
+                        disabled={
+                          isSendingBulkQuestionnaireEmail ||
+                          bulkQuestionnaireEmailIndex >= bulkQuestionnaireEmailRecords.length - 1
+                        }
+                        aria-label="Next contact preview"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                {bulkQuestionnaireActiveRecord ? (
+                  <div className="space-y-4">
+                    <div className="rounded-md border border-blue-100 bg-[#eef4ff] px-3 py-2 text-sm text-slate-700">
+                      Recipient:{" "}
+                      <span className="font-medium text-slate-900">
+                        {bulkQuestionnaireActiveRecord.name}
+                        {" · "}
+                        {bulkQuestionnaireActiveRecord.email ?? "No email"}
+                      </span>
+                      {bulkQuestionnaireActiveAlreadySent ? (
+                        <span className="ml-2 inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          Sent
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="rounded-md border p-4">
+                      <p className="text-xs font-semibold tracking-wide uppercase">Subject</p>
+                      <p className="mt-1 text-base font-medium">
+                        {bulkQuestionnaireResolvedTemplate?.subject ??
+                          bulkQuestionnaireTemplate?.name ??
+                          "No template selected"}
+                      </p>
+                      <p className="mt-3 text-xs font-semibold tracking-wide uppercase">
+                        Email Preview (Lead View)
+                      </p>
+                      <div className="bg-card mt-2 rounded-md border p-4">
+                        {bulkQuestionnaireContactColumnsQuery.isLoading ? (
+                          <p className="text-muted-foreground text-sm">Loading contact values…</p>
+                        ) : !bulkQuestionnaireTemplate ? (
+                          <p className="text-muted-foreground text-sm">
+                            {emailTemplatesQuery.isLoading
+                              ? "Loading templates…"
+                              : "No matching template found. Using first available template once loaded."}
+                          </p>
+                        ) : (bulkQuestionnaireResolvedTemplate?.text ?? "").trim().length === 0 ? (
+                          <p className="text-muted-foreground text-sm">
+                            No content found in template.
+                          </p>
+                        ) : (bulkQuestionnaireResolvedTemplate?.html ?? "").trim().length > 0 ? (
+                          <div
+                            className="prose prose-sm dark:prose-invert max-w-none **:wrap-break-word"
+                            style={{ whiteSpace: "pre-wrap" }}
+                            dangerouslySetInnerHTML={{
+                              __html: bulkQuestionnaireResolvedTemplate?.html ?? "",
+                            }}
+                          />
+                        ) : (
+                          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                            {bulkQuestionnaireResolvedTemplate?.text ?? ""}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-muted-foreground text-xs">
+                        {bulkQuestionnairePendingCount} pending •{" "}
+                        {bulkQuestionnaireSentTargetIds.size} sent
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={closeBulkQuestionnaireEmailDialog}
+                          disabled={isSendingBulkQuestionnaireEmail}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            void handleSendBulkQuestionnaireToAll();
+                          }}
+                          disabled={
+                            isSendingBulkQuestionnaireEmail ||
+                            !bulkQuestionnaireTemplate ||
+                            bulkQuestionnairePendingCount === 0
+                          }
+                        >
+                          {isSendingBulkQuestionnaireEmail ? "Sending..." : "Send All"}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            void handleSendBulkQuestionnaireToActiveRecord();
+                          }}
+                          disabled={
+                            isSendingBulkQuestionnaireEmail ||
+                            !bulkQuestionnaireTemplate ||
+                            bulkQuestionnaireActiveAlreadySent
+                          }
+                        >
+                          {bulkQuestionnaireActiveAlreadySent
+                            ? "Already Sent"
+                            : isSendingBulkQuestionnaireEmail
+                              ? "Sending..."
+                              : "Send to this contact"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-sm">No contacts selected.</p>
+                )}
               </DialogContent>
             </Dialog>
 
