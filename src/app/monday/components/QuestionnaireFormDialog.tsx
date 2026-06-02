@@ -15,8 +15,10 @@ import {
 import { toast } from "@launchthatapp/ui/toast";
 
 import {
+  DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
   EMPTY_QUESTIONNAIRE_VALUES,
   QuestionaireForm,
+  type QuestionnaireFieldOptions,
   type QuestionnaireFormValues,
 } from "~/components/forms/questionaire-form";
 import { QUESTIONNAIRE_UPDATE_ACTION } from "../constants";
@@ -30,6 +32,7 @@ export function QuestionnaireFormDialog({
   staticMode,
   resolveItemId,
   onSaved,
+  fieldOptions = DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -38,6 +41,7 @@ export function QuestionnaireFormDialog({
   staticMode: boolean;
   resolveItemId: (record: MondayRecord) => string;
   onSaved: () => Promise<void>;
+  fieldOptions?: QuestionnaireFieldOptions;
 }) {
   const [slideIndex, setSlideIndex] = useState(0);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => new Set());
@@ -172,7 +176,10 @@ export function QuestionnaireFormDialog({
         </DialogHeader>
 
         <form className="space-y-3" onSubmit={(e) => void onSubmit(e)}>
-          <QuestionaireForm form={form} />
+          <QuestionaireForm
+            form={form}
+            fieldOptions={fieldOptions}
+          />
 
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
             {isSaved ? (

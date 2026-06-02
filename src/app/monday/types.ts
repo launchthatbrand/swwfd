@@ -131,6 +131,18 @@ export interface MondayRecordEditOptionsResponse {
     retentionPeriod: string[];
     tags: string[];
     status: string[];
+    questionnaireGender: string[];
+    questionnaireEntryLevel: string[];
+    questionnaireSkilled: string[];
+    questionnaireEthnicity: string[];
+    questionnaireEducationLevel: string[];
+    questionnaireUsWorkEligible: string[];
+    questionnaireVeteran: string[];
+    questionnaireSecondChance: string[];
+    questionnaireTransportation: string[];
+    questionnaireWorkSchedule: string[];
+    questionnaireCandidateEducation: string[];
+    questionnaireDesiredHourlyWage: string[];
   };
 }
 

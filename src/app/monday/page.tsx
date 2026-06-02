@@ -67,6 +67,7 @@ import { MultiSelect } from "~/components/ui/multi-select";
 import { Textarea } from "@launchthatapp/ui/textarea";
 import mondaySdkInitialize from "monday-sdk-js";
 import { toast } from "@launchthatapp/ui/toast";
+import { DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS } from "~/components/forms/questionaire-form";
 
 import type {
   AddNewContactValues,
@@ -138,7 +139,12 @@ import {
   KANBAN_STEP_CONFIG,
   LAST_INTERACTION_DATE_COLUMN_ID,
   MONDAY_DEV_BYPASS_TOKEN,
+  QUESTIONNAIRE_ENTRY_LEVEL_OPTIONS,
+  QUESTIONNAIRE_TRANSPORTATION,
+  QUESTIONNAIRE_SKILLED_OPTIONS,
   QUESTIONNAIRE_UPDATE_ACTION,
+  QUESTIONNAIRE_WORK_SCHEDULE,
+  QUESTIONNAIRE_YES_NO,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
   SUBITEM_NOTES_COLUMN_ID,
   STEP_ACTION_CONFIG,
@@ -3121,6 +3127,45 @@ export function MondayBoardView({
       value,
     }));
   }, [editOptionsQuery.data?.status, records]);
+  const questionnaireFieldOptions = useMemo(
+    () => ({
+      ...DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
+      gender: editOptionsQuery.data?.questionnaireGender ?? [],
+      entryLevel:
+        editOptionsQuery.data?.questionnaireEntryLevel?.length
+          ? editOptionsQuery.data.questionnaireEntryLevel
+          : [...QUESTIONNAIRE_ENTRY_LEVEL_OPTIONS],
+      skilled:
+        editOptionsQuery.data?.questionnaireSkilled?.length
+          ? editOptionsQuery.data.questionnaireSkilled
+          : [...QUESTIONNAIRE_SKILLED_OPTIONS],
+      ethnicity: editOptionsQuery.data?.questionnaireEthnicity ?? [],
+      educationLevel: editOptionsQuery.data?.questionnaireEducationLevel ?? [],
+      usWorkEligible:
+        editOptionsQuery.data?.questionnaireUsWorkEligible?.length
+          ? editOptionsQuery.data.questionnaireUsWorkEligible
+          : [...QUESTIONNAIRE_YES_NO],
+      veteran:
+        editOptionsQuery.data?.questionnaireVeteran?.length
+          ? editOptionsQuery.data.questionnaireVeteran
+          : [...QUESTIONNAIRE_YES_NO],
+      secondChance:
+        editOptionsQuery.data?.questionnaireSecondChance?.length
+          ? editOptionsQuery.data.questionnaireSecondChance
+          : [...QUESTIONNAIRE_YES_NO],
+      transportation:
+        editOptionsQuery.data?.questionnaireTransportation?.length
+          ? editOptionsQuery.data.questionnaireTransportation
+          : [...QUESTIONNAIRE_TRANSPORTATION],
+      workSchedule:
+        editOptionsQuery.data?.questionnaireWorkSchedule?.length
+          ? editOptionsQuery.data.questionnaireWorkSchedule
+          : [...QUESTIONNAIRE_WORK_SCHEDULE],
+      candidateEducation: editOptionsQuery.data?.questionnaireCandidateEducation ?? [],
+      desiredHourlyWage: editOptionsQuery.data?.questionnaireDesiredHourlyWage ?? [],
+    }),
+    [editOptionsQuery.data],
+  );
   const activeAdvancedFilterConditions = useMemo(
     () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
     [advancedFilterConditions],
@@ -11663,6 +11708,7 @@ export function MondayBoardView({
               staticMode={staticMode}
               resolveItemId={resolveContactUpdateTargetRecordId}
               onSaved={handleQuestionnaireSaved}
+              fieldOptions={questionnaireFieldOptions}
             />
 
             <p className="text-muted-foreground px-1 text-xs font-medium">
