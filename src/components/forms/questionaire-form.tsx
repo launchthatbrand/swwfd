@@ -124,7 +124,7 @@ export const PUBLIC_QUESTIONNAIRE_STEPS: QuestionnaireStepDefinition[] = [
     id: "education-pay",
     title: "Education & Goals",
     subtitle: "Help us match you with the right opportunities.",
-    fields: ["educationLevel", "candidateEducation", "desiredHourlyWage"],
+    fields: ["educationLevel", "desiredHourlyWage"],
   },
   {
     id: "profile",
