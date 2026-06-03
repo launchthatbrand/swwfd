@@ -5,6 +5,9 @@ import { useForm } from "react-hook-form";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
 
+import { useAction } from "convex/react";
+import { api } from "@convex-config/_generated/api";
+
 import { Button } from "@launchthatapp/ui/button";
 import { toast } from "@launchthatapp/ui/toast";
 
@@ -104,6 +107,9 @@ export default function PublicQuestionairePage() {
   const [lastProgressSavedAt, setLastProgressSavedAt] = useState<number | null>(null);
   const [qualifications, setQualifications] = useState<QuestionnaireQualification[]>([]);
   const [qualificationError, setQualificationError] = useState<string | null>(null);
+  const getOptionsAction = useAction(api.publicQuestionnaireNode.getOptions);
+  const lookupByEmailAction = useAction(api.publicQuestionnaireNode.lookupByEmail);
+  const saveByEmailAction = useAction(api.publicQuestionnaireNode.saveByEmail);
   const [questionnaireFieldOptions, setQuestionnaireFieldOptions] = useState<QuestionnaireFieldOptions>(
     DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
   );
@@ -143,22 +149,9 @@ export default function PublicQuestionairePage() {
       }
       setIsResolvingContact(true);
       try {
-        const params = new URLSearchParams({ email: trimmedEmail });
-        const response = await fetch(`/api/forms/questionaire?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const data = (await response.json()) as {
-          ok?: boolean;
-          error?: string;
-          contact?: ResolvedContact;
-          questionnaire?: QuestionnaireApiPayload;
-        };
-        if (!response.ok || !data.ok || !data.contact) {
-          throw new Error(data.error ?? "Unable to find your contact record");
-        }
-        setResolvedContact(data.contact);
-        const questionnaire = data.questionnaire;
+        const result = await lookupByEmailAction({ email: trimmedEmail });
+        setResolvedContact(result.contact as ResolvedContact);
+        const questionnaire = result.questionnaire as QuestionnaireApiPayload | undefined;
         const hydratedValues: QuestionnaireFormValues = {
           ...EMPTY_QUESTIONNAIRE_VALUES,
           gender: questionnaire?.gender ?? "",
@@ -188,7 +181,7 @@ export default function PublicQuestionairePage() {
         setIsResolvingContact(false);
       }
     },
-    [reset],
+    [reset, lookupByEmailAction],
   );
 
   useEffect(() => {
@@ -204,51 +197,27 @@ export default function PublicQuestionairePage() {
   useEffect(() => {
     void (async () => {
       try {
-        const response = await fetch("/api/forms/questionaire/options", {
-          method: "GET",
-          cache: "no-store",
-        });
-        const data = (await response.json()) as {
-          ok?: boolean;
-          error?: string;
-          options?: {
-            gender?: string[];
-            entryLevel?: string[];
-            skilled?: string[];
-            ethnicity?: string[];
-            educationLevel?: string[];
-            usWorkEligible?: string[];
-            veteran?: string[];
-            secondChance?: string[];
-            transportation?: string[];
-            workSchedule?: string[];
-            candidateEducation?: string[];
-            desiredHourlyWage?: string[];
-          };
-        };
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error ?? "Failed to load questionnaire options");
-        }
+        const options = await getOptionsAction();
         setQuestionnaireFieldOptions({
           ...DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
-          gender: data.options?.gender ?? [],
-          entryLevel: data.options?.entryLevel ?? [],
-          skilled: data.options?.skilled ?? [],
-          ethnicity: data.options?.ethnicity ?? [],
-          educationLevel: data.options?.educationLevel ?? [],
-          usWorkEligible: data.options?.usWorkEligible ?? [],
-          veteran: data.options?.veteran ?? [],
-          secondChance: data.options?.secondChance ?? [],
-          transportation: data.options?.transportation ?? [],
-          workSchedule: data.options?.workSchedule ?? [],
-          candidateEducation: data.options?.candidateEducation ?? [],
-          desiredHourlyWage: data.options?.desiredHourlyWage ?? [],
+          gender: options.gender ?? [],
+          entryLevel: options.entryLevel ?? [],
+          skilled: options.skilled ?? [],
+          ethnicity: options.ethnicity ?? [],
+          educationLevel: options.educationLevel ?? [],
+          usWorkEligible: options.usWorkEligible ?? [],
+          veteran: options.veteran ?? [],
+          secondChance: options.secondChance ?? [],
+          transportation: options.transportation ?? [],
+          workSchedule: options.workSchedule ?? [],
+          candidateEducation: options.candidateEducation ?? [],
+          desiredHourlyWage: options.desiredHourlyWage ?? [],
         });
       } catch {
         // fallback options from shared component stay active
       }
     })();
-  }, []);
+  }, [getOptionsAction]);
 
   const persistQuestionnaire = useCallback(
     async ({
@@ -276,28 +245,13 @@ export default function PublicQuestionairePage() {
       payloadFields.skilled = mappedQualifications.skilled;
 
       try {
-        const response = await fetch("/api/forms/questionaire", {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            email: trimmedEmail,
-            submissionMode,
-            ...payloadFields,
-          }),
+        const result = await saveByEmailAction({
+          email: trimmedEmail,
+          submissionMode,
+          ...(payloadFields as Record<string, string | string[] | undefined>),
         });
-        const data = (await response.json()) as {
-          ok?: boolean;
-          error?: string;
-          contact?: ResolvedContact;
-        };
-        if (!response.ok || !data.ok) {
-          throw new Error(data.error ?? "Failed to save questionnaire progress");
-        }
-        if (data.contact) {
-          setResolvedContact(data.contact);
+        if (result.contact) {
+          setResolvedContact(result.contact as ResolvedContact);
         }
         if (submissionMode === "partial") {
           setLastProgressSavedAt(Date.now());

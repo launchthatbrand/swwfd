@@ -128,6 +128,19 @@ export declare const api: {
       }>
     >;
   };
+  mondayAuth: {
+    verifyAndProvision: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string },
+      {
+        accountId: string;
+        appClientId?: string;
+        boardId?: string;
+        userId: string;
+      }
+    >;
+  };
   mondayBulkSync: {
     cancelJob: FunctionReference<
       "mutation",
@@ -306,6 +319,100 @@ export declare const api: {
       }
     >;
   };
+  mondayContactsNode: {
+    createContact: FunctionReference<
+      "action",
+      "public",
+      {
+        address?: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        ownerId?: string;
+        sessionToken: string;
+      },
+      { created: { id: string } }
+    >;
+    findContacts: FunctionReference<
+      "action",
+      "public",
+      { email: string; sessionToken: string },
+      {
+        existing: Array<{
+          email: string | null;
+          id: string;
+          name: string;
+          owner: string | null;
+          updatedAt: string | null;
+          url: string | null;
+        }>;
+        identity: { userId: string };
+      }
+    >;
+  };
+  mondayEmailTemplatesNode: {
+    listTemplates: FunctionReference<
+      "action",
+      "public",
+      {
+        boardId?: string;
+        cursor?: string;
+        limit?: number;
+        sessionToken: string;
+        workdocColumnId?: string;
+      },
+      {
+        boardId: string;
+        boardName: string | null;
+        nextCursor: string | null;
+        templates: Array<{
+          content: string;
+          docLink: string | null;
+          id: string;
+          name: string;
+          renderedHtml: string;
+          updatedAt: string | null;
+          url: string | null;
+        }>;
+        workdocColumnId: string;
+      }
+    >;
+  };
+  mondayHelpdeskNode: {
+    createTicket: FunctionReference<
+      "action",
+      "public",
+      {
+        category?: string;
+        description: string;
+        linkedContactId?: string;
+        linkedContactName?: string;
+        priority?: string;
+        sessionToken: string;
+        subject: string;
+        submitterId?: string;
+      },
+      { itemId: string | null; ok: true }
+    >;
+    listTickets: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string; submitterId?: string },
+      {
+        tickets: Array<{
+          category: string | null;
+          createdAt: string | null;
+          date: string | null;
+          description: string | null;
+          id: string;
+          linkedContact: string | null;
+          name: string;
+          priority: string | null;
+          status: string | null;
+        }>;
+      }
+    >;
+  };
   mondayHireEventBackfill: {
     cancelBackfill: FunctionReference<
       "mutation",
@@ -381,6 +488,113 @@ export declare const api: {
       "public",
       { dryRun?: boolean; monthKey: string; pageSize?: number },
       { jobId: Id<"mondayHireEventBackfillJobs">; workflowId: string }
+    >;
+  };
+  mondayJobsNode: {
+    listJobs: FunctionReference<
+      "action",
+      "public",
+      {
+        boardId?: string;
+        district?: string;
+        limit?: number;
+        onlyAvailable?: boolean;
+        search?: string;
+        sessionToken: string;
+      },
+      {
+        boardId: string;
+        boardName: string | null;
+        jobs: Array<{
+          applyEmail: string | null;
+          applyPhone: string | null;
+          categories: Array<string>;
+          contractor: string | null;
+          contractorEmail: string | null;
+          description: string | null;
+          district: string | null;
+          id: string;
+          isAvailable: boolean;
+          location: string | null;
+          locationSecondary: string | null;
+          postedDate: string | null;
+          salaryAmount: string | null;
+          salaryType: string | null;
+          status: string | null;
+          title: string;
+          updatedAt: string | null;
+          websiteUrl: string | null;
+        }>;
+      }
+    >;
+  };
+  mondayMetricsNode: {
+    getMetrics: FunctionReference<
+      "action",
+      "public",
+      { fiscalYear?: string; ownerId?: string; sessionToken: string },
+      {
+        summary: {
+          boardName: string | null;
+          communicationTotals: {
+            emailCommunications: number;
+            phoneCallCommunications: number;
+            textCommunications: number;
+          };
+          contractorReferrals: Array<{
+            contractorName: string;
+            referredCount: number;
+          }>;
+          fiscalYear: string;
+          generatedAt: string;
+          hiredContacts: Array<{
+            contactId: string;
+            email: string | null;
+            hireCount: number;
+            latestHireDate: string | null;
+            name: string;
+            url: string | null;
+          }>;
+          monthly: Array<{
+            allContacts: number;
+            candidatesGroup: number;
+            emailCommunications: number;
+            hiredCandidatesGroup: number;
+            hiredReentry: number;
+            hiredTotal: number;
+            hiredVeterans: number;
+            monthKey: string;
+            monthLabel: string;
+            phoneCallCommunications: number;
+            reentry: number;
+            textCommunications: number;
+            veterans: number;
+          }>;
+          ownerBreakdown: Array<{
+            allContacts: number;
+            candidatesGroup: number;
+            hiredCandidatesGroup: number;
+            hiredReentry: number;
+            hiredTotal: number;
+            hiredVeterans: number;
+            ownerId: string;
+            ownerLabel: string;
+            reentry: number;
+            veterans: number;
+          }>;
+          ownerId: string | null;
+          totals: {
+            allContacts: number;
+            candidatesGroup: number;
+            hiredCandidatesGroup: number;
+            hiredReentry: number;
+            hiredTotal: number;
+            hiredVeterans: number;
+            reentry: number;
+            veterans: number;
+          };
+        };
+      }
     >;
   };
   mondayMonthlyMigration: {
@@ -480,6 +694,279 @@ export declare const api: {
       { jobId: Id<"mondayMonthlyMigrationJobs">; workflowId: string }
     >;
   };
+  mondayQuestionnaireNode: {
+    saveQuestionnaire: FunctionReference<
+      "action",
+      "public",
+      {
+        candidateEducation?: string;
+        desiredHourlyWage?: string;
+        educationLevel?: string;
+        entryLevel?: string | Array<string>;
+        ethnicity?: string;
+        gender?: string;
+        itemId: string;
+        secondChance?: string | Array<string>;
+        sessionToken: string;
+        skilled?: string | Array<string>;
+        startDate?: string;
+        transportation?: string | Array<string>;
+        usWorkEligible?: string | Array<string>;
+        veteran?: string | Array<string>;
+        workSchedule?: string | Array<string>;
+      },
+      { ok: true }
+    >;
+  };
+  mondayRecordsNode: {
+    createRecordUpdate: FunctionReference<
+      "action",
+      "public",
+      {
+        body: string;
+        date?: string;
+        dateTime?: string;
+        internalExternalStatus?: "Internal" | "External";
+        itemId: string;
+        methodOfCommunication?: string;
+        sessionToken: string;
+        subitemNameOverride?: string;
+        suppressApprovalStepMarking?: boolean;
+        updateType?:
+          | "general"
+          | "welcome_email"
+          | "followup"
+          | "questionnaire"
+          | "resume"
+          | "resume_referral"
+          | "job_referral"
+          | "merge";
+      },
+      {
+        update: {
+          approvalStepMarked: boolean;
+          body: string;
+          id: string;
+          source: "subitem";
+          subitemName: string;
+          updateType: string;
+          warning: string | null;
+        };
+      }
+    >;
+    getEditOptions: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string },
+      {
+        options: {
+          hiredWithContractor: Array<string>;
+          questionnaireCandidateEducation: Array<string>;
+          questionnaireDesiredHourlyWage: Array<string>;
+          questionnaireEducationLevel: Array<string>;
+          questionnaireEntryLevel: Array<string>;
+          questionnaireEthnicity: Array<string>;
+          questionnaireGender: Array<string>;
+          questionnaireSecondChance: Array<string>;
+          questionnaireSkilled: Array<string>;
+          questionnaireTransportation: Array<string>;
+          questionnaireUsWorkEligible: Array<string>;
+          questionnaireVeteran: Array<string>;
+          questionnaireWorkSchedule: Array<string>;
+          referredToContractors: Array<string>;
+          retentionPeriod: Array<string>;
+          status: Array<string>;
+          tags: Array<string>;
+        };
+      }
+    >;
+    getRecordColumns: FunctionReference<
+      "action",
+      "public",
+      { itemId: string; sessionToken: string },
+      {
+        columns: Array<{
+          id: string;
+          isEditable: boolean;
+          options: Array<string>;
+          text: string | null;
+          title: string;
+          type: string;
+          value: string | null;
+        }>;
+        itemId: string;
+        itemName: string | null;
+      }
+    >;
+    listRecords: FunctionReference<
+      "action",
+      "public",
+      {
+        cursor?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        group?: string;
+        limit?: number;
+        owner?: string;
+        search?: string;
+        sessionToken: string;
+        status?: string;
+      },
+      {
+        appliedFilters: { date: boolean; owner: boolean; status: boolean };
+        approvalSteps: Array<{ id: string; title: string }>;
+        boardName: string | null;
+        nextCursor: string | null;
+        records: Array<{
+          address: string | null;
+          createdAt: string | null;
+          email: string | null;
+          groupTitle: string | null;
+          hireDate: string | null;
+          hiredWithContractor: string | null;
+          id: string;
+          interviewingWithContractors: string | null;
+          lastTouchpointAt: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          peopleText: string | null;
+          phone: string | null;
+          referredToContractors: string | null;
+          retentionPeriod: string | null;
+          statusText: string | null;
+          tags: string | null;
+          updatedAt: string | null;
+          url: string | null;
+        }>;
+      }
+    >;
+    listRecordUpdates: FunctionReference<
+      "action",
+      "public",
+      { itemId: string; limit?: number; sessionToken: string },
+      {
+        itemId: string;
+        itemName: string | null;
+        subitems: Array<{
+          createdAt: string | null;
+          id: string;
+          methodOfCommunication: string | null;
+          name: string;
+          typeLabel: string | null;
+          updateType: string;
+          updates: Array<{
+            body: string;
+            createdAt: string | null;
+            creatorId: string | null;
+            creatorName: string | null;
+            id: string;
+            updatedAt: string | null;
+          }>;
+        }>;
+        updates: Array<{
+          body: string;
+          createdAt: string | null;
+          creatorId: string | null;
+          creatorName: string | null;
+          id: string;
+          source: "item" | "subitem";
+          subitemId: string | null;
+          subitemName: string | null;
+          updateType: string;
+          updatedAt: string | null;
+        }>;
+      }
+    >;
+    patchRecord: FunctionReference<
+      "action",
+      "public",
+      {
+        hireDate?: string | null;
+        hiredWithContractor?: string | null;
+        interviewingWithContractors?: Array<string> | string | null;
+        itemId: string;
+        lastInteractionDate?: string | null;
+        ownerId?: string | null;
+        referredToContractors?: Array<string> | string | null;
+        retentionPeriod?: string | null;
+        sessionToken: string;
+        status?: string | null;
+        tags?: Array<string> | null;
+      },
+      {
+        hireEvent: null | {
+          id: string | null;
+          upserted: "created" | "skipped";
+        };
+        warning: string | null;
+      }
+    >;
+    patchRecordColumn: FunctionReference<
+      "action",
+      "public",
+      {
+        columnId: string;
+        columnType: string;
+        itemId: string;
+        sessionToken: string;
+        value?: string | null;
+      },
+      { columnId: string; columnType: string; itemId: string }
+    >;
+    resetApprovalStep: FunctionReference<
+      "action",
+      "public",
+      {
+        action?: "reset" | "done" | "skipped";
+        itemId: string;
+        sessionToken: string;
+        stepColumnId: string;
+      },
+      null
+    >;
+  };
+  mondayRoutingNode: {
+    assignOwnerByDistrict: FunctionReference<
+      "action",
+      "public",
+      { force?: boolean; itemId: string; sessionToken: string },
+      {
+        ok: boolean;
+        result: {
+          countyFips: string | null;
+          countyName: string | null;
+          districtCode: string | null;
+          itemId: string;
+          matchedAddress: string | null;
+          message: string;
+          ok: boolean;
+          ownerId: string | null;
+          source: "webhook" | "manual";
+          status: string;
+        };
+      }
+    >;
+    getRoutingStatus: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string },
+      {
+        status: {
+          contactBoardId: string | null;
+          contactBoardUrl: string | null;
+          countyBoardId: string | null;
+          countyBoardUrl: string | null;
+          countyMappingsCount: number;
+          districtBoardId: string | null;
+          districtBoardUrl: string | null;
+          districtOwnerMappingsCount: number;
+          enabled: boolean;
+          issues: Array<string>;
+          ok: boolean;
+        };
+      }
+    >;
+  };
   mondaySettings: {
     getFeatureFlags: FunctionReference<
       "query",
@@ -537,6 +1024,63 @@ export declare const api: {
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
       }
+    >;
+  };
+  mondaySubitemsNode: {
+    deleteSubitem: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string; subitemId: string },
+      { deletedId: string }
+    >;
+    patchSubitem: FunctionReference<
+      "action",
+      "public",
+      { date: string; sessionToken: string; subitemId: string },
+      { date: string; updatedId: string }
+    >;
+  };
+  mondayToolHistory: {
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        baselineDate?: string | null;
+        createdCount: number;
+        dateFrom?: string | null;
+        dateTo?: string | null;
+        dryRun?: boolean;
+        errorCount: number;
+        finishedAt?: number | null;
+        jobId: string;
+        lastError?: string | null;
+        legacy: boolean;
+        mappedCount: number;
+        monthKey?: string | null;
+        monthTag?: string | null;
+        pageSize?: number;
+        processedCount: number;
+        searchText: string;
+        skippedCount: number;
+        sourceBoardId?: string | null;
+        sourceBoardName?: string | null;
+        sourceTag?: string | null;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        targetBoardId?: string | null;
+        toolLabel: string;
+        toolType:
+          | "monthly_migration"
+          | "hire_event_backfill"
+          | "touch_range_backfill"
+          | "touch_backfill"
+          | "touch_csv_export";
+        updatedAt: number;
+        updatedCount: number;
+        warningCount: number;
+        workflowId?: string | null;
+      }>
     >;
   };
   mondayTouchBackfill: {
@@ -692,6 +1236,71 @@ export declare const api: {
       "public",
       { baselineDate?: string; pageSize?: number; sourceTag?: string },
       { jobId: Id<"mondayTouchCsvExportJobs">; workflowId: string }
+    >;
+  };
+  mondayTouchesNode: {
+    createTouch: FunctionReference<
+      "action",
+      "public",
+      {
+        contactItemId: string;
+        contactName: string;
+        ownerId: string;
+        sessionToken: string;
+        source?: string;
+      },
+      { id: string | null; upserted: "created" | "updated" | "skipped" }
+    >;
+    listTouches: FunctionReference<
+      "action",
+      "public",
+      {
+        cursor?: string;
+        dateFrom?: string;
+        dateTo?: string;
+        limit?: number;
+        owner?: string;
+        search?: string;
+        sessionToken: string;
+      },
+      {
+        appliedFilters?: { date: boolean; owner: boolean };
+        boardName: string | null;
+        nextCursor: string | null;
+        records: Array<{
+          address: string | null;
+          contactDetails: Array<{ label: string; value: string }>;
+          createdAt: string | null;
+          email: string | null;
+          groupTitle: string | null;
+          hireDate: string | null;
+          hiredWithContractor: string | null;
+          id: string;
+          interviewingWithContractors: string | null;
+          lastTouchpointAt: string | null;
+          name: string;
+          ownerIds: Array<string>;
+          ownerProfiles: Array<{
+            email: string | null;
+            id: string;
+            name: string | null;
+            photoThumb: string | null;
+          }>;
+          peopleText: string | null;
+          phone: string | null;
+          referredToContractors: string | null;
+          resumeFiles: Array<{
+            assetId: string | null;
+            name: string;
+            url: string | null;
+          }>;
+          retentionPeriod: string | null;
+          statusText: string | null;
+          tags: string | null;
+          updatedAt: string | null;
+          url: string | null;
+        }>;
+      }
     >;
   };
   mondayTouchRangeBackfill: {
@@ -1016,6 +1625,27 @@ export declare const api: {
         firstSeenAt: number;
         lastSeenAt: number;
         mondayUserRecordId: Id<"mondayUsers">;
+      }
+    >;
+  };
+  mondayUsersNode: {
+    getMyProfile: FunctionReference<
+      "action",
+      "public",
+      { sessionToken: string },
+      { user: { email: string | null; id: string; name: string | null } | null }
+    >;
+    listBoardUsers: FunctionReference<
+      "action",
+      "public",
+      { ids?: Array<string>; sessionToken: string },
+      {
+        users: Array<{
+          email: string | null;
+          id: string;
+          name: string | null;
+          photoThumb: string | null;
+        }>;
       }
     >;
   };
@@ -1436,6 +2066,72 @@ export declare const api: {
       { created: boolean; outboundMessageId: Id<"outlookOutboundMessages"> }
     >;
   };
+  publicQuestionnaireNode: {
+    getOptions: FunctionReference<
+      "action",
+      "public",
+      {},
+      {
+        candidateEducation: Array<string>;
+        desiredHourlyWage: Array<string>;
+        educationLevel: Array<string>;
+        entryLevel: Array<string>;
+        ethnicity: Array<string>;
+        gender: Array<string>;
+        secondChance: Array<string>;
+        skilled: Array<string>;
+        transportation: Array<string>;
+        usWorkEligible: Array<string>;
+        veteran: Array<string>;
+        workSchedule: Array<string>;
+      }
+    >;
+    lookupByEmail: FunctionReference<
+      "action",
+      "public",
+      { email: string },
+      {
+        contact: { email: string | null; id: string; name: string };
+        questionnaire: {
+          candidateEducation?: string;
+          desiredHourlyWage?: string;
+          educationLevel?: string;
+          entryLevel?: string | Array<string>;
+          ethnicity?: string;
+          gender?: string;
+          secondChance?: string;
+          skilled?: string | Array<string>;
+          startDate?: string;
+          transportation?: string;
+          usWorkEligible?: string;
+          veteran?: string;
+          workSchedule?: string;
+        };
+      }
+    >;
+    saveByEmail: FunctionReference<
+      "action",
+      "public",
+      {
+        candidateEducation?: string;
+        desiredHourlyWage?: string;
+        educationLevel?: string;
+        email: string;
+        entryLevel?: string | Array<string>;
+        ethnicity?: string;
+        gender?: string;
+        secondChance?: string | Array<string>;
+        skilled?: string | Array<string>;
+        startDate?: string;
+        submissionMode: "partial" | "complete";
+        transportation?: string | Array<string>;
+        usWorkEligible?: string | Array<string>;
+        veteran?: string | Array<string>;
+        workSchedule?: string | Array<string>;
+      },
+      { contact: { email: string | null; id: string; name: string } }
+    >;
+  };
   viewer: {
     me: FunctionReference<
       "query",
@@ -1526,6 +2222,19 @@ export declare const internal: {
             };
       },
       any
+    >;
+  };
+  mondayAuth: {
+    verifySession: FunctionReference<
+      "action",
+      "internal",
+      { sessionToken: string },
+      {
+        accountId: string;
+        appClientId?: string;
+        boardId?: string;
+        userId: string;
+      }
     >;
   };
   mondayHireEventBackfill: {

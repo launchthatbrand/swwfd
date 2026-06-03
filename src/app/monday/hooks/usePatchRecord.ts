@@ -1,8 +1,11 @@
 import { useCallback } from "react";
+import { useAction } from "convex/react";
+import type { FunctionArgs } from "convex/server";
 import { toast } from "@launchthatapp/ui/toast";
 
-import { fetchMondayApi } from "../services/monday-api";
-import type { MondayApiResponse, MondayRecord } from "../types";
+import { api } from "@convex-config/_generated/api";
+
+import type { MondayRecord } from "../types";
 
 interface UsePatchRecordArgs {
   sessionToken: string | null;
@@ -13,7 +16,11 @@ const resolveTargetId = (record: MondayRecord) => {
   return contactId && contactId.length > 0 ? contactId : record.id;
 };
 
+type PatchRecordActionArgs = FunctionArgs<typeof api.mondayRecordsNode.patchRecord>;
+
 export const usePatchRecord = ({ sessionToken }: UsePatchRecordArgs) => {
+  const patchRecordAction = useAction(api.mondayRecordsNode.patchRecord);
+
   const patchRecord = useCallback(
     async (
       record: MondayRecord,
@@ -29,19 +36,17 @@ export const usePatchRecord = ({ sessionToken }: UsePatchRecordArgs) => {
       }
 
       const targetId = resolveTargetId(record);
-      const data = await fetchMondayApi<MondayApiResponse>(
-        `/api/monday/records/${encodeURIComponent(targetId)}`,
-        { sessionToken, method: "PATCH", body: patch },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to update record");
-      }
+      await patchRecordAction({
+        sessionToken,
+        itemId: targetId,
+        ...(patch as Omit<PatchRecordActionArgs, "sessionToken" | "itemId">),
+      });
       if (opts?.successMessage) {
         toast.success(opts.successMessage);
       }
       return true;
     },
-    [sessionToken],
+    [patchRecordAction, sessionToken],
   );
 
   return { patchRecord, resolveTargetId };

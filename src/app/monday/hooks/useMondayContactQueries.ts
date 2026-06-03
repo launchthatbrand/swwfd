@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAction } from "convex/react";
 
-import { fetchMondayApi } from "../services/monday-api";
+import { api } from "@convex-config/_generated/api";
+
 import type {
   MondayJobsResponse,
   MondayRecord,
   MondayRecordUpdatesResponse,
-  MondayRoutingStatusResponse,
 } from "../types";
 
 interface ContactColumnEntry {
@@ -52,6 +53,11 @@ export const useMondayContactQueries = ({
   bulkQuestionnaireTargetRecordId,
   bulkQuestionnaireEmailRecordsCount,
 }: UseMondayContactQueriesArgs) => {
+  const listRecordUpdates = useAction(api.mondayRecordsNode.listRecordUpdates);
+  const listJobs = useAction(api.mondayJobsNode.listJobs);
+  const getRecordColumns = useAction(api.mondayRecordsNode.getRecordColumns);
+  const getRoutingStatus = useAction(api.mondayRoutingNode.getRoutingStatus);
+
   const contactUpdatesQuery = useQuery({
     queryKey: [
       "monday-record-updates",
@@ -66,14 +72,12 @@ export const useMondayContactQueries = ({
         contactId && contactId.length > 0
           ? contactId
           : (contactHistoryDialogRecord?.id ?? "");
-      const data = await fetchMondayApi<MondayRecordUpdatesResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates?limit=200`,
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact conversation history");
-      }
-      return data;
+      const result = await listRecordUpdates({
+        sessionToken: sessionToken!,
+        itemId: targetRecordId,
+        limit: 200,
+      });
+      return { ok: true, ...result } as MondayRecordUpdatesResponse;
     },
     staleTime: 30_000,
   });
@@ -86,14 +90,12 @@ export const useMondayContactQueries = ({
       !staticMode &&
       contactDialogTab === "jobs",
     queryFn: async () => {
-      const data = await fetchMondayApi<MondayJobsResponse>(
-        "/api/monday/jobs?limit=300&onlyAvailable=true",
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load jobs board");
-      }
-      return data;
+      const result = await listJobs({
+        sessionToken: sessionToken!,
+        limit: 300,
+        onlyAvailable: true,
+      });
+      return { ok: true, ...result } as MondayJobsResponse;
     },
     staleTime: 60_000,
   });
@@ -116,14 +118,11 @@ export const useMondayContactQueries = ({
         contactId && contactId.length > 0
           ? contactId
           : (contactHistoryDialogRecord?.id ?? "");
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact details");
-      }
-      return data;
+      const result = await getRecordColumns({
+        sessionToken: sessionToken!,
+        itemId: targetRecordId,
+      });
+      return { ok: true, ...result } as ContactColumnsResponse;
     },
     staleTime: 60_000,
   });
@@ -136,14 +135,11 @@ export const useMondayContactQueries = ({
       settingsOpen &&
       !staticMode,
     queryFn: async () => {
-      const data = await fetchMondayApi<MondayRoutingStatusResponse>(
-        "/api/monday/routing/status",
-        { sessionToken },
-      );
-      if (!data.ok || !data.status) {
-        throw new Error(data.error ?? "Failed to load district routing status");
+      const result = await getRoutingStatus({ sessionToken: sessionToken! });
+      if (!result.status) {
+        throw new Error("Failed to load district routing status");
       }
-      return data.status;
+      return result.status;
     },
     staleTime: 30_000,
   });
@@ -152,14 +148,11 @@ export const useMondayContactQueries = ({
     queryKey: ["monday-send-email-columns", sessionToken, sendEmailTargetRecordId],
     enabled: !!sessionToken && !!sendEmailRecord && !staticMode && sendEmailTargetRecordId.length > 0,
     queryFn: async () => {
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(sendEmailTargetRecordId)}`,
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact template values");
-      }
-      return data;
+      const result = await getRecordColumns({
+        sessionToken: sessionToken!,
+        itemId: sendEmailTargetRecordId,
+      });
+      return { ok: true, ...result } as ContactColumnsResponse;
     },
     staleTime: 60_000,
   });
@@ -176,14 +169,11 @@ export const useMondayContactQueries = ({
       bulkQuestionnaireEmailRecordsCount > 0 &&
       bulkQuestionnaireTargetRecordId.length > 0,
     queryFn: async () => {
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(bulkQuestionnaireTargetRecordId)}`,
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact template values");
-      }
-      return data;
+      const result = await getRecordColumns({
+        sessionToken: sessionToken!,
+        itemId: bulkQuestionnaireTargetRecordId,
+      });
+      return { ok: true, ...result } as ContactColumnsResponse;
     },
     staleTime: 60_000,
   });

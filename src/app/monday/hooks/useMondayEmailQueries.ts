@@ -1,4 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAction } from "convex/react";
+
+import { api } from "@convex-config/_generated/api";
 
 import { fetchMondayApi } from "../services/monday-api";
 import type {
@@ -27,6 +30,8 @@ export const useMondayEmailQueries = ({
   bulkQuestionnaireEmailRecordsCount,
   emailMarketingEnabled,
 }: UseMondayEmailQueriesArgs) => {
+  const listTemplates = useAction(api.mondayEmailTemplatesNode.listTemplates);
+
   const emailTemplatesQuery = useQuery({
     queryKey: ["monday-email-templates", sessionToken],
     enabled:
@@ -34,19 +39,13 @@ export const useMondayEmailQueries = ({
       !staticMode &&
       (!!sendEmailRecord || settingsOpen || bulkQuestionnaireEmailRecordsCount > 0),
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("boardId", "18401299370");
-      params.set("workdocColumnId", "doc_mm0wq4r");
-      params.set("limit", "250");
-
-      const data = await fetchMondayApi<MondayEmailTemplatesResponse>(
-        `/api/monday/email-templates?${params.toString()}`,
-        { sessionToken },
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load email templates");
-      }
-      return data;
+      const result = await listTemplates({
+        sessionToken: sessionToken!,
+        boardId: "18401299370",
+        workdocColumnId: "doc_mm0wq4r",
+        limit: 250,
+      });
+      return { ok: true, ...result } as MondayEmailTemplatesResponse;
     },
     staleTime: 60_000,
   });

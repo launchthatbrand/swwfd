@@ -1,5 +1,9 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { useAction } from "convex/react";
 
+import { api } from "@convex-config/_generated/api";
+
+import { fetchMondayApi } from "../services/monday-api";
 import type { MondayResponse } from "../types";
 
 interface UseMondayRecordsQueryArgs {
@@ -27,6 +31,8 @@ export const useMondayRecordsQuery = ({
   hasResolvedUserScopeOwner,
   boardSettingsReady,
 }: UseMondayRecordsQueryArgs) => {
+  const listRecords = useAction(api.mondayRecordsNode.listRecords);
+
   return useInfiniteQuery({
     queryKey: [
       "monday-records",
@@ -45,34 +51,48 @@ export const useMondayRecordsQuery = ({
       boardSettingsReady,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const recordsEndpoint = useUserRecordsEndpoint
-        ? "/api/monday/user-records"
-        : "/api/monday/records";
-      const params = new URLSearchParams();
-      params.set("limit", useUserRecordsEndpoint ? "50" : "100");
-      if (pageParam) params.set("cursor", pageParam);
       const normalizedSearch = debouncedSearch.trim();
       const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
-      if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
-      if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
       const shouldApplyDateWindow = !isGlobalDateScope && !isFullDbSearch;
-      if (shouldApplyDateWindow) {
-        params.set("dateFrom", monthBounds.from);
-        params.set("dateTo", monthBounds.to);
+
+      if (useUserRecordsEndpoint) {
+        const params = new URLSearchParams();
+        params.set("limit", "50");
+        if (pageParam) params.set("cursor", pageParam);
+        if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
+        if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
+        if (shouldApplyDateWindow) {
+          params.set("dateFrom", monthBounds.from);
+          params.set("dateTo", monthBounds.to);
+        }
+
+        const data = await fetchMondayApi<MondayResponse>(
+          `/api/monday/user-records?${params.toString()}`,
+          { sessionToken },
+        );
+        if (!data.ok) {
+          throw new Error(data.error ?? "Failed to load Monday records");
+        }
+        return data;
       }
 
-      const response = await fetch(`${recordsEndpoint}?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-        headers: sessionToken
-          ? { "x-monday-session-token": sessionToken }
-          : undefined,
+      const result = await listRecords({
+        sessionToken: sessionToken!,
+        cursor: pageParam,
+        limit: 100,
+        search: normalizedSearch.length >= 2 ? normalizedSearch : undefined,
+        owner: ownerFilter.trim() || undefined,
+        dateFrom: shouldApplyDateWindow ? monthBounds.from : undefined,
+        dateTo: shouldApplyDateWindow ? monthBounds.to : undefined,
       });
-      const data = (await response.json()) as MondayResponse;
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load Monday records");
-      }
-      return data;
+
+      return {
+        ok: true,
+        boardName: result.boardName,
+        records: result.records,
+        nextCursor: result.nextCursor,
+        approvalSteps: result.approvalSteps,
+      } as MondayResponse;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     staleTime: useUserRecordsEndpoint ? 60_000 : 30_000,

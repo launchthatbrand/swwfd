@@ -25,6 +25,9 @@ import {
   type QuestionnaireQualification,
   type QuestionnaireFormValues,
 } from "~/components/forms/questionaire-form";
+import { useAction } from "convex/react";
+import { api } from "@convex-config/_generated/api";
+
 import { QUESTIONNAIRE_UPDATE_ACTION } from "../constants";
 import type { MondayRecord } from "../types";
 
@@ -53,6 +56,7 @@ export function QuestionnaireFormDialog({
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const [qualifications, setQualifications] = useState<QuestionnaireQualification[]>([]);
+  const saveQuestionnaireAction = useAction(api.mondayQuestionnaireNode.saveQuestionnaire);
   const valuesByItemIdRef = useRef<Map<string, QuestionnaireFormValues>>(new Map());
   const qualificationsByItemIdRef = useRef<Map<string, QuestionnaireQualification[]>>(new Map());
   const stepByItemIdRef = useRef<Map<string, number>>(new Map());
@@ -140,26 +144,13 @@ export function QuestionnaireFormDialog({
     setSaving(true);
     try {
       const mappedQualifications = mapQualificationsToColumns(qualifications);
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(activeItemId)}/questionnaire`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify({
-            ...data,
-            entryLevel: mappedQualifications.entryLevel,
-            skilled: mappedQualifications.skilled,
-          }),
-        },
-      );
-      const result = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error ?? "Failed to save questionnaire");
-      }
+      await saveQuestionnaireAction({
+        sessionToken,
+        itemId: activeItemId,
+        ...data,
+        entryLevel: mappedQualifications.entryLevel,
+        skilled: mappedQualifications.skilled,
+      });
       valuesByItemIdRef.current.set(activeItemId, data);
       qualificationsByItemIdRef.current.set(activeItemId, qualifications);
       setSavedItemIds((prev) => new Set(prev).add(activeItemId));

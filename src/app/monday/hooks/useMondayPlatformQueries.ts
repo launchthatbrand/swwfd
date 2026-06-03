@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { useQuery as useConvexQuery } from "convex/react";
+
+import { api } from "@convex-config/_generated/api";
 
 import { fetchMondayApi } from "../services/monday-api";
-import type {
-  MondayFeatureFlagsResponse,
-  MondayPlatformSettings,
-  MondayPlatformSettingsResponse,
-} from "../types";
+import type { MondayPlatformSettings } from "../types";
 
 interface PlatformBoardColumnsResponse {
   ok: boolean;
@@ -30,37 +29,15 @@ export const useMondayPlatformQueries = ({
   settingsOpen,
   isMasterAdmin,
 }: UseMondayPlatformQueriesArgs) => {
-  const featureFlagsQuery = useQuery({
-    queryKey: ["monday-feature-flags", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayFeatureFlagsResponse>(
-        "/api/monday/settings/feature-flags",
-        { sessionToken },
-      );
-      if (!data.ok || !data.featureFlags) {
-        throw new Error(data.error ?? "Failed to load feature flags");
-      }
-      return data.featureFlags;
-    },
-    staleTime: 30_000,
-  });
+  const featureFlagsQuery = useConvexQuery(
+    api.mondaySettings.getFeatureFlags,
+    staticMode ? "skip" : {},
+  );
 
-  const platformSettingsQuery = useQuery({
-    queryKey: ["monday-platform-settings", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayPlatformSettingsResponse>(
-        "/api/monday/settings/platform",
-        { sessionToken },
-      );
-      if (!data.ok || !data.platformSettings) {
-        throw new Error(data.error ?? "Failed to load platform settings");
-      }
-      return data.platformSettings;
-    },
-    staleTime: 30_000,
-  });
+  const platformSettingsQuery = useConvexQuery(
+    api.mondaySettings.getPlatformSettings,
+    staticMode ? "skip" : {},
+  );
 
   const platformBoardColumnsQuery = useQuery({
     queryKey: ["monday-platform-board-columns", sessionToken],

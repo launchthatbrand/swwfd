@@ -49,7 +49,12 @@ import {
   DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  useAction,
+  useConvex,
+  useMutation as useConvexMutation,
+} from "convex/react";
+import { api } from "@convex-config/_generated/api";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
@@ -102,8 +107,6 @@ import type {
   MondayRoutingStatusResponse,
   MondaySendEmailResponse,
   MondayUserBoardSettingsResponse,
-  MondayUserFilterPresetUpsertResponse,
-  MondayUserFilterPresetsResponse,
   MondayUserProfileResponse,
   OutlookConnectionStatusResponse,
   OutlookTeamMailboxesResponse,
@@ -249,7 +252,16 @@ import {
 } from "./board-local";
 import { useAdvancedFilters } from "./hooks/useAdvancedFilters";
 import { useBulkActions } from "./hooks/useBulkActions";
+import { useBulkSyncMutations } from "./hooks/useBulkSyncMutations";
 import { useCommunicationActions } from "./hooks/useCommunicationActions";
+import {
+  useMondayContactQueries,
+  type ContactColumnEntry,
+} from "./hooks/useMondayContactQueries";
+import { useMondayEmailQueries } from "./hooks/useMondayEmailQueries";
+import { useMondayPlatformQueries } from "./hooks/useMondayPlatformQueries";
+import { useMondayRecordsQuery } from "./hooks/useMondayRecordsQuery";
+import { useMondayUserQueries } from "./hooks/useMondayUserQueries";
 import { useContactDialogController } from "./hooks/useContactDialogController";
 import { useContactDialogOnboardingStepperProps } from "./hooks/useContactDialogOnboardingStepperProps";
 import { useKanbanActions } from "./hooks/useKanbanActions";
@@ -259,7 +271,6 @@ import { useMondaySession } from "./hooks/useMondaySession";
 import { useMondaySettings } from "./hooks/useMondaySettings";
 import { useOnboardingWorkflows } from "./hooks/useOnboardingWorkflows";
 import { useSendEmailFlow } from "./hooks/useSendEmailFlow";
-import { deleteSubitem, patchSubitemDate } from "./services";
 
 const MASTER_ADMIN_USER_ID = "53441186";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -385,13 +396,9 @@ export function MondayBoardView({
   const [editingContactColumnId, setEditingContactColumnId] = useState<string | null>(null);
   const [editingContactColumnDraft, setEditingContactColumnDraft] = useState("");
   const [isSavingContactColumn, setIsSavingContactColumn] = useState(false);
-  const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
   const [syncContactBoardPickerRecord, setSyncContactBoardPickerRecord] =
     useState<MondayRecord | null>(null);
   const [syncContactBoardSelection, setSyncContactBoardSelection] = useState("");
-  const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
-  const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
-  const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
   const hasHydratedInitialQueryParamsRef = useRef(false);
   const [bulkQuickActionType, setBulkQuickActionType] = useState<
     Exclude<ContactUpdateType, "general"> | null
@@ -827,53 +834,31 @@ export function MondayBoardView({
     isMondayEmbeddedContext &&
     !!identity?.userId &&
     sessionToken !== MONDAY_DEV_BYPASS_TOKEN;
-  const recordsQuery = useInfiniteQuery({
-    queryKey: [
-      "monday-records",
-      viewMode,
-      useUserRecordsEndpoint ? "user-records" : "records",
-      isGlobalDateScope ? "__global__" : monthBounds.from,
-      isGlobalDateScope ? "__global__" : monthBounds.to,
-      debouncedSearch,
-      ownerFilter,
-      sessionToken,
-    ],
-    enabled:
-      !!sessionToken &&
-      !staticMode &&
-      hasResolvedUserScopeOwner &&
-      boardSettingsReady,
-    initialPageParam: undefined as string | undefined,
-    queryFn: async ({ pageParam }) => {
-      const recordsEndpoint = useUserRecordsEndpoint
-        ? "/api/monday/user-records"
-        : "/api/monday/records";
-      const params = new URLSearchParams();
-      params.set("limit", useUserRecordsEndpoint ? "50" : "100");
-      if (pageParam) params.set("cursor", pageParam);
-      const normalizedSearch = debouncedSearch.trim();
-      const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
-      if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
-      if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
-      const shouldApplyDateWindow = !isGlobalDateScope && !isFullDbSearch;
-      if (shouldApplyDateWindow) {
-        params.set("dateFrom", monthBounds.from);
-        params.set("dateTo", monthBounds.to);
-      }
+  const resolveContactUpdateTargetRecordId = useCallback((record: MondayRecord) => {
+    const contactId = record.contactId?.trim();
+    if (contactId && contactId.length > 0) return contactId;
+    return record.id;
+  }, []);
 
-      const data = await fetchMondayApi<MondayResponse>(
-        `${recordsEndpoint}?${params.toString()}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load Monday records");
-      }
-      return data;
-    },
-    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    staleTime: useUserRecordsEndpoint ? 60_000 : 30_000,
+  const sendEmailTargetRecordId =
+    sendEmailRecord?.contactId?.trim() || sendEmailRecord?.id?.trim() || "";
+  const bulkQuestionnaireActiveRecord =
+    bulkQuestionnaireEmailRecords[bulkQuestionnaireEmailIndex] ?? null;
+  const bulkQuestionnaireTargetRecordId = bulkQuestionnaireActiveRecord
+    ? resolveContactUpdateTargetRecordId(bulkQuestionnaireActiveRecord)
+    : "";
+
+  const recordsQuery = useMondayRecordsQuery({
+    sessionToken,
+    staticMode,
+    viewMode,
+    useUserRecordsEndpoint,
+    isGlobalDateScope,
+    monthBounds,
+    debouncedSearch,
+    ownerFilter,
+    hasResolvedUserScopeOwner,
+    boardSettingsReady,
   });
 
   const shouldAutoLoadMore =
@@ -884,59 +869,35 @@ export function MondayBoardView({
     void recordsQuery.fetchNextPage();
   };
 
-  const featureFlagsQuery = useQuery({
-    queryKey: ["monday-feature-flags", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayFeatureFlagsResponse>(
-        "/api/monday/settings/feature-flags",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !data.featureFlags) {
-        throw new Error(data.error ?? "Failed to load feature flags");
-      }
-      return data.featureFlags;
-    },
-    staleTime: 30_000,
+  const {
+    featureFlagsQuery: featureFlagsConvex,
+    platformSettingsQuery: platformSettingsConvex,
+    platformBoardColumnsQuery,
+  } = useMondayPlatformQueries({
+    sessionToken,
+    staticMode,
+    settingsOpen,
+    isMasterAdmin,
   });
 
-  const platformSettingsQuery = useQuery({
-    queryKey: ["monday-platform-settings", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayPlatformSettingsResponse>(
-        "/api/monday/settings/platform",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !data.platformSettings) {
-        throw new Error(data.error ?? "Failed to load platform settings");
-      }
-      return data.platformSettings;
-    },
-    staleTime: 30_000,
-  });
+  const featureFlagsQuery = useMemo(
+    () => ({
+      data: staticMode ? undefined : featureFlagsConvex,
+      error: null as Error | null,
+      refetch: async () => {},
+    }),
+    [featureFlagsConvex, staticMode],
+  );
 
-  const platformBoardColumnsQuery = useQuery({
-    queryKey: ["monday-platform-board-columns", sessionToken],
-    enabled: !!sessionToken && !staticMode && settingsOpen && isMasterAdmin,
-    queryFn: async () => {
-      const data = await fetchMondayApi<PlatformBoardColumnsResponse>(
-        "/api/monday/settings/platform/columns",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !Array.isArray(data.columns)) {
-        throw new Error(data.error ?? "Failed to load platform board columns");
-      }
-      return data.columns;
-    },
-    staleTime: 5 * 60_000,
-  });
+  const platformSettingsQuery = useMemo(
+    () => ({
+      data: staticMode ? undefined : platformSettingsConvex,
+      error: null as Error | null,
+      refetch: async () => {},
+    }),
+    [platformSettingsConvex, staticMode],
+  );
+
   const platformBoardColumnOptions = useMemo(
     () =>
       (platformBoardColumnsQuery.data ?? []).map((column) => ({
@@ -946,326 +907,104 @@ export function MondayBoardView({
     [platformBoardColumnsQuery.data],
   );
 
-  const emailTemplatesQuery = useQuery({
-    queryKey: ["monday-email-templates", sessionToken],
-    enabled:
-      !!sessionToken &&
-      !staticMode &&
-      (!!sendEmailRecord || settingsOpen || bulkQuestionnaireEmailRecords.length > 0),
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("boardId", "18401299370");
-      params.set("workdocColumnId", "doc_mm0wq4r");
-      params.set("limit", "250");
-
-      const data = await fetchMondayApi<MondayEmailTemplatesResponse>(
-        `/api/monday/email-templates?${params.toString()}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load email templates");
-      }
-      return data;
-    },
-    staleTime: 60_000,
+  const {
+    userProfileQuery,
+    ownerDirectoryQuery,
+    editOptionsQuery,
+    userFilterPresetsQuery,
+    userBoardSettingsQuery,
+  } = useMondayUserQueries({
+    sessionToken,
+    staticMode,
+    identityUserId: identity?.userId,
+    accountId: identity?.accountId,
+    presetScopeOwnerId,
+    parseSavedAdvancedFilterPreset,
+    parseUserBoardGeneralSettings,
   });
 
-  const userProfileQuery = useQuery({
-    queryKey: ["monday-user-profile", sessionToken, identity?.userId],
-    enabled: !!sessionToken && !!identity?.userId && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayUserProfileResponse>(
-        "/api/monday/users/me",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load Monday user profile");
-      }
-      return data.user ?? null;
-    },
-    staleTime: 60_000,
+  const {
+    emailTemplatesQuery,
+    outlookStatusQuery,
+    outlookTeamMailboxesQuery,
+    sendEmailContactOwnerId,
+  } = useMondayEmailQueries({
+    sessionToken,
+    staticMode,
+    identityUserId: identity?.userId,
+    settingsOpen,
+    sendEmailRecord,
+    bulkQuestionnaireEmailRecordsCount: bulkQuestionnaireEmailRecords.length,
+    emailMarketingEnabled: featureFlags.emailMarketingEnabled,
   });
 
-  const ownerDirectoryQuery = useQuery({
-    queryKey: ["monday-users", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<
-        {
-                ok?: boolean;
-                error?: string;
-                users?: Array<{
-                  id: string;
-                  name: string | null;
-                  email: string | null;
-                  photoThumb: string | null;
-                }>;
-              }
-      >(
-
-        "/api/monday/users",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load Monday users");
-      }
-      return data.users ?? [];
-    },
-    staleTime: 60_000,
+  const {
+    contactUpdatesQuery,
+    jobsQuery,
+    contactColumnsQuery,
+    routingStatusQuery,
+    sendEmailContactColumnsQuery,
+    bulkQuestionnaireContactColumnsQuery,
+  } = useMondayContactQueries({
+    sessionToken,
+    staticMode,
+    identityUserId: identity?.userId,
+    settingsOpen,
+    contactHistoryDialogRecord,
+    contactDialogTab,
+    sendEmailRecord,
+    sendEmailTargetRecordId,
+    bulkQuestionnaireTargetRecordId,
+    bulkQuestionnaireEmailRecordsCount: bulkQuestionnaireEmailRecords.length,
+    resolveContactUpdateTargetRecordId,
   });
 
-  const editOptionsQuery = useQuery({
-    queryKey: ["monday-record-edit-options", sessionToken],
-    enabled: !!sessionToken && !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayRecordEditOptionsResponse>(
-        "/api/monday/records/edit-options",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !data.options) {
-        throw new Error(data.error ?? "Failed to load monday edit options");
+  const convex = useConvex();
+
+  const upsertFilterPreset = useConvexMutation(
+    api.mondayUserFilterPresets.upsertForOwnerBoard,
+  );
+  const removeFilterPreset = useConvexMutation(
+    api.mondayUserFilterPresets.removeForOwnerBoard,
+  );
+  const setPlatformSettingsMutation = useConvexMutation(api.mondaySettings.setPlatformSettings);
+  const setFeatureFlagsMutation = useConvexMutation(api.mondaySettings.setFeatureFlags);
+  const upsertUserBoardSettingsMutation = useConvexMutation(
+    api.mondayUserBoardSettings.upsertForOwnerBoard,
+  );
+
+  const patchRecordAction = useAction(api.mondayRecordsNode.patchRecord);
+  const patchRecordColumnAction = useAction(api.mondayRecordsNode.patchRecordColumn);
+  const getRecordColumnsAction = useAction(api.mondayRecordsNode.getRecordColumns);
+  const createRecordUpdateAction = useAction(api.mondayRecordsNode.createRecordUpdate);
+  const resetApprovalStepAction = useAction(api.mondayRecordsNode.resetApprovalStep);
+  const assignRoutingAction = useAction(api.mondayRoutingNode.assignOwnerByDistrict);
+  const deleteSubitemAction = useAction(api.mondaySubitemsNode.deleteSubitem);
+  const patchSubitemAction = useAction(api.mondaySubitemsNode.patchSubitem);
+
+  const {
+    latestBulkSyncJob,
+    syncingContactIds,
+    setSyncingContactIds,
+    fetchBulkSyncStatus,
+    startBulkSyncJob,
+    cancelBulkSyncJob,
+    retryFailedBulkSyncJob,
+  } = useBulkSyncMutations({
+    sessionToken,
+    staticMode,
+    isMondaySettingsAdmin,
+    mondayAccountId: identity?.accountId,
+    identityUserId: identity?.userId,
+    mondayAppClientId: identity?.appClientId,
+    monthlyBoardMappings: platformSettings.monthlyBoardMappings,
+    resolveContactUpdateTargetRecordId,
+    onJobCompleted: () => {
+      void recordsQuery.refetch();
+      if (contactHistoryDialogRecord) {
+        void contactUpdatesQuery.refetch();
       }
-      return data.options;
     },
-    staleTime: 60_000,
-  });
-
-  const outlookStatusQuery = useQuery({
-    queryKey: ["monday-outlook-status", sessionToken, identity?.userId, settingsOpen],
-    enabled:
-      !!sessionToken &&
-      !!identity?.userId &&
-      settingsOpen &&
-      !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<OutlookConnectionStatusResponse>(
-        "/api/monday/email/outlook/status",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load Outlook connection status");
-      }
-      return data;
-    },
-    staleTime: 30_000,
-  });
-  const sendEmailContactOwnerId = sendEmailRecord?.ownerIds[0]?.trim() ?? "";
-  const outlookTeamMailboxesQuery = useQuery({
-    queryKey: [
-      "monday-outlook-team-mailboxes",
-      sessionToken,
-      sendEmailRecord?.id,
-      sendEmailContactOwnerId,
-    ],
-    enabled:
-      !!sessionToken &&
-      !!identity?.userId &&
-      !!sendEmailRecord &&
-      featureFlags.emailMarketingEnabled &&
-      !staticMode,
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (sendEmailContactOwnerId) {
-        params.set("contactOwnerUserId", sendEmailContactOwnerId);
-      }
-      const data = await fetchMondayApi<OutlookTeamMailboxesResponse>(
-        `/api/monday/email/outlook/team-mailboxes?${params.toString()}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !Array.isArray(data.mailboxes)) {
-        throw new Error(data.error ?? "Failed to load team sender mailboxes");
-      }
-      return data;
-    },
-    staleTime: 30_000,
-  });
-
-  const routingStatusQuery = useQuery({
-    queryKey: ["monday-routing-status", sessionToken, identity?.userId, settingsOpen],
-    enabled:
-      !!sessionToken &&
-      !!identity?.userId &&
-      settingsOpen &&
-      !staticMode,
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayRoutingStatusResponse>(
-        "/api/monday/routing/status",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok || !data.status) {
-        throw new Error(data.error ?? "Failed to load district routing status");
-      }
-      return data.status;
-    },
-    staleTime: 30_000,
-  });
-
-  const contactUpdatesQuery = useQuery({
-    queryKey: [
-      "monday-record-updates",
-      sessionToken,
-      contactHistoryDialogRecord?.id,
-      contactHistoryDialogRecord?.contactId,
-    ],
-    enabled: !!sessionToken && !!contactHistoryDialogRecord && !staticMode,
-    queryFn: async () => {
-      const contactId = contactHistoryDialogRecord?.contactId?.trim();
-      const targetRecordId =
-        contactId && contactId.length > 0
-          ? contactId
-          : (contactHistoryDialogRecord?.id ?? "");
-      const data = await fetchMondayApi<MondayRecordUpdatesResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates?limit=200`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact conversation history");
-      }
-      return data;
-    },
-    staleTime: 30_000,
-  });
-
-  const jobsQuery = useQuery({
-    queryKey: ["monday-jobs-board", sessionToken],
-    enabled:
-      !!sessionToken &&
-      !!contactHistoryDialogRecord &&
-      !staticMode &&
-      contactDialogTab === "jobs",
-    queryFn: async () => {
-      const data = await fetchMondayApi<MondayJobsResponse>(
-        "/api/monday/jobs?limit=300&onlyAvailable=true",
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load jobs board");
-      }
-      return data;
-    },
-    staleTime: 60_000,
-  });
-
-  interface ContactColumnEntry {
-    id: string;
-    title: string;
-    type: string;
-    text: string | null;
-    value: string | null;
-    options?: string[];
-    isEditable?: boolean;
-  }
-
-  interface ContactColumnsResponse {
-    ok: boolean;
-    error?: string;
-    itemId?: string;
-    itemName?: string | null;
-    columns?: ContactColumnEntry[];
-  }
-
-  interface PlatformBoardColumnsResponse {
-    ok: boolean;
-    error?: string;
-    columns?: Array<{
-      id: string;
-      title: string;
-      type: string;
-    }>;
-  }
-
-  const contactColumnsQuery = useQuery({
-    queryKey: [
-      "monday-record-columns",
-      sessionToken,
-      contactHistoryDialogRecord?.id,
-      contactHistoryDialogRecord?.contactId,
-    ],
-    enabled:
-      !!sessionToken &&
-      !!contactHistoryDialogRecord &&
-      !staticMode &&
-      contactDialogTab === "info",
-    queryFn: async () => {
-      const contactId = contactHistoryDialogRecord?.contactId?.trim();
-      const targetRecordId =
-        contactId && contactId.length > 0
-          ? contactId
-          : (contactHistoryDialogRecord?.id ?? "");
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact details");
-      }
-      return data;
-    },
-    staleTime: 60_000,
-  });
-
-  const userFilterPresetsQuery = useQuery({
-    queryKey: ["monday-user-filter-presets", sessionToken, presetScopeOwnerId],
-    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("ownerId", presetScopeOwnerId);
-      const data = await fetchMondayApi<MondayUserFilterPresetsResponse>(
-        `/api/monday/user-filter-presets?${params.toString()}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load saved filters");
-      }
-      const presets = (data.presets ?? [])
-        .map((entry) => parseSavedAdvancedFilterPreset(entry))
-        .filter((entry): entry is SavedAdvancedFilterPreset => entry !== null)
-        .slice(0, 25);
-      return presets;
-    },
-    staleTime: 30_000,
-  });
-
-  const userBoardSettingsQuery = useQuery({
-    queryKey: ["monday-user-board-settings", sessionToken, presetScopeOwnerId],
-    enabled: !!sessionToken && !staticMode && presetScopeOwnerId.length > 0,
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("ownerId", presetScopeOwnerId);
-      const data = await fetchMondayApi<MondayUserBoardSettingsResponse>(
-        `/api/monday/settings/user-board?${params.toString()}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load board settings");
-      }
-      return parseUserBoardGeneralSettings(data.settings);
-    },
-    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -1400,57 +1139,56 @@ export function MondayBoardView({
         }
         let maybeToken = sdkToken ?? queryToken;
 
-        if (!maybeToken) {
-          const devAuthData = await fetchMondayApi<{
-            ok?: boolean;
-            error?: string;
-            identity?: MondayIdentity;
-            sessionToken?: string;
-          }>("/api/monday/auth/session", { method: "POST", body: {} });
-          if (devAuthData.ok && devAuthData.identity) {
-            setSessionToken(devAuthData.sessionToken ?? MONDAY_DEV_BYPASS_TOKEN);
-            setIdentity(devAuthData.identity);
-            setIsMondayEmbeddedContext(false);
-            return;
-          }
-          throw new Error(
-            devAuthData.error ??
-            "Missing Monday session token from SDK/query string",
-          );
-        }
-
-        const verifyWithToken = async (token: string) => {
-          const authData = await fetchMondayApi<{
-            ok: boolean;
-            error?: string;
-            identity?: MondayIdentity;
-            sessionToken?: string;
-          }>("/api/monday/auth/session", {
+        const verifySessionWithConvex = async (token: string): Promise<MondayIdentity> => {
+          const result = await convex.action(api.mondayAuth.verifyAndProvision, {
             sessionToken: token,
-            method: "POST",
-            body: { sessionToken: token },
           });
-          return authData;
+          return {
+            userId: result.userId,
+            accountId: result.accountId,
+            boardId: result.boardId,
+            appClientId: result.appClientId,
+          };
         };
 
-        let authData = await verifyWithToken(maybeToken);
-
-        if (
-          (!authData.ok || !authData.identity) &&
-          authData.error === "signature verification failed" &&
-          sdkToken &&
-          sdkToken !== maybeToken
-        ) {
-          maybeToken = sdkToken;
-          authData = await verifyWithToken(maybeToken);
+        if (!maybeToken) {
+          try {
+            const devIdentity = await verifySessionWithConvex("");
+            setSessionToken(MONDAY_DEV_BYPASS_TOKEN);
+            setIdentity(devIdentity);
+            setIsMondayEmbeddedContext(false);
+            return;
+          } catch (devError) {
+            const message =
+              devError instanceof Error
+                ? devError.message
+                : "Missing Monday session token from SDK/query string";
+            throw new Error(message);
+          }
         }
 
-        if (!authData.ok || !authData.identity) {
-          throw new Error(authData.error ?? "Unable to verify Monday session");
+        let verifiedIdentity: MondayIdentity;
+        try {
+          verifiedIdentity = await verifySessionWithConvex(maybeToken);
+        } catch (firstError) {
+          const message =
+            firstError instanceof Error
+              ? firstError.message
+              : "Unable to verify Monday session";
+          if (
+            message === "signature verification failed" &&
+            sdkToken &&
+            sdkToken !== maybeToken
+          ) {
+            maybeToken = sdkToken;
+            verifiedIdentity = await verifySessionWithConvex(maybeToken);
+          } else {
+            throw new Error(message);
+          }
         }
 
-        setSessionToken(authData.sessionToken ?? maybeToken);
-        setIdentity(authData.identity);
+        setSessionToken(maybeToken);
+        setIdentity(verifiedIdentity);
         setIsMondayEmbeddedContext(isEmbeddedMondaySessionToken(maybeToken));
       } catch (error) {
         const message =
@@ -1465,7 +1203,7 @@ export function MondayBoardView({
     };
 
     void initEmbeddedSession();
-  }, [monday, staticMode]);
+  }, [convex, monday, staticMode]);
 
   useEffect(() => {
     if (hasForcedOwnerScope) return;
@@ -1548,16 +1286,6 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [staticMode, userProfileQuery.error]);
-
-  useEffect(() => {
-    if (staticMode) return;
-    if (!userFilterPresetsQuery.error) return;
-    const message =
-      userFilterPresetsQuery.error instanceof Error
-        ? userFilterPresetsQuery.error.message
-        : "Unknown loading error";
-    toast.error(message);
-  }, [staticMode, userFilterPresetsQuery.error]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -2045,26 +1773,20 @@ export function MondayBoardView({
 
     setIsSavingPlatformSettings(true);
     try {
-      const data = await fetchMondayApi<MondayPlatformSettingsResponse>(
-        "/api/monday/settings/platform",
-        {
-        sessionToken,
-        method: "POST",
-        body: {
-          adminUserIds: nextPayload.adminUserIds,
-          employeeUserIds: nextPayload.employeeUserIds,
-          replyToEmails: nextPayload.replyToEmails,
-          emailSystemTags: nextPayload.emailSystemTags,
-          monthlyBoardMappings: nextPayload.monthlyBoardMappings,
-        }
-        }
-      );
-      if (!data.ok || !data.platformSettings) {
-        throw new Error(data.error ?? "Failed to save platform settings");
-      }
-      setPlatformSettings(data.platformSettings);
-      setPlatformSettingsDraft(data.platformSettings);
-      await platformSettingsQuery.refetch();
+      const saved = await setPlatformSettingsMutation({
+        adminUserIds: nextPayload.adminUserIds,
+        employeeUserIds: nextPayload.employeeUserIds,
+        replyToEmails: nextPayload.replyToEmails,
+        emailSystemTags: nextPayload.emailSystemTags,
+        monthlyBoardMappings: nextPayload.monthlyBoardMappings,
+        updatedByMondayUserId: normalizedIdentityUserId,
+      });
+      const nextSettings: MondayPlatformSettings = {
+        ...saved,
+        masterAdminUserId: MASTER_ADMIN_USER_ID,
+      };
+      setPlatformSettings(nextSettings);
+      setPlatformSettingsDraft(nextSettings);
       toast.success(successMessage);
     } catch (error) {
       const message =
@@ -2086,19 +1808,11 @@ export function MondayBoardView({
     }
     setIsSavingFeatureFlags(true);
     try {
-      const data = await fetchMondayApi<MondayFeatureFlagsResponse>(
-        "/api/monday/settings/feature-flags",
-        {
-        sessionToken,
-        method: "POST",
-        body: { emailMarketingEnabled: enabled }
-        }
-      );
-      if (!data.ok || !data.featureFlags) {
-        throw new Error(data.error ?? "Failed to save feature flags");
-      }
-      setFeatureFlags(data.featureFlags);
-      await featureFlagsQuery.refetch();
+      const saved = await setFeatureFlagsMutation({
+        emailMarketingEnabled: enabled,
+        updatedByMondayUserId: normalizedIdentityUserId,
+      });
+      setFeatureFlags(saved);
       toast.success("Feature flag updated");
     } catch (error) {
       const message =
@@ -2126,19 +1840,13 @@ export function MondayBoardView({
 
     setIsRunningRoutingRerun(true);
     try {
-      const data = await fetchMondayApi<MondayRoutingAssignResponse>(
-        "/api/monday/tools/routing/assign",
-        {
+      const data = await assignRoutingAction({
         sessionToken,
-        method: "POST",
-        body: {
-          itemId,
-          force: true,
-        }
-        }
-      );
+        itemId,
+        force: true,
+      });
       if (!data.result) {
-        throw new Error(data.error ?? "Failed to run routing assignment");
+        throw new Error("Failed to run routing assignment");
       }
       const result = data.result;
       if (!result.ok) {
@@ -2184,36 +1892,35 @@ export function MondayBoardView({
       const parsedCustomTheme = parseUserBoardCustomTheme(
         boardGeneralSettingsDraft.customTheme,
       );
-      const data = await fetchMondayApi<MondayUserBoardSettingsResponse>(
-        "/api/monday/settings/user-board",
-        {
-        sessionToken,
-        method: "POST",
-        body: {
-          ownerId: presetScopeOwnerId,
-          colorTheme: boardGeneralSettingsDraft.colorTheme,
-          customTheme:
-            boardGeneralSettingsDraft.colorTheme === "custom" ? parsedCustomTheme : undefined,
-          fontSize: boardGeneralSettingsDraft.fontSize,
-          tableDensity: boardGeneralSettingsDraft.tableDensity,
-          hoverPopoversEnabled: boardGeneralSettingsDraft.hoverPopoversEnabled,
-          pageSize: boardGeneralSettingsDraft.pageSize,
-          displayMode: boardGeneralSettingsDraft.displayMode,
-          recordSource: boardGeneralSettingsDraft.recordSource,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to save board settings");
+      const accountId = identity?.accountId?.trim();
+      if (!accountId) {
+        throw new Error("Missing Monday account context");
       }
+      const saved = await upsertUserBoardSettingsMutation({
+        accountId,
+        ownerMondayUserId: presetScopeOwnerId,
+        viewerMondayUserId: normalizedIdentityUserId,
+        colorTheme: boardGeneralSettingsDraft.colorTheme,
+        customTheme:
+          boardGeneralSettingsDraft.colorTheme === "custom" ? parsedCustomTheme : undefined,
+        fontSize: boardGeneralSettingsDraft.fontSize,
+        tableDensity: boardGeneralSettingsDraft.tableDensity,
+        hoverPopoversEnabled: boardGeneralSettingsDraft.hoverPopoversEnabled,
+        pageSize: boardGeneralSettingsDraft.pageSize,
+        displayMode:
+          boardGeneralSettingsDraft.displayMode === "table" ||
+          boardGeneralSettingsDraft.displayMode === "grid"
+            ? boardGeneralSettingsDraft.displayMode
+            : undefined,
+        recordSource: boardGeneralSettingsDraft.recordSource,
+      });
 
-      const parsedSettings = parseUserBoardGeneralSettings(data.settings);
+      const parsedSettings = parseUserBoardGeneralSettings(saved);
       setBoardGeneralSettings(parsedSettings);
       setBoardGeneralSettingsDraft(parsedSettings);
       if (isUserBoardDisplayMode(parsedSettings.displayMode)) {
         setUserScopedDisplayMode(parsedSettings.displayMode);
       }
-      await userBoardSettingsQuery.refetch();
       toast.success("General settings saved for this employee board");
     } catch (error) {
       const message =
@@ -2280,55 +1987,6 @@ export function MondayBoardView({
     setSendEmailProgressUpdate(null);
     setIsSendingEmail(false);
   };
-  const sendEmailTargetRecordId =
-    sendEmailRecord?.contactId?.trim() || sendEmailRecord?.id?.trim() || "";
-  const sendEmailContactColumnsQuery = useQuery({
-    queryKey: ["monday-send-email-columns", sessionToken, sendEmailTargetRecordId],
-    enabled: !!sessionToken && !!sendEmailRecord && !staticMode && sendEmailTargetRecordId.length > 0,
-    queryFn: async () => {
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(sendEmailTargetRecordId)}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact template values");
-      }
-      return data;
-    },
-    staleTime: 60_000,
-  });
-  const bulkQuestionnaireActiveRecord =
-    bulkQuestionnaireEmailRecords[bulkQuestionnaireEmailIndex] ?? null;
-  const bulkQuestionnaireTargetRecordId = bulkQuestionnaireActiveRecord
-    ? resolveContactUpdateTargetRecordId(bulkQuestionnaireActiveRecord)
-    : "";
-  const bulkQuestionnaireContactColumnsQuery = useQuery({
-    queryKey: [
-      "monday-bulk-questionnaire-columns",
-      sessionToken,
-      bulkQuestionnaireTargetRecordId,
-    ],
-    enabled:
-      !!sessionToken &&
-      !staticMode &&
-      bulkQuestionnaireEmailRecords.length > 0 &&
-      bulkQuestionnaireTargetRecordId.length > 0,
-    queryFn: async () => {
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(bulkQuestionnaireTargetRecordId)}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact template values");
-      }
-      return data;
-    },
-    staleTime: 60_000,
-  });
   const sendEmailOwnerVars = useMemo(() => {
     const primaryOwner = sendEmailRecord?.ownerProfiles[0] ?? null;
     const ownerName =
@@ -2688,25 +2346,17 @@ export function MondayBoardView({
             targetRecordId,
             updateType: updatePayload.updateType,
           });
-                    const serverData = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-            `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-            {
+          const serverResult = await createRecordUpdateAction({
             sessionToken,
-            method: "POST",
-            body: {
-                body: updatePayload.body,
-                updateType: updatePayload.updateType,
-                dateTime: sendProgressDateTime,
-                internalExternalStatus: updatePayload.internalExternalStatus,
-                methodOfCommunication: updatePayload.methodOfCommunication,
-                suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
-              }
-            }
-          );
-          if (!serverData.ok) {
-            throw new Error(serverData.error ?? updatePayload.fallbackErrorMessage);
-          }
-          return serverData;
+            itemId: targetRecordId,
+            body: updatePayload.body,
+            updateType: updatePayload.updateType,
+            dateTime: sendProgressDateTime,
+            internalExternalStatus: updatePayload.internalExternalStatus,
+            methodOfCommunication: updatePayload.methodOfCommunication,
+            suppressApprovalStepMarking: updatePayload.suppressApprovalStepMarking,
+          });
+          return { ok: true as const, update: serverResult.update };
         };
 
         if (canCreateUpdatesAsLoggedInMondayUser) {
@@ -3246,6 +2896,10 @@ export function MondayBoardView({
       toast.error("Missing owner board scope for saved filters");
       return;
     }
+    if (!identity?.accountId?.trim() || !identity.userId?.trim()) {
+      toast.error("Missing Monday account identity");
+      return;
+    }
 
     const normalizedName = name.toLowerCase();
     const existingPreset = savedAdvancedFilterPresets.find(
@@ -3268,24 +2922,16 @@ export function MondayBoardView({
     }
     setIsSavingAdvancedFilterPreset(true);
     try {
-      const data = await fetchMondayApi<MondayUserFilterPresetUpsertResponse>(
-        "/api/monday/user-filter-presets",
-        {
-        sessionToken,
-        method: "POST",
-        body: {
-          ownerId: presetScopeOwnerId,
-          presetId: existingPreset?.id,
-          name,
-          matchMode: advancedFilterMatchMode,
-          conditions: conditionsForSave,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to save filter preset");
-      }
-      const parsedPreset = parseSavedAdvancedFilterPreset(data.preset);
+      const preset = await upsertFilterPreset({
+        accountId: identity.accountId.trim(),
+        ownerMondayUserId: presetScopeOwnerId,
+        viewerMondayUserId: identity.userId.trim(),
+        presetId: existingPreset?.id,
+        name,
+        matchMode: advancedFilterMatchMode,
+        conditions: conditionsForSave,
+      });
+      const parsedPreset = parseSavedAdvancedFilterPreset(preset);
       if (!parsedPreset) {
         throw new Error("Invalid filter preset returned from server");
       }
@@ -3299,7 +2945,6 @@ export function MondayBoardView({
       toast.success(
         existingPreset ? `Updated filter preset "${name}"` : `Saved filter preset "${name}"`,
       );
-      await userFilterPresetsQuery.refetch();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save filter preset";
@@ -3331,23 +2976,19 @@ export function MondayBoardView({
       toast.error("Missing owner board scope for saved filters");
       return;
     }
+    if (!identity?.accountId?.trim()) {
+      toast.error("Missing Monday account identity");
+      return;
+    }
     setDeletingAdvancedFilterPresetIds((prev) => ({ ...prev, [presetId]: true }));
     try {
-      const params = new URLSearchParams();
-      params.set("ownerId", presetScopeOwnerId);
-      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/user-filter-presets/${encodeURIComponent(presetId)}?${params.toString()}`,
-        {
-        sessionToken,
-        method: "DELETE"
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to delete filter preset");
-      }
+      await removeFilterPreset({
+        accountId: identity.accountId.trim(),
+        ownerMondayUserId: presetScopeOwnerId,
+        presetId,
+      });
       setSavedAdvancedFilterPresets((prev) => prev.filter((preset) => preset.id !== presetId));
       setActiveSavedAdvancedFilterId((prev) => (prev === presetId ? null : prev));
-      await userFilterPresetsQuery.refetch();
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to delete filter preset";
@@ -3919,12 +3560,6 @@ export function MondayBoardView({
     [contactDialogIndex, filteredRecords],
   );
 
-  function resolveContactUpdateTargetRecordId(record: MondayRecord) {
-    const contactId = record.contactId?.trim();
-    if (contactId && contactId.length > 0) return contactId;
-    return record.id;
-  }
-
   const normalizeEditableColumnDraft = useCallback((column: ContactColumnEntry) => {
     const normalizedType = column.type.toLowerCase();
     if (normalizedType === "date") {
@@ -3980,21 +3615,13 @@ export function MondayBoardView({
       const targetRecordId = resolveContactUpdateTargetRecordId(
         contactHistoryDialogRecord,
       );
-            const payload = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/columns`,
-        {
+      await patchRecordColumnAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-            columnId: column.id,
-            columnType: column.type,
-            value: editingContactColumnDraft,
-          }
-        }
-      );
-      if (!payload.ok) {
-        throw new Error(payload.error ?? "Failed to update column");
-      }
+        itemId: targetRecordId,
+        columnId: column.id,
+        columnType: column.type,
+        value: editingContactColumnDraft,
+      });
 
       await contactColumnsQuery.refetch();
       const refreshedRecordsResult = await recordsQuery.refetch();
@@ -4190,223 +3817,6 @@ export function MondayBoardView({
     syncContactBoardSelection,
     syncMonthlyBoardOptions,
   ]);
-
-  const fetchBulkSyncStatus = useCallback(
-    async (jobId?: string | null) => {
-      if (!sessionToken) return null;
-      const params = new URLSearchParams();
-      if (jobId && jobId.trim().length > 0) {
-        params.set("jobId", jobId.trim());
-      }
-      const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-        `/api/monday/sync/bulk/status${params.toString() ? `?${params.toString()}` : ""}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load bulk sync status");
-      }
-      const job = data.job ?? null;
-      setLatestBulkSyncJob(job);
-      if (job?.status === "running") {
-        setActiveBulkSyncJobId(job.jobId);
-        setSyncingContactIds((prev) => {
-          const next = new Set(prev);
-          next.add("__bulk_sync__");
-          return next;
-        });
-      }
-      return job;
-    },
-    [sessionToken],
-  );
-
-  const startBulkSyncJob = useCallback(
-    async (records: MondayRecord[]) => {
-      if (!sessionToken) {
-        throw new Error("Missing monday session token");
-      }
-      const dedupedTargetIds = Array.from(
-        new Set(
-          records
-            .map((record) => resolveContactUpdateTargetRecordId(record).trim())
-            .filter((id) => id.length > 0),
-        ),
-      );
-      if (dedupedTargetIds.length === 0) {
-        throw new Error("No valid contact records selected");
-      }
-      const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-        "/api/monday/sync/bulk/start",
-        {
-        sessionToken,
-        method: "POST",
-        body: {
-          contactItemIds: dedupedTargetIds,
-          ownerId: identity?.userId,
-        }
-        }
-      );
-      if (!data.ok || !data.job) {
-        throw new Error(data.error ?? "Failed to start bulk sync");
-      }
-      finalizedBulkSyncJobIdRef.current = null;
-      setLatestBulkSyncJob(data.job);
-      setActiveBulkSyncJobId(data.job.jobId);
-      setSyncingContactIds((prev) => {
-        const next = new Set(prev);
-        next.add("__bulk_sync__");
-        return next;
-      });
-      return data.job;
-    },
-    [identity?.userId, sessionToken],
-  );
-
-  const cancelBulkSyncJob = useCallback(
-    async (jobId: string) => {
-      if (!sessionToken) return;
-      const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-        "/api/monday/sync/bulk/cancel",
-        {
-        sessionToken,
-        method: "POST",
-        body: { jobId }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to cancel bulk sync");
-      }
-      if (data.job) {
-        setLatestBulkSyncJob(data.job);
-      }
-      setActiveBulkSyncJobId(null);
-    },
-    [sessionToken],
-  );
-
-  const retryFailedBulkSyncJob = useCallback(
-    async (jobId: string) => {
-      if (!sessionToken) {
-        throw new Error("Missing monday session token");
-      }
-      const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-        "/api/monday/sync/bulk/retry",
-        {
-        sessionToken,
-        method: "POST",
-        body: { jobId }
-        }
-      );
-      if (!data.ok || !data.job) {
-        throw new Error(data.error ?? "Failed to retry failed contacts");
-      }
-      finalizedBulkSyncJobIdRef.current = null;
-      setLatestBulkSyncJob(data.job);
-      setActiveBulkSyncJobId(data.job.jobId);
-      setSyncingContactIds((prev) => {
-        const next = new Set(prev);
-        next.add("__bulk_sync__");
-        return next;
-      });
-      return data;
-    },
-    [sessionToken],
-  );
-
-  useEffect(() => {
-    if (!sessionToken || staticMode || !isMondaySettingsAdmin) return;
-    void fetchBulkSyncStatus(null)
-      .then((job) => {
-        if (job && job.status !== "running") {
-          finalizedBulkSyncJobIdRef.current = job.jobId;
-        }
-      })
-      .catch(() => null);
-  }, [fetchBulkSyncStatus, isMondaySettingsAdmin, sessionToken, staticMode]);
-
-  useEffect(() => {
-    if (!sessionToken || !activeBulkSyncJobId) return;
-    if (latestBulkSyncJob?.status !== "running") return;
-
-    let cancelled = false;
-    let inFlight = false;
-    const tick = async () => {
-      if (cancelled || inFlight) return;
-      inFlight = true;
-      try {
-          const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-          "/api/monday/sync/bulk/tick",
-          {
-          sessionToken,
-          method: "POST",
-          body: {
-            jobId: activeBulkSyncJobId,
-            batchSize: 6,
-            concurrency: 3,
-          }
-          }
-        );
-        if (cancelled) return;
-        if (response.ok && data.ok && data.job) {
-          setLatestBulkSyncJob(data.job);
-          return;
-        }
-        await fetchBulkSyncStatus(activeBulkSyncJobId);
-      } catch {
-        // status polling failures are tolerated; next interval retries
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    void tick();
-    const timer = window.setInterval(() => {
-      void tick();
-    }, 2_500);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [activeBulkSyncJobId, fetchBulkSyncStatus, latestBulkSyncJob?.status, sessionToken]);
-
-  useEffect(() => {
-    if (!latestBulkSyncJob) return;
-    if (latestBulkSyncJob.status === "running") return;
-    if (finalizedBulkSyncJobIdRef.current === latestBulkSyncJob.jobId) return;
-
-    finalizedBulkSyncJobIdRef.current = latestBulkSyncJob.jobId;
-    setActiveBulkSyncJobId(null);
-    setSyncingContactIds((prev) => {
-      if (!prev.has("__bulk_sync__")) return prev;
-      const next = new Set(prev);
-      next.delete("__bulk_sync__");
-      return next;
-    });
-
-    void (async () => {
-      await recordsQuery.refetch();
-      if (contactHistoryDialogRecord) {
-        await contactUpdatesQuery.refetch();
-      }
-      if (latestBulkSyncJob.status === "cancelled") {
-        toast.error("Bulk sync cancelled");
-        return;
-      }
-      if (latestBulkSyncJob.status === "failed") {
-        toast.error(latestBulkSyncJob.lastError ?? "Bulk sync failed");
-        return;
-      }
-      const summary = `${latestBulkSyncJob.succeededContacts}/${latestBulkSyncJob.totalContacts} synced`;
-      if (latestBulkSyncJob.failedContacts > 0) {
-        toast.error(`${summary} (${latestBulkSyncJob.failedContacts} failed)`);
-      } else {
-        toast.success(summary);
-      }
-    })();
-  }, [contactHistoryDialogRecord, contactUpdatesQuery, latestBulkSyncJob, recordsQuery]);
 
   const openQuestionnaireDialogForRecords = useCallback(
     (items: MondayRecord[]) => {
@@ -4629,39 +4039,23 @@ export function MondayBoardView({
       if (!sessionToken) {
         throw new Error("Missing monday session token for step update");
       }
-            const payload = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${encodeURIComponent(itemId)}/reset-step`,
-        {
+      await resetApprovalStepAction({
         sessionToken,
-        method: "POST",
-        body: {
-            stepColumnId,
-            action: "done",
-          }
-        }
-      );
-      if (!payload.ok) {
-        throw new Error(payload.error ?? "Failed to mark onboarding step done");
-      }
+        itemId,
+        stepColumnId,
+        action: "done",
+      });
     };
 
     const markLastInteractionDateViaServer = async (dateOnly: string) => {
       if (!sessionToken) {
         throw new Error("Missing monday session token for last interaction sync");
       }
-            const payload = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${encodeURIComponent(itemId)}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-            lastInteractionDate: dateOnly,
-          }
-        }
-      );
-      if (!payload.ok) {
-        throw new Error(payload.error ?? "Failed to set last interaction date");
-      }
+        itemId,
+        lastInteractionDate: dateOnly,
+      });
     };
 
     let warning: string | null = null;
@@ -4869,19 +4263,11 @@ export function MondayBoardView({
       : "server-fallback";
     try {
       if (updateType === "resume") {
-                const patchData = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-          `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
-          {
+        await patchRecordAction({
           sessionToken,
-          method: "PATCH",
-          body: {
-              referredToContractors: normalizedReferredToContractors,
-            }
-          }
-        );
-        if (!patchData.ok) {
-          throw new Error(patchData.error ?? "Failed to save referred contractor values");
-        }
+          itemId: targetRecordId,
+          referredToContractors: normalizedReferredToContractors,
+        });
       }
       if (canCreateUpdatesAsLoggedInMondayUser) {
         const update = await createMondayRecordUpdateAsContextUser({
@@ -4896,25 +4282,18 @@ export function MondayBoardView({
         });
         data = { ok: true, update };
       } else {
-                data = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-          `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-          {
+        const created = await createRecordUpdateAction({
           sessionToken,
-          method: "POST",
-          body: {
-              body,
-              updateType,
-              date: options?.date,
-              dateTime: options?.dateTime,
-              methodOfCommunication: resolvedMethodOfCommunication,
-              internalExternalStatus: resolvedInternalExternalStatus,
-              subitemNameOverride: resolvedSubitemNameOverride,
-            }
-          }
-        );
-        if (!data.ok) {
-          throw new Error(data.error ?? "Failed to post Monday update");
-        }
+          itemId: targetRecordId,
+          body,
+          updateType,
+          date: options?.date,
+          dateTime: options?.dateTime,
+          methodOfCommunication: resolvedMethodOfCommunication,
+          internalExternalStatus: resolvedInternalExternalStatus,
+          subitemNameOverride: resolvedSubitemNameOverride,
+        });
+        data = { ok: true, update: created.update };
       }
     } catch (error) {
       const message =
@@ -5060,23 +4439,16 @@ export function MondayBoardView({
         });
         data = { ok: true, update };
       } else {
-                data = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-          `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-          {
+        const created = await createRecordUpdateAction({
           sessionToken,
-          method: "POST",
-          body: {
-              body: values.body,
-              updateType: "general",
-              date: dateOnly || undefined,
-              dateTime,
-              methodOfCommunication: values.methodOfCommunication,
-            }
-          }
-        );
-        if (!data.ok) {
-          throw new Error(data.error ?? "Failed to post Monday update");
-        }
+          itemId: targetRecordId,
+          body: values.body,
+          updateType: "general",
+          date: dateOnly || undefined,
+          dateTime,
+          methodOfCommunication: values.methodOfCommunication,
+        });
+        data = { ok: true, update: created.update };
       }
       return data;
     },
@@ -5418,20 +4790,13 @@ export function MondayBoardView({
               });
               data = { ok: true, update };
             } else {
-                            data = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-                `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-                {
+              const created = await createRecordUpdateAction({
                 sessionToken,
-                method: "POST",
-                body: {
-                    body: action.defaultBody,
-                    updateType: action.type,
-                  }
-                }
-              );
-              if (!data.ok) {
-                throw new Error(data.error ?? "Failed to post Monday update");
-              }
+                itemId: targetRecordId,
+                body: action.defaultBody,
+                updateType: action.type,
+              });
+              data = { ok: true, update: created.update };
             }
             return {
               ok: true,
@@ -5587,15 +4952,10 @@ export function MondayBoardView({
         throw new Error("No email templates found");
       }
 
-      const data = await fetchMondayApi<ContactColumnsResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
-        {
-        sessionToken
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to load contact template values");
-      }
+      const data = await getRecordColumnsAction({
+        sessionToken,
+        itemId: targetRecordId,
+      });
 
       const primaryOwner = record.ownerProfiles[0] ?? null;
       const ownerName = primaryOwner?.name?.trim() ?? record.peopleText?.trim() ?? "";
@@ -5695,22 +5055,14 @@ export function MondayBoardView({
 
       const actionType = bulkQuickEmailAction?.type ?? "followup";
       const updateBody = bulkQuickEmailAction?.defaultBody?.trim() || "Questionnaire Sent";
-            const updateData = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-        {
+      await createRecordUpdateAction({
         sessionToken,
-        method: "POST",
-        body: {
-            body: updateBody,
-            updateType: actionType,
-            dateTime: new Date().toISOString(),
-            internalExternalStatus: "External",
-          }
-        }
-      );
-      if (!updateData.ok) {
-        throw new Error(updateData.error ?? "Failed to mark questionnaire step");
-      }
+        itemId: targetRecordId,
+        body: updateBody,
+        updateType: actionType,
+        dateTime: new Date().toISOString(),
+        internalExternalStatus: "External",
+      });
 
       if (identity?.userId) {
         fetchMondayApi<{ ok?: boolean; error?: string }>(
@@ -6032,20 +5384,12 @@ export function MondayBoardView({
             updateType: stepConfig.updateType,
           });
         } else if (stepConfig.updateType) {
-              const data = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-            `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-            {
+          await createRecordUpdateAction({
             sessionToken,
-            method: "POST",
-            body: {
-                body: stepConfig.defaultBody,
-                updateType: stepConfig.updateType,
-              }
-            }
-          );
-          if (!data.ok) {
-            throw new Error(data.error ?? "Failed to post Monday update");
-          }
+            itemId: targetRecordId,
+            body: stepConfig.defaultBody,
+            updateType: stepConfig.updateType,
+          });
         } else {
           if (canCreateUpdatesAsLoggedInMondayUser) {
             const boardId = await resolveMondayContextBoardId();
@@ -6068,28 +5412,18 @@ export function MondayBoardView({
               );
             }
           } else {
-            await fetchMondayApi<unknown>(
-              `/api/monday/records/${encodeURIComponent(targetRecordId)}/updates`,
-              {
+            await createRecordUpdateAction({
               sessionToken,
-              method: "POST",
-              body: {
-                  body: stepConfig.defaultBody,
-                  updateType: "general",
-                }
-              }
-            );;
-            await fetchMondayApi<unknown>(
-              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-              {
+              itemId: targetRecordId,
+              body: stepConfig.defaultBody,
+              updateType: "general",
+            });
+            await resetApprovalStepAction({
               sessionToken,
-              method: "POST",
-              body: {
-                  stepColumnId: stepConfig.stepColumnId,
-                  action: "done",
-                }
-              }
-            );;
+              itemId: targetRecordId,
+              stepColumnId: stepConfig.stepColumnId,
+              action: "done",
+            });
           }
         }
         toast.success(`Moved "${move.record.name}" forward`);
@@ -6117,20 +5451,12 @@ export function MondayBoardView({
             );
           }
         } else {
-              const data = await fetchMondayApi<{ ok: boolean; error?: string }>(
-            `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-            {
+          await resetApprovalStepAction({
             sessionToken,
-            method: "POST",
-            body: {
-                stepColumnId: stepConfig.stepColumnId,
-                action: "reset",
-              }
-            }
-          );
-          if (!data.ok) {
-            throw new Error(data.error ?? "Failed to reset step");
-          }
+            itemId: targetRecordId,
+            stepColumnId: stepConfig.stepColumnId,
+            action: "reset",
+          });
         }
         toast.success(`Moved "${move.record.name}" back`);
       }
@@ -6196,20 +5522,12 @@ export function MondayBoardView({
             return { ok: false, error: "Missing record id" };
           }
           try {
-                  const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-              `/api/monday/records/${encodeURIComponent(targetRecordId)}/reset-step`,
-              {
+            await resetApprovalStepAction({
               sessionToken,
-              method: "POST",
-              body: {
-                  stepColumnId: stepConfig.stepColumnId,
-                  action: "done",
-                }
-              }
-            );
-            if (!data.ok) {
-              throw new Error(data.error ?? "Failed to move record");
-            }
+              itemId: targetRecordId,
+              stepColumnId: stepConfig.stepColumnId,
+              action: "done",
+            });
             return { ok: true, error: "" };
           } catch (error) {
             return {
@@ -6255,25 +5573,17 @@ export function MondayBoardView({
         contactId && contactId.length > 0
           ? contactId
           : retentionDialogRecord.id;
-      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${targetRecordId}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-          referredToContractors:
-            retentionDraft.referredToContractors.length > 0
-              ? retentionDraft.referredToContractors
-              : null,
-          hiredWithContractor: retentionDraft.hiredWithContractor || null,
-          hireDate: retentionDraft.hireDate || null,
-          retentionPeriod: retentionDraft.retentionPeriod || null,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to update retention values");
-      }
+        itemId: targetRecordId,
+        referredToContractors:
+          retentionDraft.referredToContractors.length > 0
+            ? retentionDraft.referredToContractors
+            : null,
+        hiredWithContractor: retentionDraft.hiredWithContractor || null,
+        hireDate: retentionDraft.hireDate || null,
+        retentionPeriod: retentionDraft.retentionPeriod || null,
+      });
       toast.success("Retention values updated");
       setRetentionDialogRecord(null);
       await recordsQuery.refetch();
@@ -6304,20 +5614,12 @@ export function MondayBoardView({
     if (!sessionToken) {
       throw new Error("Missing monday session context");
     }
-        const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-      `/api/monday/records/${encodeURIComponent(args.targetRecordId)}/reset-step`,
-      {
+    await resetApprovalStepAction({
       sessionToken,
-      method: "POST",
-      body: {
-          stepColumnId: args.stepColumnId,
-          action: args.action,
-        }
-      }
-    );
-    if (!data.ok) {
-      throw new Error(data.error ?? "Failed to update onboarding step");
-    }
+      itemId: args.targetRecordId,
+      stepColumnId: args.stepColumnId,
+      action: args.action,
+    });
   };
 
   const completeGenericOnboardingStep = async (args: {
@@ -6339,17 +5641,14 @@ export function MondayBoardView({
     });
 
     if (args.recordPatch) {
-            const patchData = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${encodeURIComponent(args.targetRecordId)}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: args.recordPatch
-        }
-      );
-      if (!patchData.ok) {
-        throw new Error(patchData.error ?? "Failed to update contractor values");
-      }
+        itemId: args.targetRecordId,
+        ...(args.recordPatch as Omit<
+          Parameters<typeof patchRecordAction>[0],
+          "sessionToken" | "itemId"
+        >),
+      });
     }
 
     await updateOnboardingStepStatus({
@@ -6545,22 +5844,14 @@ export function MondayBoardView({
         keepSelectedType: true,
       });
 
-            const patchData = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${encodeURIComponent(targetRecordId)}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-            referredToContractors,
-            interviewingWithContractors,
-            hiredWithContractor,
-            hireDate,
-          }
-        }
-      );
-      if (!patchData.ok) {
-        throw new Error(patchData.error ?? "Failed to update contractor/hire values");
-      }
+        itemId: targetRecordId,
+        referredToContractors,
+        interviewingWithContractors,
+        hiredWithContractor,
+        hireDate,
+      });
 
       if (!markAsHiredWorkflowDialogState.screeningAlreadyDone) {
         await updateOnboardingStepStatus({
@@ -6614,19 +5905,11 @@ export function MondayBoardView({
       const contactId = tagsDialogRecord.contactId?.trim();
       const targetRecordId =
         contactId && contactId.length > 0 ? contactId : tagsDialogRecord.id;
-      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${targetRecordId}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-          tags: tagsDraft,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to update tags");
-      }
+        itemId: targetRecordId,
+        tags: tagsDraft,
+      });
       toast.success("Tags updated");
       setTagsDialogRecord(null);
       await recordsQuery.refetch();
@@ -6650,19 +5933,11 @@ export function MondayBoardView({
       const contactId = statusDialogRecord.contactId?.trim();
       const targetRecordId =
         contactId && contactId.length > 0 ? contactId : statusDialogRecord.id;
-      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${targetRecordId}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-          status: statusDraft || null,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to update status");
-      }
+        itemId: targetRecordId,
+        status: statusDraft || null,
+      });
       toast.success("Status updated");
       setStatusDialogRecord(null);
       await recordsQuery.refetch();
@@ -6686,19 +5961,11 @@ export function MondayBoardView({
       const contactId = ownerDialogRecord.contactId?.trim();
       const targetRecordId =
         contactId && contactId.length > 0 ? contactId : ownerDialogRecord.id;
-      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
-        `/api/monday/records/${targetRecordId}`,
-        {
+      await patchRecordAction({
         sessionToken,
-        method: "PATCH",
-        body: {
-          ownerId: ownerDraft || null,
-        }
-        }
-      );
-      if (!data.ok) {
-        throw new Error(data.error ?? "Failed to update owner");
-      }
+        itemId: targetRecordId,
+        ownerId: ownerDraft || null,
+      });
       toast.success("Owner updated");
       setOwnerDialogRecord(null);
       await recordsQuery.refetch();
@@ -6790,23 +6057,15 @@ export function MondayBoardView({
               suppressApprovalStepMarking: true,
             });
           } else {
-                        const updateData = await fetchMondayApi<MondayCreateRecordUpdateResponse>(
-              `/api/monday/records/${encodeURIComponent(updateTargetRecordId)}/updates`,
-              {
+            await createRecordUpdateAction({
               sessionToken,
-              method: "POST",
-              body: {
-                  body: "Resume Added",
-                  updateType: "resume",
-                  dateTime: resumeAddedDateTime,
-                  subitemNameOverride: "Resume Added",
-                  suppressApprovalStepMarking: true,
-                }
-              }
-            );
-            if (!updateData.ok) {
-              throw new Error(updateData.error ?? "Failed to log resume update");
-            }
+              itemId: updateTargetRecordId,
+              body: "Resume Added",
+              updateType: "resume",
+              dateTime: resumeAddedDateTime,
+              subitemNameOverride: "Resume Added",
+              suppressApprovalStepMarking: true,
+            });
           }
         } catch (error) {
           updateSyncError =
@@ -9047,15 +8306,13 @@ export function MondayBoardView({
                   }}
                   onDeleteSubitem={async (subitemId) => {
                     if (!sessionToken) return;
-                    const json = await deleteSubitem(sessionToken, subitemId);
-                    if (!json.ok) throw new Error(json.error ?? "Delete failed");
+                    await deleteSubitemAction({ sessionToken, subitemId });
                     toast.success("Update deleted");
                     await contactUpdatesQuery.refetch();
                   }}
                   onUpdateSubitemDate={async (subitemId, date) => {
                     if (!sessionToken) return;
-                    const json = await patchSubitemDate(sessionToken, subitemId, date);
-                    if (!json.ok) throw new Error(json.error ?? "Date update failed");
+                    await patchSubitemAction({ sessionToken, subitemId, date });
                     toast.success("Date updated");
                     await contactUpdatesQuery.refetch();
                   }}

@@ -1,76 +1,89 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import {
+  useMutation as useConvexMutation,
+  useQuery as useConvexQuery,
+} from "convex/react";
+import type { FunctionArgs, FunctionReference } from "convex/server";
 import { toast } from "@launchthatapp/ui/toast";
 
 type JobStatus = "running" | "done" | "failed" | "cancelled";
 
-interface ToolJobConfig<TJob> {
-  statusUrl: string;
-  startUrl: string;
-  cancelUrl: string;
+export interface ToolJobConfig<
+  TStatusQuery extends FunctionReference<"query", "public">,
+  TStartMutation extends FunctionReference<"mutation", "public">,
+  TCancelMutation extends FunctionReference<"mutation", "public">,
+> {
+  statusQuery: TStatusQuery;
+  startMutation: TStartMutation;
+  cancelMutation: TCancelMutation;
   label: string;
-  parseJob: (data: Record<string, unknown>) => TJob | null;
+  statusQueryArgs?: FunctionArgs<TStatusQuery>;
 }
 
-interface ToolJobState<TJob> {
-  job: TJob | null;
-  isLoading: boolean;
+export interface UseToolJobOptions {
+  onStartComplete?: () => void;
+}
+
+export interface ToolJobState<
+  TJob,
+  TStartArgs extends Record<string, unknown>,
+  TCancelArgs extends Record<string, unknown>,
+> {
+  /** Latest job from Convex, `null` when none, `undefined` while the query is loading */
+  job: TJob | null | undefined;
   isStarting: boolean;
   isCancelling: boolean;
-  refresh: () => Promise<void>;
-  start: (body: Record<string, unknown>) => Promise<void>;
-  cancel: (body?: Record<string, unknown>) => Promise<void>;
+  start: (args: TStartArgs) => Promise<void>;
+  cancel: (args?: TCancelArgs) => Promise<void>;
 }
 
-export const useToolJob = <TJob extends { status: JobStatus }>(
-  config: ToolJobConfig<TJob>,
-  opts?: {
-    onRefreshComplete?: () => void;
-    onStartComplete?: () => void;
-  },
-): ToolJobState<TJob> => {
-  const [job, setJob] = useState<TJob | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+/**
+ * Reactive tool-job controls backed by Convex queries and mutations.
+ *
+ * @example
+ * ```ts
+ * import { api } from "@convex-config/_generated/api";
+ *
+ * const backfill = useToolJob({
+ *   statusQuery: api.mondayTouchBackfill.getLatestJob,
+ *   startMutation: api.mondayTouchBackfill.startBackfill,
+ *   cancelMutation: api.mondayTouchBackfill.cancelBackfill,
+ *   label: "Touch backfill",
+ * });
+ * ```
+ */
+export const useToolJob = <
+  TJob extends { status: JobStatus },
+  TStatusQuery extends FunctionReference<
+    "query",
+    "public",
+    Record<string, never>,
+    TJob | null
+  >,
+  TStartMutation extends FunctionReference<"mutation", "public">,
+  TCancelMutation extends FunctionReference<"mutation", "public">,
+>(
+  config: ToolJobConfig<TStatusQuery, TStartMutation, TCancelMutation>,
+  opts?: UseToolJobOptions,
+): ToolJobState<
+  TJob,
+  FunctionArgs<TStartMutation>,
+  FunctionArgs<TCancelMutation>
+> => {
+  const statusArgs = (config.statusQueryArgs ?? {}) as FunctionArgs<TStatusQuery>;
+  const rawJob = useConvexQuery(config.statusQuery, statusArgs);
+  const runStart = useConvexMutation(config.startMutation);
+  const runCancel = useConvexMutation(config.cancelMutation);
+
   const [isStarting, setIsStarting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const refresh = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(config.statusUrl, {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as Record<string, unknown>;
-      if (!response.ok || !data.ok) {
-        throw new Error((data.error as string) ?? `Failed to load ${config.label} status`);
-      }
-      setJob(config.parseJob(data));
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : `Failed to load ${config.label} status`,
-      );
-    } finally {
-      setIsLoading(false);
-      opts?.onRefreshComplete?.();
-    }
-  }, [config.statusUrl, config.label, config.parseJob, opts?.onRefreshComplete]);
-
   const start = useCallback(
-    async (body: Record<string, unknown>) => {
+    async (args: FunctionArgs<TStartMutation>) => {
       setIsStarting(true);
       try {
-        const response = await fetch(config.startUrl, {
-          method: "POST",
-          cache: "no-store",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = (await response.json()) as Record<string, unknown>;
-        if (!response.ok || !data.ok) {
-          throw new Error((data.error as string) ?? `Failed to start ${config.label}`);
-        }
+        await runStart(args);
         toast.success(`${config.label} started`);
-        await refresh();
         opts?.onStartComplete?.();
       } catch (error) {
         toast.error(
@@ -80,27 +93,15 @@ export const useToolJob = <TJob extends { status: JobStatus }>(
         setIsStarting(false);
       }
     },
-    [config.startUrl, config.label, refresh, opts?.onStartComplete],
+    [config.label, runStart, opts?.onStartComplete],
   );
 
   const cancel = useCallback(
-    async (body?: Record<string, unknown>) => {
+    async (args?: FunctionArgs<TCancelMutation>) => {
       setIsCancelling(true);
       try {
-        const response = await fetch(config.cancelUrl, {
-          method: "POST",
-          cache: "no-store",
-          ...(body ? {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          } : {}),
-        });
-        const data = (await response.json()) as Record<string, unknown>;
-        if (!response.ok || !data.ok) {
-          throw new Error((data.error as string) ?? `Failed to cancel ${config.label}`);
-        }
+        await runCancel((args ?? {}) as FunctionArgs<TCancelMutation>);
         toast.success(`${config.label} cancelled`);
-        await refresh();
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : `Failed to cancel ${config.label}`,
@@ -109,29 +110,25 @@ export const useToolJob = <TJob extends { status: JobStatus }>(
         setIsCancelling(false);
       }
     },
-    [config.cancelUrl, config.label, refresh],
+    [config.label, runCancel],
   );
 
-  return { job, isLoading, isStarting, isCancelling, refresh, start, cancel };
+  return {
+    job: rawJob as TJob | null | undefined,
+    isStarting,
+    isCancelling,
+    start,
+    cancel,
+  };
 };
 
 /**
- * Polls multiple job statuses at a regular interval when any job is running.
+ * @deprecated Convex status queries are reactive; interval polling is unnecessary.
  */
 export const useToolJobPoller = (
-  jobs: Array<{ status?: string }>,
-  callbacks: Array<() => Promise<void>>,
-  intervalMs = 5000,
+  _jobs?: Array<{ status?: string }>,
+  _callbacks?: Array<() => Promise<void>>,
+  _intervalMs?: number,
 ) => {
-  useEffect(() => {
-    const anyRunning = jobs.some((j) => j.status === "running");
-    if (!anyRunning) return;
-
-    const timer = setInterval(() => {
-      for (const cb of callbacks) {
-        void cb();
-      }
-    }, intervalMs);
-    return () => clearInterval(timer);
-  }, [jobs, callbacks, intervalMs]);
+  // no-op
 };
