@@ -1,4 +1,4 @@
-import { MondayBoardView } from "../../page";
+import { MondayBoardView } from "../../MondayBoardView";
 
 const normalizeOwnerId = (value: string | string[] | undefined): string | undefined => {
   if (!value) return undefined;

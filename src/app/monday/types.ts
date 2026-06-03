@@ -559,6 +559,12 @@ export type UserBoardColorTheme =
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
 export type UserBoardDisplayMode = "table" | "grid" | "kanban";
+export type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
+export type GridSortDirection = "asc" | "desc";
+export interface GridSortState {
+  field: GridSortField;
+  direction: GridSortDirection;
+}
 export type UserBoardRecordSource = "created_in_month" | "touched_in_month";
 /** 0 = infinite scroll */
 export type UserBoardPageSize = 20 | 40 | 100 | 0;
