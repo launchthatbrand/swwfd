@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SupportChannelComposer } from "@swwfd/support-chat-composer";
 
 import { Badge } from "@launchthatapp/ui/badge";
 
@@ -11,13 +12,18 @@ export const ConversationThreadPane = ({
   selectedConversation,
   subitems,
   isLoadingMessages,
+  composerChannels,
+  selectedComposerChannel,
+  onComposerChannelChange,
   currentUserId,
   onSendMessage,
   onDeleteMessage,
   onUpdateMessageDate,
 }: ConversationThreadPaneProps) => {
-  const [draft, setDraft] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const noop = () => {
+    // Thread composer is rendered separately for channel-aware sending.
+  };
 
   if (!selectedConversation) {
     return (
@@ -57,29 +63,40 @@ export const ConversationThreadPane = ({
             isLoading={isLoadingMessages}
             isEmpty={subitems.length === 0}
             isStaticMode={false}
-            draft={draft}
-            onDraftChange={setDraft}
-            onSubmit={async ({ updateType, date }) => {
-              const body = draft.trim();
-              if (!body) return;
-              setIsSubmitting(true);
-              try {
-                await onSendMessage({ body, updateType, date });
-                setDraft("");
-              } finally {
-                setIsSubmitting(false);
-              }
-            }}
+            draft=""
+            onDraftChange={noop}
+            onSubmit={async () => undefined}
             onDeleteSubitem={async (subitemId) => {
               await onDeleteMessage(subitemId);
             }}
             onUpdateSubitemDate={async (subitemId, date) => {
               await onUpdateMessageDate(subitemId, date);
             }}
-            isSubmitting={isSubmitting}
+            isSubmitting={false}
             currentUserId={currentUserId}
+            hideComposer
           />
         )}
+      </div>
+
+      <div className="border-t bg-background p-3">
+        <SupportChannelComposer
+          channels={composerChannels}
+          selectedChannel={selectedComposerChannel}
+          onSelectedChannelChange={onComposerChannelChange}
+          isSending={isSubmitting}
+          onSend={async ({ channel, text }) => {
+            setIsSubmitting(true);
+            try {
+              await onSendMessage({
+                channel,
+                body: text,
+              });
+            } finally {
+              setIsSubmitting(false);
+            }
+          }}
+        />
       </div>
     </section>
   );

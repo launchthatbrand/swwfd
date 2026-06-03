@@ -17,8 +17,14 @@ const messageValidator = v.object({
   ),
   role: v.union(v.literal("user"), v.literal("assistant")),
   source: v.union(v.literal("admin"), v.literal("visitor"), v.literal("system")),
-  channel: v.union(v.literal("chat"), v.literal("email")),
-  messageType: v.union(v.literal("chat"), v.literal("email_inbound"), v.literal("email_outbound")),
+  channel: v.union(v.literal("chat"), v.literal("email"), v.literal("sms")),
+  messageType: v.union(
+    v.literal("chat"),
+    v.literal("email_inbound"),
+    v.literal("email_outbound"),
+    v.literal("sms_inbound"),
+    v.literal("sms_outbound"),
+  ),
   body: v.string(),
   senderName: v.union(v.string(), v.null()),
   senderEmail: v.union(v.string(), v.null()),
@@ -73,9 +79,15 @@ export const sendMessage = mutation({
     date: v.optional(v.string()),
     role: v.optional(v.union(v.literal("user"), v.literal("assistant"))),
     source: v.optional(v.union(v.literal("admin"), v.literal("visitor"), v.literal("system"))),
-    channel: v.optional(v.union(v.literal("chat"), v.literal("email"))),
+    channel: v.optional(v.union(v.literal("chat"), v.literal("email"), v.literal("sms"))),
     messageType: v.optional(
-      v.union(v.literal("chat"), v.literal("email_inbound"), v.literal("email_outbound")),
+      v.union(
+        v.literal("chat"),
+        v.literal("email_inbound"),
+        v.literal("email_outbound"),
+        v.literal("sms_inbound"),
+        v.literal("sms_outbound"),
+      ),
     ),
     senderName: v.optional(v.string()),
     senderEmail: v.optional(v.string()),
@@ -98,7 +110,13 @@ export const sendMessage = mutation({
     const role = args.role ?? "assistant";
     const source = args.source ?? "admin";
     const channel = args.channel ?? "chat";
-    const messageType = args.messageType ?? (channel === "chat" ? "chat" : "email_outbound");
+    const messageType =
+      args.messageType ??
+      (channel === "chat"
+        ? "chat"
+        : channel === "email"
+          ? "email_outbound"
+          : "sms_outbound");
 
     const updateType = args.updateType ?? "general";
 

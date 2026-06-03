@@ -34,19 +34,18 @@ export type ConversationThreadPaneProps = {
   selectedConversation: MondaySupportConversationSummary | null;
   subitems: MondaySubitemEntry[];
   isLoadingMessages: boolean;
+  composerChannels: {
+    id: "email" | "sms";
+    label: string;
+    enabled: boolean;
+    disabledReason?: string;
+  }[];
+  selectedComposerChannel: "email" | "sms";
+  onComposerChannelChange: (channel: "email" | "sms") => void;
   currentUserId: string | null;
   onSendMessage: (payload: {
+    channel: "email" | "sms";
     body: string;
-    updateType:
-      | "general"
-      | "welcome_email"
-      | "followup"
-      | "questionnaire"
-      | "resume"
-      | "resume_referral"
-      | "job_referral"
-      | "merge";
-    date: string;
   }) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onUpdateMessageDate: (messageId: string, date: string) => Promise<void>;

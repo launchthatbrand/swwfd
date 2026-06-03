@@ -621,10 +621,15 @@ export type DataModel = {
   mondaySupportMessages: {
     document: {
       body: string;
-      channel: "chat" | "email";
+      channel: "chat" | "email" | "sms";
       conversationId: Id<"mondaySupportConversations">;
       createdAt: number;
-      messageType: "chat" | "email_inbound" | "email_outbound";
+      messageType:
+        | "chat"
+        | "email_inbound"
+        | "email_outbound"
+        | "sms_inbound"
+        | "sms_outbound";
       role: "user" | "assistant";
       senderEmail: string | null;
       senderName: string | null;

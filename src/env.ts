@@ -48,6 +48,9 @@ export const env = createEnv({
       .enum(["true", "false"])
       .optional()
       .default("false"),
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_FROM_PHONE: z.string().optional(),
   },
 
   client: {

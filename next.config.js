@@ -6,7 +6,11 @@ await jiti.import("./src/env");
 
 /** @type {import("next").NextConfig} */
 const config = {
-  transpilePackages: ["@launchthatapp/ui", "@launchthatapp/dnd"],
+  transpilePackages: [
+    "@launchthatapp/ui",
+    "@launchthatapp/dnd",
+    "@swwfd/support-chat-composer",
+  ],
 
   typescript: { ignoreBuildErrors: true },
 

@@ -314,8 +314,13 @@ export interface HelpdeskTicket {
 export type MondaySupportConversationStatus = "open" | "snoozed" | "closed";
 export type MondaySupportConversationMode = "agent" | "manual";
 export type MondaySupportMessageRole = "user" | "assistant";
-export type MondaySupportMessageChannel = "chat" | "email";
-export type MondaySupportMessageType = "chat" | "email_inbound" | "email_outbound";
+export type MondaySupportMessageChannel = "chat" | "email" | "sms";
+export type MondaySupportMessageType =
+  | "chat"
+  | "email_inbound"
+  | "email_outbound"
+  | "sms_inbound"
+  | "sms_outbound";
 
 export interface MondaySupportConversationSummary {
   id: string;

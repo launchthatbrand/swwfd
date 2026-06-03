@@ -31,8 +31,13 @@ export const useSupportMessages = (conversationId: string | null) => {
     date?: string;
     role?: "user" | "assistant";
     source?: "admin" | "visitor" | "system";
-    channel?: "chat" | "email";
-    messageType?: "chat" | "email_inbound" | "email_outbound";
+    channel?: "chat" | "email" | "sms";
+    messageType?:
+      | "chat"
+      | "email_inbound"
+      | "email_outbound"
+      | "sms_inbound"
+      | "sms_outbound";
     senderName?: string;
     senderEmail?: string;
     actorMondayUserId?: string;

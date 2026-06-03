@@ -240,6 +240,7 @@ interface ContactUpdatesProps {
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmitting: boolean;
   currentUserId: string | null;
+  hideComposer?: boolean;
 }
 
 export const ContactUpdates = ({
@@ -254,6 +255,7 @@ export const ContactUpdates = ({
   onUpdateSubitemDate,
   isSubmitting,
   currentUserId,
+  hideComposer = false,
 }: ContactUpdatesProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -384,7 +386,8 @@ export const ContactUpdates = ({
           )}
         </div>
 
-        <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
+        {hideComposer ? null : (
+          <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
           {showAdvancedComposer ? (
             <>
               <div className="mb-2 flex items-center justify-between">
@@ -450,11 +453,15 @@ export const ContactUpdates = ({
               </Button>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Post-submit: pick type & date */}
-      <Dialog open={showTypeDialog} onOpenChange={setShowTypeDialog}>
+      <Dialog
+        open={!hideComposer && showTypeDialog}
+        onOpenChange={setShowTypeDialog}
+      >
         <DialogContent className="sm:max-w-[380px]">
           <DialogHeader>
             <DialogTitle>Classify update</DialogTitle>

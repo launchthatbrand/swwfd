@@ -2239,11 +2239,16 @@ export declare const api: {
       { conversationId: Id<"mondaySupportConversations"> },
       Array<{
         body: string;
-        channel: "chat" | "email";
+        channel: "chat" | "email" | "sms";
         conversationId: string;
         createdAt: number;
         id: string;
-        messageType: "chat" | "email_inbound" | "email_outbound";
+        messageType:
+          | "chat"
+          | "email_inbound"
+          | "email_outbound"
+          | "sms_inbound"
+          | "sms_outbound";
         role: "user" | "assistant";
         senderEmail: string | null;
         senderName: string | null;
@@ -2272,10 +2277,15 @@ export declare const api: {
         actorMondayUserId?: string;
         actorName?: string;
         body: string;
-        channel?: "chat" | "email";
+        channel?: "chat" | "email" | "sms";
         conversationId: Id<"mondaySupportConversations">;
         date?: string;
-        messageType?: "chat" | "email_inbound" | "email_outbound";
+        messageType?:
+          | "chat"
+          | "email_inbound"
+          | "email_outbound"
+          | "sms_inbound"
+          | "sms_outbound";
         role?: "user" | "assistant";
         senderEmail?: string;
         senderName?: string;
