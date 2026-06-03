@@ -20,7 +20,12 @@ const fontSizeValidator = v.union(
   v.literal("large"),
 );
 const tableDensityValidator = v.union(v.literal("expanded"), v.literal("compact"));
-const displayModeValidator = v.union(v.literal("table"), v.literal("grid"));
+const displayModeValidator = v.union(
+  v.literal("table"),
+  v.literal("grid"),
+  v.literal("kanban"),
+  v.literal("chat"),
+);
 const recordSourceValidator = v.union(
   v.literal("created_in_month"),
   v.literal("touched_in_month"),

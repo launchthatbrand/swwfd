@@ -1395,7 +1395,7 @@ export declare const api: {
           | "custom";
         createdAt: number;
         customTheme?: { alpha: number; colorHex: string };
-        displayMode?: "table" | "grid";
+        displayMode?: "table" | "grid" | "kanban" | "chat";
         fontSize: "default" | "medium" | "large";
         hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
@@ -1418,7 +1418,7 @@ export declare const api: {
           | "rose"
           | "custom";
         customTheme?: { alpha: number; colorHex: string };
-        displayMode?: "table" | "grid";
+        displayMode?: "table" | "grid" | "kanban" | "chat";
         fontSize: "default" | "medium" | "large";
         hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
@@ -1437,7 +1437,7 @@ export declare const api: {
           | "custom";
         createdAt: number;
         customTheme?: { alpha: number; colorHex: string };
-        displayMode?: "table" | "grid";
+        displayMode?: "table" | "grid" | "kanban" | "chat";
         fontSize: "default" | "medium" | "large";
         hoverPopoversEnabled?: boolean;
         ownerMondayUserId: string;
@@ -2130,6 +2130,284 @@ export declare const api: {
         workSchedule?: string | Array<string>;
       },
       { contact: { email: string | null; id: string; name: string } }
+    >;
+  };
+  supportConversations: {
+    ensureConversationForContact: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accountId: string;
+        contactEmail?: string;
+        contactItemId: string;
+        contactName: string;
+      },
+      { conversationId: Id<"mondaySupportConversations"> }
+    >;
+    getConversationById: FunctionReference<
+      "query",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      {
+        assignedAgentId: string | null;
+        assignedAgentName: string | null;
+        contactEmail: string | null;
+        contactItemId: string | null;
+        contactName: string;
+        createdAt: number;
+        id: string;
+        lastMessageAt: number | null;
+        lastMessagePreview: string | null;
+        lastMessageRole: "user" | "assistant" | null;
+        mode: "agent" | "manual";
+        sessionId: string;
+        status: "open" | "snoozed" | "closed";
+        unreadCount: number;
+        updatedAt: number;
+      } | null
+    >;
+    listConversations: FunctionReference<
+      "query",
+      "public",
+      {
+        accountId: string;
+        scope?: "all" | "mine" | "unassigned";
+        search?: string;
+        userId?: string;
+      },
+      Array<{
+        assignedAgentId: string | null;
+        assignedAgentName: string | null;
+        contactEmail: string | null;
+        contactItemId: string | null;
+        contactName: string;
+        createdAt: number;
+        id: string;
+        lastMessageAt: number | null;
+        lastMessagePreview: string | null;
+        lastMessageRole: "user" | "assistant" | null;
+        mode: "agent" | "manual";
+        sessionId: string;
+        status: "open" | "snoozed" | "closed";
+        unreadCount: number;
+        updatedAt: number;
+      }>
+    >;
+  };
+  supportEvents: {
+    appendEvent: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        conversationId: Id<"mondaySupportConversations">;
+        payload?: string;
+        type: string;
+      },
+      { ok: true }
+    >;
+    listEvents: FunctionReference<
+      "query",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      Array<{
+        actorMondayUserId: string | null;
+        actorName: string | null;
+        conversationId: string;
+        createdAt: number;
+        id: string;
+        payload: string | null;
+        type: string;
+      }>
+    >;
+  };
+  supportMessages: {
+    deleteMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        messageId: Id<"mondaySupportMessages">;
+      },
+      { ok: true }
+    >;
+    listMessages: FunctionReference<
+      "query",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      Array<{
+        body: string;
+        channel: "chat" | "email";
+        conversationId: string;
+        createdAt: number;
+        id: string;
+        messageType: "chat" | "email_inbound" | "email_outbound";
+        role: "user" | "assistant";
+        senderEmail: string | null;
+        senderName: string | null;
+        source: "admin" | "visitor" | "system";
+        updateType:
+          | "general"
+          | "welcome_email"
+          | "followup"
+          | "questionnaire"
+          | "resume"
+          | "resume_referral"
+          | "job_referral"
+          | "merge";
+      }>
+    >;
+    markRead: FunctionReference<
+      "mutation",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      { ok: true }
+    >;
+    sendMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        body: string;
+        channel?: "chat" | "email";
+        conversationId: Id<"mondaySupportConversations">;
+        date?: string;
+        messageType?: "chat" | "email_inbound" | "email_outbound";
+        role?: "user" | "assistant";
+        senderEmail?: string;
+        senderName?: string;
+        source?: "admin" | "visitor" | "system";
+        updateType?:
+          | "general"
+          | "welcome_email"
+          | "followup"
+          | "questionnaire"
+          | "resume"
+          | "resume_referral"
+          | "job_referral"
+          | "merge";
+      },
+      { messageId: Id<"mondaySupportMessages"> }
+    >;
+    updateMessageDate: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        date: string;
+        messageId: Id<"mondaySupportMessages">;
+      },
+      { ok: true }
+    >;
+  };
+  supportNotes: {
+    addNote: FunctionReference<
+      "mutation",
+      "public",
+      {
+        authorMondayUserId: string;
+        authorName?: string;
+        body: string;
+        conversationId: Id<"mondaySupportConversations">;
+      },
+      { noteId: Id<"mondaySupportNotes"> }
+    >;
+    listNotes: FunctionReference<
+      "query",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      Array<{
+        authorMondayUserId: string;
+        authorName: string | null;
+        body: string;
+        conversationId: string;
+        createdAt: number;
+        id: string;
+      }>
+    >;
+  };
+  supportPresence: {
+    heartbeat: FunctionReference<
+      "mutation",
+      "public",
+      {
+        conversationId: Id<"mondaySupportConversations">;
+        status?: "online" | "typing" | "idle";
+        userId: string;
+        userName?: string;
+        userType: "agent" | "visitor";
+      },
+      { ok: true }
+    >;
+    listPresence: FunctionReference<
+      "query",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      Array<{
+        conversationId: string;
+        id: string;
+        lastSeenAt: number;
+        status: "online" | "typing" | "idle";
+        userId: string;
+        userName: string | null;
+        userType: "agent" | "visitor";
+      }>
+    >;
+  };
+  supportWorkflow: {
+    assignConversation: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        assignedAgentId: string;
+        assignedAgentName?: string;
+        conversationId: Id<"mondaySupportConversations">;
+      },
+      { ok: true }
+    >;
+    deleteConversation: FunctionReference<
+      "mutation",
+      "public",
+      { conversationId: Id<"mondaySupportConversations"> },
+      { ok: true }
+    >;
+    setConversationMode: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        conversationId: Id<"mondaySupportConversations">;
+        mode: "agent" | "manual";
+      },
+      { ok: true }
+    >;
+    setConversationStatus: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        conversationId: Id<"mondaySupportConversations">;
+        status: "open" | "snoozed" | "closed";
+      },
+      { ok: true }
+    >;
+    unassignConversation: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actorMondayUserId?: string;
+        actorName?: string;
+        conversationId: Id<"mondaySupportConversations">;
+      },
+      { ok: true }
     >;
   };
   viewer: {

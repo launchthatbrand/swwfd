@@ -4,6 +4,7 @@ export { BoardRecordsView } from "./BoardRecordsView";
 export { BoardTable } from "./BoardTable";
 export { GridBoardView } from "./GridBoardView";
 export { KanbanBoardView } from "./KanbanBoardView";
+export { MondayChatView } from "./chat/MondayChatView";
 export { TableBoardView } from "./TableBoardView";
 export { AdvancedFiltersDialog } from "./board/AdvancedFiltersDialog";
 export { BoardFilterBar } from "./board/BoardFilterBar";

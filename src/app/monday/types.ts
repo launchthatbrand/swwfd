@@ -311,6 +311,73 @@ export interface HelpdeskTicket {
   createdAt: string | null;
 }
 
+export type MondaySupportConversationStatus = "open" | "snoozed" | "closed";
+export type MondaySupportConversationMode = "agent" | "manual";
+export type MondaySupportMessageRole = "user" | "assistant";
+export type MondaySupportMessageChannel = "chat" | "email";
+export type MondaySupportMessageType = "chat" | "email_inbound" | "email_outbound";
+
+export interface MondaySupportConversationSummary {
+  id: string;
+  sessionId: string;
+  contactItemId: string | null;
+  contactName: string;
+  contactEmail: string | null;
+  status: MondaySupportConversationStatus;
+  mode: MondaySupportConversationMode;
+  assignedAgentId: string | null;
+  assignedAgentName: string | null;
+  lastMessagePreview: string | null;
+  lastMessageRole: MondaySupportMessageRole | null;
+  lastMessageAt: number | null;
+  unreadCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MondaySupportMessage {
+  id: string;
+  conversationId: string;
+  updateType: MondayUpdateType;
+  role: MondaySupportMessageRole;
+  source: "admin" | "visitor" | "system";
+  channel: MondaySupportMessageChannel;
+  messageType: MondaySupportMessageType;
+  body: string;
+  senderName: string | null;
+  senderEmail: string | null;
+  createdAt: number;
+}
+
+export interface MondaySupportNote {
+  id: string;
+  conversationId: string;
+  authorMondayUserId: string;
+  authorName: string | null;
+  body: string;
+  createdAt: number;
+}
+
+export interface MondaySupportEvent {
+  id: string;
+  conversationId: string;
+  type: string;
+  actorMondayUserId: string | null;
+  actorName: string | null;
+  payload: string | null;
+  createdAt: number;
+}
+
+export interface MondaySupportPresenceEntry {
+  id: string;
+  conversationId: string;
+  userId: string;
+  userName: string | null;
+  userType: "agent" | "visitor";
+  status: "online" | "typing" | "idle";
+  lastSeenAt: number;
+}
+
 // ---------------------------------------------------------------------------
 // Metrics types
 // ---------------------------------------------------------------------------
@@ -557,7 +624,7 @@ export type UserBoardColorTheme =
   | "custom";
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
-export type UserBoardDisplayMode = "table" | "grid" | "kanban";
+export type UserBoardDisplayMode = "table" | "grid" | "kanban" | "chat";
 export type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
 export type GridSortDirection = "asc" | "desc";
 export interface GridSortState {

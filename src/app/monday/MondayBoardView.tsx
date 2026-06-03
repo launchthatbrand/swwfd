@@ -14,6 +14,7 @@ import {
   CircleHelp,
   List,
   MoreHorizontal,
+  MessageSquareText,
   RefreshCcw,
   Settings,
   Upload,
@@ -231,6 +232,7 @@ import {
   HelpDeskDialog,
   GridBoardView,
   KanbanBoardView,
+  MondayChatView,
   PdfResumePreview,
   ResumeReferralStepDialog,
   SendEmailDialog,
@@ -289,6 +291,38 @@ export function MondayBoardView({
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
   const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<UserBoardDisplayMode>("table");
+  const isViewportLockedBoardMode =
+    userScopedDisplayMode === "kanban" || userScopedDisplayMode === "chat";
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const body = document.body;
+    const html = document.documentElement;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyOverscrollBehavior = body.style.overscrollBehavior;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousHtmlOverscrollBehavior = html.style.overscrollBehavior;
+
+    if (isViewportLockedBoardMode) {
+      body.style.overflow = "hidden";
+      body.style.overscrollBehavior = "none";
+      html.style.overflow = "hidden";
+      html.style.overscrollBehavior = "none";
+    } else {
+      body.style.overflow = previousBodyOverflow;
+      body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      html.style.overflow = previousHtmlOverflow;
+      html.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+    }
+
+    return () => {
+      body.style.overflow = previousBodyOverflow;
+      body.style.overscrollBehavior = previousBodyOverscrollBehavior;
+      html.style.overflow = previousHtmlOverflow;
+      html.style.overscrollBehavior = previousHtmlOverscrollBehavior;
+    };
+  }, [isViewportLockedBoardMode]);
   const [gridSort, setGridSort] = useState<GridSortState>({
     field: "createdAt",
     direction: "desc",
@@ -884,7 +918,7 @@ export function MondayBoardView({
     () => ({
       data: staticMode ? undefined : featureFlagsConvex,
       error: null as Error | null,
-      refetch: async () => {},
+      refetch: async () => { },
     }),
     [featureFlagsConvex, staticMode],
   );
@@ -893,7 +927,7 @@ export function MondayBoardView({
     () => ({
       data: staticMode ? undefined : platformSettingsConvex,
       error: null as Error | null,
-      refetch: async () => {},
+      refetch: async () => { },
     }),
     [platformSettingsConvex, staticMode],
   );
@@ -1640,15 +1674,15 @@ export function MondayBoardView({
     try {
       const data = await fetchMondayApi<
         {
-                ok?: boolean;
-                error?: string;
-                authorizeUrl?: string;
-              }
+          ok?: boolean;
+          error?: string;
+          authorizeUrl?: string;
+        }
       >(
 
         "/api/monday/email/outlook/connect",
         {
-        sessionToken
+          sessionToken
         }
       );
       if (!data.ok || !data.authorizeUrl) {
@@ -1679,8 +1713,8 @@ export function MondayBoardView({
       const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
         "/api/monday/email/outlook/disconnect",
         {
-        sessionToken,
-        method: "POST"
+          sessionToken,
+          method: "POST"
         }
       );
       if (!data.ok) {
@@ -1907,11 +1941,9 @@ export function MondayBoardView({
         tableDensity: boardGeneralSettingsDraft.tableDensity,
         hoverPopoversEnabled: boardGeneralSettingsDraft.hoverPopoversEnabled,
         pageSize: boardGeneralSettingsDraft.pageSize,
-        displayMode:
-          boardGeneralSettingsDraft.displayMode === "table" ||
-          boardGeneralSettingsDraft.displayMode === "grid"
-            ? boardGeneralSettingsDraft.displayMode
-            : undefined,
+        displayMode: isUserBoardDisplayMode(boardGeneralSettingsDraft.displayMode)
+          ? boardGeneralSettingsDraft.displayMode
+          : undefined,
         recordSource: boardGeneralSettingsDraft.recordSource,
       });
 
@@ -2281,15 +2313,15 @@ export function MondayBoardView({
       const data = await fetchMondayApi<MondaySendEmailResponse>(
         "/api/monday/email/send",
         {
-        sessionToken,
-        method: "POST",
-        body: {
-          to: recipient,
-          subject: sendEmailResolvedTemplate.subject,
-          html: sendEmailResolvedTemplate.html,
-          contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
-          ownerMondayUserId: senderMailboxUserId,
-        }
+          sessionToken,
+          method: "POST",
+          body: {
+            to: recipient,
+            subject: sendEmailResolvedTemplate.subject,
+            html: sendEmailResolvedTemplate.html,
+            contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
+            ownerMondayUserId: senderMailboxUserId,
+          }
         }
       );
       if (!data.ok) {
@@ -2393,14 +2425,14 @@ export function MondayBoardView({
           fetchMondayApi<{ ok?: boolean; error?: string }>(
             "/api/monday/touches",
             {
-            sessionToken,
-            method: "POST",
-            body: {
-              contactItemId: targetRecordId,
-              contactName: sendEmailRecord.name ?? "",
-              ownerId: identity.userId,
-              source: "update",
-            }
+              sessionToken,
+              method: "POST",
+              body: {
+                contactItemId: targetRecordId,
+                contactName: sendEmailRecord.name ?? "",
+                ownerId: identity.userId,
+                source: "update",
+              }
             }
           ).catch(() => { });
         }
@@ -3735,25 +3767,25 @@ export function MondayBoardView({
       setSyncingContactIds((prev) => new Set(prev).add(syncKey));
       try {
         const targetId = resolveContactUpdateTargetRecordId(record);
-          const data = await fetchMondayApi<
+        const data = await fetchMondayApi<
           {
-                    ok: boolean;
-                    error?: string;
-                    linkedItemCount?: number;
-                    createdParentUpdates?: number;
-                    createdSubitems?: number;
-                    createdSubitemUpdates?: number;
-                    updatedProgressColumns?: number;
-                    skippedSubitems?: number;
-                    warnings?: string[];
-                  }
+            ok: boolean;
+            error?: string;
+            linkedItemCount?: number;
+            createdParentUpdates?: number;
+            createdSubitems?: number;
+            createdSubitemUpdates?: number;
+            updatedProgressColumns?: number;
+            skippedSubitems?: number;
+            warnings?: string[];
+          }
         >(
 
           `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
           {
-          sessionToken,
-          method: "POST",
-          body: {
+            sessionToken,
+            method: "POST",
+            body: {
               ownerId: resolvedSyncOwnerId.length > 0 ? resolvedSyncOwnerId : undefined,
               monthlyBoardId: options?.monthlyBoardId,
             }
@@ -4319,14 +4351,14 @@ export function MondayBoardView({
       fetchMondayApi<{ ok?: boolean; error?: string }>(
         "/api/monday/touches",
         {
-        sessionToken,
-        method: "POST",
-        body: {
-          contactItemId: contactId,
-          contactName: contactHistoryDialogRecord.name ?? "",
-          ownerId: identity.userId,
-          source: "update",
-        }
+          sessionToken,
+          method: "POST",
+          body: {
+            contactItemId: contactId,
+            contactName: contactHistoryDialogRecord.name ?? "",
+            ownerId: identity.userId,
+            source: "update",
+          }
         }
       ).catch(() => { });
     }
@@ -5035,18 +5067,18 @@ export function MondayBoardView({
         throw new Error("Contact has no owner mailbox to send from");
       }
 
-            const sendData = await fetchMondayApi<MondaySendEmailResponse>(
+      const sendData = await fetchMondayApi<MondaySendEmailResponse>(
         "/api/monday/email/send",
         {
-        sessionToken,
-        method: "POST",
-        body: {
-          to: recipient,
-          subject,
-          html,
-          contactItemId: targetRecordId,
-          ownerMondayUserId: senderMailboxUserId,
-        }
+          sessionToken,
+          method: "POST",
+          body: {
+            to: recipient,
+            subject,
+            html,
+            contactItemId: targetRecordId,
+            ownerMondayUserId: senderMailboxUserId,
+          }
         }
       );
       if (!sendData.ok) {
@@ -5068,14 +5100,14 @@ export function MondayBoardView({
         fetchMondayApi<{ ok?: boolean; error?: string }>(
           "/api/monday/touches",
           {
-          sessionToken,
-          method: "POST",
-          body: {
-            contactItemId: targetRecordId,
-            contactName: record.name ?? "",
-            ownerId: identity.userId,
-            source: "update",
-          }
+            sessionToken,
+            method: "POST",
+            body: {
+              contactItemId: targetRecordId,
+              contactName: record.name ?? "",
+              ownerId: identity.userId,
+              source: "update",
+            }
           }
         ).catch(() => { });
       }
@@ -5303,24 +5335,24 @@ export function MondayBoardView({
     try {
       const data = await fetchMondayApi<
         {
-                ok?: boolean;
-                error?: string;
-                createdSubitems?: number;
-                skippedDuplicates?: number;
-                deletedSourceCount?: number;
-              }
+          ok?: boolean;
+          error?: string;
+          createdSubitems?: number;
+          skippedDuplicates?: number;
+          deletedSourceCount?: number;
+        }
       >(
 
         "/api/monday/records/merge",
         {
-        sessionToken,
-        method: "POST",
-        body: {
-          masterItemId: masterRecordId,
-          sourceItemIds,
-          fieldOverrides,
-          deleteSources: true,
-        }
+          sessionToken,
+          method: "POST",
+          body: {
+            masterItemId: masterRecordId,
+            sourceItemIds,
+            fieldOverrides,
+            deleteSources: true,
+          }
         }
       );
       if (!data.ok) {
@@ -6136,9 +6168,9 @@ export function MondayBoardView({
       const data = await fetchMondayApi<MondayCreateContactResponse>(
         "/api/monday/contacts",
         {
-        sessionToken,
-        method: "POST",
-        body: addContactValues
+          sessionToken,
+          method: "POST",
+          body: addContactValues
         }
       );
       if (!data.ok) {
@@ -6177,7 +6209,7 @@ export function MondayBoardView({
       const data = await fetchMondayApi<MondayContactsLookupResponse>(
         `/api/monday/contacts?${params.toString()}`,
         {
-        sessionToken
+          sessionToken
         }
       );
       if (!data.ok) {
@@ -6265,7 +6297,9 @@ export function MondayBoardView({
   return (
     <GuidedTourProvider>
       <UserSettingsProvider settings={boardGeneralSettings}>
-        <div className="monday-like-page mx-auto space-y-3 pb-10">
+        <div
+          className={`monday-like-page mx-auto ${isViewportLockedBoardMode ? "h-[calc(100vh-0px)] overflow-hidden pb-0" : "pb-10"}`}
+        >
           <div
             data-board-filter-bar
             className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
@@ -6773,7 +6807,7 @@ export function MondayBoardView({
                   </Button>
                   <BoardViewModeToggle
                     mode={userScopedDisplayMode}
-                    availableModes={["table", "grid", "kanban"]}
+                    availableModes={["table", "grid", "kanban", "chat"]}
                     onChange={setUserScopedDisplayMode}
                     dataTour="view-toggle"
                   />
@@ -6783,7 +6817,7 @@ export function MondayBoardView({
                   <div className="bg-border/60 h-5 w-px shrink-0" />
                   <BoardViewModeToggle
                     mode={userScopedDisplayMode}
-                    availableModes={["table", "kanban"]}
+                    availableModes={["table", "kanban", "chat"]}
                     onChange={setUserScopedDisplayMode}
                   />
                 </>
@@ -7187,7 +7221,9 @@ export function MondayBoardView({
                                   <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
                                 </div>
                                 <div className="flex shrink-0 overflow-hidden rounded-md border">
-                                  {(["table", "grid", "kanban"] as UserBoardDisplayMode[]).map((mode) => (
+                                  {(
+                                    ["table", "grid", "kanban", "chat"] as UserBoardDisplayMode[]
+                                  ).map((mode) => (
                                     <button
                                       key={mode}
                                       type="button"
@@ -7202,7 +7238,15 @@ export function MondayBoardView({
                                         : "bg-background text-muted-foreground hover:bg-muted"
                                         }`}
                                     >
-                                      {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
+                                      {mode === "table" ? (
+                                        <List className="h-3.5 w-3.5" />
+                                      ) : mode === "grid" ? (
+                                        <LayoutGrid className="h-3.5 w-3.5" />
+                                      ) : mode === "kanban" ? (
+                                        <Columns3 className="h-3.5 w-3.5" />
+                                      ) : (
+                                        <MessageSquareText className="h-3.5 w-3.5" />
+                                      )}
                                       {mode}
                                     </button>
                                   ))}
@@ -8104,7 +8148,13 @@ export function MondayBoardView({
               </div>
             </div>
           </div>
-          <div className="max-w-[1600px] container">
+          <div
+            className={
+              userScopedDisplayMode === "chat"
+                ? "w-full"
+                : "max-w-[1600px] container"
+            }
+          >
 
             <AddContactDialog
               open={addContactOpen}
@@ -8404,11 +8454,13 @@ export function MondayBoardView({
               questionnaireFieldOptions={questionnaireFieldOptions}
             />
 
-            <p className="text-muted-foreground px-1 text-xs font-medium">
-              {advancedFiltersState.hasActiveAdvancedFilters
-                ? `${recordsState.filteredRecordCountLabel} (advanced filters)`
-                : filteredRecordCountLabel}
-            </p>
+            {userScopedDisplayMode === "chat" ? null : (
+              <p className="text-muted-foreground px-1 text-xs font-medium">
+                {advancedFiltersState.hasActiveAdvancedFilters
+                  ? `${recordsState.filteredRecordCountLabel} (advanced filters)`
+                  : filteredRecordCountLabel}
+              </p>
+            )}
 
             {isTouchScopedView && userScopedDisplayMode === "grid" ? (
               <GridSortToolbar
@@ -8426,7 +8478,15 @@ export function MondayBoardView({
               />
             ) : null}
 
-            {userScopedDisplayMode === "kanban" ? (
+            {userScopedDisplayMode === "chat" ? (
+              <MondayChatView
+                accountId={identity?.accountId ?? null}
+                userId={identity?.userId ?? null}
+                userName={userProfileQuery.data?.name ?? null}
+                sessionToken={sessionToken}
+                records={filteredRecords}
+              />
+            ) : userScopedDisplayMode === "kanban" ? (
               <KanbanBoardView
                 records={filteredRecords}
                 approvalSteps={approvalSteps}
@@ -8577,8 +8637,8 @@ export function MondayBoardView({
           />
 
           {!sessionState.staticMode &&
-          (boardQueriesState.recordsQuery as typeof recordsQuery).hasNextPage &&
-          shouldAutoLoadMore ? (
+            (boardQueriesState.recordsQuery as typeof recordsQuery).hasNextPage &&
+            shouldAutoLoadMore ? (
             <div ref={loadMoreAnchorRef} className="h-2" />
           ) : null}
         </div>

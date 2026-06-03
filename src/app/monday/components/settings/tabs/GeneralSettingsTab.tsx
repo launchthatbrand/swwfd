@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, type Dispatch, type SetStateAction } from "react";
-import { Columns3, LayoutGrid, List } from "lucide-react";
+import { Columns3, LayoutGrid, List, MessageSquareText } from "lucide-react";
 
 import { Button } from "@launchthatapp/ui/button";
 
@@ -330,7 +330,7 @@ export const GeneralSettingsTab = ({
           <p className="text-muted-foreground text-xs">Starting layout when the board loads.</p>
         </div>
         <div className="flex shrink-0 overflow-hidden rounded-md border">
-          {(["table", "grid", "kanban"] as UserBoardDisplayMode[]).map((mode) => (
+          {(["table", "grid", "kanban", "chat"] as UserBoardDisplayMode[]).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -345,7 +345,15 @@ export const GeneralSettingsTab = ({
                 : "bg-background text-muted-foreground hover:bg-muted"
                 }`}
             >
-              {mode === "table" ? <List className="h-3.5 w-3.5" /> : mode === "grid" ? <LayoutGrid className="h-3.5 w-3.5" /> : <Columns3 className="h-3.5 w-3.5" />}
+              {mode === "table" ? (
+                <List className="h-3.5 w-3.5" />
+              ) : mode === "grid" ? (
+                <LayoutGrid className="h-3.5 w-3.5" />
+              ) : mode === "kanban" ? (
+                <Columns3 className="h-3.5 w-3.5" />
+              ) : (
+                <MessageSquareText className="h-3.5 w-3.5" />
+              )}
               {mode}
             </button>
           ))}

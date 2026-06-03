@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleHelp,
+  MessageSquareText,
   RefreshCcw,
   Settings,
   UserPlus,
@@ -132,7 +133,7 @@ export const BoardToolbar = ({
           </Button>
           <BoardViewModeToggle
             mode={userScopedDisplayMode}
-            availableModes={["table", "grid", "kanban"]}
+            availableModes={["table", "grid", "kanban", "chat"]}
             onChange={onUserScopedDisplayModeChange}
             dataTour="view-toggle"
           />
@@ -142,7 +143,7 @@ export const BoardToolbar = ({
           <div className="bg-border/60 h-5 w-px shrink-0" />
           <BoardViewModeToggle
             mode={userScopedDisplayMode}
-            availableModes={["table", "kanban"]}
+            availableModes={["table", "kanban", "chat"]}
             onChange={onUserScopedDisplayModeChange}
           />
         </>
@@ -174,6 +175,15 @@ export const BoardToolbar = ({
       ) : null}
 
       <div data-tour="toolbar-actions" className="flex items-center gap-0.5">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 shrink-0 px-2"
+          title="Chat"
+          onClick={() => onUserScopedDisplayModeChange("chat")}
+        >
+          <MessageSquareText className="h-4 w-4" />
+        </Button>
         <Button
           size="sm"
           variant="ghost"

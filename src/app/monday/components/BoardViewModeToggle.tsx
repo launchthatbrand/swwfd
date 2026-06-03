@@ -1,6 +1,6 @@
 "use client";
 
-import { Columns3, LayoutGrid, List } from "lucide-react";
+import { Columns3, LayoutGrid, List, MessageSquareText } from "lucide-react";
 
 import type { UserBoardDisplayMode } from "../types";
 
@@ -19,11 +19,13 @@ export const BoardViewModeToggle = ({
     table: List,
     grid: LayoutGrid,
     kanban: Columns3,
+    chat: MessageSquareText,
   };
   const titleByMode: Record<UserBoardDisplayMode, string> = {
     table: "Table view",
     grid: "Grid view",
     kanban: "Kanban view",
+    chat: "Chat view",
   };
 
   return (

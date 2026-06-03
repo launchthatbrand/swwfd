@@ -193,7 +193,7 @@ export const isUserBoardPageSize = (value: unknown): value is UserBoardPageSize 
   value === 20 || value === 40 || value === 100 || value === 0;
 
 export const isUserBoardDisplayMode = (value: unknown): value is UserBoardDisplayMode =>
-  value === "table" || value === "grid" || value === "kanban";
+  value === "table" || value === "grid" || value === "kanban" || value === "chat";
 
 export const USER_BOARD_RECORD_SOURCE_OPTIONS: {
   value: UserBoardRecordSource;
