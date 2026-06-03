@@ -31,11 +31,18 @@ type Props = {
   userName: string | null;
   sessionToken: string | null;
   records: MondayRecord[];
+  isLoadingRecords: boolean;
 };
 
-export const MondayChatView = ({ accountId, userId, userName, sessionToken, records }: Props) => {
+export const MondayChatView = ({
+  accountId,
+  userId,
+  userName,
+  sessionToken,
+  records,
+  isLoadingRecords,
+}: Props) => {
   const [scope, setScope] = useState<"all" | "mine" | "unassigned">("all");
-  const [search, setSearch] = useState("");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [composerChannel, setComposerChannel] = useState<"email" | "sms">("email");
@@ -44,7 +51,7 @@ export const MondayChatView = ({ accountId, userId, userName, sessionToken, reco
     accountId,
     userId,
     scope,
-    search,
+    search: "",
   });
 
   const selectedConversation = useMemo(
@@ -264,18 +271,10 @@ export const MondayChatView = ({ accountId, userId, userName, sessionToken, reco
   return (
     <div className="flex h-[calc(100vh-3rem)] max-h-[calc(100vh-3rem)] min-h-[560px] w-full overflow-hidden rounded-xl border bg-background">
       <ConversationLeftSidebar
+        userId={userId}
         records={records}
-        conversations={conversations}
-        selectedConversationId={selectedConversationId}
+        isLoadingRecords={isLoadingRecords}
         selectedRecordId={selectedRecordId}
-        scope={scope}
-        search={search}
-        onScopeChange={setScope}
-        onSearchChange={setSearch}
-        onSelectConversation={(conversationId) => {
-          setSelectedConversationId(conversationId);
-          setSelectedRecordId(null);
-        }}
         onSelectRecord={(record) => {
           const recordId = (record.contactId ?? record.id ?? "").trim();
           setSelectedRecordId(recordId || null);
