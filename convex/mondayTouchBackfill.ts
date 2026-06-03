@@ -9,55 +9,28 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  createUnifiedMigrationJobRowValidator,
+  getMondayBackfillEnv,
+  normalizeDateOnly,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type BackfillStatus = "running" | "done" | "failed" | "cancelled";
-type CsvExportStatus = "running" | "done" | "failed" | "cancelled";
+type BackfillStatus = BackfillJobStatus;
+type CsvExportStatus = BackfillJobStatus;
 const CSV_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
-const DEFAULT_HISTORY_LIMIT = 25;
-const MAX_HISTORY_LIMIT = 200;
 
-const touchJobStatusValidator = v.union(
-  v.literal("running"),
-  v.literal("done"),
-  v.literal("failed"),
-  v.literal("cancelled"),
+const touchJobStatusValidator = backfillJobStatusValidator;
+
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.union(v.literal("touch_backfill"), v.literal("touch_csv_export")),
 );
-
-const unifiedMigrationJobRowValidator = v.object({
-  toolType: v.union(v.literal("touch_backfill"), v.literal("touch_csv_export")),
-  toolLabel: v.string(),
-  legacy: v.boolean(),
-  jobId: v.string(),
-  status: touchJobStatusValidator,
-  workflowId: v.optional(v.union(v.string(), v.null())),
-  startedAt: v.number(),
-  updatedAt: v.number(),
-  finishedAt: v.optional(v.union(v.number(), v.null())),
-  dryRun: v.optional(v.boolean()),
-  sourceBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceBoardName: v.optional(v.union(v.string(), v.null())),
-  targetBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceTag: v.optional(v.union(v.string(), v.null())),
-  baselineDate: v.optional(v.union(v.string(), v.null())),
-  monthTag: v.optional(v.union(v.string(), v.null())),
-  monthKey: v.optional(v.union(v.string(), v.null())),
-  dateFrom: v.optional(v.union(v.string(), v.null())),
-  dateTo: v.optional(v.union(v.string(), v.null())),
-  pageSize: v.optional(v.number()),
-  processedCount: v.number(),
-  mappedCount: v.number(),
-  skippedCount: v.number(),
-  createdCount: v.number(),
-  updatedCount: v.number(),
-  errorCount: v.number(),
-  warningCount: v.number(),
-  lastError: v.optional(v.union(v.string(), v.null())),
-  searchText: v.string(),
-});
 
 type CsvContact = {
   id: string;
@@ -67,23 +40,7 @@ type CsvContact = {
   createdAtDate: string | null;
 };
 
-const getMondayBackfillEnv = () => {
-  const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
-  const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!contactBoardId) throw new Error("MONDAY_BOARD_ID is missing for backfill job");
-  if (!touchBoardId) {
-    throw new Error("MONDAY_CONTACT_TOUCHED_BOARD_ID is missing for backfill job");
-  }
-  return { contactBoardId, touchBoardId };
-};
-
-const normalizeDateOnly = (value: string) => {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("baselineDate must be YYYY-MM-DD");
-  }
-  return trimmed;
-};
+// getMondayBackfillEnv, normalizeDateOnly, clampHistoryLimit imported from shared
 
 const toBaselineTouchKey = (args: {
   sourceTag: string;
@@ -119,11 +76,6 @@ const csvHeaderLine = [
   CSV_RELATION_COLUMN_ID,
   "baseline_key",
 ].join(",");
-
-const clampHistoryLimit = (value: number | undefined) => {
-  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
-  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
-};
 
 const buildCsvChunk = (args: {
   contacts: CsvContact[];

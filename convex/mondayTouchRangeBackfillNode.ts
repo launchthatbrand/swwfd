@@ -8,45 +8,10 @@ import { internalAction } from "./_generated/server";
 // Constants & helpers
 // ---------------------------------------------------------------------------
 
-const MONDAY_API_URL = "https://api.monday.com/v2";
-// "Registration date" column on the main API board — same value as creation_log.
-// Using a proper date column lets us push the between filter down to Monday's API.
+import { callMondayGraphQL } from "./lib/mondayGraphQL";
+
 const REGISTRATION_DATE_COLUMN_ID = "date1__1";
 const TOUCH_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
-
-const getEnv = () => {
-  const apiKey = process.env.MONDAY_API_KEY?.trim() ?? "";
-  if (!apiKey) throw new Error("MONDAY_API_KEY is missing");
-  return { apiKey };
-};
-
-const callMondayGraphQL = async <TData>(
-  queryText: string,
-  variables: Record<string, unknown>,
-): Promise<TData> => {
-  const { apiKey } = getEnv();
-  const response = await fetch(MONDAY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: queryText, variables }),
-  });
-  if (!response.ok) {
-    throw new Error(`Monday API request failed (${response.status})`);
-  }
-  const json = (await response.json()) as {
-    data?: TData;
-    errors?: Array<{ message?: string }>;
-  };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const msg = json.errors.map((e) => e.message).filter(Boolean).join(" | ");
-    throw new Error(msg || "Unknown Monday GraphQL error");
-  }
-  if (!json.data) throw new Error("Monday API returned no data");
-  return json.data;
-};
 
 // ---------------------------------------------------------------------------
 // Touch board column resolution (cached per action invocation)

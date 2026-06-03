@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 
 import { api as apiGenerated } from "@convex-config/_generated/api";
@@ -11,23 +12,16 @@ const apiAny = apiGenerated as any;
 const toJson = (body: unknown, status = 200) =>
   NextResponse.json(body, { status });
 
-interface Body {
-  dateFrom?: string;
-  dateTo?: string;
-  dryRun?: boolean;
-  pageSize?: number;
-}
-
 export const POST = async (request: Request) => {
-  let body: Body = {};
+  let body: Record<string, unknown> = {};
   try {
-    body = (await request.json()) as Body;
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     body = {};
   }
 
-  const dateFrom = body.dateFrom?.trim();
-  const dateTo = body.dateTo?.trim();
+  const dateFrom = (body.dateFrom as string | undefined)?.trim();
+  const dateTo = (body.dateTo as string | undefined)?.trim();
   if (!dateFrom) return toJson({ ok: false, error: "dateFrom is required (YYYY-MM-DD)" }, 400);
   if (!dateTo) return toJson({ ok: false, error: "dateTo is required (YYYY-MM-DD)" }, 400);
 
@@ -35,7 +29,7 @@ export const POST = async (request: Request) => {
     const convex = getConvexHttpClient();
     const result = await convex.mutation(
       apiAny.mondayTouchRangeBackfill.startRangeBackfill,
-      { dateFrom, dateTo, dryRun: body.dryRun ?? true, pageSize: body.pageSize },
+      { dateFrom, dateTo, dryRun: (body.dryRun as boolean | undefined) ?? true, pageSize: body.pageSize },
     );
     return toJson({ ok: true, result });
   } catch (error) {

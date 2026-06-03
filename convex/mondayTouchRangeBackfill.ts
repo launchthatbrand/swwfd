@@ -9,77 +9,29 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  clampPageSize,
+  createUnifiedMigrationJobRowValidator,
+  getMondayBackfillEnv,
+  normalizeDateOnly,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type RangeBackfillStatus = "running" | "done" | "failed" | "cancelled";
-const DEFAULT_HISTORY_LIMIT = 25;
-const MAX_HISTORY_LIMIT = 200;
+type RangeBackfillStatus = BackfillJobStatus;
 
-const rangeBackfillStatusValidator = v.union(
-  v.literal("running"),
-  v.literal("done"),
-  v.literal("failed"),
-  v.literal("cancelled"),
+const rangeBackfillStatusValidator = backfillJobStatusValidator;
+
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.literal("touch_range_backfill"),
 );
 
-const unifiedMigrationJobRowValidator = v.object({
-  toolType: v.literal("touch_range_backfill"),
-  toolLabel: v.string(),
-  legacy: v.boolean(),
-  jobId: v.string(),
-  status: rangeBackfillStatusValidator,
-  workflowId: v.optional(v.union(v.string(), v.null())),
-  startedAt: v.number(),
-  updatedAt: v.number(),
-  finishedAt: v.optional(v.union(v.number(), v.null())),
-  dryRun: v.optional(v.boolean()),
-  sourceBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceBoardName: v.optional(v.union(v.string(), v.null())),
-  targetBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceTag: v.optional(v.union(v.string(), v.null())),
-  baselineDate: v.optional(v.union(v.string(), v.null())),
-  monthTag: v.optional(v.union(v.string(), v.null())),
-  monthKey: v.optional(v.union(v.string(), v.null())),
-  dateFrom: v.optional(v.union(v.string(), v.null())),
-  dateTo: v.optional(v.union(v.string(), v.null())),
-  pageSize: v.optional(v.number()),
-  processedCount: v.number(),
-  mappedCount: v.number(),
-  skippedCount: v.number(),
-  createdCount: v.number(),
-  updatedCount: v.number(),
-  errorCount: v.number(),
-  warningCount: v.number(),
-  lastError: v.optional(v.union(v.string(), v.null())),
-  searchText: v.string(),
-});
-
-const getMondayRangeBackfillEnv = () => {
-  const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
-  const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!contactBoardId) throw new Error("MONDAY_BOARD_ID is missing");
-  if (!touchBoardId) throw new Error("MONDAY_CONTACT_TOUCHED_BOARD_ID is missing");
-  return { contactBoardId, touchBoardId };
-};
-
-const normalizeDateOnly = (value: string) => {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error(`Date must be YYYY-MM-DD, got: ${trimmed}`);
-  }
-  return trimmed;
-};
-
-const clampPageSize = (value: number | undefined) =>
-  Math.max(25, Math.min(200, Math.floor(value ?? 50)));
-
-const clampHistoryLimit = (value: number | undefined) => {
-  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
-  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
-};
+const getMondayRangeBackfillEnv = () => getMondayBackfillEnv();
 
 // ---------------------------------------------------------------------------
 // Public queries

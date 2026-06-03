@@ -38,6 +38,7 @@ import {
   readTokenFromLocation,
   readTokenFromSdkResponse,
 } from "../helpers";
+import { fetchMondayApi } from "../services/monday-api";
 import type {
   MondayIdentity,
   MondayMetricsContractorReferralBreakdown,
@@ -524,13 +525,11 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         params.set("ownerId", effectiveOwnerId);
       }
 
-      const response = await fetch(`/api/monday/metrics?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
-      });
-      const data = (await response.json()) as MondayMetricsResponse;
-      if (!response.ok || !data.ok || !data.summary) {
+      const data = await fetchMondayApi<MondayMetricsResponse>(
+        `/api/monday/metrics?${params.toString()}`,
+        { sessionToken },
+      );
+      if (!data.ok || !data.summary) {
         throw new Error(data.error ?? "Failed to load metrics");
       }
       return data.summary;
@@ -543,13 +542,11 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("ownerId", settingsScopeOwnerId);
-      const response = await fetch(`/api/monday/settings/user-board?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
-      });
-      const data = (await response.json()) as MondayUserBoardSettingsResponse;
-      if (!response.ok || !data.ok) {
+      const data = await fetchMondayApi<MondayUserBoardSettingsResponse>(
+        `/api/monday/settings/user-board?${params.toString()}`,
+        { sessionToken },
+      );
+      if (!data.ok) {
         throw new Error(data.error ?? "Failed to load board settings");
       }
       return parseUserBoardGeneralSettings(data.settings);

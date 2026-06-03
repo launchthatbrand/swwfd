@@ -9,7 +9,8 @@ import { v } from "convex/values";
 
 import { internalAction } from "./_generated/server";
 
-const MONDAY_API_URL = "https://api.monday.com/v2";
+import { callMondayGraphQL } from "./lib/mondayGraphQL";
+
 const ITEM_PAGE_LIMIT_MAX = 200;
 const ITEMS_BY_IDS_CHUNK_SIZE = 25;
 
@@ -98,44 +99,7 @@ const parseSubitemBoardIdFromSubtasksColumn = (column: MondayColumn | null) => {
   return boardId.length > 0 ? boardId : null;
 };
 
-const getMondayApiKey = () => {
-  const apiKey = process.env.MONDAY_API_KEY?.trim() ?? "";
-  if (!apiKey) {
-    throw new Error("MONDAY_API_KEY is missing");
-  }
-  return apiKey;
-};
-
-const callMondayGraphQL = async <TData>(
-  queryText: string,
-  variables: Record<string, unknown>,
-) => {
-  const response = await fetch(MONDAY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: getMondayApiKey(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: queryText, variables }),
-  });
-  if (!response.ok) {
-    throw new Error(`Monday API request failed (${response.status})`);
-  }
-  const json = (await response.json()) as {
-    data?: TData;
-    errors?: Array<{ message?: string }>;
-  };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const message =
-      json.errors.map((entry) => entry.message).filter(Boolean).join(" | ") ||
-      "Unknown Monday GraphQL error";
-    throw new Error(message);
-  }
-  if (!json.data) {
-    throw new Error("Monday API returned no data");
-  }
-  return json.data;
-};
+// callMondayGraphQL and getMondayApiKey imported from ./lib/mondayGraphQL
 
 const parseLinkedPulseId = (value: string | null | undefined) => {
   const parsed = parseJsonSafe<{

@@ -12,21 +12,15 @@ const apiAny = apiGenerated as any;
 const toJson = (body: unknown, status = 200) =>
   NextResponse.json(body, { status });
 
-interface Body {
-  monthKey?: string;
-  dryRun?: boolean;
-  pageSize?: number;
-}
-
 export const POST = async (request: Request) => {
-  let body: Body = {};
+  let body: Record<string, unknown> = {};
   try {
-    body = (await request.json()) as Body;
+    body = (await request.json()) as Record<string, unknown>;
   } catch {
     body = {};
   }
 
-  const monthKey = body.monthKey?.trim();
+  const monthKey = (body.monthKey as string | undefined)?.trim();
   if (!monthKey) return toJson({ ok: false, error: "monthKey is required (YYYY-MM)" }, 400);
 
   try {
@@ -35,7 +29,7 @@ export const POST = async (request: Request) => {
       apiAny.mondayHireEventBackfill.startBackfill,
       {
         monthKey,
-        dryRun: body.dryRun ?? true,
+        dryRun: (body.dryRun as boolean | undefined) ?? true,
         pageSize: body.pageSize,
       },
     );

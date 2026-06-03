@@ -1,4 +1,5 @@
 import { env } from "~/env";
+import type { MondayJobListing } from "~/app/monday/types";
 
 import { callMondayGraphQL } from "~/server/monday/client";
 
@@ -33,26 +34,7 @@ interface MondayJobItem {
   column_values?: MondayJobColumnValue[];
 }
 
-export interface MondayJobListing {
-  id: string;
-  title: string;
-  status: string | null;
-  district: string | null;
-  location: string | null;
-  locationSecondary: string | null;
-  description: string | null;
-  categories: string[];
-  contractor: string | null;
-  contractorEmail: string | null;
-  applyEmail: string | null;
-  applyPhone: string | null;
-  salaryAmount: string | null;
-  salaryType: string | null;
-  websiteUrl: string | null;
-  postedDate: string | null;
-  updatedAt: string | null;
-  isAvailable: boolean;
-}
+export type { MondayJobListing } from "~/app/monday/types";
 
 const splitCsv = (value: string | null | undefined) => {
   if (!value) return [] as string[];

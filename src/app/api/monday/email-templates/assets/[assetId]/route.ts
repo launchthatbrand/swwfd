@@ -1,48 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { env } from "~/env";
+import { callMondayGraphQL } from "~/server/monday/client";
 
 export const runtime = "nodejs";
-
-const MONDAY_API_URL = "https://api.monday.com/v2";
-
-const callMondayGraphQL = async <TData>(
-  query: string,
-  variables: Record<string, unknown>,
-) => {
-  if (!env.MONDAY_API_KEY) {
-    throw new Error("MONDAY_API_KEY is missing");
-  }
-
-  const response = await fetch(MONDAY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: env.MONDAY_API_KEY,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query, variables }),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Monday API request failed with ${response.status}`);
-  }
-
-  const json = (await response.json()) as {
-    data?: TData;
-    errors?: { message?: string }[];
-  };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const message =
-      json.errors.map((error) => error.message).filter(Boolean).join(" | ") ||
-      "Unknown Monday API error";
-    throw new Error(message);
-  }
-  if (!json.data) {
-    throw new Error("Monday API returned no data");
-  }
-  return json.data;
-};
 
 export const GET = async (
   _request: Request,

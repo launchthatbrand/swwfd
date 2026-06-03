@@ -17,62 +17,29 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  clampPageSize as clampPageSizeShared,
+  createUnifiedMigrationJobRowValidator,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type MigrationStatus = "running" | "done" | "failed" | "cancelled";
+type MigrationStatus = BackfillJobStatus;
 
 const DEFAULT_PAGE_SIZE = 20;
 const MIN_PAGE_SIZE = 5;
 const MAX_PAGE_SIZE = 50;
-const DEFAULT_HISTORY_LIMIT = 25;
-const MAX_HISTORY_LIMIT = 200;
 
-const migrationJobStatusValidator = v.union(
-  v.literal("running"),
-  v.literal("done"),
-  v.literal("failed"),
-  v.literal("cancelled"),
+const migrationJobStatusValidator = backfillJobStatusValidator;
+
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.literal("monthly_migration"),
 );
-
-const unifiedMigrationJobRowValidator = v.object({
-  toolType: v.literal("monthly_migration"),
-  toolLabel: v.string(),
-  legacy: v.boolean(),
-  jobId: v.string(),
-  status: migrationJobStatusValidator,
-  workflowId: v.optional(v.union(v.string(), v.null())),
-  startedAt: v.number(),
-  updatedAt: v.number(),
-  finishedAt: v.optional(v.union(v.number(), v.null())),
-  dryRun: v.optional(v.boolean()),
-  sourceBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceBoardName: v.optional(v.union(v.string(), v.null())),
-  targetBoardId: v.optional(v.union(v.string(), v.null())),
-  sourceTag: v.optional(v.union(v.string(), v.null())),
-  baselineDate: v.optional(v.union(v.string(), v.null())),
-  monthTag: v.optional(v.union(v.string(), v.null())),
-  monthKey: v.optional(v.union(v.string(), v.null())),
-  dateFrom: v.optional(v.union(v.string(), v.null())),
-  dateTo: v.optional(v.union(v.string(), v.null())),
-  pageSize: v.optional(v.number()),
-  processedCount: v.number(),
-  mappedCount: v.number(),
-  skippedCount: v.number(),
-  createdCount: v.number(),
-  updatedCount: v.number(),
-  errorCount: v.number(),
-  warningCount: v.number(),
-  lastError: v.optional(v.union(v.string(), v.null())),
-  searchText: v.string(),
-});
-
-const clampHistoryLimit = (value: number | undefined) => {
-  if (!Number.isFinite(value)) return DEFAULT_HISTORY_LIMIT;
-  return Math.min(MAX_HISTORY_LIMIT, Math.max(1, Math.floor(value!)));
-};
 
 const normalizeMonthTag = (value: string | undefined, sourceBoardId: string) => {
   const raw = (value ?? "").trim();
@@ -81,10 +48,8 @@ const normalizeMonthTag = (value: string | undefined, sourceBoardId: string) => 
   return `board_${sourceBoardId}_${date}`;
 };
 
-const clampPageSize = (value: number | undefined) => {
-  if (!Number.isFinite(value)) return DEFAULT_PAGE_SIZE;
-  return Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Math.floor(value!)));
-};
+const clampPageSize = (value: number | undefined) =>
+  clampPageSizeShared(value, { min: MIN_PAGE_SIZE, max: MAX_PAGE_SIZE, fallback: DEFAULT_PAGE_SIZE });
 
 export const getLatestJob = query({
   args: {},
