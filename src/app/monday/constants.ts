@@ -1,5 +1,6 @@
 import type {
   ApprovalStepConfig,
+  GridSortField,
   MondayFeatureFlags,
   UserBoardColorTheme,
   UserBoardCustomTheme,
@@ -83,6 +84,14 @@ export const QUESTIONNAIRE_YES_NO = ["Yes", "No"] as const;
 export const QUESTIONNAIRE_TRANSPORTATION = ["Yes", "No", "Public"] as const;
 
 export const QUESTIONNAIRE_WORK_SCHEDULE = ["Full-time", "Part-time", "Both"] as const;
+
+export const GRID_SORT_OPTIONS: Array<{ value: GridSortField; label: string }> = [
+  { value: "name", label: "Contact Name" },
+  { value: "resume", label: "Resume" },
+  { value: "tags", label: "Tags" },
+  { value: "createdAt", label: "Created" },
+  { value: "updatedAt", label: "Updated" },
+];
 
 export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   Exclude<ContactUpdateType, "general">,
@@ -184,7 +193,7 @@ export const isUserBoardPageSize = (value: unknown): value is UserBoardPageSize 
   value === 20 || value === 40 || value === 100 || value === 0;
 
 export const isUserBoardDisplayMode = (value: unknown): value is UserBoardDisplayMode =>
-  value === "table" || value === "grid" || value === "kanban";
+  value === "table" || value === "grid" || value === "kanban" || value === "chat";
 
 export const USER_BOARD_RECORD_SOURCE_OPTIONS: {
   value: UserBoardRecordSource;

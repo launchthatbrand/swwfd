@@ -44,48 +44,17 @@ const normalizeDateOnlyFromIsoLike = (value: string | null | undefined) => {
   return new Date(parsed).toISOString().slice(0, 10);
 };
 
-const MONDAY_API_URL = "https://api.monday.com/v2";
+import { callMondayGraphQL } from "./lib/mondayGraphQL";
+
 const TOUCH_CREATE_BATCH_SIZE = 25;
 const TOUCH_CONTACT_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
 
 const getMondayBackfillEnv = () => {
-  const apiKey = process.env.MONDAY_API_KEY?.trim() ?? "";
   const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!apiKey) throw new Error("MONDAY_API_KEY is missing for backfill job");
   if (!touchBoardId) {
     throw new Error("MONDAY_CONTACT_TOUCHED_BOARD_ID is missing for backfill job");
   }
-  return { apiKey, touchBoardId };
-};
-
-const callMondayGraphQL = async <TData>(
-  queryText: string,
-  variables: Record<string, unknown>,
-) => {
-  const { apiKey } = getMondayBackfillEnv();
-  const response = await fetch(MONDAY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: queryText, variables }),
-  });
-  if (!response.ok) {
-    throw new Error(`Monday API request failed (${response.status})`);
-  }
-  const json = (await response.json()) as {
-    data?: TData;
-    errors?: Array<{ message?: string }>;
-  };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const message = json.errors.map((e) => e.message).filter(Boolean).join(" | ");
-    throw new Error(message || "Unknown Monday GraphQL error");
-  }
-  if (!json.data) {
-    throw new Error("Monday GraphQL returned no data");
-  }
-  return json.data;
+  return { touchBoardId };
 };
 
 const columnMatches = (column: BoardColumn, titleIncludes: string) =>

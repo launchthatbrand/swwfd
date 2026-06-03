@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ComponentProps } from "react";
+import { useMutation as useConvexMutation, useQuery as useConvexQuery } from "convex/react";
+import { api } from "@convex-config/_generated/api";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
@@ -10,6 +12,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@launchthat
 import { EntityList, type ColumnDefinition } from "@launchthatapp/ui/entity-list";
 import { Input } from "@launchthatapp/ui/input";
 import { toast } from "@launchthatapp/ui/toast";
+
+import { useToolJob } from "../hooks/useToolJob";
 
 interface BackfillJob {
   jobId: string;
@@ -183,15 +187,45 @@ interface UnifiedMigrationJobRow extends Record<string, unknown> {
 type HistorySortKey = "startedAt" | "status" | "toolLabel" | "dryRun" | "createdCount";
 
 export default function MondayToolsPage() {
-  const [job, setJob] = useState<BackfillJob | null>(null);
-  const [csvJob, setCsvJob] = useState<CsvExportJob | null>(null);
-  const [monthlyJob, setMonthlyJob] = useState<MonthlyMigrationJob | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const touchBackfill = useToolJob({
+    statusQuery: api.mondayTouchBackfill.getLatestJob,
+    startMutation: api.mondayTouchBackfill.startBackfill,
+    cancelMutation: api.mondayTouchBackfill.cancelBackfill,
+    label: "Backfill",
+  });
+  const csvJobQuery = useConvexQuery(api.mondayTouchBackfill.getLatestCsvExportJob, {});
+  const startCsvExportMutation = useConvexMutation(api.mondayTouchBackfill.startCsvExport);
+  const monthlyMigration = useToolJob({
+    statusQuery: api.mondayMonthlyMigration.getLatestJob,
+    startMutation: api.mondayMonthlyMigration.startMigration,
+    cancelMutation: api.mondayMonthlyMigration.cancelMigration,
+    label: "Monthly migration",
+  });
+  const touchRangeBackfill = useToolJob({
+    statusQuery: api.mondayTouchRangeBackfill.getLatestJob,
+    startMutation: api.mondayTouchRangeBackfill.startRangeBackfill,
+    cancelMutation: api.mondayTouchRangeBackfill.cancelRangeBackfill,
+    label: "Touch range backfill",
+  });
+  const hireEventBackfill = useToolJob({
+    statusQuery: api.mondayHireEventBackfill.getLatestJob,
+    startMutation: api.mondayHireEventBackfill.startBackfill,
+    cancelMutation: api.mondayHireEventBackfill.cancelBackfill,
+    label: "Hire event backfill",
+  });
+  const historyJobsQuery = useConvexQuery(api.mondayToolHistory.listRecentJobs, {
+    limit: 200,
+  });
+
+  const job = (touchBackfill.job ?? null) as BackfillJob | null;
+  const csvJob = (csvJobQuery ?? null) as CsvExportJob | null;
+  const monthlyJob = (monthlyMigration.job ?? null) as MonthlyMigrationJob | null;
+  const touchRangeJob = (touchRangeBackfill.job ?? null) as TouchRangeBackfillJob | null;
+  const hireEventJob = (hireEventBackfill.job ?? null) as HireEventBackfillJob | null;
+  const historyJobs = (historyJobsQuery ?? []) as UnifiedMigrationJobRow[];
+  const historyLoading = historyJobsQuery === undefined;
+
   const [exportingCsv, setExportingCsv] = useState(false);
-  const [startingMonthlyMigration, setStartingMonthlyMigration] = useState(false);
-  const [cancellingMonthlyMigration, setCancellingMonthlyMigration] = useState(false);
   const [downloadingCsv, setDownloadingCsv] = useState(false);
   const [downloadingCsvParts, setDownloadingCsvParts] = useState(false);
   const [baselineDate, setBaselineDate] = useState(
@@ -213,24 +247,17 @@ export default function MondayToolsPage() {
     () => new Date().toISOString().slice(0, 7),
   );
 
-  // Touch range backfill state
-  const [touchRangeJob, setTouchRangeJob] = useState<TouchRangeBackfillJob | null>(null);
   const [touchRangeDateFrom, setTouchRangeDateFrom] = useState("2026-02-01");
   const [touchRangeDateTo, setTouchRangeDateTo] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
   const [touchRangePageSize, setTouchRangePageSize] = useState("50");
   const [touchRangeDryRun, setTouchRangeDryRun] = useState(true);
-  const [startingTouchRange, setStartingTouchRange] = useState(false);
-  const [cancellingTouchRange, setCancellingTouchRange] = useState(false);
-  const [hireEventJob, setHireEventJob] = useState<HireEventBackfillJob | null>(null);
   const [hireEventMonthKey, setHireEventMonthKey] = useState(
     () => new Date().toISOString().slice(0, 7),
   );
   const [hireEventPageSize, setHireEventPageSize] = useState("50");
   const [hireEventDryRun, setHireEventDryRun] = useState(true);
-  const [startingHireEventBackfill, setStartingHireEventBackfill] = useState(false);
-  const [cancellingHireEventBackfill, setCancellingHireEventBackfill] = useState(false);
   const [lastInteractionMonthKey, setLastInteractionMonthKey] = useState(
     () => new Date().toISOString().slice(0, 7),
   );
@@ -239,8 +266,6 @@ export default function MondayToolsPage() {
   const [runningLastInteractionBackfill, setRunningLastInteractionBackfill] = useState(false);
   const [lastInteractionResult, setLastInteractionResult] =
     useState<LastInteractionBackfillResult | null>(null);
-  const [historyJobs, setHistoryJobs] = useState<UnifiedMigrationJobRow[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyToolTypeFilter, setHistoryToolTypeFilter] = useState<"all" | UnifiedMigrationJobToolType>("all");
   const [historyStatusFilter, setHistoryStatusFilter] = useState<
@@ -253,46 +278,6 @@ export default function MondayToolsPage() {
   );
   const [isLegacyToolsExpanded, setIsLegacyToolsExpanded] = useState(false);
 
-  const refreshTouchRangeStatus = async () => {
-    try {
-      const response = await fetch("/api/monday/tools/touch-range-backfill/status", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        job?: TouchRangeBackfillJob | null;
-      };
-      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to load status");
-      setTouchRangeJob(data.job ?? null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load touch range status");
-    }
-  };
-
-  const refreshHireEventBackfillStatus = async () => {
-    try {
-      const response = await fetch("/api/monday/tools/hire-events-backfill/status", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        job?: HireEventBackfillJob | null;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load hire event backfill status");
-      }
-      setHireEventJob(data.job ?? null);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to load hire event backfill status",
-      );
-    }
-  };
-
   const startTouchRangeBackfill = async () => {
     if (!touchRangeDryRun) {
       const confirmed = window.confirm(
@@ -300,49 +285,17 @@ export default function MondayToolsPage() {
       );
       if (!confirmed) return;
     }
-    setStartingTouchRange(true);
-    try {
-      const parsedPageSize = Number(touchRangePageSize);
-      const response = await fetch("/api/monday/tools/touch-range-backfill/start", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          dateFrom: touchRangeDateFrom.trim(),
-          dateTo: touchRangeDateTo.trim(),
-          dryRun: touchRangeDryRun,
-          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
-        }),
-      });
-      const data = (await response.json()) as { ok: boolean; error?: string };
-      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to start");
-      toast.success("Touch range backfill started");
-      await refreshTouchRangeStatus();
-      await refreshHistory();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to start touch range backfill");
-    } finally {
-      setStartingTouchRange(false);
-    }
+    const parsedPageSize = Number(touchRangePageSize);
+    await touchRangeBackfill.start({
+      dateFrom: touchRangeDateFrom.trim(),
+      dateTo: touchRangeDateTo.trim(),
+      dryRun: touchRangeDryRun,
+      pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+    });
   };
 
   const cancelTouchRangeBackfill = async () => {
-    setCancellingTouchRange(true);
-    try {
-      const response = await fetch("/api/monday/tools/touch-range-backfill/cancel", {
-        method: "POST",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as { ok: boolean; error?: string };
-      if (!response.ok || !data.ok) throw new Error(data.error ?? "Failed to cancel");
-      toast.success("Touch range backfill cancelled");
-      await refreshTouchRangeStatus();
-      await refreshHistory();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to cancel");
-    } finally {
-      setCancellingTouchRange(false);
-    }
+    await touchRangeBackfill.cancel();
   };
 
   const startHireEventBackfill = async () => {
@@ -352,56 +305,16 @@ export default function MondayToolsPage() {
       );
       if (!confirmed) return;
     }
-    setStartingHireEventBackfill(true);
-    try {
-      const parsedPageSize = Number(hireEventPageSize);
-      const response = await fetch("/api/monday/tools/hire-events-backfill/start", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          monthKey: hireEventMonthKey.trim(),
-          dryRun: hireEventDryRun,
-          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
-        }),
-      });
-      const data = (await response.json()) as { ok: boolean; error?: string };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to start hire event backfill");
-      }
-      toast.success("Hire event backfill started");
-      await refreshHireEventBackfillStatus();
-      await refreshHistory();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to start hire event backfill",
-      );
-    } finally {
-      setStartingHireEventBackfill(false);
-    }
+    const parsedPageSize = Number(hireEventPageSize);
+    await hireEventBackfill.start({
+      monthKey: hireEventMonthKey.trim(),
+      dryRun: hireEventDryRun,
+      pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+    });
   };
 
   const cancelHireEventBackfill = async () => {
-    setCancellingHireEventBackfill(true);
-    try {
-      const response = await fetch("/api/monday/tools/hire-events-backfill/cancel", {
-        method: "POST",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as { ok: boolean; error?: string };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to cancel hire event backfill");
-      }
-      toast.success("Hire event backfill cancelled");
-      await refreshHireEventBackfillStatus();
-      await refreshHistory();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to cancel hire event backfill",
-      );
-    } finally {
-      setCancellingHireEventBackfill(false);
-    }
+    await hireEventBackfill.cancel();
   };
 
   const runLastInteractionBackfill = async () => {
@@ -447,200 +360,17 @@ export default function MondayToolsPage() {
     }
   };
 
-  const refresh = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/monday/tools/backfill/status", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        job?: BackfillJob | null;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load status");
-      }
-      setJob(data.job ?? null);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to load status";
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshCsvStatus = async () => {
-    try {
-      const response = await fetch("/api/monday/tools/backfill/export-csv/status", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        job?: CsvExportJob | null;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load CSV export status");
-      }
-      setCsvJob(data.job ?? null);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to load CSV export status";
-      toast.error(message);
-    }
-  };
-
-  const refreshMonthlyMigrationStatus = async () => {
-    try {
-      const response = await fetch("/api/monday/tools/monthly-migration/status", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        job?: MonthlyMigrationJob | null;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load monthly migration status");
-      }
-      setMonthlyJob(data.job ?? null);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Failed to load monthly migration status";
-      toast.error(message);
-    }
-  };
-
-  const refreshHistory = async () => {
-    setHistoryLoading(true);
-    try {
-      const response = await fetch("/api/monday/tools/history?limit=200", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        jobs?: UnifiedMigrationJobRow[];
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load tool history");
-      }
-      setHistoryJobs(data.jobs ?? []);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load tool history");
-    } finally {
-      setHistoryLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void refresh();
-    void refreshCsvStatus();
-    void refreshMonthlyMigrationStatus();
-    void refreshTouchRangeStatus();
-    void refreshHireEventBackfillStatus();
-    void refreshHistory();
-  }, []);
-
-  useEffect(() => {
-    const status = job?.status;
-    const csvStatus = csvJob?.status;
-    const monthlyStatus = monthlyJob?.status;
-    const touchRangeStatus = touchRangeJob?.status;
-    const hireEventStatus = hireEventJob?.status;
-    if (
-      status !== "running" &&
-      csvStatus !== "running" &&
-      monthlyStatus !== "running" &&
-      touchRangeStatus !== "running" &&
-      hireEventStatus !== "running"
-    ) {
-      return;
-    }
-    const timer = setInterval(() => {
-      void refresh();
-      void refreshCsvStatus();
-      void refreshMonthlyMigrationStatus();
-      void refreshTouchRangeStatus();
-      void refreshHireEventBackfillStatus();
-      void refreshHistory();
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [
-    job?.status,
-    csvJob?.status,
-    monthlyJob?.status,
-    touchRangeJob?.status,
-    hireEventJob?.status,
-  ]);
-
   const startBackfill = async () => {
-    setStarting(true);
-    try {
-      const parsedPageSize = Number(pageSize);
-      const response = await fetch("/api/monday/tools/backfill/start", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          baselineDate,
-          sourceTag: sourceTag.trim() || undefined,
-          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
-        }),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to start backfill");
-      }
-      toast.success("Backfill started");
-      await refresh();
-      await refreshHistory();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start backfill";
-      toast.error(message);
-    } finally {
-      setStarting(false);
-    }
+    const parsedPageSize = Number(pageSize);
+    await touchBackfill.start({
+      baselineDate,
+      sourceTag: sourceTag.trim() || undefined,
+      pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+    });
   };
 
   const cancelBackfill = async () => {
-    setCancelling(true);
-    try {
-      const response = await fetch("/api/monday/tools/backfill/cancel", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jobId: job?.jobId }),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to cancel backfill");
-      }
-      toast.success("Backfill cancelled");
-      await refresh();
-      await refreshHistory();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to cancel backfill";
-      toast.error(message);
-    } finally {
-      setCancelling(false);
-    }
+    await touchBackfill.cancel();
   };
 
   const startMonthlyMigration = async () => {
@@ -650,107 +380,42 @@ export default function MondayToolsPage() {
       );
       if (!confirmed) return;
     }
-    setStartingMonthlyMigration(true);
-    try {
-      const parsedPageSize = Number(migrationPageSize);
-      const sourceBoardId = migrationSourceBoardId.trim();
-      if (!sourceBoardId) {
-        throw new Error("Source board id is required");
-      }
-      const response = await fetch("/api/monday/tools/monthly-migration/start", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceBoardId,
-          targetBoardId: migrationTargetBoardId.trim() || undefined,
-          monthTag: migrationMonthTag.trim() || undefined,
-          dryRun: migrationDryRun,
-          includeParentUpdates: migrationIncludeParentUpdates,
-          includeSubitems: migrationIncludeSubitems,
-          includeSubitemUpdates: migrationIncludeSubitemUpdates,
-          updateProgressColumns: migrationUpdateProgressColumns,
-          monthKey: migrationMonthKey.trim() || undefined,
-          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
-        }),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to start monthly migration");
-      }
-      toast.success(
-        migrationDryRun
-          ? "Monthly migration dry-run started"
-          : "Monthly migration started",
-      );
-      await refreshMonthlyMigrationStatus();
-      await refreshHistory();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start monthly migration";
-      toast.error(message);
-    } finally {
-      setStartingMonthlyMigration(false);
+    const parsedPageSize = Number(migrationPageSize);
+    const sourceBoardId = migrationSourceBoardId.trim();
+    if (!sourceBoardId) {
+      toast.error("Source board id is required");
+      return;
     }
+    await monthlyMigration.start({
+      sourceBoardId,
+      targetBoardId: migrationTargetBoardId.trim() || undefined,
+      monthTag: migrationMonthTag.trim() || undefined,
+      dryRun: migrationDryRun,
+      includeParentUpdates: migrationIncludeParentUpdates,
+      includeSubitems: migrationIncludeSubitems,
+      includeSubitemUpdates: migrationIncludeSubitemUpdates,
+      updateProgressColumns: migrationUpdateProgressColumns,
+      monthKey: migrationMonthKey.trim() || undefined,
+      pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
+    });
   };
 
   const cancelMonthlyMigration = async () => {
-    setCancellingMonthlyMigration(true);
-    try {
-      const response = await fetch("/api/monday/tools/monthly-migration/cancel", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jobId: monthlyJob?.jobId }),
-      });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-      };
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to cancel monthly migration");
-      }
-      toast.success("Monthly migration cancelled");
-      await refreshMonthlyMigrationStatus();
-      await refreshHistory();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to cancel monthly migration";
-      toast.error(message);
-    } finally {
-      setCancellingMonthlyMigration(false);
-    }
+    await monthlyMigration.cancel();
   };
 
   const exportBackfillCsv = async () => {
     setExportingCsv(true);
     try {
       const parsedPageSize = Number(pageSize);
-      const response = await fetch("/api/monday/tools/backfill/export-csv", {
-        method: "POST",
-        cache: "no-store",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          baselineDate,
-          sourceTag: sourceTag.trim() || undefined,
-          pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
-        }),
+      await startCsvExportMutation({
+        baselineDate,
+        sourceTag: sourceTag.trim() || undefined,
+        pageSize: Number.isFinite(parsedPageSize) ? parsedPageSize : undefined,
       });
-      if (!response.ok) {
-        const fallbackMessage = "Failed to start CSV export";
-        const errorText = await response.text().catch(() => fallbackMessage);
-        throw new Error(errorText || fallbackMessage);
-      }
       toast.success("CSV export workflow started");
-      await refreshCsvStatus();
-      await refreshHistory();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to start CSV export";
-      toast.error(message);
+      toast.error(error instanceof Error ? error.message : "Failed to start CSV export");
     } finally {
       setExportingCsv(false);
     }
@@ -1160,23 +825,8 @@ export default function MondayToolsPage() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardHeader>
           <CardTitle className="text-base">Active Jobs</CardTitle>
-            <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void refresh();
-              void refreshCsvStatus();
-              void refreshMonthlyMigrationStatus();
-              void refreshTouchRangeStatus();
-              void refreshHireEventBackfillStatus();
-              void refreshHistory();
-            }}
-            disabled={loading || historyLoading}
-          >
-            Refresh All
-            </Button>
         </CardHeader>
         <CardContent>
           {activeJobs.length === 0 ? (
@@ -1314,27 +964,21 @@ export default function MondayToolsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => void startMonthlyMigration()}
-              disabled={startingMonthlyMigration}
+              disabled={monthlyMigration.isStarting}
             >
-              {startingMonthlyMigration
+              {monthlyMigration.isStarting
                 ? "Starting..."
                 : migrationDryRun
                   ? "Start Dry Run"
                   : "Start Migration"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => void refreshMonthlyMigrationStatus()}
-            >
-                Refresh Status
-            </Button>
             {monthlyJob?.status === "running" ? (
               <Button
                 variant="destructive"
                 onClick={() => void cancelMonthlyMigration()}
-                disabled={cancellingMonthlyMigration}
+                disabled={monthlyMigration.isCancelling}
               >
-                  {cancellingMonthlyMigration ? "Cancelling..." : "Cancel"}
+                  {monthlyMigration.isCancelling ? "Cancelling..." : "Cancel"}
               </Button>
             ) : null}
           </div>
@@ -1418,24 +1062,21 @@ export default function MondayToolsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 onClick={() => void startHireEventBackfill()}
-                disabled={startingHireEventBackfill}
+                disabled={hireEventBackfill.isStarting}
               >
-                {startingHireEventBackfill
+                {hireEventBackfill.isStarting
                   ? "Starting..."
                   : hireEventDryRun
                     ? "Start Dry Run"
                     : "Start Backfill"}
               </Button>
-              <Button variant="outline" onClick={() => void refreshHireEventBackfillStatus()}>
-                Refresh Status
-              </Button>
               {hireEventJob?.status === "running" ? (
                 <Button
                   variant="destructive"
                   onClick={() => void cancelHireEventBackfill()}
-                  disabled={cancellingHireEventBackfill}
+                  disabled={hireEventBackfill.isCancelling}
                 >
-                  {cancellingHireEventBackfill ? "Cancelling..." : "Cancel"}
+                  {hireEventBackfill.isCancelling ? "Cancelling..." : "Cancel"}
                 </Button>
               ) : null}
             </div>
@@ -1580,16 +1221,8 @@ export default function MondayToolsPage() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardHeader>
           <CardTitle className="text-base">Migration History</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void refreshHistory()}
-            disabled={historyLoading}
-          >
-            {historyLoading ? "Refreshing..." : "Refresh History"}
-          </Button>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -1732,8 +1365,8 @@ export default function MondayToolsPage() {
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Button onClick={() => void startBackfill()} disabled={starting}>
-                      {starting ? "Starting..." : "Start Backfill"}
+                    <Button onClick={() => void startBackfill()} disabled={touchBackfill.isStarting}>
+                      {touchBackfill.isStarting ? "Starting..." : "Start Backfill"}
                     </Button>
                     <Button
                       variant="secondary"
@@ -1768,9 +1401,9 @@ export default function MondayToolsPage() {
                       <Button
                         variant="destructive"
                         onClick={() => void cancelBackfill()}
-                        disabled={cancelling}
+                        disabled={touchBackfill.isCancelling}
                       >
-                        {cancelling ? "Cancelling..." : "Cancel Running Job"}
+                        {touchBackfill.isCancelling ? "Cancelling..." : "Cancel Running Job"}
                       </Button>
               ) : null}
             </div>
@@ -1857,24 +1490,21 @@ export default function MondayToolsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
                       onClick={() => void startTouchRangeBackfill()}
-                      disabled={startingTouchRange}
+                      disabled={touchRangeBackfill.isStarting}
             >
-                      {startingTouchRange
+                      {touchRangeBackfill.isStarting
                 ? "Starting..."
                         : touchRangeDryRun
                   ? "Start Dry Run"
                   : "Start Backfill"}
             </Button>
-                    <Button variant="outline" onClick={() => void refreshTouchRangeStatus()}>
-              Refresh Status
-            </Button>
                     {touchRangeJob?.status === "running" ? (
               <Button
                 variant="destructive"
                         onClick={() => void cancelTouchRangeBackfill()}
-                        disabled={cancellingTouchRange}
+                        disabled={touchRangeBackfill.isCancelling}
               >
-                        {cancellingTouchRange ? "Cancelling..." : "Cancel"}
+                        {touchRangeBackfill.isCancelling ? "Cancelling..." : "Cancel"}
               </Button>
             ) : null}
           </div>

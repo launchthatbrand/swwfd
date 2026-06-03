@@ -5,6 +5,7 @@ import type {
   AdvancedFilterOperator,
   ApprovalStepConfig,
   KanbanColumn,
+  GridSortState,
   MockBusinessInfo,
   MondayRecord,
   SavedAdvancedFilterPreset,
@@ -157,6 +158,50 @@ export const contactUpdateTypeLabel = (value: string) => {
     { value: "job_referral", label: "Job Referral Update" },
   ];
   return options.find((option) => option.value === value)?.label ?? "General Update";
+};
+
+export const sortRecordsForGrid = (
+  records: MondayRecord[],
+  gridSort: GridSortState,
+): MondayRecord[] => {
+  const getSortValue = (record: MondayRecord): string | number | null => {
+    switch (gridSort.field) {
+      case "name":
+        return record.name?.trim() ?? "";
+      case "resume":
+        return record.resumeFiles[0]?.name?.trim() ?? "";
+      case "tags":
+        return splitCsvValues(record.tags).join(", ").trim();
+      case "createdAt": {
+        const timestamp = Date.parse(record.createdAt ?? "");
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+      case "updatedAt": {
+        const timestamp = Date.parse(record.updatedAt ?? "");
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+      default:
+        return "";
+    }
+  };
+  const directionFactor = gridSort.direction === "asc" ? 1 : -1;
+  return [...records].sort((a, b) => {
+    const valueA = getSortValue(a);
+    const valueB = getSortValue(b);
+    const isEmptyA = valueA === null || (typeof valueA === "string" && valueA.trim().length === 0);
+    const isEmptyB = valueB === null || (typeof valueB === "string" && valueB.trim().length === 0);
+    if (isEmptyA && isEmptyB) return 0;
+    if (isEmptyA) return 1;
+    if (isEmptyB) return -1;
+    const compareResult =
+      typeof valueA === "number" && typeof valueB === "number"
+        ? valueA - valueB
+        : String(valueA).localeCompare(String(valueB), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+    return compareResult * directionFactor;
+  });
 };
 
 export const getContactTooltipDetails = (record: MondayRecord) => {
