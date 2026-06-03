@@ -18,15 +18,10 @@ export type ChatIdentity = {
 };
 
 export type ConversationLeftSidebarProps = {
+  userId: string | null;
   records: MondayRecord[];
-  conversations: MondaySupportConversationSummary[];
-  selectedConversationId: string | null;
+  isLoadingRecords: boolean;
   selectedRecordId: string | null;
-  scope: ChatConversationScope;
-  search: string;
-  onScopeChange: (scope: ChatConversationScope) => void;
-  onSearchChange: (search: string) => void;
-  onSelectConversation: (conversationId: string) => void;
   onSelectRecord: (record: MondayRecord) => void;
 };
 

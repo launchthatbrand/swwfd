@@ -8494,6 +8494,9 @@ export function MondayBoardView({
                 userName={userProfileQuery.data?.name ?? null}
                 sessionToken={sessionToken}
                 records={filteredRecords}
+                isLoadingRecords={
+                  sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)
+                }
               />
             ) : userScopedDisplayMode === "kanban" ? (
               <KanbanBoardView
