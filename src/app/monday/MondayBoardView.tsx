@@ -2583,7 +2583,8 @@ export function MondayBoardView({
   const boardColumnFilterOptions = useMemo(() => {
     const labels = new Set<string>();
     for (const record of records) {
-      for (const detail of record.contactDetails) {
+      const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
+      for (const detail of details) {
         const label = detail.label.trim();
         if (!label) continue;
         labels.add(label);
@@ -2594,7 +2595,8 @@ export function MondayBoardView({
   const boardColumnFilterKindByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
-      for (const detail of record.contactDetails) {
+      const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
+      for (const detail of details) {
         const label = detail.label.trim();
         const value = detail.value.trim();
         if (!label || !value) continue;
@@ -2621,7 +2623,8 @@ export function MondayBoardView({
   const boardColumnValueOptionsByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
-      for (const detail of record.contactDetails) {
+      const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
+      for (const detail of details) {
         const label = detail.label.trim();
         const value = detail.value.trim();
         if (!label || !value) continue;

@@ -1,15 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import { Loader2, SendHorizontal } from "lucide-react";
-import { LexicalComposer } from "@lexical/react/LexicalComposer";
-import { ContentEditable } from "@lexical/react/LexicalContentEditable";
-import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
-import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
-import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
-import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
-import { $getRoot } from "lexical";
-import { Button } from "@launchthatapp/ui/button";
 import {
   Select,
   SelectContent,
@@ -17,6 +8,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@launchthatapp/ui/select";
+import { useMemo, useState } from "react";
+
+import { $getRoot } from "lexical";
+import { Button } from "@launchthatapp/ui/button";
+import { ContentEditable } from "@lexical/react/LexicalContentEditable";
+import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
+import { LexicalComposer } from "@lexical/react/LexicalComposer";
+import { LexicalErrorBoundary } from "@lexical/react/LexicalErrorBoundary";
+import { OnChangePlugin } from "@lexical/react/LexicalOnChangePlugin";
+import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin";
 
 export type SupportComposerChannel = "email" | "sms";
 
@@ -88,7 +89,7 @@ export const SupportChannelComposer = ({
                     Type your message...
                   </div>
                 }
-                className="min-h-[108px] px-3 py-2 text-sm outline-none"
+                className="min-h-12.5 px-3 py-2 text-sm outline-none"
               />
             }
             ErrorBoundary={LexicalErrorBoundary}
