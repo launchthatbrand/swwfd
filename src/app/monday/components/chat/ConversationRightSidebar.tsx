@@ -18,6 +18,7 @@ const formatWhen = (timestamp: number) =>
 
 export const ConversationRightSidebar = ({
   selectedConversation,
+  campaignUpdates,
   notes,
   events,
   presence,
@@ -96,6 +97,26 @@ export const ConversationRightSidebar = ({
             <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => void onDeleteConversation()}>
               Delete
             </Button>
+          </div>
+        </section>
+
+        <section className="space-y-2 rounded-md border p-3">
+          <p className="text-sm font-semibold">Campaign lane</p>
+          <div className="space-y-2">
+            {campaignUpdates.slice(0, 10).map((entry) => (
+              <div key={entry.id} className="rounded border p-2 text-xs">
+                <p className="font-medium">{entry.name}</p>
+                <p className="text-muted-foreground">
+                  {entry.methodOfCommunication ?? "Unknown channel"} ·{" "}
+                  {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : "No date"}
+                </p>
+              </div>
+            ))}
+            {campaignUpdates.length === 0 ? (
+              <p className="text-muted-foreground text-xs">
+                No campaign interactions for this contact yet.
+              </p>
+            ) : null}
           </div>
         </section>
 

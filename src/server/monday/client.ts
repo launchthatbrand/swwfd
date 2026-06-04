@@ -74,6 +74,7 @@ const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
 const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
+const SUBITEM_INTENT_COLUMN_ID = "color_mm40edt7";
 const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
 const SUBITEM_NAME_MAX_LENGTH = 120;
 export const MONDAY_HIRE_EVENT_TYPE_LABEL = "Hire Event";
@@ -4009,6 +4010,7 @@ export const listMondayRecordUpdates = async (args: {
   const methodColId = SUBITEM_METHOD_COLUMN_ID;
   const dateColId = "date0";
   const personColId = "person";
+  const intentColId = SUBITEM_INTENT_COLUMN_ID;
   const notesColId = SUBITEM_NOTES_COLUMN_ID;
   const query = `
     query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
@@ -4029,7 +4031,7 @@ export const listMondayRecordUpdates = async (args: {
           id
           name
           created_at
-          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${notesColId}"]) {
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${intentColId}", "${notesColId}"]) {
             id
             text
             value
@@ -4181,6 +4183,7 @@ export const listMondayRecordUpdates = async (args: {
     name: string;
     typeLabel: string | null;
     updateType: MondayUpdateType;
+  intent: "internal_note" | "conversation" | "campaign";
     methodOfCommunication: string | null;
     createdAt: string | null;
     creatorProfile: SubitemCreatorProfile | null;
@@ -4226,11 +4229,21 @@ export const listMondayRecordUpdates = async (args: {
 
   const subitems: SubitemEntry[] = [];
 
+  const normalizeIntentLabel = (
+    value: string | null | undefined,
+  ): "internal_note" | "conversation" | "campaign" => {
+    const normalized = (value ?? "").trim().toLowerCase().replaceAll(/\s+/g, "_");
+    if (normalized === "internal_note") return "internal_note";
+    if (normalized === "campaign") return "campaign";
+    return "conversation";
+  };
+
   for (const subitem of item?.subitems ?? []) {
     const subitemId = subitem.id?.trim() ?? "";
     const subitemName = subitem.name?.trim() ?? null;
     const typeColText = subitem.column_values?.find((c) => c.id === typeColId)?.text ?? null;
     const methodText = subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ?? null;
+    const intentText = subitem.column_values?.find((c) => c.id === intentColId)?.text ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
     const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
     const subitemNotes = readSubitemNotes(notesCol?.value, notesCol?.text);
@@ -4301,6 +4314,7 @@ export const listMondayRecordUpdates = async (args: {
         name: subitemDisplayName ?? `Subitem ${subitemId}`,
         typeLabel: typeColText ?? methodText,
         updateType,
+        intent: normalizeIntentLabel(intentText),
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
         creatorProfile,
@@ -4701,6 +4715,7 @@ export const upsertMondayHireEventSubitem = async (args: {
   const columnValues: Record<string, unknown> = {
     [SUBITEM_TYPE_COLUMN_ID]: { label: MONDAY_HIRE_EVENT_TYPE_LABEL },
     [SUBITEM_DATE_COLUMN_ID]: { date: hireDate },
+    [SUBITEM_INTENT_COLUMN_ID]: { label: "internal_note" },
   };
   if (/^\d+$/.test(ownerId)) {
     columnValues[SUBITEM_PERSON_COLUMN_ID] = {
@@ -4954,6 +4969,7 @@ export const createMondayRecordUpdate = async (args: {
   itemId: string;
   body: string;
   updateType?: MondayUpdateType;
+  intent?: "internal_note" | "conversation" | "campaign";
   date?: string;
   dateTime?: string;
   methodOfCommunication?: string;
@@ -4976,6 +4992,7 @@ export const createMondayRecordUpdate = async (args: {
     throw new Error("Update body cannot be empty");
   }
   const requestedUpdateType = args.updateType ?? "general";
+  const intent = args.intent ?? "conversation";
   const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
     ? requestedUpdateType
     : "general";
@@ -5093,6 +5110,7 @@ export const createMondayRecordUpdate = async (args: {
     ...(normalizedInternalExternalStatus
       ? { [SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID]: { label: normalizedInternalExternalStatus } }
       : {}),
+    [SUBITEM_INTENT_COLUMN_ID]: { label: intent },
     [SUBITEM_NOTES_COLUMN_ID]: { text: body },
     ...(/^\d+$/.test(normalizedActorMondayUserId)
       ? {
@@ -5423,7 +5441,7 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
     if (pageCount > 10000) {
       throw new Error("Aborted: exceeded page safety limit while backfilling");
     }
-    const data = await callMondayGraphQL<BackfillData>(
+    const data: BackfillData = await callMondayGraphQL<BackfillData>(
       cursor ? cursorPageQuery : firstPageQuery,
       {
         boardId: mondayBoard.boardId,
@@ -5431,7 +5449,19 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
         ...(cursor ? { cursor } : {}),
       },
     );
-    const itemsPage = data.boards?.[0]?.items_page;
+    const itemsPage:
+      | {
+          cursor?: string | null;
+          items?: Array<{
+            id?: string | null;
+            column_values?: Array<{ id?: string | null; text?: string | null; value?: string | null }>;
+            subitems?: Array<{
+              created_at?: string | null;
+              column_values?: Array<{ value?: string | null; text?: string | null }>;
+            }>;
+          }>;
+        }
+      | undefined = data.boards?.[0]?.items_page;
     const items = itemsPage?.items ?? [];
     if (pageCount === 1 || pageCount % 10 === 0) {
       console.info("[MondayLastInteractionBackfill] page processed", {
@@ -5452,7 +5482,7 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
       processedContacts += 1;
 
       const registrationColumn = (item.column_values ?? []).find(
-        (column) => column.id === CONTACT_REGISTRATION_DATE_COLUMN_ID,
+        (column: { id?: string | null }) => column.id === CONTACT_REGISTRATION_DATE_COLUMN_ID,
       );
       const registrationDate = readDateOnlyFromTopLevelDateColumn(
         registrationColumn?.value,
@@ -5494,7 +5524,7 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
       registeredWithInteraction += 1;
 
       const lastInteractionColumn = (item.column_values ?? []).find(
-        (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
+        (column: { id?: string | null }) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
       );
       const currentDateTime = readDateTimeFromTopLevelDateColumn(
         lastInteractionColumn?.value,
@@ -5535,7 +5565,7 @@ export const backfillMondayLastInteractionDateByMonth = async (args: {
       }
     }
 
-    const nextCursor = itemsPage?.cursor?.trim() ?? "";
+    const nextCursor: string = itemsPage?.cursor?.trim() ?? "";
     if (!nextCursor) break;
     cursor = nextCursor;
   }

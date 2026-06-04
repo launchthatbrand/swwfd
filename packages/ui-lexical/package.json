@@ -1,0 +1,75 @@
+{
+  "name": "@swwfd/ui-lexical",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./editor-x/editor": {
+      "types": "./src/components/editor-x/editor.tsx",
+      "default": "./src/components/editor-x/editor.tsx"
+    },
+    "./editor-x/viewer": {
+      "types": "./src/components/editor-x/viewer.tsx",
+      "default": "./src/components/editor-x/viewer.tsx"
+    },
+    "./*": "./src/*.tsx"
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "clean": "git clean -xdf .cache .turbo dist node_modules",
+    "format": "prettier --check . --ignore-path ../../.gitignore",
+    "lint": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "ui-add": "pnpm dlx shadcn@latest add && prettier src --write --list-different"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
+    "@launchthatapp/ui": "0.1.2",
+    "@lexical/code": "^0.31.2",
+    "@lexical/file": "^0.31.2",
+    "@lexical/hashtag": "^0.31.2",
+    "@lexical/link": "^0.31.2",
+    "@lexical/list": "^0.31.2",
+    "@lexical/markdown": "^0.31.2",
+    "@lexical/overflow": "^0.31.2",
+    "@lexical/react": "^0.31.2",
+    "@lexical/rich-text": "^0.31.2",
+    "@lexical/selection": "^0.31.2",
+    "@lexical/table": "^0.31.2",
+    "@lexical/text": "^0.31.2",
+    "@lexical/utils": "^0.31.2",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-popover": "^1.1.15",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "katex": "^0.16.22",
+    "lexical": "^0.31.2",
+    "lodash-es": "^4.17.21",
+    "lucide-react": "^0.555.0",
+    "react-colorful": "^5.6.1",
+    "react-error-boundary": "^6.0.0",
+    "tailwind-merge": "^3.3.1"
+  },
+  "devDependencies": {
+    "@types/lodash-es": "^4.17.12",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "eslint": "^9.25.0",
+    "prettier": "^3.5.3",
+    "react": "^19.1.0",
+    "typescript": "^5.8.3",
+    "zod": "^3.24.4"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "files": [
+    "src",
+    "dist",
+    "package.json",
+    "README.md"
+  ]
+}

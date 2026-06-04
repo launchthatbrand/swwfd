@@ -1,0 +1,18 @@
+{
+  "name": "@swwfd/plugin-langfuse",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./convex/component/convex.config": "./src/convex/component/convex.config.ts",
+    "./convex/component/_generated/component.js": "./src/convex/component/_generated/component.ts"
+  },
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\"",
+    "lint": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "convex": "^1.34.0"
+  }
+}

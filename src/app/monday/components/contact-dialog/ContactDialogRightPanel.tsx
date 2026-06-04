@@ -19,7 +19,7 @@ import { Textarea } from "@launchthatapp/ui/textarea";
 
 import { ContactUpdates } from "../ContactUpdates";
 import type { ContactUpdateType } from "../../constants";
-import type { MondayRecordUpdate } from "../../types";
+import type { MondaySubitemEntry } from "../../types";
 import type { ContactJobRow, ReferredJobHistoryRow } from "../../board-local";
 
 type ContactColumn = {
@@ -40,7 +40,7 @@ type ResumeFile = {
 type ContactDialogRightPanelProps = {
   tab: string;
   onTabChange: (value: string) => void;
-  updates: MondayRecordUpdate[];
+  updates: MondaySubitemEntry[];
   updatesLoading: boolean;
   updatesEmpty: boolean;
   staticMode: boolean;

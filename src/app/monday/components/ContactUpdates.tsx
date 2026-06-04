@@ -130,6 +130,12 @@ const MessageBubble = ({
   const Icon = config.icon;
   const creator = subitem.creatorProfile;
   const methodBadgeLabel = subitem.methodOfCommunication?.trim() ?? "";
+  const intentLabel =
+    subitem.intent === "internal_note"
+      ? "Internal Note"
+      : subitem.intent === "campaign"
+        ? "Campaign"
+        : "Conversation";
 
   const avatar = creator?.photoThumb ? (
     <img
@@ -194,6 +200,9 @@ const MessageBubble = ({
                 {methodBadgeLabel}
               </Badge>
             ) : null}
+            <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+              {intentLabel}
+            </Badge>
 
             <div className="flex items-center gap-0 opacity-0 transition-opacity group-hover:opacity-100">
               <Button

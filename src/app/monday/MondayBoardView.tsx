@@ -145,6 +145,7 @@ import {
   QUESTIONNAIRE_WORK_SCHEDULE,
   QUESTIONNAIRE_YES_NO,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+  SUBITEM_INTENT_COLUMN_ID,
   SUBITEM_NOTES_COLUMN_ID,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -245,6 +246,7 @@ import {
   COMMUNICATION_QUICK_ACTIONS,
   type BulkCommunicationQuickActionState,
   type BulkUniqueCommunicationSession,
+  type CommunicationQuickActionMethod,
   type ContactJobRow,
   type MergeFieldKey,
   MERGE_FIELD_CONFIG,
@@ -3982,6 +3984,7 @@ export function MondayBoardView({
     itemId: string;
     body: string;
     updateType?: ContactUpdateType;
+    intent?: "internal_note" | "conversation" | "campaign";
     date?: string;
     dateTime?: string;
     methodOfCommunication?: string;
@@ -3995,6 +3998,7 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
+    const intent = args.intent ?? "conversation";
     const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
@@ -4022,6 +4026,7 @@ export function MondayBoardView({
     if (internalExternalStatus) {
       columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
+    columnValues[SUBITEM_INTENT_COLUMN_ID] = { label: intent };
     columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
@@ -4238,6 +4243,7 @@ export function MondayBoardView({
     options?: {
       body?: string;
       updateType?: ContactUpdateType;
+      intent?: "internal_note" | "conversation" | "campaign";
       keepSelectedType?: boolean;
       date?: string;
       dateTime?: string;
@@ -4292,6 +4298,17 @@ export function MondayBoardView({
       (updateType === "welcome_email" || updateType === "followup"
         ? "Internal"
         : undefined);
+    const resolvedIntent =
+      options?.intent ??
+      (updateType === "job_referral"
+        ? "campaign"
+        : resolvedInternalExternalStatus === "Internal" ||
+            updateType === "welcome_email" ||
+            updateType === "followup" ||
+            updateType === "questionnaire" ||
+            updateType === "resume"
+          ? "internal_note"
+          : "conversation");
     if (!body) {
       toast.error("Enter an update before posting");
       return;
@@ -4315,6 +4332,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
+          intent: resolvedIntent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4328,6 +4346,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
+          intent: resolvedIntent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4430,6 +4449,7 @@ export function MondayBoardView({
       dateOnly && timeOnly ? `${dateOnly}T${timeOnly}:00` : undefined;
     await handleCreateContactUpdate({
       updateType: "general",
+      intent: "conversation",
       body: values.body,
       keepSelectedType: true,
       date: dateOnly || undefined,
@@ -4474,6 +4494,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body: values.body,
           updateType: "general",
+          intent: "campaign",
           date: dateOnly || undefined,
           dateTime,
           methodOfCommunication: values.methodOfCommunication,
@@ -4485,6 +4506,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body: values.body,
           updateType: "general",
+          intent: "campaign",
           date: dateOnly || undefined,
           dateTime,
           methodOfCommunication: values.methodOfCommunication,
@@ -5676,6 +5698,7 @@ export function MondayBoardView({
 
     await handleCreateContactUpdate({
       updateType: "general",
+      intent: "internal_note",
       body: args.body,
       keepSelectedType: true,
       targetRecordId: args.targetRecordId,
@@ -5722,6 +5745,7 @@ export function MondayBoardView({
     try {
       await handleCreateContactUpdate({
         updateType: "resume",
+        intent: "internal_note",
         targetRecordId: resumeReferralDialogState.targetRecordId,
         referredToContractors: resumeReferralDialogState.selectedContractors,
         keepSelectedType: true,
@@ -5880,6 +5904,7 @@ export function MondayBoardView({
 
       await handleCreateContactUpdate({
         updateType: "general",
+        intent: "internal_note",
         targetRecordId,
         body: hiredSummary,
         keepSelectedType: true,

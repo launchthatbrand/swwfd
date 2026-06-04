@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   BriefcaseBusiness,
+  MessageSquare,
   Link2,
   Handshake,
   Plug,
@@ -39,6 +40,7 @@ const buildItems = (section: "admin" | "dashboard"): NavItem[] => {
       { label: "Partners", href: "/admin/partners", icon: Handshake },
       { label: "Job Listings", href: "/admin/job-listings", icon: BriefcaseBusiness },
       { label: "Connections", href: "/admin/connections", icon: Link2 },
+      { label: "Support", href: "/admin/support", icon: MessageSquare },
       { label: "Integrations", href: "/admin/integrations", icon: Plug },
       { label: "Analytics", href: "/admin/analytics", icon: BarChart3 },
       { label: "Automations", href: "/admin/automations", icon: Workflow },

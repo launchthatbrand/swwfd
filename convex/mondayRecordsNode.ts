@@ -36,6 +36,7 @@ const SUBITEM_DATE_COLUMN_ID = "date0";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const SUBITEM_METHOD_COLUMN_ID = "method_of_communication__1";
 const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
+const SUBITEM_INTENT_COLUMN_ID = "color_mm40edt7";
 const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
 const SUBITEM_NAME_MAX_LENGTH = 120;
 
@@ -175,6 +176,7 @@ const subitemEntryValidator = v.object({
   name: v.string(),
   typeLabel: v.union(v.string(), v.null()),
   updateType: v.string(),
+  intent: v.union(v.literal("internal_note"), v.literal("conversation"), v.literal("campaign")),
   methodOfCommunication: v.union(v.string(), v.null()),
   createdAt: v.union(v.string(), v.null()),
   updates: v.array(
@@ -198,6 +200,12 @@ const mondayUpdateTypeValidator = v.union(
   v.literal("resume_referral"),
   v.literal("job_referral"),
   v.literal("merge"),
+);
+
+const mondayUpdateIntentValidator = v.union(
+  v.literal("internal_note"),
+  v.literal("conversation"),
+  v.literal("campaign"),
 );
 
 // ---------------------------------------------------------------------------
@@ -235,6 +243,15 @@ const normalizeDateOnlyValue = (value: string | null | undefined) => {
   const dateOnly = trimmed.includes("T") ? trimmed.slice(0, 10) : trimmed;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) return null;
   return dateOnly;
+};
+
+const normalizeIntentLabel = (
+  value: string | null | undefined,
+): "internal_note" | "conversation" | "campaign" => {
+  const normalized = (value ?? "").trim().toLowerCase().replaceAll(/\s+/g, "_");
+  if (normalized === "internal_note") return "internal_note";
+  if (normalized === "campaign") return "campaign";
+  return "conversation";
 };
 
 const splitCsvValues = (value: string | null | undefined) => {
@@ -1167,6 +1184,7 @@ const listMondayRecordUpdatesImpl = async (args: {
   const methodColId = SUBITEM_METHOD_COLUMN_ID;
   const dateColId = SUBITEM_DATE_COLUMN_ID;
   const personColId = SUBITEM_PERSON_COLUMN_ID;
+  const intentColId = SUBITEM_INTENT_COLUMN_ID;
   const notesColId = SUBITEM_NOTES_COLUMN_ID;
 
   interface MondayItemUpdatesData {
@@ -1211,7 +1229,7 @@ const listMondayRecordUpdatesImpl = async (args: {
         }
         subitems {
           id name created_at
-          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${notesColId}"]) {
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${intentColId}", "${notesColId}"]) {
             id text value
           }
           updates(limit: $limit) {
@@ -1315,6 +1333,7 @@ const listMondayRecordUpdatesImpl = async (args: {
     name: string;
     typeLabel: string | null;
     updateType: string;
+    intent: "internal_note" | "conversation" | "campaign";
     methodOfCommunication: string | null;
     createdAt: string | null;
     updates: Array<{
@@ -1335,6 +1354,7 @@ const listMondayRecordUpdatesImpl = async (args: {
     const methodText =
       subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ??
       null;
+    const intentText = subitem.column_values?.find((c) => c.id === intentColId)?.text ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
     const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
     const subitemNotes = readSubitemNotes(notesCol?.value, notesCol?.text);
@@ -1389,6 +1409,7 @@ const listMondayRecordUpdatesImpl = async (args: {
         name: subitemDisplayName ?? `Subitem ${subitemId}`,
         typeLabel: typeColText ?? methodText,
         updateType,
+        intent: normalizeIntentLabel(intentText),
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
         updates: subitemUpdateList.sort(
@@ -1420,6 +1441,7 @@ const createMondayRecordUpdateImpl = async (args: {
   itemId: string;
   body: string;
   updateType?: MondayUpdateType;
+  intent?: "internal_note" | "conversation" | "campaign";
   date?: string;
   dateTime?: string;
   methodOfCommunication?: string;
@@ -1435,6 +1457,7 @@ const createMondayRecordUpdateImpl = async (args: {
   if (!body) throw new Error("Update body cannot be empty");
 
   const requestedUpdateType = args.updateType ?? "general";
+  const intent = args.intent ?? "conversation";
   const updateType: MondayUpdateType = isMondayUpdateType(requestedUpdateType)
     ? requestedUpdateType
     : "general";
@@ -1491,6 +1514,7 @@ const createMondayRecordUpdateImpl = async (args: {
           },
         }
       : {}),
+    [SUBITEM_INTENT_COLUMN_ID]: { label: intent },
     [SUBITEM_NOTES_COLUMN_ID]: { text: body },
     ...(/^\d+$/.test(normalizedActorMondayUserId)
       ? {
@@ -1796,6 +1820,7 @@ export const createRecordUpdate = mondayAction({
     itemId: v.string(),
     body: v.string(),
     updateType: v.optional(mondayUpdateTypeValidator),
+    intent: v.optional(mondayUpdateIntentValidator),
     date: v.optional(v.string()),
     dateTime: v.optional(v.string()),
     methodOfCommunication: v.optional(v.string()),
@@ -1821,6 +1846,7 @@ export const createRecordUpdate = mondayAction({
       itemId: args.itemId,
       body: args.body,
       updateType: args.updateType,
+      intent: args.intent,
       date: args.date,
       dateTime: args.dateTime,
       methodOfCommunication: args.methodOfCommunication,

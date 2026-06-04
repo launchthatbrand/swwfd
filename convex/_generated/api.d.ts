@@ -726,6 +726,7 @@ export declare const api: {
         body: string;
         date?: string;
         dateTime?: string;
+        intent?: "internal_note" | "conversation" | "campaign";
         internalExternalStatus?: "Internal" | "External";
         itemId: string;
         methodOfCommunication?: string;
@@ -850,6 +851,7 @@ export declare const api: {
         subitems: Array<{
           createdAt: string | null;
           id: string;
+          intent: "internal_note" | "conversation" | "campaign";
           methodOfCommunication: string | null;
           name: string;
           typeLabel: string | null;
@@ -3069,4 +3071,6 @@ export declare const internal: {
 
 export declare const components: {
   workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
+  swwfd_ai: import("@swwfd/ai/convex/component/_generated/component.js").ComponentApi<"swwfd_ai">;
+  launchthat_support: import("@swwfd/plugin-support/convex/component/_generated/component.js").ComponentApi<"launchthat_support">;
 };

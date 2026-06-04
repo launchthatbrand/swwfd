@@ -1,0 +1,92 @@
+{
+  "name": "@swwfd/ai",
+  "version": "0.1.4",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./convex/component": {
+      "types": "./dist/convex/component/index.d.ts",
+      "default": "./dist/convex/component/index.js"
+    },
+    "./convex/component/convex.config": {
+      "types": "./dist/convex/component/convex.config.d.ts",
+      "default": "./src/convex/component/convex.config.ts"
+    },
+    "./frontend": {
+      "types": "./dist/frontend/index.d.ts",
+      "default": "./dist/frontend/index.js"
+    },
+    "./admin": {
+      "types": "./dist/admin/index.d.ts",
+      "default": "./dist/admin/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "default": "./dist/runtime/index.js"
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "clean": "git clean -xdf .cache .turbo dist node_modules",
+    "dev": "node -e \"process.exit(0)\"",
+    "format": "prettier --check . --ignore-path ../../.gitignore",
+    "lint": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@ai-sdk/google": "^3.0.59",
+    "@ai-sdk/openai": "^2.0.88",
+    "@convex-dev/agent": "^0.3.2",
+    "@convex-dev/rag": "^0.7.2",
+    "@launchthatapp/ui": "0.1.2",
+    "@radix-ui/react-collapsible": "^1.1.12",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-hover-card": "^1.1.15",
+    "@radix-ui/react-scroll-area": "^1.2.10",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@streamdown/cjk": "^1.0.1",
+    "@streamdown/code": "^1.0.1",
+    "@streamdown/math": "^1.0.1",
+    "@streamdown/mermaid": "^1.0.1",
+    "@tanstack/react-virtual": "^3.13.23",
+    "ai": "^6.0.3",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "convex": "^1.34.0",
+    "@swwfd/plugin-langfuse": "workspace:*",
+    "lucide-react": "^0.555.0",
+    "nanoid": "^5.1.6",
+    "neutral-cost": "^0.2.0",
+    "shiki": "^3.22.0",
+    "streamdown": "^2.1.0",
+    "tailwind-merge": "^3.3.1",
+    "use-stick-to-bottom": "^1.1.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.11",
+    "@types/react": "^19.0.12",
+    "eslint": "^9.38.0",
+    "prettier": "^3.6.2",
+    "react": "19.0.0",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@launchthatapp/ui": ">=0.1.0",
+    "react": "19.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/launchthatbrand/t3-launchthat.git",
+    "directory": "packages/core/ai"
+  }
+}
