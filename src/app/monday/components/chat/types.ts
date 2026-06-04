@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  ApprovalStepConfig,
   MondayRecord,
   MondaySupportConversationSummary,
   MondaySupportEvent,
@@ -20,6 +21,7 @@ export type ChatIdentity = {
 export type ConversationLeftSidebarProps = {
   userId: string | null;
   records: MondayRecord[];
+  approvalSteps: ApprovalStepConfig[];
   isLoadingRecords: boolean;
   selectedRecordId: string | null;
   onSelectRecord: (record: MondayRecord) => void;

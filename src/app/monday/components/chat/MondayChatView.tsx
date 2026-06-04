@@ -12,6 +12,7 @@ import { useSupportNotes } from "../../hooks/chat/useSupportNotes";
 import { useSupportPresence } from "../../hooks/chat/useSupportPresence";
 import { useSupportWorkflow } from "../../hooks/chat/useSupportWorkflow";
 import type {
+  ApprovalStepConfig,
   MondayApiResponse,
   MondayRecord,
   MondaySubitemEntry,
@@ -33,6 +34,7 @@ type Props = {
   userName: string | null;
   sessionToken: string | null;
   records: MondayRecord[];
+  approvalSteps: ApprovalStepConfig[];
   isLoadingRecords: boolean;
 };
 
@@ -42,6 +44,7 @@ export const MondayChatView = ({
   userName,
   sessionToken,
   records,
+  approvalSteps,
   isLoadingRecords,
 }: Props) => {
   const [scope, setScope] = useState<"all" | "mine" | "unassigned">("all");
@@ -282,6 +285,7 @@ export const MondayChatView = ({
       <ConversationLeftSidebar
         userId={userId}
         records={records}
+        approvalSteps={approvalSteps}
         isLoadingRecords={isLoadingRecords}
         selectedRecordId={selectedRecordId}
         onSelectRecord={(record) => {
