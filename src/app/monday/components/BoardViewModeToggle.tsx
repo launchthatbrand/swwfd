@@ -31,7 +31,7 @@ export const BoardViewModeToggle = ({
   return (
     <div
       data-tour={dataTour}
-      className="flex shrink-0 overflow-hidden rounded-md border"
+      className="flex shrink-0 gap-1"
     >
       {availableModes.map((entryMode) => {
         const Icon = iconByMode[entryMode];
