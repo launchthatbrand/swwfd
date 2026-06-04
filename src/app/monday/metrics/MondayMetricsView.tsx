@@ -439,41 +439,56 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         }
         let maybeToken = sdkToken ?? queryToken;
 
-        if (!maybeToken) {
-          const devAuthData = await convex.action(api.mondayAuth.verifyAndProvision, {});
-          if (devAuthData.ok && devAuthData.identity) {
-            setSessionToken(devAuthData.sessionToken ?? MONDAY_DEV_BYPASS_TOKEN);
-            setIdentity(devAuthData.identity as MondayIdentity);
-            setIsMondayEmbeddedContext(false);
-            return;
-          }
-          throw new Error(
-            devAuthData.error ?? "Missing Monday session token from SDK/query string",
-          );
-        }
-
-        const verifyWithToken = async (token: string) => {
-          return convex.action(api.mondayAuth.verifyAndProvision, { sessionToken: token });
+        const verifySessionWithConvex = async (token: string): Promise<MondayIdentity> => {
+          const result = await convex.action(api.mondayAuth.verifyAndProvision, {
+            sessionToken: token,
+          });
+          return {
+            userId: result.userId,
+            accountId: result.accountId,
+            boardId: result.boardId,
+            appClientId: result.appClientId,
+          };
         };
 
-        let authData = await verifyWithToken(maybeToken);
-
-        if (
-          (!authData.ok || !authData.identity) &&
-          authData.error === "signature verification failed" &&
-          sdkToken &&
-          sdkToken !== maybeToken
-        ) {
-          maybeToken = sdkToken;
-          authData = await verifyWithToken(maybeToken);
+        if (!maybeToken) {
+          try {
+            const devIdentity = await verifySessionWithConvex("");
+            setSessionToken(MONDAY_DEV_BYPASS_TOKEN);
+            setIdentity(devIdentity);
+            setIsMondayEmbeddedContext(false);
+            return;
+          } catch (devError) {
+            const message =
+              devError instanceof Error
+                ? devError.message
+                : "Missing Monday session token from SDK/query string";
+            throw new Error(message);
+          }
         }
 
-        if (!authData.ok || !authData.identity) {
-          throw new Error(authData.error ?? "Unable to verify Monday session");
+        let verifiedIdentity: MondayIdentity;
+        try {
+          verifiedIdentity = await verifySessionWithConvex(maybeToken);
+        } catch (firstError) {
+          const message =
+            firstError instanceof Error
+              ? firstError.message
+              : "Unable to verify Monday session";
+          if (
+            message === "signature verification failed" &&
+            sdkToken &&
+            sdkToken !== maybeToken
+          ) {
+            maybeToken = sdkToken;
+            verifiedIdentity = await verifySessionWithConvex(maybeToken);
+          } else {
+            throw new Error(message);
+          }
         }
 
-        setSessionToken(authData.sessionToken ?? maybeToken);
-        setIdentity(authData.identity as MondayIdentity);
+        setSessionToken(maybeToken);
+        setIdentity(verifiedIdentity);
         setIsMondayEmbeddedContext(isEmbeddedMondaySessionToken(maybeToken));
       } catch (error) {
         const message =
