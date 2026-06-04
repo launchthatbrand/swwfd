@@ -24,14 +24,20 @@ export const ApprovalProgressIndicator = (props: {
   };
   const stepProgress = getApprovalStepProgress(props.record, props.steps);
   const safeProgress = Math.max(0, Math.min(100, Math.round(props.progressValue ?? 0)));
+  const progressLabel =
+    typeof props.progressValue === "number" && Number.isFinite(props.progressValue)
+      ? `${safeProgress}%`
+      : null;
   const completedSteps = stepProgress.completedCount;
   const firstNotDoneStepIndex = stepProgress.states.findIndex((entry) => entry.state !== "done");
   const shouldShowRaw = props.rawProgressValue != null && hoverPopoversEnabled;
   const indicator = (
     <div className={cn("mt-1 space-y-1", props.className)}>
-      <div className="text-muted-foreground flex items-center justify-end text-[10px]">
-        <span>{props.progressValue !== null ? `${safeProgress}%` : "—"}</span>
-      </div>
+      {progressLabel ? (
+        <div className="text-muted-foreground flex items-center justify-end text-[10px]">
+          <span>{progressLabel}</span>
+        </div>
+      ) : null}
       <div
         className="flex cursor-default gap-0.5"
         onMouseEnter={hoverPopoversEnabled ? () => updateOpen(true) : undefined}

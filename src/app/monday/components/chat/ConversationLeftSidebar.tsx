@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Star } from "lucide-react";
 
 import { cn } from "~/lib/utils";
+import { ContactCard } from "../ContactCard";
 
 import type { ConversationLeftSidebarProps } from "./types";
 
@@ -13,6 +14,7 @@ const toRecordKey = (record: { id: string; contactId?: string | null }) =>
 export const ConversationLeftSidebar = ({
   userId,
   records,
+  approvalSteps,
   isLoadingRecords,
   selectedRecordId,
   onSelectRecord,
@@ -71,51 +73,44 @@ export const ConversationLeftSidebar = ({
             <p className="text-muted-foreground px-1 pb-1 text-xs font-semibold uppercase tracking-wide">
               Pinned Contacts
             </p>
-            <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
+            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
               {favoriteRecords.map((record) => {
                 const recordId = toRecordKey(record);
                 const isActive = selectedRecordId === recordId;
                 return (
-                  <button
-                    key={`fav:${record.id}:${recordId}`}
-                    type="button"
-                    onClick={() => onSelectRecord(record)}
-                    className={cn(
-                      "w-full rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
-                      isActive ? "border-primary bg-primary/10" : "hover:bg-muted/60",
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate font-medium">{record.name || "Unnamed Contact"}</p>
-                        <p className="text-muted-foreground truncate">{record.email || "No email"}</p>
-                      </div>
-                      <button
-                        type="button"
-                        className="text-amber-500 hover:text-amber-600"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          toggleFavorite(record);
-                        }}
-                        title="Unpin contact"
-                      >
-                        <Star className="h-3.5 w-3.5 fill-current" />
-                      </button>
-                    </div>
-                  </button>
+                  <div key={`fav:${record.id}:${recordId}`} className="relative">
+                    <ContactCard
+                      record={record}
+                      approvalSteps={approvalSteps}
+                      compact
+                      selected={isActive}
+                      onClick={onSelectRecord}
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-2 rounded-sm p-0.5 text-amber-500 hover:text-amber-600"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        toggleFavorite(record);
+                      }}
+                      title="Unpin contact"
+                    >
+                      <Star className="h-3.5 w-3.5 fill-current" />
+                    </button>
+                  </div>
                 );
               })}
             </div>
           </div>
         ) : null}
 
-        <div className="space-y-1 p-2 pb-3">
+        <div className="space-y-2 p-2 pb-3">
           {isLoadingRecords && regularRecords.length === 0 ? (
             Array.from({ length: 8 }).map((_, index) => (
               <div
                 key={`record-skeleton-${index}`}
-                className="space-y-1 rounded-md border px-2 py-1.5"
+                className="space-y-1 rounded-lg border px-3 py-2"
               >
                 <div className="h-3 w-3/5 animate-pulse rounded bg-muted" />
                 <div className="h-2.5 w-4/5 animate-pulse rounded bg-muted" />
@@ -127,37 +122,30 @@ export const ConversationLeftSidebar = ({
             const isActive = selectedRecordId === recordId;
             const isFavorite = favoriteSet.has(recordId);
             return (
-              <button
-                key={`${record.id}:${recordId}`}
-                type="button"
-                onClick={() => onSelectRecord(record)}
-                className={cn(
-                  "w-full rounded-md border px-2 py-1.5 text-left text-xs transition-colors",
-                  isActive ? "border-primary bg-primary/10" : "hover:bg-muted/60",
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{record.name || "Unnamed Contact"}</p>
-                    <p className="text-muted-foreground truncate">{record.email || "No email"}</p>
-                  </div>
-                  <button
-                    type="button"
-                    className={cn(
-                      "hover:text-amber-600",
-                      isFavorite ? "text-amber-500" : "text-muted-foreground",
-                    )}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      toggleFavorite(record);
-                    }}
-                    title={isFavorite ? "Unpin contact" : "Pin contact"}
-                  >
-                    <Star className={cn("h-3.5 w-3.5", isFavorite ? "fill-current" : "")} />
-                  </button>
-                </div>
-              </button>
+              <div key={`${record.id}:${recordId}`} className="relative">
+                <ContactCard
+                  record={record}
+                  approvalSteps={approvalSteps}
+                  compact
+                  selected={isActive}
+                  onClick={onSelectRecord}
+                />
+                <button
+                  type="button"
+                  className={cn(
+                    "absolute right-2 top-2 rounded-sm p-0.5 hover:text-amber-600",
+                    isFavorite ? "text-amber-500" : "text-muted-foreground",
+                  )}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleFavorite(record);
+                  }}
+                  title={isFavorite ? "Unpin contact" : "Pin contact"}
+                >
+                  <Star className={cn("h-3.5 w-3.5", isFavorite ? "fill-current" : "")} />
+                </button>
+              </div>
             );
             })
           )}

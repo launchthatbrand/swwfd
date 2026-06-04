@@ -23,6 +23,7 @@ export const ContactCard = ({
   selectable,
   selected,
   onToggleSelect,
+  compact = false,
 }: {
   record: MondayRecord;
   approvalSteps: ApprovalStepConfig[];
@@ -31,6 +32,7 @@ export const ContactCard = ({
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: (record: MondayRecord) => void;
+  compact?: boolean;
 }) => {
   const addressDisplay = getAddressDisplayParts(record.address);
   const owner = record.ownerProfiles[0];
@@ -49,9 +51,9 @@ export const ContactCard = ({
           onClick(record);
         }
       }}
-      className={`hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col gap-3 rounded-xl border bg-card p-4 text-left shadow-sm transition-all duration-150 hover:shadow-md ${selected ? "ring-primary border-primary/60 ring-2" : ""}`}
+      className={`hover:border-primary/50 hover:shadow-primary/5 group flex w-full cursor-pointer flex-col border bg-card text-left shadow-sm transition-all duration-150 hover:shadow-md ${compact ? "gap-2 rounded-lg p-3" : "gap-3 rounded-xl p-4"} ${selected ? "ring-primary border-primary/60 ring-2" : ""}`}
     >
-      <div className="flex items-start gap-3">
+      <div className={`flex items-start ${compact ? "gap-2" : "gap-3"}`}>
         {selectable ? (
           <div
             className="mr-1 mt-0.5"
@@ -69,17 +71,17 @@ export const ContactCard = ({
             />
           </div>
         ) : null}
-        <Avatar className="size-10 shrink-0">
-          <AvatarFallback className="text-sm font-semibold">
+        <Avatar className={`${compact ? "size-8" : "size-10"} shrink-0`}>
+          <AvatarFallback className={`${compact ? "text-xs" : "text-sm"} font-semibold`}>
             {getNameInitials(record.name)}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold leading-tight">{record.name}</p>
+          <p className={`truncate font-semibold leading-tight ${compact ? "text-sm" : ""}`}>{record.name}</p>
           {record.email ? (
             <p className="text-muted-foreground truncate text-xs">{record.email}</p>
           ) : null}
-          {addressDisplay.localityLine ? (
+          {!compact && addressDisplay.localityLine ? (
             <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
           ) : null}
         </div>
@@ -135,8 +137,10 @@ export const ContactCard = ({
         progressValue={record.batteryProgress}
         steps={approvalSteps}
         rawProgressValue={record.batteryRawValue}
+        hoverPopoversEnabled={!compact}
       />
 
+      {!compact ? (
       <div className="flex items-center justify-between gap-2">
         {owner ? (
           <div className="flex items-center gap-1.5">
@@ -161,6 +165,7 @@ export const ContactCard = ({
           </span>
         ) : null}
       </div>
+      ) : null}
     </div>
   );
 };
