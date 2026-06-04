@@ -6792,17 +6792,13 @@ export function MondayBoardView({
                 <ChevronRight className="h-4 w-4" />
               </Button>
 
-              {viewMode === "userScoped" && (
-                <>
-                  <div className="bg-border/60 h-5 w-px shrink-0" />
-                  <BoardViewModeToggle
-                    mode={userScopedDisplayMode}
-                    availableModes={["table", "grid", "kanban", "chat"]}
-                    onChange={setUserScopedDisplayMode}
-                    dataTour="view-toggle"
-                  />
-                </>
-              )}
+              <div className="bg-border/60 h-5 w-px shrink-0" />
+              <BoardViewModeToggle
+                mode={userScopedDisplayMode}
+                availableModes={["table", "grid", "kanban", "chat"]}
+                onChange={setUserScopedDisplayMode}
+                dataTour="view-toggle"
+              />
 
               <div className="bg-border/60 h-5 w-px shrink-0" />
               <Button
