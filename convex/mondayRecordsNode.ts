@@ -97,6 +97,13 @@ const CONTACT_EDITABLE_COLUMN_TYPES = new Set([
   "dropdown",
 ]);
 
+const SHOULD_DEBUG_PROGRESS =
+  process.env.NODE_ENV !== "production" || process.env.MONDAY_DEBUG_PROGRESS === "1";
+const truncateForLog = (value: string | null | undefined, limit = 240) => {
+  if (!value) return value ?? null;
+  return value.length <= limit ? value : `${value.slice(0, limit)}…`;
+};
+
 // ---------------------------------------------------------------------------
 // Return validators
 // ---------------------------------------------------------------------------
@@ -564,6 +571,26 @@ const boardItemToRecord = (item: BoardItem) => {
     contactDetails.push({ label: "Address", value: address });
   }
 
+  if (SHOULD_DEBUG_PROGRESS && batteryProgress === null) {
+    const progressColumns = columns
+      .filter((column) => (column.type ?? "").toLowerCase() === "progress")
+      .map((column) => ({
+        id: column.id ?? null,
+        type: column.type ?? null,
+        text: truncateForLog(column.text ?? null),
+        value: truncateForLog(column.value ?? null),
+      }));
+    console.info("[mondayRecordsNode][progress][null]", {
+      itemId: item.id,
+      itemName: item.name ?? null,
+      batteryColumnId: batteryColumn?.id ?? null,
+      batteryColumnType: batteryColumn?.type ?? null,
+      batteryColumnText: truncateForLog(batteryColumn?.text ?? null),
+      batteryColumnValue: truncateForLog(batteryColumn?.value ?? null),
+      progressColumns,
+    });
+  }
+
   return {
     id: item.id,
     name: item.name ?? "",
@@ -771,8 +798,50 @@ const listMondayBoardRecordsImpl = async (args: {
     title: columnIds.columnTitleById[id]?.trim() || `Approval Step ${index + 1}`,
   }));
 
+  const mappedRecords = firstItems.map(boardItemToRecord);
+  for (let index = 0; index < mappedRecords.length; index += 1) {
+    const record = mappedRecords[index];
+    const sourceItem = firstItems[index];
+    if (!record || !sourceItem) continue;
+    const columns = sourceItem.column_values ?? [];
+    for (const step of approvalSteps) {
+      const value = columns
+        .find((column) => column.id === step.id)
+        ?.text?.trim();
+      if (!value) continue;
+      const hasLabel = record.contactDetails.some(
+        (detail) => detail.label.trim().toLowerCase() === step.title.trim().toLowerCase(),
+      );
+      if (!hasLabel) {
+        record.contactDetails.push({
+          label: step.title,
+          value,
+        });
+      }
+    }
+  }
+  if (SHOULD_DEBUG_PROGRESS) {
+    const withProgress = mappedRecords.filter(
+      (record) => typeof record.batteryProgress === "number",
+    ).length;
+    console.info("[mondayRecordsNode][progress][summary]", {
+      search: searchArg,
+      cursor: cursorArg ?? null,
+      isSearchFirstPage,
+      total: mappedRecords.length,
+      withProgress,
+      withoutProgress: mappedRecords.length - withProgress,
+      sample: mappedRecords.slice(0, 8).map((record) => ({
+        id: record.id,
+        name: record.name,
+        batteryProgress: record.batteryProgress,
+        batteryRawValue: truncateForLog(record.batteryRawValue),
+      })),
+    });
+  }
+
   return {
-    records: firstItems.map(boardItemToRecord),
+    records: mappedRecords,
     nextCursor,
     boardName,
     appliedFilters,

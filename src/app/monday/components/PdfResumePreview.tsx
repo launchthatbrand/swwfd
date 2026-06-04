@@ -1,20 +1,39 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Document, Page, pdfjs } from "react-pdf";
-
-pdfjs.GlobalWorkerOptions.workerSrc =
-  `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export const PdfResumePreview = (props: {
   fileUrl: string;
   fileName: string;
 }) => {
+  const [pdfModule, setPdfModule] = useState<null | typeof import("react-pdf")>(null);
   const [numPages, setNumPages] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [containerWidth, setContainerWidth] = useState(0);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const lastMeasuredWidthRef = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPdf = async () => {
+      try {
+        const mod = await import("react-pdf");
+        mod.pdfjs.GlobalWorkerOptions.workerSrc =
+          `https://unpkg.com/pdfjs-dist@${mod.pdfjs.version}/build/pdf.worker.min.mjs`;
+        if (!cancelled) setPdfModule(mod);
+      } catch (error) {
+        if (!cancelled) {
+          setErrorMessage(
+            error instanceof Error ? error.message : "Unable to initialize PDF preview",
+          );
+        }
+      }
+    };
+    void loadPdf();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setNumPages(0);
@@ -74,6 +93,17 @@ export const PdfResumePreview = (props: {
       </div>
     );
   }
+
+  if (!pdfModule) {
+    return (
+      <div className="flex h-full items-center justify-center p-4 text-sm text-muted-foreground">
+        Loading PDF…
+      </div>
+    );
+  }
+
+  const Document = pdfModule.Document;
+  const Page = pdfModule.Page;
 
   return (
     <div ref={containerRef} className="h-full overflow-auto p-3">
