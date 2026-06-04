@@ -751,7 +751,10 @@ export const getRecordFieldValuesForCondition = (
   const boardColumnTarget = getBoardColumnTargetForCondition(condition);
   if (boardColumnTarget.length > 0) {
     const normalizedTarget = boardColumnTarget.trim().toLowerCase();
-    const detailValues = record.contactDetails
+    const safeContactDetails = Array.isArray(record.contactDetails)
+      ? record.contactDetails
+      : [];
+    const detailValues = safeContactDetails
       .filter((detail) => detail.label.trim().toLowerCase() === normalizedTarget)
       .map((detail) => detail.value.trim())
       .filter((value) => value.length > 0);
@@ -983,7 +986,10 @@ export const getApprovalStepProgress = (
     };
   }
   const statusByStepKey = new Map<string, string>();
-  for (const detail of record.contactDetails) {
+  const safeContactDetails = Array.isArray(record.contactDetails)
+    ? record.contactDetails
+    : [];
+  for (const detail of safeContactDetails) {
     const key = toStepKey(detail.label);
     if (!key) continue;
     if (!statusByStepKey.has(key)) {
