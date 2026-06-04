@@ -1141,5 +1141,5 @@ export const components = componentsGeneric() as unknown as {
   agent: import("@convex-dev/agent/_generated/component.js").ComponentApi<"agent">;
   rag: import("@convex-dev/rag/_generated/component.js").ComponentApi<"rag">;
   neutralCost: import("neutral-cost/_generated/component.js").ComponentApi<"neutralCost">;
-  langfuse: import("@swwfd/plugin-langfuse/convex/component/_generated/component.js").ComponentApi<"langfuse">;
+  langfuse: import("../../packages/plugin-langfuse/src/convex/component/_generated/component.js").ComponentApi<"langfuse">;
 };

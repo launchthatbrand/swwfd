@@ -2,7 +2,7 @@ import agent from "@convex-dev/agent/convex.config";
 import { defineComponent } from "convex/server";
 import neutralCost from "neutral-cost/convex.config";
 import rag from "@convex-dev/rag/convex.config";
-import swwfdLangfuse from "@swwfd/plugin-langfuse/convex/component/convex.config";
+import swwfdLangfuse from "../../../../plugin-langfuse/src/convex/component/convex.config";
 
 const component = defineComponent("swwfd_ai");
 component.use(agent, { name: "agent" });

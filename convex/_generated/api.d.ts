@@ -3071,6 +3071,6 @@ export declare const internal: {
 
 export declare const components: {
   workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
-  swwfd_ai: import("@swwfd/ai/convex/component/_generated/component.js").ComponentApi<"swwfd_ai">;
-  launchthat_support: import("@swwfd/plugin-support/convex/component/_generated/component.js").ComponentApi<"launchthat_support">;
+  swwfd_ai: import("../../packages/ai/src/convex/component/_generated/component.js").ComponentApi<"swwfd_ai">;
+  swwfd_support: import("../../packages/plugin-support/src/convex/component/_generated/component.js").ComponentApi<"swwfd_support">;
 };
