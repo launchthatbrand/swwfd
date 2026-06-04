@@ -145,7 +145,6 @@ import {
   QUESTIONNAIRE_WORK_SCHEDULE,
   QUESTIONNAIRE_YES_NO,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
-  SUBITEM_INTENT_COLUMN_ID,
   SUBITEM_NOTES_COLUMN_ID,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -246,7 +245,6 @@ import {
   COMMUNICATION_QUICK_ACTIONS,
   type BulkCommunicationQuickActionState,
   type BulkUniqueCommunicationSession,
-  type CommunicationQuickActionMethod,
   type ContactJobRow,
   type MergeFieldKey,
   MERGE_FIELD_CONFIG,
@@ -2585,10 +2583,7 @@ export function MondayBoardView({
   const boardColumnFilterOptions = useMemo(() => {
     const labels = new Set<string>();
     for (const record of records) {
-      const contactDetails = Array.isArray(record.contactDetails)
-        ? record.contactDetails
-        : [];
-      for (const detail of contactDetails) {
+      for (const detail of record.contactDetails) {
         const label = detail.label.trim();
         if (!label) continue;
         labels.add(label);
@@ -2599,10 +2594,7 @@ export function MondayBoardView({
   const boardColumnFilterKindByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
-      const contactDetails = Array.isArray(record.contactDetails)
-        ? record.contactDetails
-        : [];
-      for (const detail of contactDetails) {
+      for (const detail of record.contactDetails) {
         const label = detail.label.trim();
         const value = detail.value.trim();
         if (!label || !value) continue;
@@ -2629,10 +2621,7 @@ export function MondayBoardView({
   const boardColumnValueOptionsByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
-      const contactDetails = Array.isArray(record.contactDetails)
-        ? record.contactDetails
-        : [];
-      for (const detail of contactDetails) {
+      for (const detail of record.contactDetails) {
         const label = detail.label.trim();
         const value = detail.value.trim();
         if (!label || !value) continue;
@@ -3984,7 +3973,6 @@ export function MondayBoardView({
     itemId: string;
     body: string;
     updateType?: ContactUpdateType;
-    intent?: "internal_note" | "conversation" | "campaign";
     date?: string;
     dateTime?: string;
     methodOfCommunication?: string;
@@ -3998,7 +3986,6 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
-    const intent = args.intent ?? "conversation";
     const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
@@ -4026,7 +4013,6 @@ export function MondayBoardView({
     if (internalExternalStatus) {
       columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
-    columnValues[SUBITEM_INTENT_COLUMN_ID] = { label: intent };
     columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
@@ -4243,7 +4229,6 @@ export function MondayBoardView({
     options?: {
       body?: string;
       updateType?: ContactUpdateType;
-      intent?: "internal_note" | "conversation" | "campaign";
       keepSelectedType?: boolean;
       date?: string;
       dateTime?: string;
@@ -4298,17 +4283,6 @@ export function MondayBoardView({
       (updateType === "welcome_email" || updateType === "followup"
         ? "Internal"
         : undefined);
-    const resolvedIntent =
-      options?.intent ??
-      (updateType === "job_referral"
-        ? "campaign"
-        : resolvedInternalExternalStatus === "Internal" ||
-            updateType === "welcome_email" ||
-            updateType === "followup" ||
-            updateType === "questionnaire" ||
-            updateType === "resume"
-          ? "internal_note"
-          : "conversation");
     if (!body) {
       toast.error("Enter an update before posting");
       return;
@@ -4332,7 +4306,6 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
-          intent: resolvedIntent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4346,7 +4319,6 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
-          intent: resolvedIntent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4449,7 +4421,6 @@ export function MondayBoardView({
       dateOnly && timeOnly ? `${dateOnly}T${timeOnly}:00` : undefined;
     await handleCreateContactUpdate({
       updateType: "general",
-      intent: "conversation",
       body: values.body,
       keepSelectedType: true,
       date: dateOnly || undefined,
@@ -4494,7 +4465,6 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body: values.body,
           updateType: "general",
-          intent: "campaign",
           date: dateOnly || undefined,
           dateTime,
           methodOfCommunication: values.methodOfCommunication,
@@ -4506,7 +4476,6 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body: values.body,
           updateType: "general",
-          intent: "campaign",
           date: dateOnly || undefined,
           dateTime,
           methodOfCommunication: values.methodOfCommunication,
@@ -5698,7 +5667,6 @@ export function MondayBoardView({
 
     await handleCreateContactUpdate({
       updateType: "general",
-      intent: "internal_note",
       body: args.body,
       keepSelectedType: true,
       targetRecordId: args.targetRecordId,
@@ -5745,7 +5713,6 @@ export function MondayBoardView({
     try {
       await handleCreateContactUpdate({
         updateType: "resume",
-        intent: "internal_note",
         targetRecordId: resumeReferralDialogState.targetRecordId,
         referredToContractors: resumeReferralDialogState.selectedContractors,
         keepSelectedType: true,
@@ -5904,7 +5871,6 @@ export function MondayBoardView({
 
       await handleCreateContactUpdate({
         updateType: "general",
-        intent: "internal_note",
         targetRecordId,
         body: hiredSummary,
         keepSelectedType: true,
@@ -6332,7 +6298,7 @@ export function MondayBoardView({
     <GuidedTourProvider>
       <UserSettingsProvider settings={boardGeneralSettings}>
         <div
-          className={`monday-like-page mx-auto ${isViewportLockedBoardMode ? "h-[calc(100vh-0px)] overflow-hidden pb-0" : "pb-10"}`}
+          className={`monday-like-page mx-auto ${isViewportLockedBoardMode ? "h-[calc(100vh-20px)] overflow-hidden pb-0" : "pb-10"}`}
         >
           <div
             data-board-filter-bar
@@ -6823,22 +6789,9 @@ export function MondayBoardView({
                 <ChevronRight className="h-4 w-4" />
               </Button>
 
-              {viewMode === "userScoped" ? (
+              {viewMode === "userScoped" && (
                 <>
                   <div className="bg-border/60 h-5 w-px shrink-0" />
-                  <Button
-                    size="sm"
-                    variant="default"
-                    className="h-8 shrink-0 px-2.5"
-                    onClick={() => {
-                      resetAddContactDialog();
-                      setAddContactOpen(true);
-                    }}
-                    disabled={authLoading || !identity?.userId}
-                  >
-                    <UserPlus className="mr-1.5 h-4 w-4" />
-                    Add
-                  </Button>
                   <BoardViewModeToggle
                     mode={userScopedDisplayMode}
                     availableModes={["table", "grid", "kanban", "chat"]}
@@ -6846,18 +6799,22 @@ export function MondayBoardView({
                     dataTour="view-toggle"
                   />
                 </>
-              ) : (
-                <>
-                  <div className="bg-border/60 h-5 w-px shrink-0" />
-                  <BoardViewModeToggle
-                    mode={userScopedDisplayMode}
-                    availableModes={["table", "kanban", "chat"]}
-                    onChange={setUserScopedDisplayMode}
-                  />
-                </>
               )}
 
               <div className="bg-border/60 h-5 w-px shrink-0" />
+              <Button
+                size="sm"
+                variant="default"
+                className="h-8 shrink-0 px-2.5"
+                onClick={() => {
+                  resetAddContactDialog();
+                  setAddContactOpen(true);
+                }}
+                disabled={authLoading || !identity?.userId}
+              >
+                <UserPlus className="mr-1.5 h-4 w-4" />
+                Add
+              </Button>
 
               {/* Reload */}
               <Button
@@ -8519,9 +8476,6 @@ export function MondayBoardView({
                 userName={userProfileQuery.data?.name ?? null}
                 sessionToken={sessionToken}
                 records={filteredRecords}
-                isLoadingRecords={
-                  sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)
-                }
               />
             ) : userScopedDisplayMode === "kanban" ? (
               <KanbanBoardView
