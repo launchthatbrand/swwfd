@@ -519,11 +519,20 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     staleTime: 30_000,
   });
   const userBoardSettingsQuery = useQuery({
-    queryKey: ["monday-user-board-settings", sessionToken, settingsScopeOwnerId],
-    enabled: !!sessionToken && settingsScopeOwnerId.length > 0,
+    queryKey: [
+      "monday-user-board-settings",
+      sessionToken,
+      identity?.accountId,
+      settingsScopeOwnerId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !!identity?.accountId?.trim() &&
+      settingsScopeOwnerId.length > 0,
     queryFn: async () => {
       const result = await convex.query(api.mondayUserBoardSettings.getForOwnerBoard, {
-        ownerId: settingsScopeOwnerId,
+        accountId: identity!.accountId.trim(),
+        ownerMondayUserId: settingsScopeOwnerId,
       });
       return parseUserBoardGeneralSettings(result ?? undefined);
     },
