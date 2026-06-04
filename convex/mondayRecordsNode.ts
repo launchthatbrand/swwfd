@@ -118,6 +118,14 @@ const mondayRecordValidator = v.object({
   hireDate: v.union(v.string(), v.null()),
   retentionPeriod: v.union(v.string(), v.null()),
   tags: v.union(v.string(), v.null()),
+  batteryProgress: v.union(v.number(), v.null()),
+  batteryRawValue: v.union(v.string(), v.null()),
+  contactDetails: v.array(
+    v.object({
+      label: v.string(),
+      value: v.string(),
+    }),
+  ),
   createdAt: v.union(v.string(), v.null()),
   updatedAt: v.union(v.string(), v.null()),
   lastTouchpointAt: v.union(v.string(), v.null()),
@@ -471,6 +479,11 @@ const boardItemToRecord = (item: BoardItem) => {
   const lastTouchpointColumn = columns.find(
     (column) => column.id === LAST_INTERACTION_DATE_COLUMN_ID,
   );
+  const batteryColumn = columns.find(
+    (column) =>
+      column.id === "columns_battery_mm1dnmq3" ||
+      (column.type ?? "").toLowerCase() === "progress",
+  );
 
   let ownerIds: string[] = [];
   if (peopleColumn?.value) {
@@ -513,6 +526,44 @@ const boardItemToRecord = (item: BoardItem) => {
     .map((value) => value?.trim())
     .filter((value): value is string => !!value && value.length > 0);
 
+  const parseBatteryProgress = () => {
+    const fromText = batteryColumn?.text?.match(/\d{1,3}/)?.[0];
+    if (fromText) {
+      const parsed = Number(fromText);
+      if (Number.isFinite(parsed)) return Math.max(0, Math.min(100, Math.round(parsed)));
+    }
+    if (batteryColumn?.value) {
+      try {
+        const parsed = JSON.parse(batteryColumn.value) as Record<string, unknown>;
+        for (const key of ["batteryValue", "value", "percent", "progress"]) {
+          const candidate = parsed[key];
+          if (typeof candidate === "number" && Number.isFinite(candidate)) {
+            return Math.max(0, Math.min(100, Math.round(candidate)));
+          }
+          if (typeof candidate === "string" && /^\d{1,3}$/.test(candidate.trim())) {
+            return Math.max(0, Math.min(100, Math.round(Number(candidate.trim()))));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  };
+  const batteryProgress = parseBatteryProgress();
+  const address = addressParts.length > 0 ? addressParts.join(", ") : null;
+  const contactDetails: Array<{ label: string; value: string }> = [];
+  if ((item.name ?? "").trim()) contactDetails.push({ label: "Name", value: item.name ?? "" });
+  if ((emailColumn?.text ?? "").trim()) {
+    contactDetails.push({ label: "Email", value: emailColumn?.text ?? "" });
+  }
+  if ((phoneColumn?.text ?? "").trim()) {
+    contactDetails.push({ label: "Phone", value: phoneColumn?.text ?? "" });
+  }
+  if (address) {
+    contactDetails.push({ label: "Address", value: address });
+  }
+
   return {
     id: item.id,
     name: item.name ?? "",
@@ -523,7 +574,7 @@ const boardItemToRecord = (item: BoardItem) => {
     ownerIds,
     email: emailColumn?.text ?? null,
     phone: phoneColumn?.text ?? null,
-    address: addressParts.length > 0 ? addressParts.join(", ") : null,
+    address,
     referredToContractors:
       toColumnDisplayValue(
         referredToContractorsColumn?.text,
@@ -550,6 +601,9 @@ const boardItemToRecord = (item: BoardItem) => {
         retentionPeriodColumn?.value,
       ) || null,
     tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
+    batteryProgress,
+    batteryRawValue: batteryColumn?.value ?? null,
+    contactDetails,
     createdAt: parseTimestampFromColumn(dateColumn?.value, dateColumn?.text),
     updatedAt: item.updated_at ?? null,
     lastTouchpointAt: parseTimestampFromColumn(
