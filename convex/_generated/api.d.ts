@@ -820,6 +820,9 @@ export declare const api: {
         nextCursor: string | null;
         records: Array<{
           address: string | null;
+          batteryProgress: number | null;
+          batteryRawValue: string | null;
+          contactDetails: Array<{ label: string; value: string }>;
           createdAt: string | null;
           email: string | null;
           groupTitle: string | null;
