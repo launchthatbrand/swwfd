@@ -48,6 +48,7 @@ export type ConversationThreadPaneProps = {
 
 export type ConversationRightSidebarProps = {
   selectedConversation: MondaySupportConversationSummary | null;
+  campaignUpdates: MondaySubitemEntry[];
   notes: MondaySupportNote[];
   events: MondaySupportEvent[];
   presence: MondaySupportPresenceEntry[];

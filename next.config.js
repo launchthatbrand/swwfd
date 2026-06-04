@@ -9,7 +9,13 @@ const config = {
   transpilePackages: [
     "@launchthatapp/ui",
     "@launchthatapp/dnd",
+    "@swwfd/ai",
+    "@swwfd/admin-runtime",
+    "@swwfd/plugin-core",
+    "@swwfd/plugin-langfuse",
+    "@swwfd/plugin-support",
     "@swwfd/support-chat-composer",
+    "@swwfd/ui-lexical",
   ],
 
   typescript: { ignoreBuildErrors: true },

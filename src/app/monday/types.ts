@@ -143,6 +143,7 @@ export interface MondaySubitemEntry {
   name: string;
   typeLabel: string | null;
   updateType: MondayUpdateType;
+  intent: MondayUpdateIntent;
   methodOfCommunication: string | null;
   createdAt: string | null;
   creatorProfile: {
@@ -321,6 +322,8 @@ export type MondaySupportMessageType =
   | "email_outbound"
   | "sms_inbound"
   | "sms_outbound";
+
+export type MondayUpdateIntent = "internal_note" | "conversation" | "campaign";
 
 export interface MondaySupportConversationSummary {
   id: string;

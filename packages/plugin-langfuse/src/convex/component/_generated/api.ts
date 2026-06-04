@@ -1,0 +1,35 @@
+/* eslint-disable */
+/**
+ * Generated `api` utility.
+ *
+ * THIS CODE IS AUTOMATICALLY GENERATED.
+ *
+ * To regenerate, run `npx convex dev`.
+ * @module
+ */
+
+import type { FunctionReference } from "convex/server";
+import type { GenericId as Id } from "convex/values";
+import { anyApi, componentsGeneric } from "convex/server";
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
+export const api: {} = anyApi as any;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
+export const internal: {} = anyApi as any;
+
+export const components = componentsGeneric() as unknown as {};

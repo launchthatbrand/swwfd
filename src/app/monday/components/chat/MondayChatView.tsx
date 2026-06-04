@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import { toast } from "@launchthatapp/ui/toast";
 
 import { useSupportConversations } from "../../hooks/chat/useSupportConversations";
 import { useSupportEvents } from "../../hooks/chat/useSupportEvents";
+import { useSupportMessages } from "../../hooks/chat/useSupportMessages";
 import { useSupportNotes } from "../../hooks/chat/useSupportNotes";
 import { useSupportPresence } from "../../hooks/chat/useSupportPresence";
 import { useSupportWorkflow } from "../../hooks/chat/useSupportWorkflow";
@@ -18,6 +19,7 @@ import type {
   OutlookTeamMailboxesResponse,
 } from "../../types";
 import { api } from "@convex-config/_generated/api";
+import type { Id } from "@convex-config/_generated/dataModel";
 import { fetchMondayApi } from "../../services/monday-api";
 import { ConversationLeftSidebar } from "./ConversationLeftSidebar";
 import { ConversationRightSidebar } from "./ConversationRightSidebar";
@@ -46,6 +48,7 @@ export const MondayChatView = ({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [composerChannel, setComposerChannel] = useState<"email" | "sms">("email");
+  const selectedSupportConversationId = selectedConversationId as Id<"mondaySupportConversations"> | null;
 
   const { conversations, ensureConversationForRecord } = useSupportConversations({
     accountId,
@@ -58,6 +61,8 @@ export const MondayChatView = ({
     () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const { sendMessage: appendSupportMessage } = useSupportMessages(selectedConversationId);
+  const appendSupportEvent = useMutation(api.supportEvents.appendEvent);
 
   const listRecordUpdatesAction = useAction(api.mondayRecordsNode.listRecordUpdates);
   const createRecordUpdateAction = useAction(api.mondayRecordsNode.createRecordUpdate);
@@ -169,6 +174,10 @@ export const MondayChatView = ({
     },
     staleTime: 10_000,
   });
+  const campaignUpdates = useMemo(
+    () => (updatesQuery.data ?? []).filter((entry) => entry.intent === "campaign"),
+    [updatesQuery.data],
+  );
   const workflowState = useSupportWorkflow(selectedConversationId);
   const notesState = useSupportNotes(selectedConversationId);
   const eventsState = useSupportEvents(selectedConversationId);
@@ -340,10 +349,31 @@ export const MondayChatView = ({
                 itemId: selectedContactItemId,
                 body: `Email Sent - ${subject}`,
                 updateType: "general",
+                intent: "conversation",
                 date: todayYmd(),
                 methodOfCommunication: "Email",
                 internalExternalStatus: "External",
               });
+              if (selectedSupportConversationId) {
+                await appendSupportMessage({
+                  body: trimmedBody,
+                  role: "assistant",
+                  source: "admin",
+                  channel: "email",
+                  messageType: "email_outbound",
+                  senderName: userName ?? "Agent",
+                  senderEmail: senderMailboxUserId || undefined,
+                  actorMondayUserId: userId ?? undefined,
+                  actorName: userName ?? undefined,
+                });
+                await appendSupportEvent({
+                  conversationId: selectedSupportConversationId!,
+                  type: "message.sent",
+                  actorMondayUserId: userId ?? undefined,
+                  actorName: userName ?? undefined,
+                  payload: JSON.stringify({ channel: "email", subject }),
+                });
+              }
               toast.success("Email sent and logged.");
             } else {
               if (!contactPhone) {
@@ -369,10 +399,30 @@ export const MondayChatView = ({
                 itemId: selectedContactItemId,
                 body: `SMS Sent - ${trimmedBody}`,
                 updateType: "general",
+                intent: "conversation",
                 date: todayYmd(),
                 methodOfCommunication: "Text",
                 internalExternalStatus: "External",
               });
+              if (selectedSupportConversationId) {
+                await appendSupportMessage({
+                  body: trimmedBody,
+                  role: "assistant",
+                  source: "admin",
+                  channel: "sms",
+                  messageType: "sms_outbound",
+                  senderName: userName ?? "Agent",
+                  actorMondayUserId: userId ?? undefined,
+                  actorName: userName ?? undefined,
+                });
+                await appendSupportEvent({
+                  conversationId: selectedSupportConversationId!,
+                  type: "message.sent",
+                  actorMondayUserId: userId ?? undefined,
+                  actorName: userName ?? undefined,
+                  payload: JSON.stringify({ channel: "sms" }),
+                });
+              }
               toast.success("SMS sent and logged.");
             }
             await updatesQuery.refetch();
@@ -401,6 +451,7 @@ export const MondayChatView = ({
 
       <ConversationRightSidebar
         selectedConversation={selectedConversation}
+        campaignUpdates={campaignUpdates}
         notes={notesState.notes}
         events={eventsState.events}
         presence={presenceState.presence}
