@@ -922,6 +922,7 @@ export type DataModel = {
       tableDensity?: "expanded" | "compact";
       updatedAt: number;
       updatedByMondayUserId: string;
+      viewerMondayUserId?: string;
       _id: Id<"mondayUserBoardSettings">;
       _creationTime: number;
     };
@@ -942,11 +943,18 @@ export type DataModel = {
       | "recordSource"
       | "tableDensity"
       | "updatedAt"
-      | "updatedByMondayUserId";
+      | "updatedByMondayUserId"
+      | "viewerMondayUserId";
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
       by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+      by_account_owner_and_viewer: [
+        "accountId",
+        "ownerMondayUserId",
+        "viewerMondayUserId",
+        "_creationTime",
+      ];
     };
     searchIndexes: {};
     vectorIndexes: {};

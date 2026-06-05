@@ -812,6 +812,7 @@ export function MondayBoardView({
     isMondayEmbeddedContext &&
     isMondaySettingsAdmin;
   const presetScopeOwnerId = useMemo(() => {
+    if (viewMode === "all") return "__route_all__";
     if (hasForcedOwnerScope) return forcedOwnerId;
     if (viewMode !== "userScoped") return "";
     const ownerFromFilter = ownerFilter.trim();
@@ -1908,7 +1909,7 @@ export function MondayBoardView({
       return;
     }
     if (!presetScopeOwnerId) {
-      toast.error("Select an owner board before saving settings");
+      toast.error("Settings scope is unavailable for this route");
       return;
     }
     if (
@@ -1953,7 +1954,7 @@ export function MondayBoardView({
       if (isUserBoardDisplayMode(parsedSettings.displayMode)) {
         setUserScopedDisplayMode(parsedSettings.displayMode);
       }
-      toast.success("General settings saved for this employee board");
+      toast.success("General settings saved for this board view");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to save general settings";
@@ -6929,7 +6930,11 @@ export function MondayBoardView({
                                 <div>
                                   <p className="text-sm font-semibold">Appearance</p>
                                   <p className="text-muted-foreground text-xs">
-                                    Scope: {presetScopeOwnerId.length > 0 ? `Owner ${presetScopeOwnerId}` : "No owner selected"}
+                                    Scope: {presetScopeOwnerId === "__route_all__"
+                                      ? "All board"
+                                      : presetScopeOwnerId.length > 0
+                                        ? `Owner ${presetScopeOwnerId}`
+                                        : "No owner selected"}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2">
