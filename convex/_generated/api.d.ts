@@ -1389,7 +1389,11 @@ export declare const api: {
     getForOwnerBoard: FunctionReference<
       "query",
       "public",
-      { accountId: string; ownerMondayUserId: string },
+      {
+        accountId: string;
+        ownerMondayUserId: string;
+        viewerMondayUserId: string;
+      },
       {
         colorTheme:
           | "neutral"

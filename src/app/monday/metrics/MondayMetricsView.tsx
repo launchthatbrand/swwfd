@@ -523,16 +523,19 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
       "monday-user-board-settings",
       sessionToken,
       identity?.accountId,
+      identity?.userId,
       settingsScopeOwnerId,
     ],
     enabled:
       !!sessionToken &&
       !!identity?.accountId?.trim() &&
+      !!identity?.userId?.trim() &&
       settingsScopeOwnerId.length > 0,
     queryFn: async () => {
       const result = await convex.query(api.mondayUserBoardSettings.getForOwnerBoard, {
         accountId: identity!.accountId.trim(),
         ownerMondayUserId: settingsScopeOwnerId,
+        viewerMondayUserId: identity!.userId.trim(),
       });
       return parseUserBoardGeneralSettings(result ?? undefined);
     },

@@ -96,16 +96,17 @@ export const useMondayUserQueries = ({
 
   const userBoardSettingsRaw = useConvexQuery(
     api.mondayUserBoardSettings.getForOwnerBoard,
-    staticMode || !accountId?.trim() || presetScopeOwnerId.length === 0
+    staticMode || !accountId?.trim() || !identityUserId?.trim() || presetScopeOwnerId.length === 0
       ? "skip"
       : {
           accountId: accountId.trim(),
           ownerMondayUserId: presetScopeOwnerId,
+          viewerMondayUserId: identityUserId.trim(),
         },
   );
 
   const userBoardSettingsEnabled =
-    !staticMode && !!accountId?.trim() && presetScopeOwnerId.length > 0;
+    !staticMode && !!accountId?.trim() && !!identityUserId?.trim() && presetScopeOwnerId.length > 0;
 
   const userBoardSettingsQuery = useMemo(() => {
     const data =

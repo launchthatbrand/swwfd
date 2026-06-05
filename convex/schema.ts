@@ -255,6 +255,7 @@ export default defineSchema({
   mondayUserBoardSettings: defineTable({
     accountId: v.string(),
     ownerMondayUserId: v.string(),
+    viewerMondayUserId: v.optional(v.string()),
     colorTheme: v.union(
       v.literal("neutral"),
       v.literal("sky"),
@@ -282,7 +283,13 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
-  }).index("by_account_and_owner", ["accountId", "ownerMondayUserId"]),
+  })
+    .index("by_account_and_owner", ["accountId", "ownerMondayUserId"])
+    .index("by_account_owner_and_viewer", [
+      "accountId",
+      "ownerMondayUserId",
+      "viewerMondayUserId",
+    ]),
 
   mondayMonthlyMigrationJobs: defineTable({
     status: v.union(
