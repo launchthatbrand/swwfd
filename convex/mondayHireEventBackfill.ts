@@ -9,43 +9,31 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  clampPageSize,
+  createUnifiedMigrationJobRowValidator,
+  getMondayBackfillEnv,
+  monthKeyToRange,
+  normalizeMonthKey,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type HireEventBackfillStatus = "running" | "done" | "failed" | "cancelled";
+type HireEventBackfillStatus = BackfillJobStatus;
 
-const getHireEventBackfillEnv = () => {
-  const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
-  if (!contactBoardId) throw new Error("MONDAY_BOARD_ID is missing");
-  return { contactBoardId };
-};
+const hireEventBackfillStatusValidator = backfillJobStatusValidator;
 
-const normalizeMonthKey = (value: string) => {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}$/.test(trimmed)) {
-    throw new Error(`monthKey must be YYYY-MM, got: ${trimmed}`);
-  }
-  return trimmed;
-};
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.literal("hire_event_backfill"),
+);
 
-const monthKeyToRange = (monthKey: string) => {
-  const [yearText, monthText] = monthKey.split("-");
-  const year = Number(yearText);
-  const month = Number(monthText);
-  if (!Number.isFinite(year) || !Number.isFinite(month)) {
-    throw new Error("Invalid monthKey");
-  }
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 0));
-  const dateFrom = start.toISOString().slice(0, 10);
-  const dateTo = end.toISOString().slice(0, 10);
-  return { dateFrom, dateTo };
-};
-
-const clampPageSize = (value: number | undefined) =>
-  Math.max(25, Math.min(200, Math.floor(value ?? 50)));
+const getHireEventBackfillEnv = () =>
+  getMondayBackfillEnv({ requireTouchBoard: false });
 
 export const getLatestJob = query({
   args: {},
@@ -108,6 +96,69 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayHireEventBackfillJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "hire event backfill",
+        "hire_event_backfill",
+        job._id,
+        job.workflowId ?? "",
+        job.monthKey,
+        job.dateFrom,
+        job.dateTo,
+        job.contactBoardId,
+        job.subitemBoardId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "hire_event_backfill" as const,
+        toolLabel: "Hire Event Backfill",
+        legacy: false,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: job.dryRun,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: job.subitemBoardId ?? null,
+        sourceTag: null,
+        baselineDate: null,
+        monthTag: null,
+        monthKey: job.monthKey,
+        dateFrom: job.dateFrom,
+        dateTo: job.dateTo,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: job.inRangeContacts,
+        skippedCount: job.skippedEvents,
+        createdCount: job.createdEvents,
+        updatedCount: 0,
+        errorCount: job.errorsCount,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

@@ -38,6 +38,8 @@ import {
   readTokenFromLocation,
   readTokenFromSdkResponse,
 } from "../helpers";
+import { useAction, useConvex } from "convex/react";
+import { api } from "@convex-config/_generated/api";
 import type {
   MondayIdentity,
   MondayMetricsContractorReferralBreakdown,
@@ -338,9 +340,11 @@ const ContractorReferralsChart = ({
 
 export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const monday: MondayClientSdk = useMemo(() => mondaySdkInitialize(), []);
+  const convex = useConvex();
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const getMetricsAction = useAction(api.mondayMetricsNode.getMetrics);
   const [isHiredContactsExpanded, setIsHiredContactsExpanded] = useState(false);
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
@@ -435,69 +439,56 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         }
         let maybeToken = sdkToken ?? queryToken;
 
-        if (!maybeToken) {
-          const devAuthResponse = await fetch("/api/monday/auth/session", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({}),
-            cache: "no-store",
+        const verifySessionWithConvex = async (token: string): Promise<MondayIdentity> => {
+          const result = await convex.action(api.mondayAuth.verifyAndProvision, {
+            sessionToken: token,
           });
-          const devAuthData = (await devAuthResponse.json()) as {
-            ok?: boolean;
-            error?: string;
-            identity?: MondayIdentity;
-            sessionToken?: string;
+          return {
+            userId: result.userId,
+            accountId: result.accountId,
+            boardId: result.boardId,
+            appClientId: result.appClientId,
           };
-          if (devAuthResponse.ok && devAuthData.ok && devAuthData.identity) {
-            setSessionToken(devAuthData.sessionToken ?? MONDAY_DEV_BYPASS_TOKEN);
-            setIdentity(devAuthData.identity);
-            setIsMondayEmbeddedContext(false);
-            return;
-          }
-          throw new Error(
-            devAuthData.error ?? "Missing Monday session token from SDK/query string",
-          );
-        }
-
-        const verifyWithToken = async (token: string) => {
-          const authResponse = await fetch("/api/monday/auth/session", {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-monday-session-token": token,
-            },
-            body: JSON.stringify({ sessionToken: token }),
-            cache: "no-store",
-          });
-          const authData = (await authResponse.json()) as {
-            ok: boolean;
-            error?: string;
-            identity?: MondayIdentity;
-            sessionToken?: string;
-          };
-          return { authResponse, authData };
         };
 
-        let { authResponse, authData } = await verifyWithToken(maybeToken);
-
-        if (
-          (!authResponse.ok || !authData.ok || !authData.identity) &&
-          authData.error === "signature verification failed" &&
-          sdkToken &&
-          sdkToken !== maybeToken
-        ) {
-          maybeToken = sdkToken;
-          ({ authResponse, authData } = await verifyWithToken(maybeToken));
+        if (!maybeToken) {
+          try {
+            const devIdentity = await verifySessionWithConvex("");
+            setSessionToken(MONDAY_DEV_BYPASS_TOKEN);
+            setIdentity(devIdentity);
+            setIsMondayEmbeddedContext(false);
+            return;
+          } catch (devError) {
+            const message =
+              devError instanceof Error
+                ? devError.message
+                : "Missing Monday session token from SDK/query string";
+            throw new Error(message);
+          }
         }
 
-        if (!authResponse.ok || !authData.ok || !authData.identity) {
-          throw new Error(authData.error ?? "Unable to verify Monday session");
+        let verifiedIdentity: MondayIdentity;
+        try {
+          verifiedIdentity = await verifySessionWithConvex(maybeToken);
+        } catch (firstError) {
+          const message =
+            firstError instanceof Error
+              ? firstError.message
+              : "Unable to verify Monday session";
+          if (
+            message === "signature verification failed" &&
+            sdkToken &&
+            sdkToken !== maybeToken
+          ) {
+            maybeToken = sdkToken;
+            verifiedIdentity = await verifySessionWithConvex(maybeToken);
+          } else {
+            throw new Error(message);
+          }
         }
 
-        setSessionToken(authData.sessionToken ?? maybeToken);
-        setIdentity(authData.identity);
+        setSessionToken(maybeToken);
+        setIdentity(verifiedIdentity);
         setIsMondayEmbeddedContext(isEmbeddedMondaySessionToken(maybeToken));
       } catch (error) {
         const message =
@@ -512,47 +503,41 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     };
 
     void initEmbeddedSession();
-  }, [monday]);
+  }, [monday, convex]);
 
   const metricsQuery = useQuery({
     queryKey: ["monday-metrics", sessionToken, selectedFiscalYear, effectiveOwnerId],
     enabled: !!sessionToken,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("fiscalYear", selectedFiscalYear);
-      if (effectiveOwnerId) {
-        params.set("ownerId", effectiveOwnerId);
-      }
-
-      const response = await fetch(`/api/monday/metrics?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      const result = await getMetricsAction({
+        sessionToken: sessionToken!,
+        fiscalYear: selectedFiscalYear,
+        ownerId: effectiveOwnerId || undefined,
       });
-      const data = (await response.json()) as MondayMetricsResponse;
-      if (!response.ok || !data.ok || !data.summary) {
-        throw new Error(data.error ?? "Failed to load metrics");
-      }
-      return data.summary;
+      return result.summary;
     },
     staleTime: 30_000,
   });
   const userBoardSettingsQuery = useQuery({
-    queryKey: ["monday-user-board-settings", sessionToken, settingsScopeOwnerId],
-    enabled: !!sessionToken && settingsScopeOwnerId.length > 0,
+    queryKey: [
+      "monday-user-board-settings",
+      sessionToken,
+      identity?.accountId,
+      identity?.userId,
+      settingsScopeOwnerId,
+    ],
+    enabled:
+      !!sessionToken &&
+      !!identity?.accountId?.trim() &&
+      !!identity?.userId?.trim() &&
+      settingsScopeOwnerId.length > 0,
     queryFn: async () => {
-      const params = new URLSearchParams();
-      params.set("ownerId", settingsScopeOwnerId);
-      const response = await fetch(`/api/monday/settings/user-board?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-        headers: sessionToken ? { "x-monday-session-token": sessionToken } : undefined,
+      const result = await convex.query(api.mondayUserBoardSettings.getForOwnerBoard, {
+        accountId: identity!.accountId.trim(),
+        ownerMondayUserId: settingsScopeOwnerId,
+        viewerMondayUserId: identity!.userId.trim(),
       });
-      const data = (await response.json()) as MondayUserBoardSettingsResponse;
-      if (!response.ok || !data.ok) {
-        throw new Error(data.error ?? "Failed to load board settings");
-      }
-      return parseUserBoardGeneralSettings(data.settings);
+      return parseUserBoardGeneralSettings(result ?? undefined);
     },
     staleTime: 30_000,
   });

@@ -71,6 +71,11 @@ const TYPE_CONFIG: Record<
     label: "Resume Referral",
     bgColor: "bg-teal-50 dark:bg-teal-950/40",
   },
+  job_referral: {
+    icon: UserCheck,
+    label: "Referral",
+    bgColor: "bg-cyan-50 dark:bg-cyan-950/40",
+  },
   merge: {
     icon: UserCheck,
     label: "Merge",
@@ -125,6 +130,12 @@ const MessageBubble = ({
   const Icon = config.icon;
   const creator = subitem.creatorProfile;
   const methodBadgeLabel = subitem.methodOfCommunication?.trim() ?? "";
+  const intentLabel =
+    subitem.intent === "internal_note"
+      ? "Internal Note"
+      : subitem.intent === "campaign"
+        ? "Campaign"
+        : "Conversation";
 
   const avatar = creator?.photoThumb ? (
     <img
@@ -189,6 +200,9 @@ const MessageBubble = ({
                 {methodBadgeLabel}
               </Badge>
             ) : null}
+            <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+              {intentLabel}
+            </Badge>
 
             <div className="flex items-center gap-0 opacity-0 transition-opacity group-hover:opacity-100">
               <Button
@@ -235,6 +249,7 @@ interface ContactUpdatesProps {
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmitting: boolean;
   currentUserId: string | null;
+  hideComposer?: boolean;
 }
 
 export const ContactUpdates = ({
@@ -249,6 +264,7 @@ export const ContactUpdates = ({
   onUpdateSubitemDate,
   isSubmitting,
   currentUserId,
+  hideComposer = false,
 }: ContactUpdatesProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -379,7 +395,8 @@ export const ContactUpdates = ({
           )}
         </div>
 
-        <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
+        {hideComposer ? null : (
+          <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
           {showAdvancedComposer ? (
             <>
               <div className="mb-2 flex items-center justify-between">
@@ -445,11 +462,15 @@ export const ContactUpdates = ({
               </Button>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Post-submit: pick type & date */}
-      <Dialog open={showTypeDialog} onOpenChange={setShowTypeDialog}>
+      <Dialog
+        open={!hideComposer && showTypeDialog}
+        onOpenChange={setShowTypeDialog}
+      >
         <DialogContent className="sm:max-w-[380px]">
           <DialogHeader>
             <DialogTitle>Classify update</DialogTitle>

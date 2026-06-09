@@ -2,7 +2,8 @@
 
 import { Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
+import { AnimatePresence, motion } from "motion/react";
 
 import { Button } from "@launchthatapp/ui/button";
 import {
@@ -12,125 +13,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@launchthatapp/ui/dialog";
-import { Input } from "@launchthatapp/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@launchthatapp/ui/select";
 import { toast } from "@launchthatapp/ui/toast";
 
 import {
-  QUESTIONNAIRE_ENTRY_LEVEL_OPTIONS,
-  QUESTIONNAIRE_SKILLED_OPTIONS,
-  QUESTIONNAIRE_TRANSPORTATION,
-  QUESTIONNAIRE_UPDATE_ACTION,
-  QUESTIONNAIRE_WORK_SCHEDULE,
-  QUESTIONNAIRE_YES_NO,
-} from "../constants";
+  DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
+  EMPTY_QUESTIONNAIRE_VALUES,
+  PUBLIC_QUESTIONNAIRE_STEPS,
+  QuestionaireForm,
+  QuestionnaireQualificationsInput,
+  type QuestionnaireFieldOptions,
+  type QuestionnaireQualification,
+  type QuestionnaireFormValues,
+} from "~/components/forms/questionaire-form";
+import { useAction } from "convex/react";
+import { api } from "@convex-config/_generated/api";
+
+import { QUESTIONNAIRE_UPDATE_ACTION } from "../constants";
 import type { MondayRecord } from "../types";
-
-const SELECT_NONE = "__none__";
-
-export interface QuestionnaireFormValues {
-  gender: string;
-  entryLevel: string;
-  skilled: string;
-  startDate: string;
-  ethnicity: string;
-  educationLevel: string;
-  usWorkEligible: string;
-  veteran: string;
-  secondChance: string;
-  transportation: string;
-  workSchedule: string;
-  candidateEducation: string;
-  desiredHourlyWage: string;
-}
-
-const EMPTY_VALUES: QuestionnaireFormValues = {
-  gender: "",
-  entryLevel: "",
-  skilled: "",
-  startDate: "",
-  ethnicity: "",
-  educationLevel: "",
-  usWorkEligible: "",
-  veteran: "",
-  secondChance: "",
-  transportation: "",
-  workSchedule: "",
-  candidateEducation: "",
-  desiredHourlyWage: "",
-};
-
-function CreatableCombo({
-  label,
-  value,
-  onChange,
-  options,
-  id,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: readonly string[];
-  id: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const filtered = useMemo(() => {
-    const q = value.trim().toLowerCase();
-    if (!q) return [...options].slice(0, 50);
-    return options.filter((o) => o.toLowerCase().includes(q)).slice(0, 50);
-  }, [options, value]);
-
-  return (
-    <div className="space-y-1">
-      <label htmlFor={id} className="text-xs font-medium tracking-wide">
-        {label}
-      </label>
-      <div className="relative">
-        <Input
-          id={id}
-          value={value}
-          onChange={(e) => {
-            onChange(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => {
-            window.setTimeout(() => setOpen(false), 120);
-          }}
-          autoComplete="off"
-        />
-        {open && filtered.length > 0 ? (
-          <ul
-            className="bg-popover text-popover-foreground absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border p-1 shadow-md"
-            role="listbox"
-          >
-            {filtered.map((opt) => (
-              <li key={opt}>
-                <button
-                  type="button"
-                  className="hover:bg-muted focus:bg-muted w-full rounded px-2 py-1.5 text-left text-sm"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onChange(opt);
-                    setOpen(false);
-                  }}
-                >
-                  {opt}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 export function QuestionnaireFormDialog({
   open,
@@ -140,6 +39,7 @@ export function QuestionnaireFormDialog({
   staticMode,
   resolveItemId,
   onSaved,
+  fieldOptions = DEFAULT_QUESTIONNAIRE_FIELD_OPTIONS,
 }: {
   open: boolean;
   onOpenChange: (next: boolean) => void;
@@ -148,26 +48,59 @@ export function QuestionnaireFormDialog({
   staticMode: boolean;
   resolveItemId: (record: MondayRecord) => string;
   onSaved: () => Promise<void>;
+  fieldOptions?: QuestionnaireFieldOptions;
 }) {
   const [slideIndex, setSlideIndex] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [navigationDirection, setNavigationDirection] = useState(1);
   const [savedItemIds, setSavedItemIds] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
+  const [qualifications, setQualifications] = useState<QuestionnaireQualification[]>([]);
+  const saveQuestionnaireAction = useAction(api.mondayQuestionnaireNode.saveQuestionnaire);
+  const createRecordUpdateAction = useAction(api.mondayRecordsNode.createRecordUpdate);
   const valuesByItemIdRef = useRef<Map<string, QuestionnaireFormValues>>(new Map());
+  const qualificationsByItemIdRef = useRef<Map<string, QuestionnaireQualification[]>>(new Map());
+  const stepByItemIdRef = useRef<Map<string, number>>(new Map());
 
   const recordsKey = records.map((r) => resolveItemId(r)).join("|");
 
   const form = useForm<QuestionnaireFormValues>({
-    defaultValues: EMPTY_VALUES,
+    defaultValues: EMPTY_QUESTIONNAIRE_VALUES,
   });
 
-  const { control, register, handleSubmit, reset, getValues } = form;
+  const { handleSubmit, reset, getValues } = form;
+  const steps = PUBLIC_QUESTIONNAIRE_STEPS;
+  const activeStep = steps[stepIndex];
+  const stepCount = steps.length;
+  const qualificationSuggestions = useMemo(
+    () =>
+      Array.from(new Set([...fieldOptions.entryLevel, ...fieldOptions.skilled]))
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .sort((a, b) => a.localeCompare(b)),
+    [fieldOptions.entryLevel, fieldOptions.skilled],
+  );
+  const mapQualificationsToColumns = (items: QuestionnaireQualification[]) => {
+    const entryLevel = items
+      .filter((item) => item.skillLevel === "entry")
+      .map((item) => item.workType);
+    const skilled = items
+      .filter((item) => item.skillLevel === "skilled")
+      .map((item) => item.workType);
+    return { entryLevel, skilled };
+  };
 
   useEffect(() => {
     if (!open) return;
     setSlideIndex(0);
+    setStepIndex(0);
+    setNavigationDirection(1);
+    setQualifications([]);
     valuesByItemIdRef.current = new Map();
+    qualificationsByItemIdRef.current = new Map();
+    stepByItemIdRef.current = new Map();
     setSavedItemIds(new Set());
-    reset(EMPTY_VALUES);
+    reset(EMPTY_QUESTIONNAIRE_VALUES);
   }, [open, recordsKey, reset]);
 
   const activeRecord = records[slideIndex];
@@ -180,14 +113,22 @@ export function QuestionnaireFormDialog({
       if (!activeRecord || records.length === 0) return;
       const curId = resolveItemId(activeRecord);
       valuesByItemIdRef.current.set(curId, getValues());
+      qualificationsByItemIdRef.current.set(curId, qualifications);
+      stepByItemIdRef.current.set(curId, stepIndex);
       setSlideIndex(nextIndex);
+      setStepIndex(0);
       const nextRecord = records[nextIndex];
       if (!nextRecord) return;
       const nextId = resolveItemId(nextRecord);
       const stored = valuesByItemIdRef.current.get(nextId);
-      reset(stored ?? EMPTY_VALUES);
+      reset(stored ?? EMPTY_QUESTIONNAIRE_VALUES);
+      setQualifications(qualificationsByItemIdRef.current.get(nextId) ?? []);
+      const storedStep = stepByItemIdRef.current.get(nextId);
+      if (typeof storedStep === "number" && storedStep >= 0 && storedStep < stepCount) {
+        setStepIndex(storedStep);
+      }
     },
-    [activeRecord, getValues, records, reset, resolveItemId],
+    [activeRecord, getValues, qualifications, records, reset, resolveItemId, stepCount, stepIndex],
   );
 
   const onSubmit = handleSubmit(async (data) => {
@@ -203,23 +144,26 @@ export function QuestionnaireFormDialog({
 
     setSaving(true);
     try {
-      const response = await fetch(
-        `/api/monday/records/${encodeURIComponent(activeItemId)}/questionnaire`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "content-type": "application/json",
-            "x-monday-session-token": sessionToken,
-          },
-          body: JSON.stringify(data),
-        },
-      );
-      const result = (await response.json()) as { ok?: boolean; error?: string };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.error ?? "Failed to save questionnaire");
+      const shouldLogScreeningCompleted = !savedItemIds.has(activeItemId);
+      const mappedQualifications = mapQualificationsToColumns(qualifications);
+      await saveQuestionnaireAction({
+        sessionToken,
+        itemId: activeItemId,
+        ...data,
+        entryLevel: mappedQualifications.entryLevel,
+        skilled: mappedQualifications.skilled,
+      });
+      if (shouldLogScreeningCompleted) {
+        await createRecordUpdateAction({
+          sessionToken,
+          itemId: activeItemId,
+          updateType: "questionnaire",
+          body: "Screening Completed",
+          suppressApprovalStepMarking: true,
+        });
       }
       valuesByItemIdRef.current.set(activeItemId, data);
+      qualificationsByItemIdRef.current.set(activeItemId, qualifications);
       setSavedItemIds((prev) => new Set(prev).add(activeItemId));
       await onSaved();
       if (records.length === 1) {
@@ -234,259 +178,110 @@ export function QuestionnaireFormDialog({
     }
   });
 
+  const handleNextStep = useCallback(async () => {
+    if (!activeStep) return;
+    if (stepIndex < stepCount - 1) {
+      setNavigationDirection(1);
+      setStepIndex((prev) => prev + 1);
+    }
+  }, [activeStep, stepCount, stepIndex]);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isBulk
-              ? QUESTIONNAIRE_UPDATE_ACTION.label
-              : (activeRecord?.name ?? "Contact")}
-          </DialogTitle>
-          {isBulk && activeRecord ? (
-            <DialogDescription>
-              Contact {slideIndex + 1} of {records.length}: {activeRecord.name}
-            </DialogDescription>
+        <DialogHeader className="border-b bg-background pb-3">
+          {isBulk ? (
+            <>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  disabled={slideIndex <= 0 || saving}
+                  onClick={() => persistCurrentThen(slideIndex - 1)}
+                  aria-label="Previous contact"
+                  title="Previous contact"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-7 w-7 shrink-0"
+                  disabled={slideIndex >= records.length - 1 || saving}
+                  onClick={() => persistCurrentThen(slideIndex + 1)}
+                  aria-label="Next contact"
+                  title="Next contact"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <DialogTitle className="min-w-0 truncate">
+                  {activeRecord?.name ?? QUESTIONNAIRE_UPDATE_ACTION.label}
+                </DialogTitle>
+              </div>
+              <DialogDescription>
+                Contact {slideIndex + 1} of {records.length}
+              </DialogDescription>
+            </>
           ) : (
-            <DialogDescription>{QUESTIONNAIRE_UPDATE_ACTION.label}</DialogDescription>
+            <>
+              <DialogTitle>{activeRecord?.name ?? "Contact"}</DialogTitle>
+              <DialogDescription>{QUESTIONNAIRE_UPDATE_ACTION.label}</DialogDescription>
+            </>
           )}
         </DialogHeader>
 
-        {isBulk ? (
-          <div className="flex items-center justify-between gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              disabled={slideIndex <= 0 || saving}
-              onClick={() => persistCurrentThen(slideIndex - 1)}
-              aria-label="Previous contact"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="text-muted-foreground text-sm">
-              {slideIndex + 1} / {records.length}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              disabled={slideIndex >= records.length - 1 || saving}
-              onClick={() => persistCurrentThen(slideIndex + 1)}
-              aria-label="Next contact"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        ) : null}
-
         <form className="space-y-3" onSubmit={(e) => void onSubmit(e)}>
-          <div className="space-y-1">
-            <label htmlFor="q-gender" className="text-xs font-medium tracking-wide">
-              Gender
-            </label>
-            <Input id="q-gender" {...register("gender")} />
-          </div>
-
-          <Controller
-            name="entryLevel"
-            control={control}
-            render={({ field }) => (
-              <CreatableCombo
-                id="q-entry-level"
-                label="Entry-level"
-                value={field.value}
-                onChange={field.onChange}
-                options={QUESTIONNAIRE_ENTRY_LEVEL_OPTIONS}
+          <div className="space-y-2">
+            <div className="text-muted-foreground flex items-center justify-between text-xs">
+              <span>
+                Step {stepIndex + 1} of {stepCount}
+              </span>
+              <span>{Math.round(((stepIndex + 1) / stepCount) * 100)}%</span>
+            </div>
+            <div className="bg-muted h-2 w-full rounded-full">
+              <div
+                className="h-2 rounded-full bg-slate-900 transition-all duration-300"
+                style={{ width: `${((stepIndex + 1) / stepCount) * 100}%` }}
               />
-            )}
-          />
-
-          <Controller
-            name="skilled"
-            control={control}
-            render={({ field }) => (
-              <CreatableCombo
-                id="q-skilled"
-                label="Skilled"
-                value={field.value}
-                onChange={field.onChange}
-                options={QUESTIONNAIRE_SKILLED_OPTIONS}
-              />
-            )}
-          />
-
-          <div className="space-y-1">
-            <label htmlFor="q-start" className="text-xs font-medium tracking-wide">
-              Date you can start
-            </label>
-            <Input id="q-start" type="date" {...register("startDate")} />
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <label htmlFor="q-ethnicity" className="text-xs font-medium tracking-wide">
-              Ethnicity
-            </label>
-            <Input id="q-ethnicity" {...register("ethnicity")} />
-          </div>
+          <div className="relative min-h-[360px] overflow-hidden rounded-lg border p-4">
+            <AnimatePresence custom={navigationDirection} mode="wait">
+              <motion.div
+                key={`${activeItemId}:${activeStep.id}`}
+                custom={navigationDirection}
+                initial={{ opacity: 0, x: navigationDirection > 0 ? 30 : -30 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: navigationDirection > 0 ? -30 : 30 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="space-y-4"
+              >
+                <div className="space-y-1">
+                  <h3 className="text-base font-semibold">{activeStep.title}</h3>
+                  <p className="text-muted-foreground text-xs">{activeStep.subtitle}</p>
+                </div>
 
-          <div className="space-y-1">
-            <label htmlFor="q-edu-level" className="text-xs font-medium tracking-wide">
-              Highest level of education
-            </label>
-            <Input id="q-edu-level" {...register("educationLevel")} />
-          </div>
+                {activeStep.requiresQualificationSelection ? (
+                  <QuestionnaireQualificationsInput
+                    suggestions={qualificationSuggestions}
+                    qualifications={qualifications}
+                    onChange={(next) => {
+                      setQualifications(next);
+                    }}
+                  />
+                ) : null}
 
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide">
-              Are you eligible to work in the United States?
-            </p>
-            <Controller
-              name="usWorkEligible"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value.trim() ? field.value : SELECT_NONE}
-                  onValueChange={(v) => field.onChange(v === SELECT_NONE ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    {QUESTIONNAIRE_YES_NO.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide">Are you a veteran?</p>
-            <Controller
-              name="veteran"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value.trim() ? field.value : SELECT_NONE}
-                  onValueChange={(v) => field.onChange(v === SELECT_NONE ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    {QUESTIONNAIRE_YES_NO.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide">
-              Are you a second chance job seeker?
-            </p>
-            <Controller
-              name="secondChance"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value.trim() ? field.value : SELECT_NONE}
-                  onValueChange={(v) => field.onChange(v === SELECT_NONE ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    {QUESTIONNAIRE_YES_NO.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide">
-              Do you have reliable transportation?
-            </p>
-            <Controller
-              name="transportation"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value.trim() ? field.value : SELECT_NONE}
-                  onValueChange={(v) => field.onChange(v === SELECT_NONE ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    {QUESTIONNAIRE_TRANSPORTATION.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide">
-              Are you looking for full-time or part-time work
-            </p>
-            <Controller
-              name="workSchedule"
-              control={control}
-              render={({ field }) => (
-                <Select
-                  value={field.value.trim() ? field.value : SELECT_NONE}
-                  onValueChange={(v) => field.onChange(v === SELECT_NONE ? "" : v)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={SELECT_NONE}>—</SelectItem>
-                    {QUESTIONNAIRE_WORK_SCHEDULE.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {o}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="q-cand-edu" className="text-xs font-medium tracking-wide">
-              Candidate Education
-            </label>
-            <Input id="q-cand-edu" {...register("candidateEducation")} />
-          </div>
-
-          <div className="space-y-1">
-            <label htmlFor="q-wage" className="text-xs font-medium tracking-wide">
-              Desired Hourly Wage
-            </label>
-            <Input id="q-wage" {...register("desiredHourlyWage")} />
+                <QuestionaireForm
+                  form={form}
+                  fieldOptions={fieldOptions}
+                  visibleFields={activeStep.fields}
+                />
+              </motion.div>
+            </AnimatePresence>
           </div>
 
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
@@ -499,9 +294,26 @@ export function QuestionnaireFormDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Close
             </Button>
-            <Button type="submit" disabled={saving || !activeRecord}>
-              {saving ? "Saving..." : "Save"}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || stepIndex <= 0}
+              onClick={() => {
+                setNavigationDirection(-1);
+                setStepIndex((prev) => Math.max(0, prev - 1));
+              }}
+            >
+              Back
             </Button>
+            {stepIndex < stepCount - 1 ? (
+              <Button type="button" disabled={saving || !activeRecord} onClick={() => void handleNextStep()}>
+                Next
+              </Button>
+            ) : (
+              <Button type="submit" disabled={saving || !activeRecord}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            )}
           </div>
         </form>
       </DialogContent>

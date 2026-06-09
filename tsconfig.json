@@ -37,11 +37,15 @@
     ]
   },
   "include": [
-    ".",
+    "src",
+    "convex",
+    "next-env.d.ts",
+    "eslint.config.ts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "packages/**/dist"
   ]
 }

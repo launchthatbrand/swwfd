@@ -17,16 +17,29 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  clampPageSize as clampPageSizeShared,
+  createUnifiedMigrationJobRowValidator,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type MigrationStatus = "running" | "done" | "failed" | "cancelled";
+type MigrationStatus = BackfillJobStatus;
 
 const DEFAULT_PAGE_SIZE = 20;
 const MIN_PAGE_SIZE = 5;
 const MAX_PAGE_SIZE = 50;
+
+const migrationJobStatusValidator = backfillJobStatusValidator;
+
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.literal("monthly_migration"),
+);
 
 const normalizeMonthTag = (value: string | undefined, sourceBoardId: string) => {
   const raw = (value ?? "").trim();
@@ -35,10 +48,8 @@ const normalizeMonthTag = (value: string | undefined, sourceBoardId: string) => 
   return `board_${sourceBoardId}_${date}`;
 };
 
-const clampPageSize = (value: number | undefined) => {
-  if (!Number.isFinite(value)) return DEFAULT_PAGE_SIZE;
-  return Math.min(MAX_PAGE_SIZE, Math.max(MIN_PAGE_SIZE, Math.floor(value!)));
-};
+const clampPageSize = (value: number | undefined) =>
+  clampPageSizeShared(value, { min: MIN_PAGE_SIZE, max: MAX_PAGE_SIZE, fallback: DEFAULT_PAGE_SIZE });
 
 export const getLatestJob = query({
   args: {},
@@ -119,6 +130,70 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayMonthlyMigrationJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "monthly migration",
+        "monthly_migration",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceBoardId,
+        job.sourceBoardName ?? "",
+        job.targetBoardId,
+        job.monthTag,
+        job.monthKey ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "monthly_migration" as const,
+        toolLabel: "Monthly Migration",
+        legacy: false,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: job.dryRun,
+        sourceBoardId: job.sourceBoardId,
+        sourceBoardName: job.sourceBoardName ?? null,
+        targetBoardId: job.targetBoardId,
+        sourceTag: null,
+        baselineDate: null,
+        monthTag: job.monthTag,
+        monthKey: job.monthKey ?? null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: job.mappedContacts,
+        skippedCount: job.skippedContacts,
+        createdCount:
+          job.createdParentUpdates + job.createdSubitems + job.createdSubitemUpdates,
+        updatedCount: job.updatedProgressColumns ?? 0,
+        errorCount: job.errorsCount,
+        warningCount: job.warningsCount,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

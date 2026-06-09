@@ -1,5 +1,6 @@
 import type {
   ApprovalStepConfig,
+  GridSortField,
   MondayFeatureFlags,
   UserBoardColorTheme,
   UserBoardCustomTheme,
@@ -18,6 +19,7 @@ export const CONTACT_UPDATE_TYPE_OPTIONS = [
   { value: "questionnaire", label: "Questionaire Update" },
   { value: "resume", label: "Resume Update" },
   { value: "resume_referral", label: "Resume Referral Update" },
+  { value: "job_referral", label: "Job Referral Update" },
 ] as const;
 
 export type ContactUpdateType = (typeof CONTACT_UPDATE_TYPE_OPTIONS)[number]["value"];
@@ -34,11 +36,6 @@ export const CONTACT_UPDATE_ACTION_BUTTONS: {
     },
     {
       type: "followup",
-      label: "Questionnaire Sent",
-      defaultBody: "Questionnaire Sent",
-    },
-    {
-      type: "questionnaire",
       label: "Questionnaire Sent",
       defaultBody: "Questionnaire Sent",
     },
@@ -88,6 +85,14 @@ export const QUESTIONNAIRE_TRANSPORTATION = ["Yes", "No", "Public"] as const;
 
 export const QUESTIONNAIRE_WORK_SCHEDULE = ["Full-time", "Part-time", "Both"] as const;
 
+export const GRID_SORT_OPTIONS: Array<{ value: GridSortField; label: string }> = [
+  { value: "name", label: "Contact Name" },
+  { value: "resume", label: "Resume" },
+  { value: "tags", label: "Tags" },
+  { value: "createdAt", label: "Created" },
+  { value: "updatedAt", label: "Updated" },
+];
+
 export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   Exclude<ContactUpdateType, "general">,
   string
@@ -97,10 +102,12 @@ export const UPDATE_SUBITEM_NAME_BY_TYPE: Record<
   questionnaire: "Questionaire Update",
   resume: "Resume Update",
   resume_referral: "Resume Referral Update",
+  job_referral: "Job Referral Update",
 };
 
 export const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
 export const SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID = "color_mm3j5y2v";
+export const SUBITEM_INTENT_COLUMN_ID = "color_mm40edt7";
 export const SUBITEM_NOTES_COLUMN_ID = "notes1__1";
 export const LAST_INTERACTION_DATE_COLUMN_ID = "date_mm3jfsd1";
 
@@ -111,6 +118,7 @@ export const SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE: Record<ContactUpdateType, string
   questionnaire: "Questionnaire",
   resume: "Resume",
   resume_referral: "Resume Referral",
+  job_referral: "Referral",
 };
 
 export const APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE: Partial<
@@ -186,7 +194,7 @@ export const isUserBoardPageSize = (value: unknown): value is UserBoardPageSize 
   value === 20 || value === 40 || value === 100 || value === 0;
 
 export const isUserBoardDisplayMode = (value: unknown): value is UserBoardDisplayMode =>
-  value === "table" || value === "grid" || value === "kanban";
+  value === "table" || value === "grid" || value === "kanban" || value === "chat";
 
 export const USER_BOARD_RECORD_SOURCE_OPTIONS: {
   value: UserBoardRecordSource;

@@ -36,6 +36,8 @@ import { Badge } from "@launchthatapp/ui/badge";
 import { Skeleton } from "~/components/ui/skeleton";
 import type { MondayRecord } from "../types";
 import type { HelpdeskTicket } from "~/server/monday/client";
+import { useAction } from "convex/react";
+import { api } from "@convex-config/_generated/api";
 import { useGuidedTour } from "./GuidedTourProvider";
 
 // ---------------------------------------------------------------------------
@@ -327,42 +329,31 @@ const SupportForm = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const createTicketAction = useAction(api.mondayHelpdeskNode.createTicket);
 
   const handleSubmit = async () => {
     if (!subject.trim() || !description.trim()) {
       setError("Subject and description are required.");
       return;
     }
+    if (!sessionToken) {
+      setError("Missing Monday session token");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
     try {
-      const payload: Record<string, unknown> = {
+      await createTicketAction({
+        sessionToken,
         subject: subject.trim(),
         description: description.trim(),
         priority,
         category,
-      };
-      if (linkedContact) {
-        payload.linkedContactId = linkedContact.id;
-        payload.linkedContactName = linkedContact.name;
-      }
-      if (currentUserId) {
-        payload.submitterId = currentUserId;
-      }
-
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (sessionToken) headers["x-monday-token"] = sessionToken;
-
-      const res = await fetch("/api/monday/helpdesk", {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
+        linkedContactId: linkedContact?.id,
+        linkedContactName: linkedContact?.name,
+        submitterId: currentUserId ?? undefined,
       });
-      if (!res.ok) {
-        const data = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(data?.error ?? `Request failed (${res.status})`);
-      }
       setSuccess(true);
       setTimeout(() => onSuccess(), 1200);
     } catch (err) {
@@ -560,22 +551,24 @@ export const HelpDeskDialog = ({
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [ticketsError, setTicketsError] = useState<string | null>(null);
 
+  const listTicketsAction = useAction(api.mondayHelpdeskNode.listTickets);
+
   const fetchTickets = useCallback(async () => {
+    if (!sessionToken) return;
     setTicketsLoading(true);
     setTicketsError(null);
     try {
-      const params = new URLSearchParams();
-      if (currentUserId) params.set("submitterId", currentUserId);
-      const res = await fetch(`/api/monday/helpdesk?${params.toString()}`);
-      if (!res.ok) throw new Error(`Failed (${res.status})`);
-      const data = (await res.json()) as { tickets?: HelpdeskTicket[] };
-      setTickets(data.tickets ?? []);
+      const result = await listTicketsAction({
+        sessionToken,
+        submitterId: currentUserId ?? undefined,
+      });
+      setTickets((result.tickets ?? []) as HelpdeskTicket[]);
     } catch (err) {
       setTicketsError(err instanceof Error ? err.message : "Failed to load tickets");
     } finally {
       setTicketsLoading(false);
     }
-  }, [currentUserId]);
+  }, [currentUserId, sessionToken, listTicketsAction]);
 
   useEffect(() => {
     if (open) {

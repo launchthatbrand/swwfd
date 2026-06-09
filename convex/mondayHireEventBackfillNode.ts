@@ -4,7 +4,8 @@ import { v } from "convex/values";
 
 import { internalAction } from "./_generated/server";
 
-const MONDAY_API_URL = "https://api.monday.com/v2";
+import { callMondayGraphQL } from "./lib/mondayGraphQL";
+
 const DEFAULT_HIRE_DATE_COLUMN_ID = "date_mkty234p";
 const DEFAULT_TAGS_COLUMN_ID = "dropdown_mkvw578t";
 const SUBITEM_TYPE_COLUMN_ID = "color_mm2x49t2";
@@ -12,40 +13,6 @@ const SUBITEM_DATE_COLUMN_ID = "date0";
 const SUBITEM_PERSON_COLUMN_ID = "person";
 const HIRE_EVENT_TYPE_LABEL = "Hire Event";
 const HIRE_EVENT_TOKEN_PREFIX = "hk";
-
-const getEnv = () => {
-  const apiKey = process.env.MONDAY_API_KEY?.trim() ?? "";
-  if (!apiKey) throw new Error("MONDAY_API_KEY is missing");
-  return { apiKey };
-};
-
-const callMondayGraphQL = async <TData>(
-  queryText: string,
-  variables: Record<string, unknown>,
-): Promise<TData> => {
-  const { apiKey } = getEnv();
-  const response = await fetch(MONDAY_API_URL, {
-    method: "POST",
-    headers: {
-      Authorization: apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ query: queryText, variables }),
-  });
-  if (!response.ok) {
-    throw new Error(`Monday API request failed (${response.status})`);
-  }
-  const json = (await response.json()) as {
-    data?: TData;
-    errors?: Array<{ message?: string }>;
-  };
-  if (Array.isArray(json.errors) && json.errors.length > 0) {
-    const message = json.errors.map((entry) => entry.message).filter(Boolean).join(" | ");
-    throw new Error(message || "Unknown Monday GraphQL error");
-  }
-  if (!json.data) throw new Error("Monday API returned no data");
-  return json.data;
-};
 
 const parsePeopleIds = (value: string | null | undefined) => {
   if (!value) return [] as string[];

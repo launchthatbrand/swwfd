@@ -255,6 +255,7 @@ export default defineSchema({
   mondayUserBoardSettings: defineTable({
     accountId: v.string(),
     ownerMondayUserId: v.string(),
+    viewerMondayUserId: v.optional(v.string()),
     colorTheme: v.union(
       v.literal("neutral"),
       v.literal("sky"),
@@ -273,14 +274,22 @@ export default defineSchema({
     tableDensity: v.optional(v.union(v.literal("expanded"), v.literal("compact"))),
     hoverPopoversEnabled: v.optional(v.boolean()),
     pageSize: v.optional(v.number()),
-    displayMode: v.optional(v.union(v.literal("table"), v.literal("grid"))),
+    displayMode: v.optional(
+      v.union(v.literal("table"), v.literal("grid"), v.literal("kanban"), v.literal("chat")),
+    ),
     recordSource: v.optional(
       v.union(v.literal("created_in_month"), v.literal("touched_in_month")),
     ),
     createdAt: v.number(),
     updatedAt: v.number(),
     updatedByMondayUserId: v.string(),
-  }).index("by_account_and_owner", ["accountId", "ownerMondayUserId"]),
+  })
+    .index("by_account_and_owner", ["accountId", "ownerMondayUserId"])
+    .index("by_account_owner_and_viewer", [
+      "accountId",
+      "ownerMondayUserId",
+      "viewerMondayUserId",
+    ]),
 
   mondayMonthlyMigrationJobs: defineTable({
     status: v.union(
@@ -391,6 +400,83 @@ export default defineSchema({
   })
     .index("by_jobId", ["jobId"])
     .index("by_jobId_and_contactItemId", ["jobId", "contactItemId"]),
+
+  mondaySupportConversations: defineTable({
+    mondayAccountId: v.string(),
+    sessionId: v.string(),
+    contactItemId: v.union(v.string(), v.null()),
+    contactName: v.string(),
+    contactEmail: v.union(v.string(), v.null()),
+    status: v.union(v.literal("open"), v.literal("snoozed"), v.literal("closed")),
+    mode: v.union(v.literal("agent"), v.literal("manual")),
+    assignedAgentId: v.union(v.string(), v.null()),
+    assignedAgentName: v.union(v.string(), v.null()),
+    lastMessagePreview: v.union(v.string(), v.null()),
+    lastMessageRole: v.union(v.literal("user"), v.literal("assistant"), v.null()),
+    lastMessageAt: v.union(v.number(), v.null()),
+    unreadCount: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_account_and_updatedAt", ["mondayAccountId", "updatedAt"])
+    .index("by_account_and_session", ["mondayAccountId", "sessionId"])
+    .index("by_account_and_contact", ["mondayAccountId", "contactItemId"]),
+
+  mondaySupportMessages: defineTable({
+    conversationId: v.id("mondaySupportConversations"),
+    updateType: v.union(
+      v.literal("general"),
+      v.literal("welcome_email"),
+      v.literal("followup"),
+      v.literal("questionnaire"),
+      v.literal("resume"),
+      v.literal("resume_referral"),
+      v.literal("job_referral"),
+      v.literal("merge"),
+    ),
+    role: v.union(v.literal("user"), v.literal("assistant")),
+    source: v.union(v.literal("admin"), v.literal("visitor"), v.literal("system")),
+    channel: v.union(v.literal("chat"), v.literal("email"), v.literal("sms")),
+    messageType: v.union(
+      v.literal("chat"),
+      v.literal("email_inbound"),
+      v.literal("email_outbound"),
+      v.literal("sms_inbound"),
+      v.literal("sms_outbound"),
+    ),
+    body: v.string(),
+    senderName: v.union(v.string(), v.null()),
+    senderEmail: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+  }).index("by_conversation_and_createdAt", ["conversationId", "createdAt"]),
+
+  mondaySupportNotes: defineTable({
+    conversationId: v.id("mondaySupportConversations"),
+    authorMondayUserId: v.string(),
+    authorName: v.union(v.string(), v.null()),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_conversation_and_createdAt", ["conversationId", "createdAt"]),
+
+  mondaySupportEvents: defineTable({
+    conversationId: v.id("mondaySupportConversations"),
+    type: v.string(),
+    actorMondayUserId: v.union(v.string(), v.null()),
+    actorName: v.union(v.string(), v.null()),
+    payload: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+  }).index("by_conversation_and_createdAt", ["conversationId", "createdAt"]),
+
+  mondaySupportPresence: defineTable({
+    conversationId: v.id("mondaySupportConversations"),
+    userId: v.string(),
+    userName: v.union(v.string(), v.null()),
+    userType: v.union(v.literal("agent"), v.literal("visitor")),
+    status: v.union(v.literal("online"), v.literal("typing"), v.literal("idle")),
+    lastSeenAt: v.number(),
+  })
+    .index("by_conversation_and_lastSeenAt", ["conversationId", "lastSeenAt"])
+    .index("by_conversation_and_user", ["conversationId", "userId"]),
 
   outlookConnections: defineTable({
     mondayAccountId: v.string(),

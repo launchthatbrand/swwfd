@@ -530,6 +530,210 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondaySupportConversations: {
+    document: {
+      assignedAgentId: string | null;
+      assignedAgentName: string | null;
+      contactEmail: string | null;
+      contactItemId: string | null;
+      contactName: string;
+      createdAt: number;
+      lastMessageAt: number | null;
+      lastMessagePreview: string | null;
+      lastMessageRole: "user" | "assistant" | null;
+      mode: "agent" | "manual";
+      mondayAccountId: string;
+      sessionId: string;
+      status: "open" | "snoozed" | "closed";
+      unreadCount: number;
+      updatedAt: number;
+      _id: Id<"mondaySupportConversations">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "assignedAgentId"
+      | "assignedAgentName"
+      | "contactEmail"
+      | "contactItemId"
+      | "contactName"
+      | "createdAt"
+      | "lastMessageAt"
+      | "lastMessagePreview"
+      | "lastMessageRole"
+      | "mode"
+      | "mondayAccountId"
+      | "sessionId"
+      | "status"
+      | "unreadCount"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_contact: [
+        "mondayAccountId",
+        "contactItemId",
+        "_creationTime",
+      ];
+      by_account_and_session: ["mondayAccountId", "sessionId", "_creationTime"];
+      by_account_and_updatedAt: [
+        "mondayAccountId",
+        "updatedAt",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondaySupportEvents: {
+    document: {
+      actorMondayUserId: string | null;
+      actorName: string | null;
+      conversationId: Id<"mondaySupportConversations">;
+      createdAt: number;
+      payload: string | null;
+      type: string;
+      _id: Id<"mondaySupportEvents">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "actorMondayUserId"
+      | "actorName"
+      | "conversationId"
+      | "createdAt"
+      | "payload"
+      | "type";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_conversation_and_createdAt: [
+        "conversationId",
+        "createdAt",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondaySupportMessages: {
+    document: {
+      body: string;
+      channel: "chat" | "email" | "sms";
+      conversationId: Id<"mondaySupportConversations">;
+      createdAt: number;
+      messageType:
+        | "chat"
+        | "email_inbound"
+        | "email_outbound"
+        | "sms_inbound"
+        | "sms_outbound";
+      role: "user" | "assistant";
+      senderEmail: string | null;
+      senderName: string | null;
+      source: "admin" | "visitor" | "system";
+      updateType:
+        | "general"
+        | "welcome_email"
+        | "followup"
+        | "questionnaire"
+        | "resume"
+        | "resume_referral"
+        | "job_referral"
+        | "merge";
+      _id: Id<"mondaySupportMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "body"
+      | "channel"
+      | "conversationId"
+      | "createdAt"
+      | "messageType"
+      | "role"
+      | "senderEmail"
+      | "senderName"
+      | "source"
+      | "updateType";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_conversation_and_createdAt: [
+        "conversationId",
+        "createdAt",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondaySupportNotes: {
+    document: {
+      authorMondayUserId: string;
+      authorName: string | null;
+      body: string;
+      conversationId: Id<"mondaySupportConversations">;
+      createdAt: number;
+      _id: Id<"mondaySupportNotes">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "authorMondayUserId"
+      | "authorName"
+      | "body"
+      | "conversationId"
+      | "createdAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_conversation_and_createdAt: [
+        "conversationId",
+        "createdAt",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondaySupportPresence: {
+    document: {
+      conversationId: Id<"mondaySupportConversations">;
+      lastSeenAt: number;
+      status: "online" | "typing" | "idle";
+      userId: string;
+      userName: string | null;
+      userType: "agent" | "visitor";
+      _id: Id<"mondaySupportPresence">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "conversationId"
+      | "lastSeenAt"
+      | "status"
+      | "userId"
+      | "userName"
+      | "userType";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_conversation_and_lastSeenAt: [
+        "conversationId",
+        "lastSeenAt",
+        "_creationTime",
+      ];
+      by_conversation_and_user: ["conversationId", "userId", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayTouchBackfillJobs: {
     document: {
       baselineDate: string;
@@ -709,7 +913,7 @@ export type DataModel = {
       colorTheme: "neutral" | "sky" | "emerald" | "violet" | "rose" | "custom";
       createdAt: number;
       customTheme?: { alpha: number; colorHex: string };
-      displayMode?: "table" | "grid";
+      displayMode?: "table" | "grid" | "kanban" | "chat";
       fontSize: "default" | "medium" | "large";
       hoverPopoversEnabled?: boolean;
       ownerMondayUserId: string;
@@ -718,6 +922,7 @@ export type DataModel = {
       tableDensity?: "expanded" | "compact";
       updatedAt: number;
       updatedByMondayUserId: string;
+      viewerMondayUserId?: string;
       _id: Id<"mondayUserBoardSettings">;
       _creationTime: number;
     };
@@ -738,11 +943,18 @@ export type DataModel = {
       | "recordSource"
       | "tableDensity"
       | "updatedAt"
-      | "updatedByMondayUserId";
+      | "updatedByMondayUserId"
+      | "viewerMondayUserId";
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
       by_account_and_owner: ["accountId", "ownerMondayUserId", "_creationTime"];
+      by_account_owner_and_viewer: [
+        "accountId",
+        "ownerMondayUserId",
+        "viewerMondayUserId",
+        "_creationTime",
+      ];
     };
     searchIndexes: {};
     vectorIndexes: {};

@@ -20,7 +20,12 @@ const fontSizeValidator = v.union(
   v.literal("large"),
 );
 const tableDensityValidator = v.union(v.literal("expanded"), v.literal("compact"));
-const displayModeValidator = v.union(v.literal("table"), v.literal("grid"));
+const displayModeValidator = v.union(
+  v.literal("table"),
+  v.literal("grid"),
+  v.literal("kanban"),
+  v.literal("chat"),
+);
 const recordSourceValidator = v.union(
   v.literal("created_in_month"),
   v.literal("touched_in_month"),
@@ -49,63 +54,68 @@ export const getForOwnerBoard = query({
   args: {
     accountId: v.string(),
     ownerMondayUserId: v.string(),
+    viewerMondayUserId: v.string(),
   },
   returns: settingsValidator,
   handler: async (ctx, args) => {
     const accountId = normalizeInput(args.accountId);
     const ownerMondayUserId = normalizeInput(args.ownerMondayUserId);
-    if (!accountId || !ownerMondayUserId) {
+    const viewerMondayUserId = normalizeInput(args.viewerMondayUserId);
+    if (!accountId || !ownerMondayUserId || !viewerMondayUserId) {
+      return {
+        ownerMondayUserId: ownerMondayUserId || "",
+        colorTheme: DEFAULT_COLOR_THEME,
+        customTheme: undefined,
+        fontSize: DEFAULT_FONT_SIZE,
+        tableDensity: undefined,
+        hoverPopoversEnabled: undefined,
+        pageSize: undefined,
+        displayMode: undefined,
+        recordSource: undefined,
+        createdAt: 0,
+        updatedAt: 0,
+      };
+    }
+
+    const existing = await ctx.db
+      .query("mondayUserBoardSettings")
+      .withIndex("by_account_owner_and_viewer", (q) =>
+        q
+          .eq("accountId", accountId)
+          .eq("ownerMondayUserId", ownerMondayUserId)
+          .eq("viewerMondayUserId", viewerMondayUserId),
+      )
+      .unique();
+
+    if (!existing) {
+      return {
+        ownerMondayUserId,
+        colorTheme: DEFAULT_COLOR_THEME,
+        customTheme: undefined,
+        fontSize: DEFAULT_FONT_SIZE,
+        tableDensity: undefined,
+        hoverPopoversEnabled: undefined,
+        pageSize: undefined,
+        displayMode: undefined,
+        recordSource: undefined,
+        createdAt: 0,
+        updatedAt: 0,
+      };
+    }
+
     return {
-      ownerMondayUserId: ownerMondayUserId || "",
-      colorTheme: DEFAULT_COLOR_THEME,
-      customTheme: undefined,
-      fontSize: DEFAULT_FONT_SIZE,
-      tableDensity: undefined,
-      hoverPopoversEnabled: undefined,
-      pageSize: undefined,
-      displayMode: undefined,
-      recordSource: undefined,
-      createdAt: 0,
-      updatedAt: 0,
+      ownerMondayUserId: existing.ownerMondayUserId,
+      colorTheme: existing.colorTheme,
+      customTheme: existing.customTheme,
+      fontSize: existing.fontSize,
+      tableDensity: existing.tableDensity,
+      hoverPopoversEnabled: existing.hoverPopoversEnabled,
+      pageSize: existing.pageSize,
+      displayMode: existing.displayMode,
+      recordSource: existing.recordSource,
+      createdAt: existing.createdAt,
+      updatedAt: existing.updatedAt,
     };
-  }
-
-  const existing = await ctx.db
-    .query("mondayUserBoardSettings")
-    .withIndex("by_account_and_owner", (q) =>
-      q.eq("accountId", accountId).eq("ownerMondayUserId", ownerMondayUserId),
-    )
-    .unique();
-
-  if (!existing) {
-    return {
-      ownerMondayUserId,
-      colorTheme: DEFAULT_COLOR_THEME,
-      customTheme: undefined,
-      fontSize: DEFAULT_FONT_SIZE,
-      tableDensity: undefined,
-      hoverPopoversEnabled: undefined,
-      pageSize: undefined,
-      displayMode: undefined,
-      recordSource: undefined,
-      createdAt: 0,
-      updatedAt: 0,
-    };
-  }
-
-  return {
-    ownerMondayUserId: existing.ownerMondayUserId,
-    colorTheme: existing.colorTheme,
-    customTheme: existing.customTheme,
-    fontSize: existing.fontSize,
-    tableDensity: existing.tableDensity,
-    hoverPopoversEnabled: existing.hoverPopoversEnabled,
-    pageSize: existing.pageSize,
-    displayMode: existing.displayMode,
-    recordSource: existing.recordSource,
-    createdAt: existing.createdAt,
-    updatedAt: existing.updatedAt,
-  };
   },
 });
 
@@ -135,8 +145,11 @@ export const upsertForOwnerBoard = mutation({
     const now = Date.now();
     const existing = await ctx.db
       .query("mondayUserBoardSettings")
-      .withIndex("by_account_and_owner", (q) =>
-        q.eq("accountId", accountId).eq("ownerMondayUserId", ownerMondayUserId),
+      .withIndex("by_account_owner_and_viewer", (q) =>
+        q
+          .eq("accountId", accountId)
+          .eq("ownerMondayUserId", ownerMondayUserId)
+          .eq("viewerMondayUserId", viewerMondayUserId),
       )
       .unique();
 
@@ -171,6 +184,7 @@ export const upsertForOwnerBoard = mutation({
     await ctx.db.insert("mondayUserBoardSettings", {
       accountId,
       ownerMondayUserId,
+      viewerMondayUserId,
       colorTheme: args.colorTheme,
       customTheme: args.customTheme,
       fontSize: args.fontSize,

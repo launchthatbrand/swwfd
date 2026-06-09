@@ -1,0 +1,75 @@
+{
+  "name": "@swwfd/plugin-support",
+  "version": "0.1.3",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./settings": {
+      "types": "./dist/settings.d.ts",
+      "default": "./dist/settings.js"
+    },
+    "./assistant": {
+      "types": "./dist/assistant/experiences.d.ts",
+      "default": "./dist/assistant/experiences.js"
+    },
+    "./assistant/openai": {
+      "types": "./dist/assistant/openai.d.ts",
+      "default": "./dist/assistant/openai.js"
+    },
+    "./convex/component": {
+      "types": "./dist/convex/component/index.d.ts",
+      "default": "./dist/convex/component/index.js"
+    },
+    "./convex/component/convex.config": {
+      "types": "./dist/convex/component/convex.config.d.ts",
+      "default": "./dist/convex/component/convex.config.js"
+    }
+  },
+  "license": "MIT",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "clean": "git clean -xdf .cache .turbo dist node_modules",
+    "dev": "node -e \"process.exit(0)\"",
+    "format": "prettier --check . --ignore-path ../../.gitignore",
+    "lint": "node -e \"process.exit(0)\"",
+    "typecheck": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@ai-sdk/react": "^3.0.3",
+    "@convex-dev/presence": "^0.3.0",
+    "@launchthatapp/ui": "0.1.2",
+    "@swwfd/admin-runtime": "workspace:*",
+    "@swwfd/plugin-core": "workspace:*",
+    "@swwfd/ui-lexical": "workspace:*",
+    "ai": "^6.0.3",
+    "date-fns": "4.1.0",
+    "lucide-react": "^0.555.0",
+    "motion": "^12.23.24",
+    "react-resizable-panels": "^2.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "convex": "^1.34.0",
+    "eslint": "^9.25.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "convex": "^1.34.0",
+    "next": "^16.0.7",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "files": [
+    "src",
+    "dist",
+    "package.json",
+    "README.md"
+  ]
+}

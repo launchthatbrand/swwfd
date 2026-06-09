@@ -1,0 +1,33 @@
+import { $createQuoteNode } from "@lexical/rich-text";
+import { $getSelection } from "lexical";
+import { $setBlocksType } from "@lexical/selection";
+import { SelectItem } from "@launchthatapp/ui/select";
+import { blockTypeToBlockName } from "./block-format-data";
+import { useToolbarContext } from "../../../context/toolbar-context";
+
+const BLOCK_FORMAT_VALUE = "quote";
+
+export function FormatQuote() {
+  const { activeEditor, blockType } = useToolbarContext();
+
+  const formatQuote = () => {
+    if (blockType !== "quote") {
+      activeEditor.focus();
+      window.setTimeout(() => {
+        activeEditor.update(() => {
+          const selection = $getSelection();
+          $setBlocksType(selection, () => $createQuoteNode());
+        });
+      }, 0);
+    }
+  };
+
+  return (
+    <SelectItem value="quote" onSelect={formatQuote}>
+      <div className="flex items-center gap-1 font-normal">
+        {blockTypeToBlockName[BLOCK_FORMAT_VALUE]?.icon}
+        {blockTypeToBlockName[BLOCK_FORMAT_VALUE]?.label}
+      </div>
+    </SelectItem>
+  );
+}

@@ -40,6 +40,7 @@ export const NameCellContent = (props: {
             </span>
           </div>
           <ApprovalProgressIndicator
+            record={item}
             progressValue={item.batteryProgress}
             steps={approvalSteps}
             rawProgressValue={item.batteryRawValue}
@@ -67,6 +68,7 @@ export const NameCellContent = (props: {
             </span>
           </div>
           <ApprovalProgressIndicator
+            record={item}
             progressValue={item.batteryProgress}
             steps={approvalSteps}
             rawProgressValue={item.batteryRawValue}

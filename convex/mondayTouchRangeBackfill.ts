@@ -9,31 +9,29 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  clampPageSize,
+  createUnifiedMigrationJobRowValidator,
+  getMondayBackfillEnv,
+  normalizeDateOnly,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type RangeBackfillStatus = "running" | "done" | "failed" | "cancelled";
+type RangeBackfillStatus = BackfillJobStatus;
 
-const getMondayRangeBackfillEnv = () => {
-  const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
-  const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!contactBoardId) throw new Error("MONDAY_BOARD_ID is missing");
-  if (!touchBoardId) throw new Error("MONDAY_CONTACT_TOUCHED_BOARD_ID is missing");
-  return { contactBoardId, touchBoardId };
-};
+const rangeBackfillStatusValidator = backfillJobStatusValidator;
 
-const normalizeDateOnly = (value: string) => {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error(`Date must be YYYY-MM-DD, got: ${trimmed}`);
-  }
-  return trimmed;
-};
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.literal("touch_range_backfill"),
+);
 
-const clampPageSize = (value: number | undefined) =>
-  Math.max(25, Math.min(200, Math.floor(value ?? 50)));
+const getMondayRangeBackfillEnv = () => getMondayBackfillEnv();
 
 // ---------------------------------------------------------------------------
 // Public queries
@@ -100,6 +98,68 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayTouchRangeBackfillJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "touch range backfill",
+        "touch_range_backfill",
+        job._id,
+        job.workflowId ?? "",
+        job.dateFrom,
+        job.dateTo,
+        job.contactBoardId,
+        job.touchBoardId,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "touch_range_backfill" as const,
+        toolLabel: "Touch Range Backfill",
+        legacy: true,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: job.dryRun,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: job.touchBoardId,
+        sourceTag: null,
+        baselineDate: null,
+        monthTag: null,
+        monthKey: null,
+        dateFrom: job.dateFrom,
+        dateTo: job.dateTo,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: job.inRangeContacts,
+        skippedCount: job.skippedTouches,
+        createdCount: job.createdTouches,
+        updatedCount: job.updatedTouches,
+        errorCount: job.errorsCount,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

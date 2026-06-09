@@ -9,14 +9,28 @@ import {
   mutation,
   query,
 } from "./_generated/server";
+import {
+  type BackfillJobStatus,
+  backfillJobStatusValidator,
+  clampHistoryLimit,
+  createUnifiedMigrationJobRowValidator,
+  getMondayBackfillEnv,
+  normalizeDateOnly,
+} from "./lib/mondayBackfillShared";
 import { workflow } from "./workflow";
 
 const workflowAny = workflow as any;
 const internalAny = internal as any;
 
-type BackfillStatus = "running" | "done" | "failed" | "cancelled";
-type CsvExportStatus = "running" | "done" | "failed" | "cancelled";
+type BackfillStatus = BackfillJobStatus;
+type CsvExportStatus = BackfillJobStatus;
 const CSV_RELATION_COLUMN_ID = "board_relation_mm0wbvrb";
+
+const touchJobStatusValidator = backfillJobStatusValidator;
+
+const unifiedMigrationJobRowValidator = createUnifiedMigrationJobRowValidator(
+  v.union(v.literal("touch_backfill"), v.literal("touch_csv_export")),
+);
 
 type CsvContact = {
   id: string;
@@ -26,23 +40,7 @@ type CsvContact = {
   createdAtDate: string | null;
 };
 
-const getMondayBackfillEnv = () => {
-  const contactBoardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
-  const touchBoardId = process.env.MONDAY_CONTACT_TOUCHED_BOARD_ID?.trim() ?? "";
-  if (!contactBoardId) throw new Error("MONDAY_BOARD_ID is missing for backfill job");
-  if (!touchBoardId) {
-    throw new Error("MONDAY_CONTACT_TOUCHED_BOARD_ID is missing for backfill job");
-  }
-  return { contactBoardId, touchBoardId };
-};
-
-const normalizeDateOnly = (value: string) => {
-  const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new Error("baselineDate must be YYYY-MM-DD");
-  }
-  return trimmed;
-};
+// getMondayBackfillEnv, normalizeDateOnly, clampHistoryLimit imported from shared
 
 const toBaselineTouchKey = (args: {
   sourceTag: string;
@@ -178,6 +176,69 @@ export const getLatestJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayTouchBackfillJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "touch backfill",
+        "touch_backfill",
+        "baseline",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceTag,
+        job.baselineDate,
+        job.contactBoardId,
+        job.touchBoardId,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "touch_backfill" as const,
+        toolLabel: "Baseline Touch Backfill",
+        legacy: true,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: false,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: job.touchBoardId,
+        sourceTag: job.sourceTag,
+        baselineDate: job.baselineDate,
+        monthTag: null,
+        monthKey: null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: 0,
+        skippedCount: job.skippedTouches,
+        createdCount: job.createdTouches,
+        updatedCount: 0,
+        errorCount: job.errorsCount,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 
@@ -486,6 +547,67 @@ export const getLatestCsvExportJob = query({
       finishedAt: latest.finishedAt,
       lastError: latest.lastError,
     };
+  },
+});
+
+export const listRecentCsvExportJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(unifiedMigrationJobRowValidator),
+  handler: async (ctx, args) => {
+    const limit = clampHistoryLimit(args.limit);
+    const jobs = await ctx.db
+      .query("mondayTouchCsvExportJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+
+    return jobs.map((job) => {
+      const searchText = [
+        "touch csv export",
+        "touch_csv_export",
+        job._id,
+        job.workflowId ?? "",
+        job.sourceTag,
+        job.baselineDate,
+        job.contactBoardId,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return {
+        toolType: "touch_csv_export" as const,
+        toolLabel: "Touch CSV Export",
+        legacy: true,
+        jobId: String(job._id),
+        status: job.status,
+        workflowId: job.workflowId ?? null,
+        startedAt: job.startedAt,
+        updatedAt: job.updatedAt,
+        finishedAt: job.finishedAt ?? null,
+        dryRun: true,
+        sourceBoardId: job.contactBoardId,
+        sourceBoardName: null,
+        targetBoardId: null,
+        sourceTag: job.sourceTag,
+        baselineDate: job.baselineDate,
+        monthTag: null,
+        monthKey: null,
+        dateFrom: null,
+        dateTo: null,
+        pageSize: job.pageSize,
+        processedCount: job.processedContacts,
+        mappedCount: 0,
+        skippedCount: 0,
+        createdCount: job.rowCount,
+        updatedCount: job.chunkCount,
+        errorCount: 0,
+        warningCount: 0,
+        lastError: job.lastError ?? null,
+        searchText,
+      };
+    });
   },
 });
 

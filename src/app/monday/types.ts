@@ -1,3 +1,33 @@
+// ---------------------------------------------------------------------------
+// Generic API response wrapper — replaces 20+ individual response envelopes
+// ---------------------------------------------------------------------------
+
+export type MondayApiResponse<T = Record<string, never>> = {
+  ok: boolean;
+  error?: string;
+} & T;
+
+// ---------------------------------------------------------------------------
+// Update type union — shared between client and server
+// ---------------------------------------------------------------------------
+
+export const MONDAY_UPDATE_TYPES = [
+  "general",
+  "welcome_email",
+  "followup",
+  "questionnaire",
+  "resume",
+  "resume_referral",
+  "job_referral",
+  "merge",
+] as const;
+
+export type MondayUpdateType = (typeof MONDAY_UPDATE_TYPES)[number];
+
+// ---------------------------------------------------------------------------
+// Core domain types (single source of truth for client + server)
+// ---------------------------------------------------------------------------
+
 export interface MondayRecord extends Record<string, unknown> {
   id: string;
   contactId?: string | null;
@@ -42,15 +72,6 @@ export interface MondayRecord extends Record<string, unknown> {
   }[];
 }
 
-export interface MondayResponse {
-  ok: boolean;
-  error?: string;
-  boardName?: string | null;
-  records?: MondayRecord[];
-  nextCursor?: string | null;
-  approvalSteps?: ApprovalStepConfig[];
-}
-
 export interface MondayEmailTemplate {
   id: string;
   name: string;
@@ -61,15 +82,6 @@ export interface MondayEmailTemplate {
   docLink: string | null;
 }
 
-export interface MondayEmailTemplatesResponse {
-  ok: boolean;
-  error?: string;
-  boardName?: string | null;
-  boardId?: string;
-  workdocColumnId?: string;
-  templates?: MondayEmailTemplate[];
-}
-
 export interface MondayIdentity {
   userId: string;
   accountId: string;
@@ -78,59 +90,30 @@ export interface MondayIdentity {
   expiresAt?: number;
 }
 
-export interface MondayUserProfileResponse {
-  ok: boolean;
-  error?: string;
-  user?: {
-    id: string;
-    email: string | null;
-    name: string | null;
-  } | null;
-}
-
-export interface OutlookConnectionStatusResponse {
-  ok: boolean;
-  error?: string;
-  connected?: boolean;
-  callbackPath?: string;
-  connection?: {
-    email: string | null;
-    displayName: string | null;
-    accessTokenExpiresAt: number;
-    scopes: string[];
-    updatedAt: number;
-  } | null;
-}
-
-export interface OutlookTeamMailbox {
-  mondayUserId: string;
+export interface MondayUserProfile {
+  id: string;
+  email: string | null;
   name: string | null;
-  userEmail: string | null;
-  connected: boolean;
-  mailboxEmail: string | null;
-  mailboxDisplayName: string | null;
-  accessTokenExpiresAt: number | null;
-  updatedAt: number | null;
-  isCurrentUser: boolean;
-  isContactOwner: boolean;
 }
 
-export interface OutlookTeamMailboxesResponse {
-  ok: boolean;
-  error?: string;
-  mailboxes?: OutlookTeamMailbox[];
-  defaultSenderUserId?: string | null;
-}
-
-export interface MondayRecordEditOptionsResponse {
-  ok: boolean;
-  error?: string;
-  options?: {
-    referredToContractors: string[];
-    hiredWithContractor: string[];
-    retentionPeriod: string[];
-    tags: string[];
-  };
+export interface MondayRecordEditOptions {
+  referredToContractors: string[];
+  hiredWithContractor: string[];
+  retentionPeriod: string[];
+  tags: string[];
+  status: string[];
+  questionnaireGender: string[];
+  questionnaireEntryLevel: string[];
+  questionnaireSkilled: string[];
+  questionnaireEthnicity: string[];
+  questionnaireEducationLevel: string[];
+  questionnaireUsWorkEligible: string[];
+  questionnaireVeteran: string[];
+  questionnaireSecondChance: string[];
+  questionnaireTransportation: string[];
+  questionnaireWorkSchedule: string[];
+  questionnaireCandidateEducation: string[];
+  questionnaireDesiredHourlyWage: string[];
 }
 
 export interface MondayContactCandidate {
@@ -142,30 +125,10 @@ export interface MondayContactCandidate {
   updatedAt: string | null;
 }
 
-export interface MondayContactsLookupResponse {
-  ok: boolean;
-  error?: string;
-  identity?: { userId: string };
-  existing?: MondayContactCandidate[];
-}
-
-export interface MondayCreateContactResponse {
-  ok: boolean;
-  error?: string;
-  created?: { id: string };
-}
-
 export interface MondayRecordUpdate {
   id: string;
   body: string;
-  updateType:
-  | "general"
-  | "welcome_email"
-  | "followup"
-  | "questionnaire"
-  | "resume"
-  | "resume_referral"
-  | "merge";
+  updateType: MondayUpdateType;
   source: "item" | "subitem";
   subitemId: string | null;
   subitemName: string | null;
@@ -179,14 +142,8 @@ export interface MondaySubitemEntry {
   id: string;
   name: string;
   typeLabel: string | null;
-  updateType:
-  | "general"
-  | "welcome_email"
-  | "followup"
-  | "questionnaire"
-  | "resume"
-  | "resume_referral"
-  | "merge";
+  updateType: MondayUpdateType;
+  intent: MondayUpdateIntent;
   methodOfCommunication: string | null;
   createdAt: string | null;
   creatorProfile: {
@@ -204,40 +161,30 @@ export interface MondaySubitemEntry {
   }[];
 }
 
-export interface MondayRecordUpdatesResponse {
-  ok: boolean;
-  error?: string;
-  itemId?: string;
-  itemName?: string | null;
-  updates?: MondayRecordUpdate[];
-  subitems?: MondaySubitemEntry[];
+export interface ApprovalStepConfig {
+  id: string;
+  title: string;
 }
 
-export interface MondayCreateRecordUpdateResponse {
-  ok: boolean;
-  error?: string;
-  update?: {
-    id: string;
-    body: string;
-    updateType:
-    | "general"
-    | "welcome_email"
-    | "followup"
-    | "questionnaire"
-    | "resume"
-    | "resume_referral"
-    | "merge";
-    source: "item" | "subitem";
-    subitemName?: string | null;
-    approvalStepColumnId?: string | null;
-    approvalStepMarked?: boolean;
-    warning?: string | null;
-  };
-}
-
-export interface MondayResumeUploadResponse {
-  ok: boolean;
-  error?: string;
+export interface MondayJobListing {
+  id: string;
+  title: string;
+  status: string | null;
+  district: string | null;
+  location: string | null;
+  locationSecondary: string | null;
+  description: string | null;
+  categories: string[];
+  contractor: string | null;
+  contractorEmail: string | null;
+  applyEmail: string | null;
+  applyPhone: string | null;
+  salaryAmount: string | null;
+  salaryType: string | null;
+  websiteUrl: string | null;
+  postedDate: string | null;
+  updatedAt: string | null;
+  isAvailable: boolean;
 }
 
 export interface ResumePreviewState {
@@ -256,18 +203,17 @@ export interface MockBusinessInfo {
   reliabilityScore: number;
 }
 
-export interface ApprovalStepConfig {
-  id: string;
-  title: string;
-}
-
-export interface MondaySendEmailResponse {
-  ok: boolean;
-  error?: string;
-}
-
-export interface MondayFeatureFlags {
-  emailMarketingEnabled: boolean;
+export interface OutlookTeamMailbox {
+  mondayUserId: string;
+  name: string | null;
+  userEmail: string | null;
+  connected: boolean;
+  mailboxEmail: string | null;
+  mailboxDisplayName: string | null;
+  accessTokenExpiresAt: number | null;
+  updatedAt: number | null;
+  isCurrentUser: boolean;
+  isContactOwner: boolean;
 }
 
 export interface MondayEmailSystemTag {
@@ -288,16 +234,8 @@ export interface MondayPlatformSettings {
   }>;
 }
 
-export interface MondayFeatureFlagsResponse {
-  ok: boolean;
-  error?: string;
-  featureFlags?: MondayFeatureFlags;
-}
-
-export interface MondayPlatformSettingsResponse {
-  ok: boolean;
-  error?: string;
-  platformSettings?: MondayPlatformSettings;
+export interface MondayFeatureFlags {
+  emailMarketingEnabled: boolean;
 }
 
 export type MondayBulkSyncJobStatus = "running" | "done" | "failed" | "cancelled";
@@ -321,34 +259,6 @@ export interface MondayBulkSyncJob {
   lastError: string | null;
 }
 
-export interface MondayBulkSyncStatusResponse {
-  ok: boolean;
-  error?: string;
-  job?: MondayBulkSyncJob | null;
-  processed?: number;
-  succeeded?: number;
-  failed?: number;
-  retriedContacts?: number;
-}
-
-export interface MondayUserFilterPresetsResponse {
-  ok: boolean;
-  error?: string;
-  presets?: unknown[];
-}
-
-export interface MondayUserFilterPresetUpsertResponse {
-  ok: boolean;
-  error?: string;
-  preset?: unknown;
-}
-
-export interface MondayUserBoardSettingsResponse {
-  ok: boolean;
-  error?: string;
-  settings?: unknown;
-}
-
 export interface MondayRoutingStatus {
   ok: boolean;
   enabled: boolean;
@@ -361,12 +271,6 @@ export interface MondayRoutingStatus {
   countyBoardUrl: string | null;
   districtBoardUrl: string | null;
   issues: string[];
-}
-
-export interface MondayRoutingStatusResponse {
-  ok: boolean;
-  error?: string;
-  status?: MondayRoutingStatus;
 }
 
 export interface MondayRoutingAssignResult {
@@ -382,11 +286,109 @@ export interface MondayRoutingAssignResult {
   matchedAddress: string | null;
 }
 
-export interface MondayRoutingAssignResponse {
-  ok: boolean;
-  error?: string;
-  result?: MondayRoutingAssignResult;
+export interface MondayHireEventSegments {
+  isCandidatesGroup: boolean;
+  isReentry: boolean;
+  isVeteran: boolean;
 }
+
+export interface MondayHireEventMetadata {
+  contactItemId: string;
+  ownerId: string;
+  hireDate: string;
+  source: string;
+  segments: MondayHireEventSegments;
+}
+
+export interface HelpdeskTicket {
+  id: string;
+  name: string;
+  status: string | null;
+  priority: string | null;
+  category: string | null;
+  description: string | null;
+  linkedContact: string | null;
+  date: string | null;
+  createdAt: string | null;
+}
+
+export type MondaySupportConversationStatus = "open" | "snoozed" | "closed";
+export type MondaySupportConversationMode = "agent" | "manual";
+export type MondaySupportMessageRole = "user" | "assistant";
+export type MondaySupportMessageChannel = "chat" | "email" | "sms";
+export type MondaySupportMessageType =
+  | "chat"
+  | "email_inbound"
+  | "email_outbound"
+  | "sms_inbound"
+  | "sms_outbound";
+
+export type MondayUpdateIntent = "internal_note" | "conversation" | "campaign";
+
+export interface MondaySupportConversationSummary {
+  id: string;
+  sessionId: string;
+  contactItemId: string | null;
+  contactName: string;
+  contactEmail: string | null;
+  status: MondaySupportConversationStatus;
+  mode: MondaySupportConversationMode;
+  assignedAgentId: string | null;
+  assignedAgentName: string | null;
+  lastMessagePreview: string | null;
+  lastMessageRole: MondaySupportMessageRole | null;
+  lastMessageAt: number | null;
+  unreadCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MondaySupportMessage {
+  id: string;
+  conversationId: string;
+  updateType: MondayUpdateType;
+  role: MondaySupportMessageRole;
+  source: "admin" | "visitor" | "system";
+  channel: MondaySupportMessageChannel;
+  messageType: MondaySupportMessageType;
+  body: string;
+  senderName: string | null;
+  senderEmail: string | null;
+  createdAt: number;
+}
+
+export interface MondaySupportNote {
+  id: string;
+  conversationId: string;
+  authorMondayUserId: string;
+  authorName: string | null;
+  body: string;
+  createdAt: number;
+}
+
+export interface MondaySupportEvent {
+  id: string;
+  conversationId: string;
+  type: string;
+  actorMondayUserId: string | null;
+  actorName: string | null;
+  payload: string | null;
+  createdAt: number;
+}
+
+export interface MondaySupportPresenceEntry {
+  id: string;
+  conversationId: string;
+  userId: string;
+  userName: string | null;
+  userType: "agent" | "visitor";
+  status: "online" | "typing" | "idle";
+  lastSeenAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Metrics types
+// ---------------------------------------------------------------------------
 
 export interface MondayMetricsSummaryTotals {
   allContacts: number;
@@ -445,11 +447,128 @@ export interface MondayMetricsSummary {
   generatedAt: string;
 }
 
-export interface MondayMetricsResponse {
-  ok: boolean;
-  error?: string;
+// ---------------------------------------------------------------------------
+// API response types — use MondayApiResponse<T> for typed envelopes
+// ---------------------------------------------------------------------------
+
+export type MondayResponse = MondayApiResponse<{
+  boardName?: string | null;
+  records?: MondayRecord[];
+  nextCursor?: string | null;
+  approvalSteps?: ApprovalStepConfig[];
+}>;
+
+export type MondayEmailTemplatesResponse = MondayApiResponse<{
+  boardName?: string | null;
+  boardId?: string;
+  workdocColumnId?: string;
+  templates?: MondayEmailTemplate[];
+}>;
+
+export type MondayUserProfileResponse = MondayApiResponse<{
+  user?: MondayUserProfile | null;
+}>;
+
+export type OutlookConnectionStatusResponse = MondayApiResponse<{
+  connected?: boolean;
+  callbackPath?: string;
+  connection?: {
+    email: string | null;
+    displayName: string | null;
+    accessTokenExpiresAt: number;
+    scopes: string[];
+    updatedAt: number;
+  } | null;
+}>;
+
+export type OutlookTeamMailboxesResponse = MondayApiResponse<{
+  mailboxes?: OutlookTeamMailbox[];
+  defaultSenderUserId?: string | null;
+}>;
+
+export type MondayRecordEditOptionsResponse = MondayApiResponse<{
+  options?: MondayRecordEditOptions;
+}>;
+
+export type MondayContactsLookupResponse = MondayApiResponse<{
+  identity?: { userId: string };
+  existing?: MondayContactCandidate[];
+}>;
+
+export type MondayCreateContactResponse = MondayApiResponse<{
+  created?: { id: string };
+}>;
+
+export type MondayRecordUpdatesResponse = MondayApiResponse<{
+  itemId?: string;
+  itemName?: string | null;
+  updates?: MondayRecordUpdate[];
+  subitems?: MondaySubitemEntry[];
+}>;
+
+export type MondayCreateRecordUpdateResponse = MondayApiResponse<{
+  update?: {
+    id: string;
+    body: string;
+    updateType: MondayUpdateType;
+    source: "item" | "subitem";
+    subitemName?: string | null;
+    approvalStepColumnId?: string | null;
+    approvalStepMarked?: boolean;
+    warning?: string | null;
+  };
+}>;
+
+export type MondayResumeUploadResponse = MondayApiResponse;
+
+export type MondayJobsResponse = MondayApiResponse<{
+  boardId?: string;
+  boardName?: string | null;
+  jobs?: MondayJobListing[];
+}>;
+
+export type MondaySendEmailResponse = MondayApiResponse;
+
+export type MondayFeatureFlagsResponse = MondayApiResponse<{
+  featureFlags?: MondayFeatureFlags;
+}>;
+
+export type MondayPlatformSettingsResponse = MondayApiResponse<{
+  platformSettings?: MondayPlatformSettings;
+}>;
+
+export type MondayBulkSyncStatusResponse = MondayApiResponse<{
+  job?: MondayBulkSyncJob | null;
+  processed?: number;
+  succeeded?: number;
+  failed?: number;
+  retriedContacts?: number;
+}>;
+
+export type MondayUserFilterPresetsResponse = MondayApiResponse<{
+  presets?: unknown[];
+}>;
+
+export type MondayUserFilterPresetUpsertResponse = MondayApiResponse<{
+  preset?: unknown;
+}>;
+
+export type MondayUserBoardSettingsResponse = MondayApiResponse<{
+  settings?: unknown;
+}>;
+
+export type MondayRoutingStatusResponse = MondayApiResponse<{
+  status?: MondayRoutingStatus;
+}>;
+
+export type MondayRoutingAssignResponse = MondayApiResponse<{
+  result?: MondayRoutingAssignResult;
+}>;
+
+export type MondayMetricsResponse = MondayApiResponse<{
   summary?: MondayMetricsSummary;
-}
+}>;
+
 
 export interface AddNewContactValues {
   firstName: string;
@@ -513,7 +632,13 @@ export type UserBoardColorTheme =
   | "custom";
 export type UserBoardFontSize = "default" | "medium" | "large";
 export type UserBoardTableDensity = "expanded" | "compact";
-export type UserBoardDisplayMode = "table" | "grid" | "kanban";
+export type UserBoardDisplayMode = "table" | "grid" | "kanban" | "chat";
+export type GridSortField = "name" | "resume" | "tags" | "createdAt" | "updatedAt";
+export type GridSortDirection = "asc" | "desc";
+export interface GridSortState {
+  field: GridSortField;
+  direction: GridSortDirection;
+}
 export type UserBoardRecordSource = "created_in_month" | "touched_in_month";
 /** 0 = infinite scroll */
 export type UserBoardPageSize = 20 | 40 | 100 | 0;

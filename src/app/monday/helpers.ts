@@ -5,6 +5,7 @@ import type {
   AdvancedFilterOperator,
   ApprovalStepConfig,
   KanbanColumn,
+  GridSortState,
   MockBusinessInfo,
   MondayRecord,
   SavedAdvancedFilterPreset,
@@ -154,8 +155,53 @@ export const contactUpdateTypeLabel = (value: string) => {
     { value: "questionnaire", label: "Questionaire Update" },
     { value: "resume", label: "Resume Update" },
     { value: "resume_referral", label: "Resume Referral Update" },
+    { value: "job_referral", label: "Job Referral Update" },
   ];
   return options.find((option) => option.value === value)?.label ?? "General Update";
+};
+
+export const sortRecordsForGrid = (
+  records: MondayRecord[],
+  gridSort: GridSortState,
+): MondayRecord[] => {
+  const getSortValue = (record: MondayRecord): string | number | null => {
+    switch (gridSort.field) {
+      case "name":
+        return record.name?.trim() ?? "";
+      case "resume":
+        return record.resumeFiles[0]?.name?.trim() ?? "";
+      case "tags":
+        return splitCsvValues(record.tags).join(", ").trim();
+      case "createdAt": {
+        const timestamp = Date.parse(record.createdAt ?? "");
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+      case "updatedAt": {
+        const timestamp = Date.parse(record.updatedAt ?? "");
+        return Number.isNaN(timestamp) ? null : timestamp;
+      }
+      default:
+        return "";
+    }
+  };
+  const directionFactor = gridSort.direction === "asc" ? 1 : -1;
+  return [...records].sort((a, b) => {
+    const valueA = getSortValue(a);
+    const valueB = getSortValue(b);
+    const isEmptyA = valueA === null || (typeof valueA === "string" && valueA.trim().length === 0);
+    const isEmptyB = valueB === null || (typeof valueB === "string" && valueB.trim().length === 0);
+    if (isEmptyA && isEmptyB) return 0;
+    if (isEmptyA) return 1;
+    if (isEmptyB) return -1;
+    const compareResult =
+      typeof valueA === "number" && typeof valueB === "number"
+        ? valueA - valueB
+        : String(valueA).localeCompare(String(valueB), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+    return compareResult * directionFactor;
+  });
 };
 
 export const getContactTooltipDetails = (record: MondayRecord) => {
@@ -704,10 +750,25 @@ export const getRecordFieldValuesForCondition = (
 ) => {
   const boardColumnTarget = getBoardColumnTargetForCondition(condition);
   if (boardColumnTarget.length > 0) {
-    return record.contactDetails
-      .filter((detail) => detail.label.trim() === boardColumnTarget)
+    const normalizedTarget = boardColumnTarget.trim().toLowerCase();
+    const safeContactDetails = Array.isArray(record.contactDetails)
+      ? record.contactDetails
+      : [];
+    const detailValues = safeContactDetails
+      .filter((detail) => detail.label.trim().toLowerCase() === normalizedTarget)
       .map((detail) => detail.value.trim())
       .filter((value) => value.length > 0);
+    if (detailValues.length > 0) {
+      return detailValues;
+    }
+    // Fallbacks keep legacy/saved filters useful even when board labels differ.
+    if (normalizedTarget === "owner") {
+      return getRecordFieldValues(record, "owner");
+    }
+    if (normalizedTarget === "status" || normalizedTarget === "district") {
+      return [record.statusText ?? ""].map((value) => value.trim()).filter(Boolean);
+    }
+    return [];
   }
   return getRecordFieldValues(record, condition.field);
 };
@@ -878,6 +939,123 @@ export const getRecordStepIndex = (
   return Math.floor(safeProgress / stepSize);
 };
 
+const normalizeStepText = (value: string | null | undefined) =>
+  (value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+
+const isDoneStepStatusValue = (value: string | null | undefined) => {
+  const normalized = normalizeStepText(value);
+  if (!normalized) return false;
+  return /\bdone\b/.test(normalized) || /\bcomplete(d)?\b/.test(normalized);
+};
+
+const toStepKey = (value: string | null | undefined) => {
+  return normalizeStepText(value)
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\bquestionaire\b/g, "questionnaire")
+    .trim();
+};
+
+export type ApprovalStepState = "done" | "skipped" | "pending";
+
+export interface ApprovalStepProgressState {
+  step: ApprovalStepConfig;
+  statusValue: string | null;
+  state: ApprovalStepState;
+}
+
+export interface ApprovalStepProgress {
+  states: ApprovalStepProgressState[];
+  completedCount: number;
+  skippedCount: number;
+  hasAnyStepStatusValue: boolean;
+}
+
+export const getApprovalStepProgress = (
+  record: MondayRecord,
+  approvalSteps: ApprovalStepConfig[],
+) : ApprovalStepProgress => {
+  if (approvalSteps.length === 0) {
+    return {
+      states: [],
+      completedCount: 0,
+      skippedCount: 0,
+      hasAnyStepStatusValue: false,
+    };
+  }
+  const statusByStepKey = new Map<string, string>();
+  const safeContactDetails = Array.isArray(record.contactDetails)
+    ? record.contactDetails
+    : [];
+  for (const detail of safeContactDetails) {
+    const key = toStepKey(detail.label);
+    if (!key) continue;
+    if (!statusByStepKey.has(key)) {
+      statusByStepKey.set(key, detail.value);
+    }
+  }
+
+  const stepValues = approvalSteps.map((step) => statusByStepKey.get(toStepKey(step.title)) ?? null);
+  const hasAnyStepStatusValue = stepValues.some((value) => normalizeStepText(value).length > 0);
+  const states: ApprovalStepProgressState[] = [];
+
+  if (!hasAnyStepStatusValue) {
+    const contiguousDoneCount = getRecordStepIndex(record.batteryProgress, approvalSteps.length);
+    for (let index = 0; index < approvalSteps.length; index += 1) {
+      states.push({
+        step: approvalSteps[index]!,
+        statusValue: null,
+        state: index < contiguousDoneCount ? "done" : "pending",
+      });
+    }
+    return {
+      states,
+      completedCount: states.filter((entry) => entry.state === "done").length,
+      skippedCount: 0,
+      hasAnyStepStatusValue: false,
+    };
+  }
+
+  const doneFlags = stepValues.map((value) => isDoneStepStatusValue(value));
+  let furthestDoneIndex = -1;
+  for (let index = 0; index < doneFlags.length; index += 1) {
+    if (doneFlags[index]) furthestDoneIndex = index;
+  }
+
+  for (let index = 0; index < approvalSteps.length; index += 1) {
+    const isDone = doneFlags[index];
+    const state: ApprovalStepState = isDone
+      ? "done"
+      : furthestDoneIndex > index
+        ? "skipped"
+        : "pending";
+    states.push({
+      step: approvalSteps[index]!,
+      statusValue: stepValues[index] ?? null,
+      state,
+    });
+  }
+
+  return {
+    states,
+    completedCount: states.filter((entry) => entry.state === "done").length,
+    skippedCount: states.filter((entry) => entry.state === "skipped").length,
+    hasAnyStepStatusValue: true,
+  };
+};
+
+export const getRecordStepIndexFromApprovalSteps = (
+  record: MondayRecord,
+  approvalSteps: ApprovalStepConfig[],
+) => {
+  const stepProgress = getApprovalStepProgress(record, approvalSteps);
+  const firstNotDoneIndex = stepProgress.states.findIndex((entry) => entry.state !== "done");
+  if (firstNotDoneIndex < 0) return approvalSteps.length;
+  return firstNotDoneIndex;
+};
+
 export const buildKanbanColumns = (
   records: MondayRecord[],
   steps: ApprovalStepConfig[],
@@ -892,7 +1070,7 @@ export const buildKanbanColumns = (
     })),
   ];
   for (const record of records) {
-    const stepIndex = getRecordStepIndex(record.batteryProgress, steps.length);
+    const stepIndex = getRecordStepIndexFromApprovalSteps(record, steps);
     const clampedIndex = Math.max(0, Math.min(columns.length - 1, stepIndex));
     columns[clampedIndex]!.records.push(record);
   }
@@ -919,6 +1097,8 @@ export const doesSubitemMatchUpdateType = (subitemName: string, type: string) =>
       return normalized.includes("resume") && !normalized.includes("referral");
     case "resume_referral":
       return normalized.includes("resume referral");
+    case "job_referral":
+      return normalized.includes("job referral") || normalized.startsWith("referral -");
     default:
       return false;
   }
