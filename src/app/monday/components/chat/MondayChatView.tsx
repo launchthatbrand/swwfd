@@ -14,6 +14,7 @@ import { useSupportWorkflow } from "../../hooks/chat/useSupportWorkflow";
 import type {
   ApprovalStepConfig,
   MondayApiResponse,
+  MondayEmailTemplate,
   MondayRecord,
   MondaySubitemEntry,
   MondaySendEmailResponse,
@@ -27,6 +28,8 @@ import { ConversationRightSidebar } from "./ConversationRightSidebar";
 import { ConversationThreadPane } from "./ConversationThreadPane";
 
 const todayYmd = () => new Date().toISOString().slice(0, 10);
+const toRecordKey = (record: Pick<MondayRecord, "id" | "contactId">) =>
+  (record.contactId ?? record.id).trim();
 
 type Props = {
   accountId: string | null;
@@ -51,6 +54,8 @@ export const MondayChatView = ({
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null);
   const [composerChannel, setComposerChannel] = useState<"email" | "sms">("email");
+  const [selectedBulkRecordIds, setSelectedBulkRecordIds] = useState<Set<string>>(() => new Set());
+  const [selectedEmailTemplateId, setSelectedEmailTemplateId] = useState<string | null>(null);
   const selectedSupportConversationId = selectedConversationId as Id<"mondaySupportConversations"> | null;
 
   const { conversations, ensureConversationForRecord } = useSupportConversations({
@@ -66,6 +71,7 @@ export const MondayChatView = ({
   );
   const { sendMessage: appendSupportMessage } = useSupportMessages(selectedConversationId);
   const appendSupportEvent = useMutation(api.supportEvents.appendEvent);
+  const listTemplatesAction = useAction(api.mondayEmailTemplatesNode.listTemplates);
 
   const listRecordUpdatesAction = useAction(api.mondayRecordsNode.listRecordUpdates);
   const createRecordUpdateAction = useAction(api.mondayRecordsNode.createRecordUpdate);
@@ -85,6 +91,10 @@ export const MondayChatView = ({
       ) ?? null,
     [records, selectedContactItemId],
   );
+  const selectedBulkRecords = useMemo(() => {
+    if (selectedBulkRecordIds.size === 0) return [] as MondayRecord[];
+    return records.filter((record) => selectedBulkRecordIds.has(toRecordKey(record)));
+  }, [records, selectedBulkRecordIds]);
   const contactEmail =
     selectedRecord?.email?.trim() ||
     selectedConversation?.contactEmail?.trim() ||
@@ -156,6 +166,20 @@ export const MondayChatView = ({
     },
     staleTime: 30_000,
   });
+  const emailTemplatesQuery = useQuery({
+    queryKey: ["monday-chat-email-templates", sessionToken],
+    enabled: !!sessionToken,
+    queryFn: async () => {
+      const result = await listTemplatesAction({
+        sessionToken: sessionToken!,
+        boardId: "18401299370",
+        workdocColumnId: "doc_mm0wq4r",
+        limit: 250,
+      });
+      return result.templates ?? [];
+    },
+    staleTime: 60_000,
+  });
 
   const updatesQuery = useQuery({
     queryKey: ["monday-chat-updates", selectedConversationId, selectedContactItemId, sessionToken],
@@ -200,49 +224,75 @@ export const MondayChatView = ({
   );
 
   const composerChannels = useMemo(() => {
+    const bulkMode = selectedBulkRecords.length > 0;
+    const bulkEmailCount = selectedBulkRecords.filter((record) => (record.email ?? "").trim().length > 0).length;
+    const bulkSmsCount = selectedBulkRecords.filter((record) => (record.phone ?? "").trim().length > 0).length;
     const emailEnabled =
-      !!sessionToken &&
-      !!selectedContactItemId &&
-      contactEmail.length > 0 &&
-      !contactOwnerQuery.isLoading &&
-      !teamMailboxQuery.isLoading &&
-      senderMailboxUserId.length > 0 &&
-      !!senderMailbox?.connected;
+      bulkMode
+        ? !!sessionToken && bulkEmailCount > 0
+        : !!sessionToken &&
+          !!selectedContactItemId &&
+          contactEmail.length > 0 &&
+          !contactOwnerQuery.isLoading &&
+          !teamMailboxQuery.isLoading &&
+          senderMailboxUserId.length > 0 &&
+          !!senderMailbox?.connected;
     const emailDisabledReason =
-      !sessionToken
-        ? "Session unavailable."
-        : !selectedContactItemId
-          ? "Select a conversation."
-          : contactEmail.length === 0
-            ? "Contact has no email address."
-            : contactOwnerQuery.isLoading
-              ? "Resolving contact owner mailbox..."
-            : senderMailboxUserId.length === 0
-              ? "No contact owner mailbox found."
-              : teamMailboxQuery.isLoading
-                ? "Loading sender mailbox status..."
-                : !senderMailbox?.connected
-                  ? "Contact owner mailbox is not connected to Outlook."
-                  : undefined;
+      bulkMode
+        ? !sessionToken
+          ? "Session unavailable."
+          : bulkEmailCount === 0
+            ? "No selected contacts have email."
+            : undefined
+        : !sessionToken
+          ? "Session unavailable."
+          : !selectedContactItemId
+            ? "Select a conversation."
+            : contactEmail.length === 0
+              ? "Contact has no email address."
+              : contactOwnerQuery.isLoading
+                ? "Resolving contact owner mailbox..."
+              : senderMailboxUserId.length === 0
+                ? "No contact owner mailbox found."
+                : teamMailboxQuery.isLoading
+                  ? "Loading sender mailbox status..."
+                  : !senderMailbox?.connected
+                    ? "Contact owner mailbox is not connected to Outlook."
+                    : undefined;
 
     const smsEnabled =
-      !!sessionToken &&
-      !!selectedContactItemId &&
-      contactPhone.length > 0 &&
-      !smsReadinessQuery.isLoading &&
-      smsReadinessQuery.data?.ready === true;
+      bulkMode
+        ? !!sessionToken &&
+          bulkSmsCount > 0 &&
+          !smsReadinessQuery.isLoading &&
+          smsReadinessQuery.data?.ready === true
+        : !!sessionToken &&
+          !!selectedContactItemId &&
+          contactPhone.length > 0 &&
+          !smsReadinessQuery.isLoading &&
+          smsReadinessQuery.data?.ready === true;
     const smsDisabledReason =
-      !sessionToken
-        ? "Session unavailable."
-        : !selectedContactItemId
-          ? "Select a conversation."
-          : contactPhone.length === 0
-            ? "Contact has no phone number."
+      bulkMode
+        ? !sessionToken
+          ? "Session unavailable."
+          : bulkSmsCount === 0
+            ? "No selected contacts have phone numbers."
             : smsReadinessQuery.isLoading
               ? "Checking Twilio readiness..."
               : smsReadinessQuery.data?.ready !== true
                 ? "Twilio SMS is not configured."
-                : undefined;
+                : undefined
+        : !sessionToken
+          ? "Session unavailable."
+          : !selectedContactItemId
+            ? "Select a conversation."
+            : contactPhone.length === 0
+              ? "Contact has no phone number."
+              : smsReadinessQuery.isLoading
+                ? "Checking Twilio readiness..."
+                : smsReadinessQuery.data?.ready !== true
+                  ? "Twilio SMS is not configured."
+                  : undefined;
 
     return [
       {
@@ -263,6 +313,7 @@ export const MondayChatView = ({
     contactPhone.length,
     contactOwnerQuery.isLoading,
     selectedContactItemId,
+    selectedBulkRecords,
     senderMailbox?.connected,
     senderMailboxUserId.length,
     sessionToken,
@@ -279,6 +330,121 @@ export const MondayChatView = ({
       setComposerChannel(fallback.id);
     }
   }, [composerChannel, composerChannels]);
+  useEffect(() => {
+    const templates = emailTemplatesQuery.data ?? [];
+    if (templates.length === 0) {
+      if (selectedEmailTemplateId !== null) {
+        setSelectedEmailTemplateId(null);
+      }
+      return;
+    }
+    if (selectedEmailTemplateId && templates.some((template) => template.id === selectedEmailTemplateId)) {
+      return;
+    }
+    setSelectedEmailTemplateId(null);
+  }, [emailTemplatesQuery.data, selectedEmailTemplateId]);
+
+  const selectedEmailTemplate = useMemo(
+    () =>
+      (emailTemplatesQuery.data ?? []).find((template) => template.id === selectedEmailTemplateId) ??
+      null,
+    [emailTemplatesQuery.data, selectedEmailTemplateId],
+  );
+
+  const sendEmailToRecord = async (args: {
+    record: MondayRecord;
+    body: string;
+    template: MondayEmailTemplate | null;
+    intent: "conversation" | "campaign";
+  }) => {
+    if (!sessionToken) return;
+    const targetRecordId = (args.record.contactId ?? args.record.id ?? "").trim();
+    if (!targetRecordId) throw new Error("Missing contact record id");
+    const email = args.record.email?.trim() ?? "";
+    if (!email) throw new Error("Contact email is missing.");
+    const ownerResponse = await fetchMondayApi<MondayApiResponse<{ ownerUserId?: string | null }>>(
+      `/api/monday/records/${targetRecordId}/owner`,
+      { sessionToken },
+    );
+    if (!ownerResponse.ok) {
+      throw new Error(ownerResponse.error ?? "Failed to resolve contact owner");
+    }
+    const ownerMondayUserId = ownerResponse.ownerUserId?.trim() ?? "";
+    const subject = args.template
+      ? `${args.template.name} - ${args.record.name || "Contact"}`
+      : `Support update for ${args.record.name || "Contact"}`;
+    const html =
+      args.template?.renderedHtml?.trim().length
+        ? args.template.renderedHtml
+        : args.body
+            .trim()
+            .split("\n\n")
+            .map((paragraph) =>
+              paragraph ? `<p>${paragraph.replaceAll("\n", "<br/>")}</p>` : "<p><br/></p>",
+            )
+            .join("");
+    const sendEmailResult = await fetchMondayApi<MondaySendEmailResponse>("/api/monday/email/send", {
+      sessionToken,
+      method: "POST",
+      body: {
+        to: email,
+        subject,
+        html,
+        contactItemId: targetRecordId,
+        ownerMondayUserId: ownerMondayUserId || undefined,
+      },
+    });
+    if (!sendEmailResult.ok) {
+      throw new Error(sendEmailResult.error ?? "Failed to send email");
+    }
+    await createRecordUpdateAction({
+      sessionToken,
+      itemId: targetRecordId,
+      body: `${args.intent === "campaign" ? "Campaign Email Sent" : "Email Sent"} - ${subject}`,
+      updateType: "general",
+      intent: args.intent,
+      date: todayYmd(),
+      methodOfCommunication: "Email",
+      internalExternalStatus: "External",
+    });
+  };
+
+  const sendSmsToRecord = async (args: {
+    record: MondayRecord;
+    body: string;
+    intent: "conversation" | "campaign";
+  }) => {
+    if (!sessionToken) return;
+    const targetRecordId = (args.record.contactId ?? args.record.id ?? "").trim();
+    if (!targetRecordId) throw new Error("Missing contact record id");
+    const to = args.record.phone?.trim() ?? "";
+    if (!to) throw new Error("Contact phone number is missing.");
+    const smsResult = await fetchMondayApi<MondayApiResponse<{ sid?: string; to?: string; from?: string }>>(
+      "/api/monday/sms/send",
+      {
+        sessionToken,
+        method: "POST",
+        body: {
+          to,
+          body: args.body,
+          contactItemId: targetRecordId,
+        },
+      },
+    );
+    if (!smsResult.ok) {
+      throw new Error(smsResult.error ?? "Failed to send SMS");
+    }
+    await createRecordUpdateAction({
+      sessionToken,
+      itemId: targetRecordId,
+      body: `${args.intent === "campaign" ? "Campaign SMS Sent" : "SMS Sent"} - ${args.body}`,
+      updateType: "general",
+      intent: args.intent,
+      date: todayYmd(),
+      methodOfCommunication: "Text",
+      internalExternalStatus: "External",
+    });
+  };
 
   return (
     <div className="flex h-[calc(100vh-3rem)] max-h-[calc(100vh-3rem)] min-h-[560px] w-full overflow-hidden rounded-xl border bg-background">
@@ -288,6 +454,7 @@ export const MondayChatView = ({
         approvalSteps={approvalSteps}
         isLoadingRecords={isLoadingRecords}
         selectedRecordId={selectedRecordId}
+        selectedBulkRecordIds={selectedBulkRecordIds}
         onSelectRecord={(record) => {
           const recordId = (record.contactId ?? record.id ?? "").trim();
           setSelectedRecordId(recordId || null);
@@ -302,6 +469,31 @@ export const MondayChatView = ({
             }
           })();
         }}
+        onToggleRecordBulkSelection={(record) => {
+          const recordKey = toRecordKey(record);
+          if (!recordKey) return;
+          setSelectedBulkRecordIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(recordKey)) {
+              next.delete(recordKey);
+            } else {
+              next.add(recordKey);
+            }
+            return next;
+          });
+        }}
+        onSelectAllVisibleRecords={() => {
+          setSelectedBulkRecordIds(
+            new Set(
+              records
+                .map((record) => toRecordKey(record))
+                .filter((recordKey): recordKey is string => recordKey.length > 0),
+            ),
+          );
+        }}
+        onClearBulkSelection={() => {
+          setSelectedBulkRecordIds(new Set());
+        }}
       />
 
       <ConversationThreadPane
@@ -312,55 +504,30 @@ export const MondayChatView = ({
         selectedComposerChannel={composerChannel}
         onComposerChannelChange={setComposerChannel}
         currentUserId={userId}
-        onSendMessage={async ({ body, channel }) => {
-          if (!sessionToken || !selectedContactItemId) return;
+        onSendMessage={async ({ body, channel, emailTemplateId }) => {
+          if (!sessionToken || !selectedContactItemId || !selectedRecord) return;
           const trimmedBody = body.trim();
-          if (!trimmedBody) return;
+          const template =
+            emailTemplateId && channel === "email"
+              ? (emailTemplatesQuery.data ?? []).find((entry) => entry.id === emailTemplateId) ?? null
+              : null;
+          if (!trimmedBody && !template?.renderedHtml?.trim()) {
+            return;
+          }
           try {
             if (channel === "email") {
-              if (!contactEmail) {
-                toast.error("Contact email is missing.");
-                return;
-              }
-              const subject = `Support update for ${contactName}`;
-              const html = trimmedBody
-                .split("\n\n")
-                .map((paragraph) =>
-                  paragraph
-                    ? `<p>${paragraph.replaceAll("\n", "<br/>")}</p>`
-                    : "<p><br/></p>",
-                )
-                .join("");
-              const sendEmailResult = await fetchMondayApi<MondaySendEmailResponse>(
-                "/api/monday/email/send",
-                {
-                  sessionToken,
-                  method: "POST",
-                  body: {
-                    to: contactEmail,
-                    subject,
-                    html,
-                    contactItemId: selectedContactItemId,
-                    ownerMondayUserId: senderMailboxUserId || undefined,
-                  },
-                },
-              );
-              if (!sendEmailResult.ok) {
-                throw new Error(sendEmailResult.error ?? "Failed to send email");
-              }
-              await createRecordUpdateAction({
-                sessionToken,
-                itemId: selectedContactItemId,
-                body: `Email Sent - ${subject}`,
-                updateType: "general",
+              await sendEmailToRecord({
+                record: selectedRecord,
+                body: trimmedBody,
+                template,
                 intent: "conversation",
-                date: todayYmd(),
-                methodOfCommunication: "Email",
-                internalExternalStatus: "External",
               });
               if (selectedSupportConversationId) {
+                const subject = template
+                  ? `${template.name} - ${selectedRecord.name || "Contact"}`
+                  : `Support update for ${contactName}`;
                 await appendSupportMessage({
-                  body: trimmedBody,
+                  body: trimmedBody || template?.content || "",
                   role: "assistant",
                   source: "admin",
                   channel: "email",
@@ -375,38 +542,15 @@ export const MondayChatView = ({
                   type: "message.sent",
                   actorMondayUserId: userId ?? undefined,
                   actorName: userName ?? undefined,
-                  payload: JSON.stringify({ channel: "email", subject }),
+                  payload: JSON.stringify({ channel: "email", subject, templateId: template?.id ?? null }),
                 });
               }
               toast.success("Email sent and logged.");
             } else {
-              if (!contactPhone) {
-                toast.error("Contact phone number is missing.");
-                return;
-              }
-              const smsResult = await fetchMondayApi<
-                MondayApiResponse<{ sid?: string; to?: string; from?: string }>
-              >("/api/monday/sms/send", {
-                sessionToken,
-                method: "POST",
-                body: {
-                  to: contactPhone,
-                  body: trimmedBody,
-                  contactItemId: selectedContactItemId,
-                },
-              });
-              if (!smsResult.ok) {
-                throw new Error(smsResult.error ?? "Failed to send SMS");
-              }
-              await createRecordUpdateAction({
-                sessionToken,
-                itemId: selectedContactItemId,
-                body: `SMS Sent - ${trimmedBody}`,
-                updateType: "general",
+              await sendSmsToRecord({
+                record: selectedRecord,
+                body: trimmedBody,
                 intent: "conversation",
-                date: todayYmd(),
-                methodOfCommunication: "Text",
-                internalExternalStatus: "External",
               });
               if (selectedSupportConversationId) {
                 await appendSupportMessage({
@@ -433,6 +577,69 @@ export const MondayChatView = ({
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to send message");
           }
+        }}
+        onSendBulkMessage={async ({ channel, body, emailTemplateId }) => {
+          if (!sessionToken) return;
+          if (selectedBulkRecords.length === 0) {
+            toast.error("Select one or more contacts for bulk send.");
+            return;
+          }
+          const trimmedBody = body.trim();
+          const template =
+            emailTemplateId && channel === "email"
+              ? (emailTemplatesQuery.data ?? []).find((entry) => entry.id === emailTemplateId) ?? null
+              : null;
+          if (!trimmedBody && !template?.renderedHtml?.trim()) {
+            toast.error("Provide a message body or choose a template.");
+            return;
+          }
+          let sentCount = 0;
+          let failedCount = 0;
+          for (const record of selectedBulkRecords) {
+            try {
+              if (channel === "email") {
+                await sendEmailToRecord({
+                  record,
+                  body: trimmedBody,
+                  template,
+                  intent: "campaign",
+                });
+              } else {
+                await sendSmsToRecord({
+                  record,
+                  body: trimmedBody,
+                  intent: "campaign",
+                });
+              }
+              sentCount += 1;
+            } catch {
+              failedCount += 1;
+            }
+          }
+          if (sentCount > 0 && failedCount === 0) {
+            toast.success(`Bulk ${channel.toUpperCase()} sent to ${sentCount} contact${sentCount === 1 ? "" : "s"}.`);
+          } else if (sentCount > 0 && failedCount > 0) {
+            toast.error(
+              `Bulk ${channel.toUpperCase()} partially sent (${sentCount} succeeded, ${failedCount} failed).`,
+            );
+          } else {
+            toast.error(`Bulk ${channel.toUpperCase()} failed for all selected contacts.`);
+          }
+        }}
+        bulkSelectionCount={selectedBulkRecords.length}
+        emailTemplates={(emailTemplatesQuery.data ?? []).map((template) => ({
+          id: template.id,
+          name: template.name,
+          content: template.content,
+          renderedHtml: template.renderedHtml,
+        }))}
+        selectedEmailTemplateId={selectedEmailTemplateId}
+        selectedEmailTemplateBody={selectedEmailTemplate?.content ?? null}
+        onSelectedEmailTemplateIdChange={(templateId) => {
+          setSelectedEmailTemplateId(templateId);
+        }}
+        onClearBulkSelection={() => {
+          setSelectedBulkRecordIds(new Set());
         }}
         onDeleteMessage={async (messageId) => {
           if (!sessionToken) return;

@@ -3601,28 +3601,60 @@ export const updateMondayRecordColumnValue = async (
     const allowedLabels = parseDropdownLabelsFromSettings(
       matchedColumn.settings_str ?? null,
     );
-    if (normalizedValue && allowedLabels.length === 0) {
-      throw new Error("No predefined options are available for this column");
+    if (columnType === "status") {
+      if (normalizedValue && allowedLabels.length === 0) {
+        throw new Error("No predefined options are available for this column");
+      }
+      if (
+        normalizedValue &&
+        !allowedLabels.some(
+          (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+        )
+      ) {
+        throw new Error("Value must match one of the predefined options");
+      }
+      const canonicalValue =
+        normalizedValue == null
+          ? null
+          : allowedLabels.find(
+              (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+            ) ?? normalizedValue;
+      columnValues[columnId] = canonicalValue ? { label: canonicalValue } : null;
+    } else {
+      const selectedLabels =
+        normalizedValue == null
+          ? []
+          : Array.from(
+              new Set(
+                normalizedValue
+                  .split(",")
+                  .map((entry) => entry.trim())
+                  .filter((entry) => entry.length > 0),
+              ),
+            );
+      if (selectedLabels.length > 0 && allowedLabels.length === 0) {
+        throw new Error("No predefined options are available for this column");
+      }
+      const invalidLabel = selectedLabels.find(
+        (selectedLabel) =>
+          !allowedLabels.some(
+            (allowedLabel) =>
+              allowedLabel.toLowerCase() === selectedLabel.toLowerCase(),
+          ),
+      );
+      if (invalidLabel) {
+        throw new Error(`Value "${invalidLabel}" must match one of the predefined options`);
+      }
+      const canonicalLabels = selectedLabels.map(
+        (selectedLabel) =>
+          allowedLabels.find(
+            (allowedLabel) =>
+              allowedLabel.toLowerCase() === selectedLabel.toLowerCase(),
+          ) ?? selectedLabel,
+      );
+      columnValues[columnId] =
+        canonicalLabels.length > 0 ? { labels: canonicalLabels } : null;
     }
-    if (
-      normalizedValue &&
-      !allowedLabels.some(
-        (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
-      )
-    ) {
-      throw new Error("Value must match one of the predefined options");
-    }
-    const canonicalValue =
-      normalizedValue == null
-        ? null
-        : allowedLabels.find(
-            (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
-          ) ?? normalizedValue;
-    columnValues[columnId] = canonicalValue
-      ? columnType === "status"
-        ? { label: canonicalValue }
-        : { labels: [canonicalValue] }
-      : null;
   } else if (columnType === "date") {
     const dateOnly = normalizeDateOnlyValue(normalizedValue);
     if (normalizedValue && !dateOnly) {

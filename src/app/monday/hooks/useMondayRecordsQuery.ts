@@ -4,7 +4,11 @@ import { useAction } from "convex/react";
 import { api } from "@convex-config/_generated/api";
 
 import { fetchMondayApi } from "../services/monday-api";
-import type { MondayResponse } from "../types";
+import type {
+  AdvancedFilterCondition,
+  AdvancedFilterMatchMode,
+  MondayResponse,
+} from "../types";
 
 interface UseMondayRecordsQueryArgs {
   sessionToken: string | null;
@@ -17,6 +21,8 @@ interface UseMondayRecordsQueryArgs {
   ownerFilter: string;
   hasResolvedUserScopeOwner: boolean;
   boardSettingsReady: boolean;
+  activeAdvancedFilterConditions: AdvancedFilterCondition[];
+  advancedFilterMatchMode: AdvancedFilterMatchMode;
 }
 
 export const useMondayRecordsQuery = ({
@@ -30,6 +36,8 @@ export const useMondayRecordsQuery = ({
   ownerFilter,
   hasResolvedUserScopeOwner,
   boardSettingsReady,
+  activeAdvancedFilterConditions,
+  advancedFilterMatchMode,
 }: UseMondayRecordsQueryArgs) => {
   const listRecords = useAction(api.mondayRecordsNode.listRecords);
 
@@ -42,6 +50,8 @@ export const useMondayRecordsQuery = ({
       isGlobalDateScope ? "__global__" : monthBounds.to,
       debouncedSearch,
       ownerFilter,
+      JSON.stringify(activeAdvancedFilterConditions),
+      advancedFilterMatchMode,
       sessionToken,
     ],
     enabled:
@@ -84,6 +94,14 @@ export const useMondayRecordsQuery = ({
         owner: ownerFilter.trim() || undefined,
         dateFrom: shouldApplyDateWindow ? monthBounds.from : undefined,
         dateTo: shouldApplyDateWindow ? monthBounds.to : undefined,
+        advancedFilterConditions:
+          activeAdvancedFilterConditions.length > 0
+            ? activeAdvancedFilterConditions
+            : undefined,
+        advancedFilterMatchMode:
+          activeAdvancedFilterConditions.length > 0
+            ? advancedFilterMatchMode
+            : undefined,
       });
 
       return {

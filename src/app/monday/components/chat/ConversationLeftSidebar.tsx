@@ -17,7 +17,11 @@ export const ConversationLeftSidebar = ({
   approvalSteps,
   isLoadingRecords,
   selectedRecordId,
+  selectedBulkRecordIds,
   onSelectRecord,
+  onToggleRecordBulkSelection,
+  onSelectAllVisibleRecords,
+  onClearBulkSelection,
 }: ConversationLeftSidebarProps) => {
   const [favoriteRecordKeys, setFavoriteRecordKeys] = useState<string[]>([]);
   const storageKey = `monday-chat-favorites:${userId ?? "anonymous"}`;
@@ -67,6 +71,30 @@ export const ConversationLeftSidebar = ({
 
   return (
     <aside className="flex h-full min-h-0 w-[320px] shrink-0 flex-col border-r bg-background">
+      <div className="border-b px-2 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-muted-foreground text-xs font-medium">
+            Bulk selected: {selectedBulkRecordIds.size}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onSelectAllVisibleRecords}
+              className="rounded border px-2 py-0.5 text-[11px] hover:bg-muted"
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              onClick={onClearBulkSelection}
+              disabled={selectedBulkRecordIds.size === 0}
+              className="rounded border px-2 py-0.5 text-[11px] hover:bg-muted disabled:opacity-50"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-auto">
         {favoriteRecords.length > 0 ? (
           <div className="border-b p-2">
@@ -83,8 +111,10 @@ export const ConversationLeftSidebar = ({
                       record={record}
                       approvalSteps={approvalSteps}
                       compact
-                      selected={isActive}
                       onClick={onSelectRecord}
+                      selectable
+                      onToggleSelect={onToggleRecordBulkSelection}
+                      selected={selectedBulkRecordIds.has(recordId) || isActive}
                     />
                     <button
                       type="button"
@@ -127,8 +157,10 @@ export const ConversationLeftSidebar = ({
                   record={record}
                   approvalSteps={approvalSteps}
                   compact
-                  selected={isActive}
+                  selected={selectedBulkRecordIds.has(recordId) || isActive}
                   onClick={onSelectRecord}
+                  selectable
+                  onToggleSelect={onToggleRecordBulkSelection}
                 />
                 <button
                   type="button"
