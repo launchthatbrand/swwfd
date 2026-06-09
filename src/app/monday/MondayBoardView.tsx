@@ -2583,18 +2583,32 @@ export function MondayBoardView({
   }, [forcedOwnerId, hasForcedOwnerScope, ownerFilter, ownerOptions]);
   const boardColumnFilterOptions = useMemo(() => {
     const labels = new Set<string>();
-    for (const record of records) {
-      const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
-      for (const detail of details) {
-        const label = detail.label.trim();
-        if (!label) continue;
-        labels.add(label);
+    for (const column of platformBoardColumnsQuery.data ?? []) {
+      const label = column.title.trim();
+      if (!label) continue;
+      labels.add(label);
+    }
+    // Fallback: when board columns are unavailable, keep deriving from loaded record detail labels.
+    if (labels.size === 0) {
+      for (const record of records) {
+        const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
+        for (const detail of details) {
+          const label = detail.label.trim();
+          if (!label) continue;
+          labels.add(label);
+        }
       }
     }
     return Array.from(labels).sort((a, b) => a.localeCompare(b));
-  }, [records]);
+  }, [platformBoardColumnsQuery.data, records]);
   const boardColumnFilterKindByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
+    const platformTypeByLabel = new Map<string, string>();
+    for (const column of platformBoardColumnsQuery.data ?? []) {
+      const label = column.title.trim();
+      if (!label) continue;
+      platformTypeByLabel.set(label, column.type.trim().toLowerCase());
+    }
     for (const record of records) {
       const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
       for (const detail of details) {
@@ -2613,14 +2627,22 @@ export function MondayBoardView({
     const kinds = new Map<string, "text" | "date">();
     for (const label of boardColumnFilterOptions) {
       const samples = byLabel.get(label) ?? [];
+      const platformType = platformTypeByLabel.get(label) ?? "";
+      const typeSuggestsDate =
+        platformType.includes("date") ||
+        platformType.includes("timeline") ||
+        platformType.includes("week");
       const labelSuggestsDate = /\b(date|time)\b/i.test(label);
       const hasDateSamples =
         samples.length > 0 &&
         samples.every((sample) => normalizeAdvancedDate(sample).length > 0);
-      kinds.set(label, labelSuggestsDate || hasDateSamples ? "date" : "text");
+      kinds.set(
+        label,
+        typeSuggestsDate || labelSuggestsDate || hasDateSamples ? "date" : "text",
+      );
     }
     return kinds;
-  }, [boardColumnFilterOptions, records]);
+  }, [boardColumnFilterOptions, platformBoardColumnsQuery.data, records]);
   const boardColumnValueOptionsByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
