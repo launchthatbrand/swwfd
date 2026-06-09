@@ -803,6 +803,35 @@ export declare const api: {
       "action",
       "public",
       {
+        advancedFilterConditions?: Array<{
+          field:
+            | "owner"
+            | "district"
+            | "name"
+            | "email"
+            | "phone"
+            | "address"
+            | "tags"
+            | "createdAt"
+            | "hireDate"
+            | "detail";
+          id: string;
+          operator:
+            | "contains"
+            | "equals"
+            | "not_equals"
+            | "starts_with"
+            | "ends_with"
+            | "is_empty"
+            | "is_not_empty"
+            | "on_or_after"
+            | "on_or_before"
+            | "between";
+          target: string;
+          value: string;
+          valueTo: string;
+        }>;
+        advancedFilterMatchMode?: "all" | "any";
         cursor?: string;
         dateFrom?: string;
         dateTo?: string;

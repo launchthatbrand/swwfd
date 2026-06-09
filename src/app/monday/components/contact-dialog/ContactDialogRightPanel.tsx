@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@launchthatapp/ui/select";
+import { MultiSelect } from "~/components/ui/multi-select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
 import { Textarea } from "@launchthatapp/ui/textarea";
@@ -182,7 +183,7 @@ export const ContactDialogRightPanel = ({
                           <div className="space-y-2">
                             {(() => {
                               const normalizedType = col.type.toLowerCase();
-                              if (normalizedType === "status" || normalizedType === "dropdown") {
+                              if (normalizedType === "status") {
                                 const options = Array.from(new Set((col.options ?? []).filter(Boolean)));
                                 return (
                                   <Select
@@ -203,6 +204,23 @@ export const ContactDialogRightPanel = ({
                                       ))}
                                     </SelectContent>
                                   </Select>
+                                );
+                              }
+                              if (normalizedType === "dropdown") {
+                                const options = Array.from(new Set((col.options ?? []).filter(Boolean)));
+                                const selectedValues = editingColumnDraft
+                                  .split(",")
+                                  .map((entry) => entry.trim())
+                                  .filter((entry) => entry.length > 0);
+                                return (
+                                  <MultiSelect
+                                    options={options.map((option) => ({ label: option, value: option }))}
+                                    defaultValue={selectedValues}
+                                    placeholder="Select values"
+                                    onValueChange={(values) => {
+                                      onEditingColumnDraftChange(values.join(", "));
+                                    }}
+                                  />
                                 );
                               }
                               if (normalizedType === "date") {

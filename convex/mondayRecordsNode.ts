@@ -223,6 +223,43 @@ const mondayUpdateIntentValidator = v.union(
   v.literal("campaign"),
 );
 
+const advancedFilterFieldValidator = v.union(
+  v.literal("owner"),
+  v.literal("district"),
+  v.literal("name"),
+  v.literal("email"),
+  v.literal("phone"),
+  v.literal("address"),
+  v.literal("tags"),
+  v.literal("createdAt"),
+  v.literal("hireDate"),
+  v.literal("detail"),
+);
+
+const advancedFilterOperatorValidator = v.union(
+  v.literal("contains"),
+  v.literal("equals"),
+  v.literal("not_equals"),
+  v.literal("starts_with"),
+  v.literal("ends_with"),
+  v.literal("is_empty"),
+  v.literal("is_not_empty"),
+  v.literal("on_or_after"),
+  v.literal("on_or_before"),
+  v.literal("between"),
+);
+
+const advancedFilterMatchModeValidator = v.union(v.literal("all"), v.literal("any"));
+
+const advancedFilterConditionValidator = v.object({
+  id: v.string(),
+  field: advancedFilterFieldValidator,
+  operator: advancedFilterOperatorValidator,
+  value: v.string(),
+  valueTo: v.string(),
+  target: v.string(),
+});
+
 // ---------------------------------------------------------------------------
 // Env + helpers
 // ---------------------------------------------------------------------------
@@ -321,6 +358,40 @@ const parseDropdownLabelsFromSettings = (settingsStr: string | null | undefined)
   }
 };
 
+const parseOptionLabelMapFromSettings = (settingsStr: string | null | undefined) => {
+  if (!settingsStr || settingsStr.trim().length === 0) return new Map<string, string>();
+  try {
+    const parsed = JSON.parse(settingsStr) as Record<string, unknown>;
+    const optionLabelMap = new Map<string, string>();
+    const labelsNode = parsed.labels;
+    if (typeof labelsNode === "object" && labelsNode !== null) {
+      for (const [key, value] of Object.entries(labelsNode as Record<string, unknown>)) {
+        if (typeof value === "string" && value.trim().length > 0) {
+          optionLabelMap.set(String(key), value.trim());
+          continue;
+        }
+        if (typeof value === "object" && value !== null) {
+          const record = value as Record<string, unknown>;
+          const labelCandidate =
+            typeof record.label === "string"
+              ? record.label
+              : typeof record.name === "string"
+                ? record.name
+                : typeof record.title === "string"
+                  ? record.title
+                  : null;
+          if (labelCandidate && labelCandidate.trim().length > 0) {
+            optionLabelMap.set(String(key), labelCandidate.trim());
+          }
+        }
+      }
+    }
+    return optionLabelMap;
+  } catch {
+    return new Map<string, string>();
+  }
+};
+
 const toColumnDisplayValue = (text: string | null | undefined, value: string | null | undefined) => {
   const trimmedText = text?.trim() ?? "";
   if (trimmedText.length > 0) return trimmedText;
@@ -340,6 +411,37 @@ const toColumnDisplayValue = (text: string | null | undefined, value: string | n
     // ignore
   }
   return "";
+};
+
+const toOptionAwareColumnDisplayValue = (args: {
+  text: string | null | undefined;
+  value: string | null | undefined;
+  optionLabelMap?: Map<string, string>;
+}) => {
+  const display = toColumnDisplayValue(args.text, args.value).trim();
+  if (display.length > 0) return display;
+  if (!args.value || !args.optionLabelMap || args.optionLabelMap.size === 0) return display;
+  try {
+    const parsed = JSON.parse(args.value) as Record<string, unknown>;
+    const optionIds: string[] = [];
+    if (Array.isArray(parsed.ids)) {
+      for (const id of parsed.ids) {
+        if (typeof id === "string" || typeof id === "number") {
+          optionIds.push(String(id));
+        }
+      }
+    } else if (typeof parsed.index === "string" || typeof parsed.index === "number") {
+      optionIds.push(String(parsed.index));
+    }
+    if (optionIds.length === 0) return display;
+    const labels = optionIds
+      .map((id) => args.optionLabelMap?.get(id)?.trim() ?? "")
+      .filter((entry) => entry.length > 0);
+    if (labels.length === 0) return display;
+    return Array.from(new Set(labels)).join(", ");
+  } catch {
+    return display;
+  }
 };
 
 const parseTimestampFromColumn = (
@@ -388,21 +490,38 @@ const resolveBoardColumnIds = async (boardId: string) => {
         id?: string | null;
         title?: string | null;
         type?: string | null;
+        settings_str?: string | null;
       }>;
     }>;
   }
   const data = await callMondayGraphQL<BoardColumnsData>(
     `query ResolveBoardColumns($boardId: ID!) {
       boards(ids: [$boardId]) {
-        columns { id title type }
+        columns { id title type settings_str }
       }
     }`,
     { boardId },
   );
   const columns = data.boards?.[0]?.columns ?? [];
   const columnTitleById: Record<string, string> = {};
+  const columnIdByNormalizedTitle: Record<string, string> = {};
+  const columnTypeById: Record<string, string> = {};
   for (const column of columns) {
-    if (column.id && column.title) columnTitleById[column.id] = column.title;
+    const columnId = column.id?.trim() ?? "";
+    const columnTitle = column.title?.trim() ?? "";
+    if (columnId && columnTitle) {
+      columnTitleById[columnId] = columnTitle;
+      columnIdByNormalizedTitle[columnTitle.toLowerCase()] = columnId;
+    }
+    if (columnId && column.type) {
+      columnTypeById[columnId] = column.type.trim().toLowerCase();
+    }
+  }
+  const optionLabelMapById: Record<string, Map<string, string>> = {};
+  for (const column of columns) {
+    const columnId = column.id?.trim() ?? "";
+    if (!columnId) continue;
+    optionLabelMapById[columnId] = parseOptionLabelMapFromSettings(column.settings_str ?? null);
   }
   const statusColumnId =
     columns.find((c) => (c.type ?? "").toLowerCase() === "status")?.id ?? null;
@@ -422,6 +541,9 @@ const resolveBoardColumnIds = async (boardId: string) => {
     emailColumnId,
     dateColumnId,
     columnTitleById,
+    columnIdByNormalizedTitle,
+    columnTypeById,
+    optionLabelMapById,
   };
 };
 
@@ -648,6 +770,8 @@ const listMondayBoardRecordsImpl = async (args: {
   dateTo?: string;
   owner?: string;
   status?: string;
+  advancedFilterConditions?: AdvancedFilterCondition[];
+  advancedFilterMatchMode?: AdvancedFilterMatchMode;
 }) => {
   const { boardId } = getMondayBoardEnv();
   const limit = parseLimit(args.limit);
@@ -695,6 +819,13 @@ const listMondayBoardRecordsImpl = async (args: {
         }`);
         appliedFilters.status = true;
       }
+      const advancedRules = buildServerAdvancedFilterRules({
+        conditions: args.advancedFilterConditions ?? [],
+        matchMode: args.advancedFilterMatchMode ?? "all",
+        columnIdByNormalizedTitle: columnIds.columnIdByNormalizedTitle,
+        columnTypeById: columnIds.columnTypeById,
+      });
+      rules.push(...advancedRules);
     } catch {
       // Continue without server-side rules.
     }
@@ -804,6 +935,26 @@ const listMondayBoardRecordsImpl = async (args: {
     const sourceItem = firstItems[index];
     if (!record || !sourceItem) continue;
     const columns = sourceItem.column_values ?? [];
+    for (const column of columns) {
+      const columnId = column.id?.trim() ?? "";
+      if (!columnId) continue;
+      if ((column.type ?? "").trim().toLowerCase() === "creation_log") continue;
+      const value = toOptionAwareColumnDisplayValue({
+        text: column.text,
+        value: column.value,
+        optionLabelMap: columnIds.optionLabelMapById[columnId],
+      }).trim();
+      if (!value) continue;
+      const label = columnIds.columnTitleById[columnId]?.trim() || columnId;
+      const hasLabelValue = record.contactDetails.some(
+        (detail) =>
+          detail.label.trim().toLowerCase() === label.toLowerCase() &&
+          detail.value.trim().toLowerCase() === value.toLowerCase(),
+      );
+      if (!hasLabelValue) {
+        record.contactDetails.push({ label, value });
+      }
+    }
     for (const step of approvalSteps) {
       const value = columns
         .find((column) => column.id === step.id)
@@ -900,6 +1051,229 @@ const filterRecordsClientSide = (
     }
     return true;
   });
+};
+
+type AdvancedFilterField =
+  | "owner"
+  | "district"
+  | "name"
+  | "email"
+  | "phone"
+  | "address"
+  | "tags"
+  | "createdAt"
+  | "hireDate"
+  | "detail";
+type AdvancedFilterOperator =
+  | "contains"
+  | "equals"
+  | "not_equals"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "on_or_after"
+  | "on_or_before"
+  | "between";
+type AdvancedFilterMatchMode = "all" | "any";
+type AdvancedFilterCondition = {
+  id: string;
+  field: AdvancedFilterField;
+  operator: AdvancedFilterOperator;
+  value: string;
+  valueTo: string;
+  target: string;
+};
+
+const LEGACY_FIELD_TO_BOARD_COLUMN_LABEL: Partial<
+  Record<Exclude<AdvancedFilterField, "detail">, string>
+> = {
+  owner: "Owner",
+  district: "Status",
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  address: "Address",
+  tags: "Tags",
+  createdAt: "Date",
+  hireDate: "Hire Date",
+};
+
+const getBoardColumnTargetForCondition = (condition: AdvancedFilterCondition) => {
+  if (condition.field === "detail") return condition.target.trim();
+  return LEGACY_FIELD_TO_BOARD_COLUMN_LABEL[condition.field]?.trim() ?? "";
+};
+
+const normalizeAdvancedDate = (value: string | null | undefined) => {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const parsed = Date.parse(trimmed);
+  if (Number.isNaN(parsed)) return "";
+  return new Date(parsed).toISOString().slice(0, 10);
+};
+
+const getRecordFieldValuesForCondition = (
+  record: ReturnType<typeof boardItemToRecord>,
+  condition: AdvancedFilterCondition,
+) => {
+  const boardColumnTarget = getBoardColumnTargetForCondition(condition);
+  if (boardColumnTarget.length > 0) {
+    const normalizedTarget = boardColumnTarget.trim().toLowerCase();
+    const detailValues = (record.contactDetails ?? [])
+      .filter((detail) => detail.label.trim().toLowerCase() === normalizedTarget)
+      .flatMap((detail) =>
+        detail.value
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter((entry) => entry.length > 0),
+      );
+    if (detailValues.length > 0) {
+      return detailValues;
+    }
+    if (normalizedTarget === "owner") {
+      const ownerProfileValues = record.ownerIds.map((entry) => entry.trim()).filter(Boolean);
+      return [record.peopleText ?? "", ...ownerProfileValues].map((value) => value.trim()).filter(Boolean);
+    }
+    if (normalizedTarget === "status" || normalizedTarget === "district") {
+      return [record.statusText ?? ""].map((value) => value.trim()).filter(Boolean);
+    }
+    return [];
+  }
+  return [];
+};
+
+const doesRecordMatchAdvancedCondition = (
+  record: ReturnType<typeof boardItemToRecord>,
+  condition: AdvancedFilterCondition,
+) => {
+  const values = getRecordFieldValuesForCondition(record, condition);
+  const hasValue = values.length > 0;
+  if (condition.operator === "is_empty") return !hasValue;
+  if (condition.operator === "is_not_empty") return hasValue;
+
+  if (
+    condition.operator === "on_or_after" ||
+    condition.operator === "on_or_before" ||
+    condition.operator === "between"
+  ) {
+    const target = normalizeAdvancedDate(condition.value);
+    const targetTo = normalizeAdvancedDate(condition.valueTo);
+    const dateValues = values.map((value) => normalizeAdvancedDate(value)).filter(Boolean);
+    if (dateValues.length === 0) return false;
+    if (condition.operator === "between") {
+      if (!target || !targetTo) return true;
+      return dateValues.some((value) => value >= target && value <= targetTo);
+    }
+    if (condition.operator === "on_or_after") {
+      if (!target) return true;
+      return dateValues.some((value) => value >= target);
+    }
+    if (!target) return true;
+    return dateValues.some((value) => value <= target);
+  }
+
+  const normalizedNeedle = condition.value.trim().toLowerCase();
+  if (normalizedNeedle.length === 0) return true;
+  const normalizedValues = values.map((value) => value.toLowerCase());
+  if (normalizedValues.length === 0) return false;
+  switch (condition.operator) {
+    case "contains":
+      return normalizedValues.some((value) => value.includes(normalizedNeedle));
+    case "equals":
+      return normalizedValues.some((value) => value === normalizedNeedle);
+    case "not_equals":
+      return normalizedValues.every((value) => value !== normalizedNeedle);
+    case "starts_with":
+      return normalizedValues.some((value) => value.startsWith(normalizedNeedle));
+    case "ends_with":
+      return normalizedValues.some((value) => value.endsWith(normalizedNeedle));
+    default:
+      return true;
+  }
+};
+
+const isAdvancedConditionActive = (condition: AdvancedFilterCondition) => {
+  const target = getBoardColumnTargetForCondition(condition);
+  if (target.length === 0) return false;
+  if (condition.operator === "is_empty" || condition.operator === "is_not_empty") return true;
+  if (condition.operator === "between") {
+    return condition.value.trim().length > 0 && condition.valueTo.trim().length > 0;
+  }
+  return condition.value.trim().length > 0;
+};
+
+const filterRecordsByAdvancedConditions = (
+  records: ReturnType<typeof boardItemToRecord>[],
+  conditions: AdvancedFilterCondition[],
+  matchMode: AdvancedFilterMatchMode,
+) => {
+  const activeConditions = conditions.filter((condition) => isAdvancedConditionActive(condition));
+  if (activeConditions.length === 0) return records;
+  if (matchMode === "any") {
+    return records.filter((record) =>
+      activeConditions.some((condition) => doesRecordMatchAdvancedCondition(record, condition)),
+    );
+  }
+  return records.filter((record) =>
+    activeConditions.every((condition) => doesRecordMatchAdvancedCondition(record, condition)),
+  );
+};
+
+const buildServerAdvancedFilterRules = (args: {
+  conditions: AdvancedFilterCondition[];
+  matchMode: AdvancedFilterMatchMode;
+  columnIdByNormalizedTitle: Record<string, string>;
+  columnTypeById: Record<string, string>;
+}) => {
+  // Monday rules are most reliable for "AND" semantics.
+  if (args.matchMode !== "all") return [] as string[];
+  const rules: string[] = [];
+  for (const condition of args.conditions) {
+    if (!isAdvancedConditionActive(condition)) continue;
+    const targetLabel = getBoardColumnTargetForCondition(condition).trim();
+    if (!targetLabel) continue;
+    const columnId = args.columnIdByNormalizedTitle[targetLabel.toLowerCase()] ?? "";
+    if (!columnId || !/^[a-zA-Z0-9_]+$/.test(columnId)) continue;
+    const normalizedValue = condition.value.trim();
+    const columnType = args.columnTypeById[columnId] ?? "";
+
+    if (
+      (condition.operator === "contains" || condition.operator === "equals") &&
+      normalizedValue.length > 0
+    ) {
+      const escapedValue = JSON.stringify(normalizedValue);
+      const operator =
+        condition.operator === "equals" &&
+        (columnType === "dropdown" || columnType === "status")
+          ? "any_of"
+          : "contains_text";
+      rules.push(`{
+        column_id: "${columnId}"
+        compare_value: [${escapedValue}]
+        operator: ${operator}
+      }`);
+      continue;
+    }
+
+    if (condition.operator === "is_empty") {
+      rules.push(`{
+        column_id: "${columnId}"
+        compare_value: [""]
+        operator: is_empty
+      }`);
+      continue;
+    }
+    if (condition.operator === "is_not_empty") {
+      rules.push(`{
+        column_id: "${columnId}"
+        compare_value: [""]
+        operator: is_not_empty
+      }`);
+    }
+  }
+  return rules;
 };
 
 const getMondayRecordEditOptionsImpl = async () => {
@@ -1238,28 +1612,60 @@ const updateMondayRecordColumnValueImpl = async (args: {
     const allowedLabels = parseDropdownLabelsFromSettings(
       matchedColumn.settings_str ?? null,
     );
-    if (normalizedValue && allowedLabels.length === 0) {
-      throw new Error("No predefined options are available for this column");
+    if (columnType === "status") {
+      if (normalizedValue && allowedLabels.length === 0) {
+        throw new Error("No predefined options are available for this column");
+      }
+      if (
+        normalizedValue &&
+        !allowedLabels.some(
+          (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+        )
+      ) {
+        throw new Error("Value must match one of the predefined options");
+      }
+      const canonicalValue =
+        normalizedValue == null
+          ? null
+          : (allowedLabels.find(
+              (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
+            ) ?? normalizedValue);
+      columnValues[columnId] = canonicalValue ? { label: canonicalValue } : null;
+    } else {
+      const selectedLabels =
+        normalizedValue == null
+          ? []
+          : Array.from(
+              new Set(
+                normalizedValue
+                  .split(",")
+                  .map((entry) => entry.trim())
+                  .filter((entry) => entry.length > 0),
+              ),
+            );
+      if (selectedLabels.length > 0 && allowedLabels.length === 0) {
+        throw new Error("No predefined options are available for this column");
+      }
+      const invalidLabel = selectedLabels.find(
+        (selectedLabel) =>
+          !allowedLabels.some(
+            (allowedLabel) =>
+              allowedLabel.toLowerCase() === selectedLabel.toLowerCase(),
+          ),
+      );
+      if (invalidLabel) {
+        throw new Error(`Value "${invalidLabel}" must match one of the predefined options`);
+      }
+      const canonicalLabels = selectedLabels.map(
+        (selectedLabel) =>
+          allowedLabels.find(
+            (allowedLabel) =>
+              allowedLabel.toLowerCase() === selectedLabel.toLowerCase(),
+          ) ?? selectedLabel,
+      );
+      columnValues[columnId] =
+        canonicalLabels.length > 0 ? { labels: canonicalLabels } : null;
     }
-    if (
-      normalizedValue &&
-      !allowedLabels.some(
-        (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
-      )
-    ) {
-      throw new Error("Value must match one of the predefined options");
-    }
-    const canonicalValue =
-      normalizedValue == null
-        ? null
-        : (allowedLabels.find(
-            (label) => label.toLowerCase() === normalizedValue.toLowerCase(),
-          ) ?? normalizedValue);
-    columnValues[columnId] = canonicalValue
-      ? columnType === "status"
-        ? { label: canonicalValue }
-        : { labels: [canonicalValue] }
-      : null;
   } else if (columnType === "date") {
     const dateOnly = normalizeDateOnlyValue(normalizedValue);
     if (normalizedValue && !dateOnly) {
@@ -1750,6 +2156,8 @@ export const listRecords = mondayAction({
     owner: v.optional(v.string()),
     dateFrom: v.optional(v.string()),
     dateTo: v.optional(v.string()),
+    advancedFilterConditions: v.optional(v.array(advancedFilterConditionValidator)),
+    advancedFilterMatchMode: v.optional(advancedFilterMatchModeValidator),
   },
   returns: v.object({
     boardName: v.union(v.string(), v.null()),
@@ -1769,6 +2177,8 @@ export const listRecords = mondayAction({
     const owner = args.owner?.trim().toLowerCase() ?? "";
     const dateFrom = parseIsoDateOnly(args.dateFrom);
     const dateTo = parseIsoDateOnly(args.dateTo);
+    const advancedFilterConditions = args.advancedFilterConditions ?? [];
+    const advancedFilterMatchMode = args.advancedFilterMatchMode ?? "all";
 
     const result = await listMondayBoardRecordsImpl({
       cursor: args.cursor,
@@ -1778,9 +2188,11 @@ export const listRecords = mondayAction({
       dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
       owner: owner || undefined,
       status: status || undefined,
+      advancedFilterConditions,
+      advancedFilterMatchMode,
     });
 
-    const filtered = filterRecordsClientSide(result.records, {
+    const clientFiltered = filterRecordsClientSide(result.records, {
       search,
       group,
       status,
@@ -1789,6 +2201,11 @@ export const listRecords = mondayAction({
       dateTo,
       appliedFilters: result.appliedFilters,
     });
+    const filtered = filterRecordsByAdvancedConditions(
+      clientFiltered,
+      advancedFilterConditions,
+      advancedFilterMatchMode,
+    );
 
     return {
       boardName: result.boardName,

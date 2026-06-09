@@ -202,7 +202,9 @@ import {
   getDefaultAdvancedOperatorForField,
   isAdvancedDateField,
   isAdvancedDateOperator,
+  doesRecordMatchAdvancedCondition,
   getBoardColumnTargetForCondition,
+  getRecordFieldValuesForCondition,
   normalizeAdvancedDate,
   getRecordFieldValues,
   LEGACY_FIELD_TO_BOARD_COLUMN_LABEL,
@@ -831,6 +833,10 @@ export function MondayBoardView({
     !canOverrideUserScopeOwner &&
     boardGeneralSettings.recordSource === "touched_in_month" &&
     debouncedSearch.trim().length < 2;
+  const activeAdvancedFilterConditions = useMemo(
+    () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
+    [advancedFilterConditions],
+  );
   const boardThemeStyles = useMemo(
     () => USER_BOARD_COLOR_THEME_STYLES[boardGeneralSettings.colorTheme],
     [boardGeneralSettings.colorTheme],
@@ -894,10 +900,14 @@ export function MondayBoardView({
     ownerFilter,
     hasResolvedUserScopeOwner,
     boardSettingsReady,
+    activeAdvancedFilterConditions,
+    advancedFilterMatchMode,
   });
 
   const shouldAutoLoadMore =
-    !staticMode && (boardGeneralSettings.pageSize === 0 || isGlobalDateScope);
+    !staticMode &&
+    activeAdvancedFilterConditions.length === 0 &&
+    (boardGeneralSettings.pageSize === 0 || isGlobalDateScope);
   const handleLoadMoreRecords = () => {
     if (recordsQuery.isFetchingNextPage) return;
     if (!recordsQuery.hasNextPage) return;
@@ -2583,18 +2593,32 @@ export function MondayBoardView({
   }, [forcedOwnerId, hasForcedOwnerScope, ownerFilter, ownerOptions]);
   const boardColumnFilterOptions = useMemo(() => {
     const labels = new Set<string>();
-    for (const record of records) {
-      const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
-      for (const detail of details) {
-        const label = detail.label.trim();
-        if (!label) continue;
-        labels.add(label);
+    for (const column of platformBoardColumnsQuery.data ?? []) {
+      const label = column.title.trim();
+      if (!label) continue;
+      labels.add(label);
+    }
+    // Fallback: when board columns are unavailable, keep deriving from loaded record detail labels.
+    if (labels.size === 0) {
+      for (const record of records) {
+        const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
+        for (const detail of details) {
+          const label = detail.label.trim();
+          if (!label) continue;
+          labels.add(label);
+        }
       }
     }
     return Array.from(labels).sort((a, b) => a.localeCompare(b));
-  }, [records]);
+  }, [platformBoardColumnsQuery.data, records]);
   const boardColumnFilterKindByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
+    const platformTypeByLabel = new Map<string, string>();
+    for (const column of platformBoardColumnsQuery.data ?? []) {
+      const label = column.title.trim();
+      if (!label) continue;
+      platformTypeByLabel.set(label, column.type.trim().toLowerCase());
+    }
     for (const record of records) {
       const details = Array.isArray(record.contactDetails) ? record.contactDetails : [];
       for (const detail of details) {
@@ -2613,14 +2637,22 @@ export function MondayBoardView({
     const kinds = new Map<string, "text" | "date">();
     for (const label of boardColumnFilterOptions) {
       const samples = byLabel.get(label) ?? [];
+      const platformType = platformTypeByLabel.get(label) ?? "";
+      const typeSuggestsDate =
+        platformType.includes("date") ||
+        platformType.includes("timeline") ||
+        platformType.includes("week");
       const labelSuggestsDate = /\b(date|time)\b/i.test(label);
       const hasDateSamples =
         samples.length > 0 &&
         samples.every((sample) => normalizeAdvancedDate(sample).length > 0);
-      kinds.set(label, labelSuggestsDate || hasDateSamples ? "date" : "text");
+      kinds.set(
+        label,
+        typeSuggestsDate || labelSuggestsDate || hasDateSamples ? "date" : "text",
+      );
     }
     return kinds;
-  }, [boardColumnFilterOptions, records]);
+  }, [boardColumnFilterOptions, platformBoardColumnsQuery.data, records]);
   const boardColumnValueOptionsByLabel = useMemo(() => {
     const byLabel = new Map<string, string[]>();
     for (const record of records) {
@@ -2693,12 +2725,12 @@ export function MondayBoardView({
     }),
     [editOptionsQuery.data],
   );
-  const activeAdvancedFilterConditions = useMemo(
-    () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
-    [advancedFilterConditions],
-  );
   const filteredRecords = useMemo(() => {
     if (activeAdvancedFilterConditions.length === 0) return records;
+    if (!staticMode && !useUserRecordsEndpoint) {
+      // Advanced conditions are applied on the server for the main records endpoint.
+      return records;
+    }
     return records.filter((record) =>
       doesRecordMatchAdvancedFilters(
         record,
@@ -2706,7 +2738,61 @@ export function MondayBoardView({
         advancedFilterMatchMode,
       ),
     );
-  }, [activeAdvancedFilterConditions, advancedFilterMatchMode, records]);
+  }, [
+    activeAdvancedFilterConditions,
+    advancedFilterMatchMode,
+    records,
+    staticMode,
+    useUserRecordsEndpoint,
+  ]);
+  useEffect(() => {
+    const shouldDebugFilters =
+      process.env.NODE_ENV !== "production" ||
+      process.env.NEXT_PUBLIC_MONDAY_DEBUG_FILTERS === "1";
+    if (!shouldDebugFilters) return;
+    if (activeAdvancedFilterConditions.length === 0) return;
+
+    const conditionDiagnostics = activeAdvancedFilterConditions.map((condition) => {
+      const target = getBoardColumnTargetForCondition(condition);
+      const matchedRecords = records.filter((record) =>
+        doesRecordMatchAdvancedCondition(record, condition),
+      );
+      const sampledValues = records
+        .slice(0, 40)
+        .map((record) => {
+          const values = getRecordFieldValuesForCondition(record, condition);
+          if (values.length === 0) return null;
+          return {
+            id: record.id,
+            name: record.name,
+            values: values.slice(0, 6),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+        .slice(0, 10);
+      return {
+        id: condition.id,
+        field: condition.field,
+        target,
+        operator: condition.operator,
+        value: condition.value,
+        valueTo: condition.valueTo,
+        matchedCount: matchedRecords.length,
+        sampleMatches: matchedRecords.slice(0, 8).map((record) => ({
+          id: record.id,
+          name: record.name,
+        })),
+        sampleValues: sampledValues,
+      };
+    });
+
+    console.info("[MondayAdvancedFilters][debug]", {
+      matchMode: advancedFilterMatchMode,
+      totalRecords: records.length,
+      filteredRecords: filteredRecords.length,
+      conditions: conditionDiagnostics,
+    });
+  }, [activeAdvancedFilterConditions, advancedFilterMatchMode, filteredRecords.length, records]);
   const sortedGridRecords = useMemo(() => {
     if (!(isTouchScopedView && userScopedDisplayMode === "grid")) {
       return filteredRecords;
@@ -2771,7 +2857,10 @@ export function MondayBoardView({
     return getRecordStepIndexFromApprovalSteps(selectedCrossViewRecords[0], approvalSteps);
   }, [approvalSteps, selectedCrossViewRecords]);
   const isHydratingGlobalRecords =
-    !staticMode && isGlobalDateScope && !!recordsQuery.hasNextPage;
+    !staticMode &&
+    shouldAutoLoadMore &&
+    !!recordsQuery.hasNextPage &&
+    (recordsQuery.isLoading || recordsQuery.isFetchingNextPage);
   const filteredRecordCountLabel = isHydratingGlobalRecords
     ? `${filteredRecords.length} loaded contact${filteredRecords.length === 1 ? "" : "s"} (loading all...)`
     : `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"}`;
@@ -3613,11 +3702,11 @@ export function MondayBoardView({
       return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
     }
     if (normalizedType === "dropdown") {
-      const first = (column.text ?? "")
+      const values = (column.text ?? "")
         .split(",")
         .map((entry) => entry.trim())
-        .find((entry) => entry.length > 0);
-      return first ?? "";
+        .filter((entry) => entry.length > 0);
+      return Array.from(new Set(values)).join(", ");
     }
     return column.text ?? "";
   }, []);

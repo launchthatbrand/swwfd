@@ -41,7 +41,7 @@ export const useMondayPlatformQueries = ({
 
   const platformBoardColumnsQuery = useQuery({
     queryKey: ["monday-platform-board-columns", sessionToken],
-    enabled: !!sessionToken && !staticMode && settingsOpen && isMasterAdmin,
+    enabled: !!sessionToken && !staticMode,
     queryFn: async () => {
       const data = await fetchMondayApi<PlatformBoardColumnsResponse>(
         "/api/monday/settings/platform/columns",

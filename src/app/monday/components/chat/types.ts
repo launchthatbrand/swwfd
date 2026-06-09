@@ -24,7 +24,11 @@ export type ConversationLeftSidebarProps = {
   approvalSteps: ApprovalStepConfig[];
   isLoadingRecords: boolean;
   selectedRecordId: string | null;
+  selectedBulkRecordIds: Set<string>;
   onSelectRecord: (record: MondayRecord) => void;
+  onToggleRecordBulkSelection: (record: MondayRecord) => void;
+  onSelectAllVisibleRecords: () => void;
+  onClearBulkSelection: () => void;
 };
 
 export type ConversationThreadPaneProps = {
@@ -43,7 +47,24 @@ export type ConversationThreadPaneProps = {
   onSendMessage: (payload: {
     channel: "email" | "sms";
     body: string;
+    emailTemplateId?: string | null;
   }) => Promise<void>;
+  onSendBulkMessage: (payload: {
+    channel: "email" | "sms";
+    body: string;
+    emailTemplateId?: string | null;
+  }) => Promise<void>;
+  bulkSelectionCount: number;
+  emailTemplates: {
+    id: string;
+    name: string;
+    content: string;
+    renderedHtml: string;
+  }[];
+  selectedEmailTemplateId: string | null;
+  selectedEmailTemplateBody: string | null;
+  onSelectedEmailTemplateIdChange: (templateId: string | null) => void;
+  onClearBulkSelection: () => void;
   onDeleteMessage: (messageId: string) => Promise<void>;
   onUpdateMessageDate: (messageId: string, date: string) => Promise<void>;
 };

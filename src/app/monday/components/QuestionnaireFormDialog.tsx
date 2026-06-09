@@ -57,6 +57,7 @@ export function QuestionnaireFormDialog({
   const [saving, setSaving] = useState(false);
   const [qualifications, setQualifications] = useState<QuestionnaireQualification[]>([]);
   const saveQuestionnaireAction = useAction(api.mondayQuestionnaireNode.saveQuestionnaire);
+  const createRecordUpdateAction = useAction(api.mondayRecordsNode.createRecordUpdate);
   const valuesByItemIdRef = useRef<Map<string, QuestionnaireFormValues>>(new Map());
   const qualificationsByItemIdRef = useRef<Map<string, QuestionnaireQualification[]>>(new Map());
   const stepByItemIdRef = useRef<Map<string, number>>(new Map());
@@ -143,6 +144,7 @@ export function QuestionnaireFormDialog({
 
     setSaving(true);
     try {
+      const shouldLogScreeningCompleted = !savedItemIds.has(activeItemId);
       const mappedQualifications = mapQualificationsToColumns(qualifications);
       await saveQuestionnaireAction({
         sessionToken,
@@ -151,6 +153,15 @@ export function QuestionnaireFormDialog({
         entryLevel: mappedQualifications.entryLevel,
         skilled: mappedQualifications.skilled,
       });
+      if (shouldLogScreeningCompleted) {
+        await createRecordUpdateAction({
+          sessionToken,
+          itemId: activeItemId,
+          updateType: "questionnaire",
+          body: "Screening Completed",
+          suppressApprovalStepMarking: true,
+        });
+      }
       valuesByItemIdRef.current.set(activeItemId, data);
       qualificationsByItemIdRef.current.set(activeItemId, qualifications);
       setSavedItemIds((prev) => new Set(prev).add(activeItemId));

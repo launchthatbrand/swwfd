@@ -10,7 +10,7 @@ import {
 } from "@launchthatapp/ui/select";
 import { useMemo, useState } from "react";
 
-import { $getRoot } from "lexical";
+import { $createParagraphNode, $createTextNode, $getRoot } from "lexical";
 import { Button } from "@launchthatapp/ui/button";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
 import { HistoryPlugin } from "@lexical/react/LexicalHistoryPlugin";
@@ -34,6 +34,7 @@ interface SupportChannelComposerProps {
   onSelectedChannelChange: (next: SupportComposerChannel) => void;
   onSend: (payload: { channel: SupportComposerChannel; text: string }) => Promise<void>;
   isSending: boolean;
+  initialText?: string;
 }
 
 const lexicalTheme = {
@@ -46,8 +47,10 @@ export const SupportChannelComposer = ({
   onSelectedChannelChange,
   onSend,
   isSending,
+  initialText,
 }: SupportChannelComposerProps) => {
-  const [plainText, setPlainText] = useState("");
+  const normalizedInitialText = (initialText ?? "").trim();
+  const [plainText, setPlainText] = useState(normalizedInitialText);
   const [editorKey, setEditorKey] = useState(0);
 
   const selected = useMemo(
@@ -69,16 +72,24 @@ export const SupportChannelComposer = ({
     () => ({
       namespace: "support-channel-composer",
       theme: lexicalTheme,
+      editorState: () => {
+        const root = $getRoot();
+        root.clear();
+        if (!normalizedInitialText) return;
+        const paragraphNode = $createParagraphNode();
+        paragraphNode.append($createTextNode(normalizedInitialText));
+        root.append(paragraphNode);
+      },
       onError(error: Error) {
         throw error;
       },
     }),
-    [],
+    [normalizedInitialText],
   );
 
   return (
     <div className="space-y-2 rounded-lg border bg-card p-3">
-      <LexicalComposer key={editorKey} initialConfig={initialConfig}>
+      <LexicalComposer key={`${editorKey}:${normalizedInitialText}`} initialConfig={initialConfig}>
         <div className="rounded-md border bg-background">
           <RichTextPlugin
             contentEditable={
