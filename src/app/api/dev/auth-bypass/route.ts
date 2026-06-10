@@ -116,8 +116,17 @@ export const GET = async (request: NextRequest) => {
     return Response.json({ error: "Not enabled." }, { status: 404 });
   }
 
-  const email = (env.SWWFD_DEV_AUTH_BYPASS_EMAIL ?? "desmond.tatilian@qcausa.com").trim().toLowerCase();
-  const password = (env.SWWFD_DEV_AUTH_BYPASS_PASSWORD ?? "dev-password-unsafe").trim();
+  const email = (env.SWWFD_DEV_AUTH_BYPASS_EMAIL ?? "").trim().toLowerCase();
+  const password = (env.SWWFD_DEV_AUTH_BYPASS_PASSWORD ?? "").trim();
+  if (!email || !password) {
+    return Response.json(
+      {
+        error:
+          "Missing SWWFD_DEV_AUTH_BYPASS_EMAIL or SWWFD_DEV_AUTH_BYPASS_PASSWORD.",
+      },
+      { status: 400 },
+    );
+  }
 
   const tokens = await signInOrUp(email, password, "Desmond");
 

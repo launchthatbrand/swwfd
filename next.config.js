@@ -33,7 +33,8 @@ const config = {
               "form-action 'self'",
               "frame-ancestors 'none'",
               "object-src 'none'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https:",
+              // TODO(security): move to nonces/hashes and remove unsafe-inline.
+              "script-src 'self' 'unsafe-inline' https:",
               "style-src 'self' 'unsafe-inline' https:",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data: https:",
@@ -51,8 +52,6 @@ const config = {
       },
     ];
   },
-
-  typescript: { ignoreBuildErrors: true },
 
   turbopack: {},
 };

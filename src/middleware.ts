@@ -5,19 +5,22 @@ import {
 import { NextResponse } from "next/server";
 
 const isAuthPage = createRouteMatcher(["/sign-in", "/sign-up"]);
-const isProtectedApplyRoute = createRouteMatcher(["/jobs/:jobId/apply(.*)"]);
-const isProtectedDashboardRoute = createRouteMatcher(["/dashboard(.*)"]);
-const isProtectedAdminRoute = createRouteMatcher(["/admin(.*)"]);
+const isFormsPage = createRouteMatcher(["/forms(.*)"]);
+const isMondayPage = createRouteMatcher(["/monday(.*)"]);
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {
+    const pathname = request.nextUrl.pathname;
+
     const nextWithPathnameHeader = () => {
       const response = NextResponse.next();
-      response.headers.set("x-pathname", request.nextUrl.pathname);
+      response.headers.set("x-pathname", pathname);
       return response;
     };
 
-    if (request.nextUrl.pathname === "/api/monday/email/outlook/callback") {
+    // API routes perform their own auth checks and should not be redirected.
+    // Monday APIs specifically rely on verified Monday session tokens server-side.
+    if (pathname.startsWith("/api/")) {
       return nextWithPathnameHeader();
     }
 
@@ -30,16 +33,13 @@ export default convexAuthNextjsMiddleware(
       return NextResponse.redirect(url);
     }
 
-    if (isProtectedApplyRoute(request) && !isAuthed) {
-      const returnTo = request.nextUrl.pathname + request.nextUrl.search;
-      const url = request.nextUrl.clone();
-      url.pathname = "/sign-in";
-      url.searchParams.set("return_to", returnTo);
-      return NextResponse.redirect(url);
-    }
+    // /forms is intentionally public.
+    // /monday app routes are embedded in Monday and use Monday context/session token auth.
+    const requiresConvexAuth =
+      !isAuthPage(request) && !isFormsPage(request) && !isMondayPage(request);
 
-    if ((isProtectedDashboardRoute(request) || isProtectedAdminRoute(request)) && !isAuthed) {
-      const returnTo = request.nextUrl.pathname + request.nextUrl.search;
+    if (requiresConvexAuth && !isAuthed) {
+      const returnTo = pathname + request.nextUrl.search;
       const url = request.nextUrl.clone();
       url.pathname = "/sign-in";
       url.searchParams.set("return_to", returnTo);
@@ -52,6 +52,6 @@ export default convexAuthNextjsMiddleware(
 );
 
 export const config = {
-  matcher: ["/((?!.*\\..*|_next|api/monday/email/outlook/callback).*)", "/"],
+  matcher: ["/((?!.*\\..*|_next).*)", "/"],
 };
 

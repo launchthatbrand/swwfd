@@ -143,29 +143,23 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
   if (isOutlookDebugLoggingEnabled) {
     console.info("[OutlookOAuth][callback][debug] request metadata", {
       method: request.method,
-      url: requestUrl.toString(),
       baseOrigin,
       host: request.headers.get("host"),
       xForwardedHost: request.headers.get("x-forwarded-host"),
       xForwardedProto: request.headers.get("x-forwarded-proto"),
-      referer: request.headers.get("referer"),
-      originHeader: request.headers.get("origin"),
       userAgent: request.headers.get("user-agent"),
       secFetchDest: request.headers.get("sec-fetch-dest"),
       secFetchMode: request.headers.get("sec-fetch-mode"),
       secFetchSite: request.headers.get("sec-fetch-site"),
-      queryString: requestUrl.search,
     });
   }
   console.info("[OutlookOAuth][callback] received", {
     method: request.method,
     path: requestUrl.pathname,
-    queryKeys: Array.from(params.keys()),
     hasCode: !!code,
     hasState: !!stateToken,
     oauthError: oauthError ?? null,
     oauthErrorDescription: oauthErrorDescription ?? null,
-    fullUrl: requestUrl.toString(),
   });
 
   if (oauthError) {
@@ -193,14 +187,12 @@ const handleCallback = async (request: Request, bodyParams?: URLSearchParams) =>
     console.warn("[OutlookOAuth][callback] missing code/state", {
       hasCode: !!code,
       hasState: !!stateToken,
-      query: params.toString(),
     });
     // Some Azure app setups return code in URL hash (#code=...),
     // which is not sent to the server. Recover it client-side if present.
     if (request.method === "GET") {
       if (isOutlookDebugLoggingEnabled) {
         console.info("[OutlookOAuth][callback][debug] serving hash recovery page", {
-          fullUrl: requestUrl.toString(),
           baseOrigin,
           hasCode: !!code,
           hasState: !!stateToken,
