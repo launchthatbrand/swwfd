@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": false,
+    "checkJs": false,
+    "incremental": false,
+    "tsBuildInfoFile": ".cache/tsbuildinfo.phase1.json"
+  },
+  "include": [
+    "src/middleware.ts",
+    "src/app/api/**/*.ts",
+    "src/server/**/*.ts",
+    "convex/**/*.ts",
+    "next-env.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "src/app/**/page.tsx",
+    "src/app/**/layout.tsx",
+    "src/app/**/template.tsx",
+    "src/app/**/loading.tsx",
+    "src/app/**/error.tsx",
+    "src/app/**/not-found.tsx",
+    "src/app/**/default.tsx",
+    "src/components/**",
+    "packages/**"
+  ]
+}

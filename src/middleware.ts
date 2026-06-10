@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 const isAuthPage = createRouteMatcher(["/sign-in", "/sign-up"]);
 const isFormsPage = createRouteMatcher(["/forms(.*)"]);
 const isMondayPage = createRouteMatcher(["/monday(.*)"]);
+const mondayRefererPattern = /^https?:\/\/([^.]+\.)?monday\.com(\/|$)/i;
 
 export default convexAuthNextjsMiddleware(
   async (request, { convexAuth }) => {
@@ -34,9 +35,19 @@ export default convexAuthNextjsMiddleware(
     }
 
     // /forms is intentionally public.
-    // /monday app routes are embedded in Monday and use Monday context/session token auth.
+    // /monday routes should only bypass Convex auth when loaded from embedded Monday context.
+    const isMondayRoute = isMondayPage(request);
+    const hasMondaySessionToken =
+      !!request.nextUrl.searchParams.get("sessionToken")?.trim() ||
+      !!request.headers.get("x-monday-session-token")?.trim();
+    const isIframeRequest = request.headers.get("sec-fetch-dest") === "iframe";
+    const referer = request.headers.get("referer") ?? "";
+    const hasMondayReferer = mondayRefererPattern.test(referer);
+    const isEmbeddedMondayRequest =
+      isMondayRoute && (hasMondaySessionToken || (isIframeRequest && hasMondayReferer));
+
     const requiresConvexAuth =
-      !isAuthPage(request) && !isFormsPage(request) && !isMondayPage(request);
+      !isAuthPage(request) && !isFormsPage(request) && !isEmbeddedMondayRequest;
 
     if (requiresConvexAuth && !isAuthed) {
       const returnTo = pathname + request.nextUrl.search;

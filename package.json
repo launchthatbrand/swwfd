@@ -14,7 +14,8 @@
     "smoke": "pnpm smoke:consumer",
     "smoke:consumer": "bash scripts/smoke/private-package-consumer-smoke.sh",
     "start": "next start",
-    "typecheck": "turbo run typecheck --filter=./packages/* && tsc --noEmit"
+    "typecheck": "turbo run typecheck --filter=./packages/* && tsc --noEmit",
+    "typecheck:phase1": "tsc --project tsconfig.phase1.json --noEmit"
   },
   "dependencies": {
     "@auth/core": "0.37.0",
@@ -76,7 +77,9 @@
     "@ianvs/prettier-plugin-sort-imports": "^4.4.2",
     "@next/eslint-plugin-next": "^16.2.9",
     "@tailwindcss/postcss": "^4.1.0",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/eslint-plugin-jsx-a11y": "^6.10.1",
+    "@types/lodash.throttle": "^4.1.9",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
