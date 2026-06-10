@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { env } from "~/env";
+import { isAuthorizedMondayWebhookRequest } from "../../webhookAuth";
 import {
   fetchMondayItemColumns,
   upsertMondayHireEventSubitem,
@@ -132,6 +133,9 @@ export const POST = async (request: Request) => {
   const { challenge, boardId, itemId, columnId } = extractWebhookPayload(body);
   if (challenge) {
     return toJson({ challenge });
+  }
+  if (!isAuthorizedMondayWebhookRequest(request)) {
+    return toJson({ ok: false, error: "Unauthorized webhook request" }, 401);
   }
 
   const contactBoardId = normalizeValue(env.MONDAY_BOARD_ID);

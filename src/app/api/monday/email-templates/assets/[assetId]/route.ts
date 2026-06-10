@@ -1,13 +1,21 @@
 import { NextResponse } from "next/server";
 
 import { callMondayGraphQL } from "~/server/monday/client";
+import { requireVerifiedMondaySession } from "~/server/monday/session";
 
 export const runtime = "nodejs";
 
 export const GET = async (
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ assetId: string }> },
 ) => {
+  try {
+    await requireVerifiedMondaySession(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    return new NextResponse(message, { status: 401 });
+  }
+
   try {
     const { assetId } = await context.params;
     if (!assetId || assetId.trim().length === 0) {

@@ -4,6 +4,7 @@ import { api as apiGenerated } from "@convex-config/_generated/api";
 import { getConvexHttpClient } from "~/server/convexHttp";
 import { callMondayGraphQL } from "~/server/monday/client";
 import { syncContactFromConnectedBoards } from "~/server/monday/sync";
+import { isAuthorizedMondayWebhookRequest } from "../../webhookAuth";
 
 export const runtime = "nodejs";
 
@@ -106,6 +107,9 @@ export const POST = async (request: Request) => {
   const { challenge, boardId, itemId, parentItemId } = extractWebhookPayload(body);
   if (challenge) {
     return toJson({ challenge });
+  }
+  if (!isAuthorizedMondayWebhookRequest(request)) {
+    return toJson({ ok: false, error: "Unauthorized webhook request" }, 401);
   }
 
   if (!boardId) {

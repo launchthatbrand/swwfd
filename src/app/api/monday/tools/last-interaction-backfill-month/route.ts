@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { backfillMondayLastInteractionDateByMonth } from "~/server/monday/client";
+import { requireBulkSyncAdminSession } from "../../sync/bulk/helpers";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,14 @@ interface Body {
 }
 
 export const POST = async (request: Request) => {
+  try {
+    await requireBulkSyncAdminSession(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    const status = message === "Admin access required" ? 403 : 401;
+    return toJson({ ok: false, error: message }, status);
+  }
+
   let body: Body = {};
   try {
     body = (await request.json()) as Body;

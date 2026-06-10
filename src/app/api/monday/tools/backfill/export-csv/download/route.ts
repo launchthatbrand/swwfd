@@ -6,12 +6,21 @@ import { NextResponse } from "next/server";
 import { api as apiGenerated } from "@convex-config/_generated/api";
 
 import { getConvexHttpClient } from "~/server/convexHttp";
+import { requireBulkSyncAdminSession } from "../../../../sync/bulk/helpers";
 
 export const runtime = "nodejs";
 
 const apiAny = apiGenerated as any;
 
 export const GET = async (request: Request) => {
+  try {
+    await requireBulkSyncAdminSession(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    const status = message === "Admin access required" ? 403 : 401;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+
   const url = new URL(request.url);
   const jobId = url.searchParams.get("jobId");
   const partParam = url.searchParams.get("part");

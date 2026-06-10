@@ -27,6 +27,8 @@ export const normalizeMonthlyBoardMappings = (values: unknown): MonthlyBoardMapp
 };
 
 export const requireBulkSyncAdminSession = async (request: Request) => {
+  // Bulk sync API routes are not protected by Convex cookie middleware;
+  // they must verify Monday session token identity per request.
   const identity = await requireVerifiedMondaySession(request);
   const convex = getConvexHttpClient();
   const platformSettings = await convex.query(
