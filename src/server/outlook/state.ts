@@ -1,9 +1,10 @@
 import "server-only";
 
 import { SignJWT, jwtVerify } from "jose";
+import type { JWTPayload } from "jose";
 import { env } from "~/env";
 
-export interface OutlookOAuthStatePayload {
+export interface OutlookOAuthStatePayload extends JWTPayload {
   mondayAccountId: string;
   mondayUserId: string;
   mondayAppClientId?: string;

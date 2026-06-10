@@ -197,6 +197,7 @@ const recoverPendingOutboundCorrelation = async (args: {
   if (uniqueContactIds.length !== 1) return null;
 
   const selected = pool[0];
+  if (!selected) return null;
   if (
     selected.status === "pending_lookup" ||
     (args.conversationId && !selected.conversationId) ||
