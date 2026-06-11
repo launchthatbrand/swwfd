@@ -1,8 +1,12 @@
 import { api as apiGenerated } from "@convex-config/_generated/api";
 import { getConvexHttpClient } from "~/server/convexHttp";
+import { env } from "~/env";
 import { getZohoOAuthConfig } from "~/server/zoho/config";
 import { sendZohoCampaignEmail } from "~/server/zoho/campaigns";
-import { refreshZohoAccessToken } from "~/server/zoho/oauth";
+import {
+  refreshZohoAccessToken,
+  refreshZohoAccessTokenWithRefreshToken,
+} from "~/server/zoho/oauth";
 import { getZohoConnection } from "~/server/zoho/store";
 
 export const sendViaZohoProvider = async (args: {
@@ -21,25 +25,33 @@ export const sendViaZohoProvider = async (args: {
   configuredSenderName: string | null;
   convex: ReturnType<typeof getConvexHttpClient>;
 }) => {
+  const isDebug = process.env.NODE_ENV !== "production";
   const connection = await getZohoConnection({
     mondayAccountId: args.mondayAccountId,
     mondayAppClientId: args.mondayAppClientId,
   });
-  if (!connection) {
+  const envRefreshToken = env.ZOHO_OAUTH_REFRESH_TOKEN?.trim() || null;
+  const refreshed = connection
+    ? await refreshZohoAccessToken({
+      connection,
+      requestOrigin: args.requestOrigin,
+    })
+    : envRefreshToken
+      ? await refreshZohoAccessTokenWithRefreshToken({
+        refreshToken: envRefreshToken,
+        requestOrigin: args.requestOrigin,
+      })
+      : null;
+  if (!refreshed) {
     throw new Error(
-      "Zoho is not connected for this workspace. Connect Zoho in Email Settings.",
+      "Zoho is not connected for this workspace. Connect Zoho in Email Settings or set ZOHO_OAUTH_REFRESH_TOKEN.",
     );
   }
-
-  const refreshed = await refreshZohoAccessToken({
-    connection,
-    requestOrigin: args.requestOrigin,
-  });
   const oauth = getZohoOAuthConfig(args.requestOrigin);
 
   const fromEmail =
     args.configuredSenderEmail ??
-    connection.senderEmail ??
+    connection?.senderEmail ??
     oauth.defaultSenderEmail;
   if (!fromEmail) {
     throw new Error(
@@ -47,8 +59,22 @@ export const sendViaZohoProvider = async (args: {
     );
   }
   const fromName =
-    args.configuredSenderName ?? connection.senderName ?? oauth.defaultSenderName;
+    args.configuredSenderName ??
+    connection?.senderName ??
+    oauth.defaultSenderName;
   const replyToEmail = args.ownerEmail ?? args.fallbackReplyToEmail;
+  if (isDebug) {
+    console.info("[ZohoProvider] dispatch", {
+      mondayAccountId: args.mondayAccountId,
+      mondayAppClientId: args.mondayAppClientId ?? null,
+      ownerMondayUserId: args.ownerMondayUserId,
+      to: args.to,
+      fromEmail,
+      replyToEmail,
+      usingStoredConnection: !!connection,
+      usingEnvRefreshToken: !connection,
+    });
+  }
 
   const sentAt = Date.now();
   try {
@@ -79,6 +105,13 @@ export const sendViaZohoProvider = async (args: {
       status: "sent",
       sentAt,
     });
+    if (isDebug) {
+      console.info("[ZohoProvider] send success", {
+        to: args.to,
+        messageId: result.messageId,
+        campaignId: result.campaignId,
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Zoho send failed";
     await args.convex.mutation(apiGenerated.zohoOutbound.recordSendResult, {
