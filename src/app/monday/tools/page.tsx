@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ComponentProps } from "react";
 import { useMutation as useConvexMutation, useQuery as useConvexQuery } from "convex/react";
 import { api } from "@convex-config/_generated/api";
@@ -14,6 +14,7 @@ import { Input } from "@launchthatapp/ui/input";
 import { toast } from "@launchthatapp/ui/toast";
 
 import { useToolJob } from "../hooks/useToolJob";
+import { fetchMondayApi } from "../services/monday-api";
 
 interface BackfillJob {
   jobId: string;
@@ -185,6 +186,32 @@ interface UnifiedMigrationJobRow extends Record<string, unknown> {
 }
 
 type HistorySortKey = "startedAt" | "status" | "toolLabel" | "dryRun" | "createdCount";
+const MONDAY_DEV_BYPASS_TOKEN = "__monday_dev_bypass__";
+
+interface ZohoConnectResponse {
+  ok?: boolean;
+  error?: string;
+  authorizeUrl?: string;
+  callbackPath?: string;
+}
+
+interface ZohoStatusResponse {
+  ok?: boolean;
+  error?: string;
+  callbackPath?: string;
+  connected?: boolean;
+  connection?: {
+    senderEmail?: string | null;
+    senderName?: string | null;
+    scopes?: string[];
+    updatedAt?: number | null;
+  } | null;
+}
+
+interface ZohoDisconnectResponse {
+  ok?: boolean;
+  error?: string;
+}
 
 export default function MondayToolsPage() {
   const touchBackfill = useToolJob({
@@ -277,6 +304,82 @@ export default function MondayToolsPage() {
     () => new Set(),
   );
   const [isLegacyToolsExpanded, setIsLegacyToolsExpanded] = useState(false);
+  const [zohoStatus, setZohoStatus] = useState<ZohoStatusResponse | null>(null);
+  const [zohoStatusLoading, setZohoStatusLoading] = useState(true);
+  const [zohoStatusError, setZohoStatusError] = useState<string | null>(null);
+  const [isConnectingZoho, setIsConnectingZoho] = useState(false);
+  const [isDisconnectingZoho, setIsDisconnectingZoho] = useState(false);
+
+  const refreshZohoStatus = async () => {
+    setZohoStatusLoading(true);
+    setZohoStatusError(null);
+    try {
+      const data = await fetchMondayApi<ZohoStatusResponse>("/api/monday/email/zoho/status", {
+        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+      });
+      if (!data.ok) {
+        throw new Error(data.error ?? "Failed to load Zoho status");
+      }
+      setZohoStatus(data);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to load Zoho status";
+      setZohoStatusError(message);
+      setZohoStatus(null);
+    } finally {
+      setZohoStatusLoading(false);
+    }
+  };
+
+  const handleConnectZohoFromTools = async () => {
+    setIsConnectingZoho(true);
+    try {
+      const data = await fetchMondayApi<ZohoConnectResponse>("/api/monday/email/zoho/connect", {
+        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+      });
+      if (!data.ok || !data.authorizeUrl) {
+        throw new Error(data.error ?? "Failed to initialize Zoho OAuth");
+      }
+      const popup = window.open(data.authorizeUrl, "_blank");
+      if (!popup) {
+        window.location.assign(data.authorizeUrl);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to initialize Zoho OAuth";
+      toast.error(message);
+    } finally {
+      setIsConnectingZoho(false);
+    }
+  };
+
+  const handleDisconnectZohoFromTools = async () => {
+    setIsDisconnectingZoho(true);
+    try {
+      const data = await fetchMondayApi<ZohoDisconnectResponse>(
+        "/api/monday/email/zoho/disconnect",
+        {
+          method: "POST",
+          sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+        },
+      );
+      if (!data.ok) {
+        throw new Error(data.error ?? "Failed to disconnect Zoho");
+      }
+      toast.success("Zoho disconnected");
+      await refreshZohoStatus();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to disconnect Zoho";
+      toast.error(message);
+    } finally {
+      setIsDisconnectingZoho(false);
+    }
+  };
+
+  useEffect(() => {
+    void refreshZohoStatus();
+  }, []);
 
   const startTouchRangeBackfill = async () => {
     if (!touchRangeDryRun) {
@@ -792,6 +895,63 @@ export default function MondayToolsPage() {
           Subitem-first migration runbook, active jobs, and unified history.
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Zoho OAuth (Outside monday iframe)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            Uses dev bypass session token to call Monday OAuth endpoints from this tools page.
+            Intended for local debugging outside embedded iframe context.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              onClick={() => void handleConnectZohoFromTools()}
+              disabled={isConnectingZoho}
+            >
+              {isConnectingZoho ? "Connecting..." : "Connect Zoho"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void refreshZohoStatus()}
+              disabled={zohoStatusLoading}
+            >
+              {zohoStatusLoading ? "Refreshing..." : "Refresh Status"}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDisconnectZohoFromTools()}
+              disabled={isDisconnectingZoho || !zohoStatus?.connected}
+            >
+              {isDisconnectingZoho ? "Disconnecting..." : "Disconnect Zoho"}
+            </Button>
+          </div>
+          <div className="rounded border p-3 text-xs">
+            <p>
+              <span className="font-medium">Connected:</span>{" "}
+              {zohoStatus?.connected ? "Yes" : "No"}
+            </p>
+            <p>
+              <span className="font-medium">Sender:</span>{" "}
+              {zohoStatus?.connection?.senderEmail ?? "—"}
+            </p>
+            <p>
+              <span className="font-medium">Scopes:</span>{" "}
+              {(zohoStatus?.connection?.scopes ?? []).join(", ") || "—"}
+            </p>
+            <p>
+              <span className="font-medium">Callback Path:</span>{" "}
+              {zohoStatus?.callbackPath ?? "/api/monday/email/zoho/callback"}
+            </p>
+            {zohoStatusError ? (
+              <p className="text-destructive mt-1">
+                <span className="font-medium">Status Error:</span> {zohoStatusError}
+              </p>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
