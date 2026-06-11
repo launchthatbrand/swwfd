@@ -1756,6 +1756,54 @@ const listMondayRecordUpdatesImpl = async (args: {
     }>;
   }
 
+  const resolveMondayUsersByIds = async (ids: string[]) => {
+    const uniqueIds = Array.from(
+      new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0)),
+    );
+    if (uniqueIds.length === 0) {
+      return new Map<
+        string,
+        { id: string; name: string | null; photoThumb: string | null }
+      >();
+    }
+
+    interface UsersData {
+      users?: Array<{
+        id?: string | number | null;
+        name?: string | null;
+        photo_thumb?: string | null;
+      }>;
+    }
+
+    const usersData = await callMondayGraphQL<UsersData>(
+      `query GetUsersByIds($userIds: [ID!]) {
+        users(ids: $userIds) {
+          id
+          name
+          photo_thumb
+        }
+      }`,
+      { userIds: uniqueIds },
+    );
+
+    const byId = new Map<
+      string,
+      { id: string; name: string | null; photoThumb: string | null }
+    >();
+    for (const user of usersData.users ?? []) {
+      const idRaw = user.id;
+      if (idRaw == null) continue;
+      const id = String(idRaw).trim();
+      if (!id) continue;
+      byId.set(id, {
+        id,
+        name: user.name?.trim() || null,
+        photoThumb: user.photo_thumb?.trim() || null,
+      });
+    }
+    return byId;
+  };
+
   const data = await callMondayGraphQL<MondayItemUpdatesData>(
     `query GetMondayItemUpdates($itemIds: [ID!], $limit: Int!) {
       items(ids: $itemIds) {
@@ -1890,6 +1938,35 @@ const listMondayRecordUpdatesImpl = async (args: {
     }>;
   }> = [];
 
+  const personIdsBySubitemId = new Map<string, string[]>();
+  for (const subitem of item?.subitems ?? []) {
+    const sid = subitem.id?.trim() ?? "";
+    if (!sid) continue;
+    const personValue =
+      subitem.column_values?.find((c) => c.id === personColId)?.value ?? null;
+    const personIds: string[] = [];
+    if (personValue) {
+      try {
+        const parsed = JSON.parse(personValue) as {
+          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+        };
+        for (const entry of parsed.personsAndTeams ?? []) {
+          if (entry.kind === "person" && entry.id != null) {
+            const id = String(entry.id).trim();
+            if (id.length > 0) personIds.push(id);
+          }
+        }
+      } catch {
+        // ignore parse failures
+      }
+    }
+    personIdsBySubitemId.set(sid, personIds);
+  }
+  const allPersonIds = Array.from(
+    new Set(Array.from(personIdsBySubitemId.values()).flat()),
+  );
+  const userProfilesById = await resolveMondayUsersByIds(allPersonIds);
+
   for (const subitem of item?.subitems ?? []) {
     const subitemId = subitem.id?.trim() ?? "";
     const subitemName = subitem.name?.trim() ?? null;
@@ -1898,8 +1975,6 @@ const listMondayRecordUpdatesImpl = async (args: {
     const methodText =
       subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ??
       null;
-    const personValue =
-      subitem.column_values?.find((c) => c.id === personColId)?.value ?? null;
     const intentText = subitem.column_values?.find((c) => c.id === intentColId)?.text ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
     const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
@@ -1922,21 +1997,20 @@ const listMondayRecordUpdatesImpl = async (args: {
       deriveUpdateTypeFromColumnValue(typeColText) ??
       deriveUpdateTypeFromColumnValue(methodText) ??
       deriveUpdateTypeFromSubitemName(subitemName);
-    let creatorUserId: string | null = null;
-    if (personValue) {
-      try {
-        const parsed = JSON.parse(personValue) as {
-          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
-        };
-        const firstPersonId = (parsed.personsAndTeams ?? []).find(
-          (entry) => entry.kind === "person" && entry.id != null,
-        )?.id;
-        creatorUserId =
-          firstPersonId == null ? null : String(firstPersonId).trim() || null;
-      } catch {
-        creatorUserId = null;
-      }
-    }
+    const personIds = personIdsBySubitemId.get(subitemId) ?? [];
+    const creatorUserId = personIds[0] ?? null;
+    const creatorProfile = creatorUserId
+      ? (() => {
+          const profile = userProfilesById.get(creatorUserId);
+          return profile
+            ? {
+                id: profile.id,
+                name: profile.name,
+                photoThumb: profile.photoThumb,
+              }
+            : null;
+        })()
+      : null;
 
     const subitemUpdateList: (typeof subitems)[number]["updates"] = [];
     for (const update of subitem.updates ?? []) {
@@ -1974,7 +2048,7 @@ const listMondayRecordUpdatesImpl = async (args: {
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
         creatorUserId,
-        creatorProfile: null,
+        creatorProfile,
         updates: subitemUpdateList.sort(
           (a, b) => toSortableTime(b.createdAt) - toSortableTime(a.createdAt),
         ),
