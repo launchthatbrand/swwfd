@@ -14,6 +14,7 @@
     "smoke": "pnpm smoke:consumer",
     "smoke:consumer": "bash scripts/smoke/private-package-consumer-smoke.sh",
     "start": "next start",
+    "test:email-routing": "node --test --experimental-strip-types --experimental-specifier-resolution=node \"src/server/email/providers/*.test.ts\"",
     "typecheck": "turbo run typecheck --filter=./packages/* && tsc --noEmit",
     "typecheck:phase1": "tsc --project tsconfig.phase1.json --noEmit"
   },

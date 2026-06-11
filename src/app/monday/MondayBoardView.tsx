@@ -107,6 +107,7 @@ import type {
   MondayRoutingStatus,
   MondayRoutingStatusResponse,
   MondaySendEmailResponse,
+  MondaySendEmailBatchResponse,
   MondayUserBoardSettingsResponse,
   MondayUserProfileResponse,
   OutlookConnectionStatusResponse,
@@ -552,6 +553,8 @@ export function MondayBoardView({
   const [isSavingFeatureFlags, setIsSavingFeatureFlags] = useState(false);
   const [isConnectingOutlook, setIsConnectingOutlook] = useState(false);
   const [isDisconnectingOutlook, setIsDisconnectingOutlook] = useState(false);
+  const [isConnectingZoho, setIsConnectingZoho] = useState(false);
+  const [isDisconnectingZoho, setIsDisconnectingZoho] = useState(false);
   const [routingRerunItemId, setRoutingRerunItemId] = useState("");
   const [isRunningRoutingRerun, setIsRunningRoutingRerun] = useState(false);
   const [search, setSearch] = useState("");
@@ -804,6 +807,10 @@ export function MondayBoardView({
     platformSettingsDraftNormalized.employeeUserIds.join(",") ||
     platformSettingsNormalized.replyToEmails.join(",") !==
     platformSettingsDraftNormalized.replyToEmails.join(",") ||
+    (platformSettingsNormalized.zohoSenderEmail ?? "") !==
+    (platformSettingsDraftNormalized.zohoSenderEmail ?? "") ||
+    (platformSettingsNormalized.zohoReplyToFallbackEmail ?? "") !==
+    (platformSettingsDraftNormalized.zohoReplyToFallbackEmail ?? "") ||
     emailSystemTagsSignature(platformSettingsNormalized.emailSystemTags) !==
     emailSystemTagsSignature(platformSettingsDraftNormalized.emailSystemTags) ||
     platformMappingsSignature(platformSettingsNormalized.monthlyBoardMappings) !==
@@ -971,6 +978,7 @@ export function MondayBoardView({
   const {
     emailTemplatesQuery,
     outlookStatusQuery,
+    zohoStatusQuery,
     outlookTeamMailboxesQuery,
     sendEmailContactOwnerId,
   } = useMondayEmailQueries({
@@ -1062,6 +1070,8 @@ export function MondayBoardView({
     const staticParam = params.get("static");
     const outlookParam = params.get("outlook");
     const outlookMessage = params.get("outlookMessage");
+    const zohoParam = params.get("zoho");
+    const zohoMessage = params.get("zohoMessage");
 
     if (!hasForcedOwnerScope && ownerParam && ownerParam.trim().length > 0) {
       setOwnerFilter(ownerParam.trim());
@@ -1078,7 +1088,13 @@ export function MondayBoardView({
     } else if (outlookParam === "error" && outlookMessage) {
       toast.error(outlookMessage);
     }
-  }, [hasForcedOwnerScope, outlookStatusQuery]);
+    if (zohoParam === "connected") {
+      toast.success("Zoho account connected");
+      void zohoStatusQuery.refetch();
+    } else if (zohoParam === "error" && zohoMessage) {
+      toast.error(zohoMessage);
+    }
+  }, [hasForcedOwnerScope, outlookStatusQuery, zohoStatusQuery]);
 
   useEffect(() => {
     setSavedAdvancedFilterPresets([]);
@@ -1131,20 +1147,35 @@ export function MondayBoardView({
   useEffect(() => {
     const handleOutlookOAuthMessage = (event: MessageEvent) => {
       const data = event.data as
-        | { type?: string; status?: "connected" | "error"; message?: string | null }
+        | {
+          type?: string;
+          status?: "connected" | "error";
+          message?: string | null;
+        }
         | null;
-      if (!data || data.type !== "outlook-oauth-result") return;
-      if (data.status === "connected") {
-        toast.success("Outlook account connected");
-        void outlookStatusQuery.refetch();
-      } else if (data.status === "error") {
-        toast.error(data.message ?? "Outlook OAuth failed");
+      if (!data) return;
+      if (data.type === "outlook-oauth-result") {
+        if (data.status === "connected") {
+          toast.success("Outlook account connected");
+          void outlookStatusQuery.refetch();
+        } else if (data.status === "error") {
+          toast.error(data.message ?? "Outlook OAuth failed");
+        }
+        return;
+      }
+      if (data.type === "zoho-oauth-result") {
+        if (data.status === "connected") {
+          toast.success("Zoho account connected");
+          void zohoStatusQuery.refetch();
+        } else if (data.status === "error") {
+          toast.error(data.message ?? "Zoho OAuth failed");
+        }
       }
     };
     window.addEventListener("message", handleOutlookOAuthMessage);
     return () =>
       window.removeEventListener("message", handleOutlookOAuthMessage);
-  }, [outlookStatusQuery]);
+  }, [outlookStatusQuery, zohoStatusQuery]);
 
   useEffect(() => {
     const initEmbeddedSession = async () => {
@@ -1362,6 +1393,17 @@ export function MondayBoardView({
         : "Unknown loading error";
     toast.error(message);
   }, [outlookStatusQuery.error, settingsOpen, staticMode]);
+
+  useEffect(() => {
+    if (staticMode) return;
+    if (!settingsOpen) return;
+    if (!zohoStatusQuery.error) return;
+    const message =
+      zohoStatusQuery.error instanceof Error
+        ? zohoStatusQuery.error.message
+        : "Unknown loading error";
+    toast.error(message);
+  }, [settingsOpen, staticMode, zohoStatusQuery.error]);
 
   useEffect(() => {
     if (staticMode) return;
@@ -1671,6 +1713,11 @@ export function MondayBoardView({
       outlookStatusQuery.data?.callbackPath ?? "/api/monday/email/outlook/callback";
     return `${window.location.origin}${path}`;
   }, [outlookStatusQuery.data?.callbackPath]);
+  const zohoCallbackUrl = useMemo(() => {
+    if (typeof window === "undefined") return "/api/monday/email/zoho/callback";
+    const path = zohoStatusQuery.data?.callbackPath ?? "/api/monday/email/zoho/callback";
+    return `${window.location.origin}${path}`;
+  }, [zohoStatusQuery.data?.callbackPath]);
   const monthlyWebhookUrl = useMemo(() => {
     if (typeof window === "undefined") return "/api/monday/routing/monthly-webhook";
     return `${window.location.origin}/api/monday/routing/monthly-webhook`;
@@ -1742,6 +1789,63 @@ export function MondayBoardView({
     }
   };
 
+  const handleConnectZoho = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    setIsConnectingZoho(true);
+    try {
+      const data = await fetchMondayApi<{
+        ok?: boolean;
+        error?: string;
+        authorizeUrl?: string;
+      }>("/api/monday/email/zoho/connect", {
+        sessionToken,
+      });
+      if (!data.ok || !data.authorizeUrl) {
+        throw new Error(data.error ?? "Failed to initialize Zoho OAuth");
+      }
+      const popup = window.open(data.authorizeUrl, "_blank");
+      if (!popup) {
+        window.location.assign(data.authorizeUrl);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to initialize Zoho OAuth";
+      toast.error(message);
+    } finally {
+      setIsConnectingZoho(false);
+    }
+  };
+
+  const handleDisconnectZoho = async () => {
+    if (!sessionToken) {
+      toast.error("Missing Monday session token");
+      return;
+    }
+    setIsDisconnectingZoho(true);
+    try {
+      const data = await fetchMondayApi<{ ok?: boolean; error?: string }>(
+        "/api/monday/email/zoho/disconnect",
+        {
+          sessionToken,
+          method: "POST",
+        },
+      );
+      if (!data.ok) {
+        throw new Error(data.error ?? "Failed to disconnect Zoho");
+      }
+      toast.success("Zoho account disconnected");
+      await zohoStatusQuery.refetch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to disconnect Zoho";
+      toast.error(message);
+    } finally {
+      setIsDisconnectingZoho(false);
+    }
+  };
+
   const parseDelimitedList = (value: string) => {
     return uniqueSorted(
       value
@@ -1764,11 +1868,28 @@ export function MondayBoardView({
     const normalizedReplyToEmails = normalizeReplyToEmailList(
       platformSettingsDraft.replyToEmails,
     );
+    const normalizedZohoSenderEmail = platformSettingsDraft.zohoSenderEmail
+      ? platformSettingsDraft.zohoSenderEmail.trim().toLowerCase()
+      : null;
+    const normalizedZohoReplyToFallbackEmail = platformSettingsDraft.zohoReplyToFallbackEmail
+      ? platformSettingsDraft.zohoReplyToFallbackEmail.trim().toLowerCase()
+      : null;
     const invalidReplyToEmails = normalizedReplyToEmails.filter(
       (email) => !EMAIL_PATTERN.test(email),
     );
     if (invalidReplyToEmails.length > 0) {
       toast.error(`Invalid reply-to emails: ${invalidReplyToEmails.join(", ")}`);
+      return;
+    }
+    if (normalizedZohoSenderEmail && !EMAIL_PATTERN.test(normalizedZohoSenderEmail)) {
+      toast.error("Invalid Zoho sender email address.");
+      return;
+    }
+    if (
+      normalizedZohoReplyToFallbackEmail &&
+      !EMAIL_PATTERN.test(normalizedZohoReplyToFallbackEmail)
+    ) {
+      toast.error("Invalid Zoho fallback reply-to email address.");
       return;
     }
     const normalizedEmailSystemTags = normalizeEmailSystemTags(
@@ -1812,6 +1933,8 @@ export function MondayBoardView({
       ]),
       employeeUserIds: normalizeUserIdList(platformSettingsDraft.employeeUserIds),
       replyToEmails: normalizedReplyToEmails,
+      zohoSenderEmail: normalizedZohoSenderEmail,
+      zohoReplyToFallbackEmail: normalizedZohoReplyToFallbackEmail,
       emailSystemTags: normalizedEmailSystemTags,
       monthlyBoardMappings: normalizedMonthlyBoardMappings,
     };
@@ -1822,6 +1945,8 @@ export function MondayBoardView({
         adminUserIds: nextPayload.adminUserIds,
         employeeUserIds: nextPayload.employeeUserIds,
         replyToEmails: nextPayload.replyToEmails,
+        zohoSenderEmail: nextPayload.zohoSenderEmail,
+        zohoReplyToFallbackEmail: nextPayload.zohoReplyToFallbackEmail,
         emailSystemTags: nextPayload.emailSystemTags,
         monthlyBoardMappings: nextPayload.monthlyBoardMappings,
         updatedByMondayUserId: normalizedIdentityUserId,
@@ -2297,9 +2422,12 @@ export function MondayBoardView({
     !isSendingEmail &&
     !!sendEmailRecord?.email &&
     sendEmailOwnerUserId.trim().length > 0 &&
-    (selectedSendEmailMailbox ? selectedSendEmailMailbox.connected : true) &&
     !outlookTeamMailboxesQuery.isLoading &&
     !outlookTeamMailboxesQuery.isFetching;
+  const sendEmailProviderHint =
+    selectedSendEmailMailbox?.connected
+      ? "Provider: Outlook (single-contact send). If this sender mailbox becomes unavailable, Zoho is used as fallback."
+      : "Provider: Zoho fallback (sender mailbox not connected). Replies route to the contact owner's mailbox when available.";
   const handleConfirmSendEmail = async () => {
     if (!sessionToken || !sendEmailRecord || !sendEmailTemplate || !sendEmailResolvedTemplate) {
       toast.error("Missing email send context");
@@ -2315,23 +2443,23 @@ export function MondayBoardView({
       toast.error("Select a sender mailbox before sending");
       return;
     }
-    if (selectedSendEmailMailbox && !selectedSendEmailMailbox.connected) {
-      toast.error("Selected sender mailbox is not connected to Outlook");
-      return;
-    }
     setIsSendingEmail(true);
     try {
-      const data = await fetchMondayApi<MondaySendEmailResponse>(
-        "/api/monday/email/send",
+      const data = await fetchMondayApi<MondaySendEmailBatchResponse>(
+        "/api/monday/email/send/batch",
         {
           sessionToken,
           method: "POST",
           body: {
-            to: recipient,
             subject: sendEmailResolvedTemplate.subject,
             html: sendEmailResolvedTemplate.html,
-            contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
-            ownerMondayUserId: senderMailboxUserId,
+            recipients: [
+              {
+                to: recipient,
+                contactItemId: resolveContactUpdateTargetRecordId(sendEmailRecord),
+                ownerMondayUserId: senderMailboxUserId,
+              },
+            ],
           }
         }
       );
@@ -5282,23 +5410,104 @@ export function MondayBoardView({
     let failedCount = 0;
     let firstError = "";
     try {
+      const recipientPayloads: Array<{
+        record: MondayRecord;
+        targetRecordId: string;
+        recipientEmail: string;
+        senderMailboxUserId: string;
+        subject: string;
+        html: string;
+      }> = [];
       for (const record of bulkQuestionnaireEmailRecords) {
         const targetRecordId = resolveContactUpdateTargetRecordId(record);
         if (!targetRecordId || nextSentSet.has(targetRecordId)) continue;
-        try {
-          const sentTargetRecordId = await sendBulkQuestionnaireEmailForRecord(record);
-          nextSentSet.add(sentTargetRecordId);
-          successCount += 1;
-        } catch (error) {
+        const recipientEmail = record.email?.trim() ?? "";
+        if (!recipientEmail) {
           failedCount += 1;
-          if (!firstError) {
-            firstError =
-              error instanceof Error
-                ? error.message
-                : `Failed to send ${bulkQuickEmailAction?.label ?? "bulk email"}`;
+          if (!firstError) firstError = "One or more contacts are missing email addresses.";
+          continue;
+        }
+        const senderMailboxUserId =
+          record.ownerIds[0]?.trim() || identity?.userId?.trim() || "";
+        if (!senderMailboxUserId) {
+          failedCount += 1;
+          if (!firstError) firstError = "Contact has no owner mailbox to send from.";
+          continue;
+        }
+        const { subject, html } = await resolveBulkQuestionnaireTemplateForRecord(record);
+        recipientPayloads.push({
+          record,
+          targetRecordId,
+          recipientEmail,
+          senderMailboxUserId,
+          subject,
+          html,
+        });
+      }
+
+      if (recipientPayloads.length > 0) {
+        const batchData = await fetchMondayApi<MondaySendEmailBatchResponse>(
+          "/api/monday/email/send/batch",
+          {
+            sessionToken,
+            method: "POST",
+            body: {
+              recipients: recipientPayloads.map((entry) => ({
+                to: entry.recipientEmail,
+                contactItemId: entry.targetRecordId,
+                ownerMondayUserId: entry.senderMailboxUserId,
+                subject: entry.subject,
+                html: entry.html,
+              })),
+            },
+          },
+        );
+
+        const results = batchData.results ?? [];
+        for (const row of results) {
+          const matchingPayload = recipientPayloads.find(
+            (entry) => entry.targetRecordId === row.contactItemId,
+          );
+          if (!matchingPayload) continue;
+          if (row.ok) {
+            nextSentSet.add(matchingPayload.targetRecordId);
+            successCount += 1;
+            const actionType = bulkQuickEmailAction?.type ?? "followup";
+            const updateBody =
+              bulkQuickEmailAction?.defaultBody?.trim() || "Questionnaire Sent";
+            await createRecordUpdateAction({
+              sessionToken,
+              itemId: matchingPayload.targetRecordId,
+              body: updateBody,
+              updateType: actionType,
+              dateTime: new Date().toISOString(),
+              internalExternalStatus: "External",
+            });
+            if (identity?.userId) {
+              fetchMondayApi<{ ok?: boolean; error?: string }>(
+                "/api/monday/touches",
+                {
+                  sessionToken,
+                  method: "POST",
+                  body: {
+                    contactItemId: matchingPayload.targetRecordId,
+                    contactName: matchingPayload.record.name ?? "",
+                    ownerId: identity.userId,
+                    source: "update",
+                  },
+                },
+              ).catch(() => {});
+            }
+          } else {
+            failedCount += 1;
+            if (!firstError) {
+              firstError =
+                row.error ?? `Failed to send ${bulkQuickEmailAction?.label ?? "bulk email"}`;
+            }
           }
         }
       }
+
       setBulkQuestionnaireSentTargetIds(nextSentSet);
 
       if (successCount > 0) {
@@ -7736,8 +7945,94 @@ export function MondayBoardView({
                                     {callbackUrl}
                                   </p>
                                 </div>
+                                <div className="space-y-2 rounded-md border border-primary/30 bg-primary/5 p-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      variant={zohoStatusQuery.data?.connected ? "default" : "secondary"}
+                                    >
+                                      {zohoStatusQuery.data?.connected
+                                        ? "Zoho connected"
+                                        : "Zoho not connected"}
+                                    </Badge>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        void handleConnectZoho();
+                                      }}
+                                      disabled={isConnectingZoho}
+                                    >
+                                      {isConnectingZoho ? "Connecting..." : "Connect Zoho"}
+                                    </Button>
+                                    {zohoStatusQuery.data?.connected ? (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          void handleDisconnectZoho();
+                                        }}
+                                        disabled={isDisconnectingZoho}
+                                      >
+                                        {isDisconnectingZoho ? "Disconnecting..." : "Disconnect"}
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                  <div className="text-muted-foreground text-sm">
+                                    {zohoStatusQuery.data?.connection?.senderEmail ? (
+                                      <p>
+                                        Zoho sender: {zohoStatusQuery.data.connection.senderEmail}
+                                      </p>
+                                    ) : (
+                                      <p>
+                                        Connect Zoho to enable marketing blast sends and fallback
+                                        sends when Outlook is unavailable.
+                                      </p>
+                                    )}
+                                  </div>
+                                  <div className="rounded-md border bg-muted/30 p-3">
+                                    <p className="text-xs font-semibold tracking-wide uppercase">
+                                      Zoho Callback URL
+                                    </p>
+                                    <p className="mt-1 break-all font-mono text-xs">
+                                      {zohoCallbackUrl}
+                                    </p>
+                                  </div>
+                                </div>
                                 {isMasterAdmin ? (
                                   <div className="space-y-3 rounded-md border-2 border-primary/30 bg-primary/5 p-3">
+                                    <div className="space-y-1">
+                                      <p className="text-sm font-medium">Zoho Sender Configuration</p>
+                                      <p className="text-muted-foreground text-xs">
+                                        Zoho sends use one sender mailbox. Single-contact fallbacks
+                                        and multi-contact blasts always use this address.
+                                      </p>
+                                    </div>
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                      <Input
+                                        value={platformSettingsDraft.zohoSenderEmail ?? ""}
+                                        onChange={(event) => {
+                                          const nextValue = event.target.value.trim();
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            zohoSenderEmail: nextValue.length > 0 ? nextValue : null,
+                                          }));
+                                        }}
+                                        placeholder="marketing@floridaroadjobs.com"
+                                        className="h-8 text-xs"
+                                      />
+                                      <Input
+                                        value={platformSettingsDraft.zohoReplyToFallbackEmail ?? ""}
+                                        onChange={(event) => {
+                                          const nextValue = event.target.value.trim();
+                                          setPlatformSettingsDraft((prev) => ({
+                                            ...prev,
+                                            zohoReplyToFallbackEmail:
+                                              nextValue.length > 0 ? nextValue : null,
+                                          }));
+                                        }}
+                                        placeholder="reply-fallback@floridaroadjobs.com"
+                                        className="h-8 text-xs"
+                                      />
+                                    </div>
                                     <div className="space-y-1">
                                       <p className="text-sm font-medium">Global Reply-To Addresses</p>
                                       <p className="text-muted-foreground text-xs">
@@ -8706,6 +9001,7 @@ export function MondayBoardView({
               ownerUserId={sendEmailOwnerUserId}
               onOwnerUserIdChange={setSendEmailOwnerUserId}
               selectedMailbox={selectedSendEmailMailbox}
+              providerHint={sendEmailProviderHint}
               canSubmit={sendEmailCanSubmit}
               isSending={sendEmailState.isSendingEmail}
               onConfirmSend={() => {

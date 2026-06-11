@@ -195,6 +195,8 @@ export default defineSchema({
     adminUserIds: v.optional(v.array(v.string())),
     employeeUserIds: v.optional(v.array(v.string())),
     replyToEmails: v.optional(v.array(v.string())),
+    zohoSenderEmail: v.optional(v.union(v.string(), v.null())),
+    zohoReplyToFallbackEmail: v.optional(v.union(v.string(), v.null())),
     emailSystemTags: v.optional(
       v.array(
         v.object({
@@ -499,6 +501,68 @@ export default defineSchema({
       "mondayAppClientId",
     ])
     .index("by_monday_user", ["mondayAccountId", "mondayUserId"]),
+
+  zohoConnections: defineTable({
+    mondayAccountId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    connectedByMondayUserId: v.string(),
+    senderEmail: v.union(v.string(), v.null()),
+    senderName: v.union(v.string(), v.null()),
+    encryptedAccessToken: v.union(v.string(), v.null()),
+    encryptedRefreshToken: v.string(),
+    accessTokenExpiresAt: v.number(),
+    scopes: v.array(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_account_and_app", ["mondayAccountId", "mondayAppClientId"])
+    .index("by_account", ["mondayAccountId"]),
+
+  zohoOutboundMessages: defineTable({
+    mondayAccountId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    actingMondayUserId: v.string(),
+    ownerMondayUserId: v.string(),
+    ownerEmail: v.union(v.string(), v.null()),
+    contactItemId: v.string(),
+    recipientEmail: v.string(),
+    subject: v.string(),
+    senderEmail: v.union(v.string(), v.null()),
+    replyToEmail: v.union(v.string(), v.null()),
+    zohoMessageId: v.union(v.string(), v.null()),
+    zohoCampaignId: v.union(v.string(), v.null()),
+    status: v.union(v.literal("sent"), v.literal("failed")),
+    errorMessage: v.union(v.string(), v.null()),
+    sentAt: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_account_and_sentAt", ["mondayAccountId", "sentAt"])
+    .index("by_contactItemId", ["contactItemId"])
+    .index("by_owner_and_sentAt", ["ownerMondayUserId", "sentAt"]),
+
+  emailSendEvents: defineTable({
+    mondayAccountId: v.string(),
+    mondayAppClientId: v.union(v.string(), v.null()),
+    actingMondayUserId: v.string(),
+    provider: v.union(v.literal("outlook"), v.literal("zoho")),
+    reason: v.union(
+      v.literal("single_outlook"),
+      v.literal("single_fallback_zoho"),
+      v.literal("multi_zoho"),
+    ),
+    recipientCount: v.number(),
+    sentCount: v.number(),
+    failedCount: v.number(),
+    contactItemIds: v.array(v.string()),
+    ownerMondayUserIds: v.array(v.string()),
+    subject: v.string(),
+    status: v.union(v.literal("sent"), v.literal("failed"), v.literal("partial")),
+    errorMessage: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+  })
+    .index("by_account_and_createdAt", ["mondayAccountId", "createdAt"])
+    .index("by_provider_and_createdAt", ["provider", "createdAt"]),
 
   outlookOutboundMessages: defineTable({
     mondayAccountId: v.string(),

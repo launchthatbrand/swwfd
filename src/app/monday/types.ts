@@ -227,6 +227,8 @@ export interface MondayPlatformSettings {
   adminUserIds: string[];
   employeeUserIds: string[];
   replyToEmails: string[];
+  zohoSenderEmail: string | null;
+  zohoReplyToFallbackEmail: string | null;
   emailSystemTags: MondayEmailSystemTag[];
   monthlyBoardMappings: Array<{
     monthKey: string;
@@ -528,6 +530,22 @@ export type MondayJobsResponse = MondayApiResponse<{
 }>;
 
 export type MondaySendEmailResponse = MondayApiResponse;
+export type MondaySendEmailBatchResponse = MondayApiResponse<{
+  provider?: "outlook" | "zoho";
+  reason?:
+    | "single_outlook"
+    | "single_fallback_zoho"
+    | "multi_zoho";
+  sentCount?: number;
+  failedCount?: number;
+  results?: Array<{
+    contactItemId: string;
+    to: string;
+    provider: "outlook" | "zoho";
+    ok: boolean;
+    error?: string;
+  }>;
+}>;
 
 export type MondayFeatureFlagsResponse = MondayApiResponse<{
   featureFlags?: MondayFeatureFlags;

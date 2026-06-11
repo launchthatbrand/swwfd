@@ -136,6 +136,8 @@ export const buildDefaultPlatformSettings = (
   adminUserIds: [masterAdminUserId],
   employeeUserIds: [],
   replyToEmails: [],
+  zohoSenderEmail: null,
+  zohoReplyToFallbackEmail: null,
   emailSystemTags: [],
   monthlyBoardMappings: [],
 });

@@ -7,14 +7,6 @@ import { sendMarketingEmailBatch } from "~/server/email/sendBatch";
 
 export const runtime = "nodejs";
 
-interface SendEmailBody {
-  to: string;
-  subject: string;
-  html: string;
-  contactItemId?: string;
-  ownerMondayUserId?: string;
-}
-
 const toJson = (body: unknown, status = 200) => {
   return NextResponse.json(body, { status });
 };
@@ -22,9 +14,9 @@ const toJson = (body: unknown, status = 200) => {
 export const POST = async (request: Request) => {
   try {
     const identity = await requireVerifiedMondaySession(request);
-    let body: SendEmailBody;
+    let body: unknown;
     try {
-      body = (await request.json()) as SendEmailBody;
+      body = await request.json();
     } catch {
       return toJson({ ok: false, error: "Invalid JSON body" }, 400);
     }
@@ -35,33 +27,49 @@ export const POST = async (request: Request) => {
         accountId: identity.accountId,
         appClientId: identity.appClientId,
       },
-      body: {
-        subject: body.subject,
-        html: body.html,
-        recipients: [
-          {
-            to: body.to,
-            contactItemId: body.contactItemId ?? "",
-            ownerMondayUserId: body.ownerMondayUserId,
-          },
-        ],
+      body: body as {
+        subject?: string;
+        html?: string;
+        recipients?: Array<{
+          to: string;
+          contactItemId: string;
+          ownerMondayUserId?: string;
+          subject?: string;
+          html?: string;
+        }>;
       },
       requestOrigin: getRequestOrigin(request),
       convex: getConvexHttpClient(),
     });
+
     if (result.sentCount === 0) {
-      const firstError =
-        result.results.find((entry) => !entry.ok)?.error ?? "Failed to send email";
-      return toJson({ ok: false, error: firstError }, 400);
+      const firstFailure =
+        result.results.find((entry) => !entry.ok)?.error ??
+        "Failed to send email";
+      return toJson(
+        {
+          ok: false,
+          error: firstFailure,
+          provider: result.provider,
+          reason: result.reason,
+          sentCount: result.sentCount,
+          failedCount: result.failedCount,
+          results: result.results,
+        },
+        400,
+      );
     }
-    if (result.failedCount > 0) {
-      const firstError =
-        result.results.find((entry) => !entry.ok)?.error ?? "Failed to send email";
-      return toJson({ ok: false, error: firstError }, 400);
-    }
-    return toJson({ ok: true, provider: result.provider, reason: result.reason });
+
+    return toJson({
+      ok: result.failedCount === 0,
+      provider: result.provider,
+      reason: result.reason,
+      sentCount: result.sentCount,
+      failedCount: result.failedCount,
+      results: result.results,
+    });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to send email";
+    const message = error instanceof Error ? error.message : "Failed to send email batch";
     return toJson({ ok: false, error: message }, 500);
   }
 };
