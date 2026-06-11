@@ -58,6 +58,18 @@ const splitEmailList = (value: string | null | undefined) => {
   );
 };
 
+const isOutlookTokenAuthFailure = (message: string) => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("aadsts50173") ||
+    normalized.includes("invalid_grant") ||
+    normalized.includes("grant has expired") ||
+    normalized.includes("token has expired") ||
+    normalized.includes("refresh token has expired") ||
+    normalized.includes("interaction_required")
+  );
+};
+
 const parseEmailFromColumnValue = (value: string | null) => {
   if (!value) return null;
   try {
@@ -268,7 +280,9 @@ export const sendMarketingEmailBatch = async (args: {
     recipientCount: preparedRecipients.length,
     ownerHasOutlookConnection: !!ownerConnection,
   });
-  const provider: EmailProvider = reason === "single_outlook" ? "outlook" : "zoho";
+  let effectiveReason: EmailProviderReason = reason;
+  let effectiveProvider: EmailProvider =
+    reason === "single_outlook" ? "outlook" : "zoho";
 
   const configuredReplyToEmails = platformSettings.replyToEmails;
   const fallbackReplyToEmail =
@@ -278,8 +292,9 @@ export const sendMarketingEmailBatch = async (args: {
 
   const results: EmailSendResult[] = [];
   for (const recipient of preparedRecipients) {
+    let recipientProvider: EmailProvider = effectiveProvider;
     try {
-      if (provider === "outlook") {
+      if (recipientProvider === "outlook") {
         await sendViaOutlookProvider({
           mondayAccountId: args.identity.accountId,
           mondayAppClientId: args.identity.appClientId,
@@ -314,15 +329,71 @@ export const sendMarketingEmailBatch = async (args: {
       results.push({
         contactItemId: recipient.contactItemId,
         to: recipient.to,
-        provider,
+        provider: recipientProvider,
         ok: true,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Send failed";
+      const shouldFallbackToZoho =
+        recipientProvider === "outlook" &&
+        preparedRecipients.length === 1 &&
+        isOutlookTokenAuthFailure(message);
+
+      if (shouldFallbackToZoho) {
+        try {
+          console.warn("[monday-email-batch] outlook token failure; falling back to zoho", {
+            mondayAccountId: args.identity.accountId,
+            ownerMondayUserId: recipient.ownerMondayUserId,
+            contactItemId: recipient.contactItemId,
+            to: recipient.to,
+            error: message,
+          });
+          await sendViaZohoProvider({
+            mondayAccountId: args.identity.accountId,
+            mondayAppClientId: args.identity.appClientId,
+            actingMondayUserId: args.identity.userId,
+            ownerMondayUserId: recipient.ownerMondayUserId,
+            ownerEmail: recipient.ownerEmail,
+            to: recipient.to,
+            subject: recipient.subject,
+            html: recipient.html,
+            contactItemId: recipient.contactItemId,
+            requestOrigin: args.requestOrigin,
+            fallbackReplyToEmail,
+            configuredSenderEmail: platformSettings.zohoSenderEmail,
+            configuredSenderName: null,
+            convex: args.convex,
+          });
+          recipientProvider = "zoho";
+          effectiveProvider = "zoho";
+          effectiveReason = "single_fallback_zoho";
+          results.push({
+            contactItemId: recipient.contactItemId,
+            to: recipient.to,
+            provider: recipientProvider,
+            ok: true,
+          });
+          continue;
+        } catch (zohoFallbackError) {
+          const fallbackMessage =
+            zohoFallbackError instanceof Error
+              ? zohoFallbackError.message
+              : "Zoho fallback send failed";
+          results.push({
+            contactItemId: recipient.contactItemId,
+            to: recipient.to,
+            provider: "zoho",
+            ok: false,
+            error: `Outlook failed: ${message} | Zoho fallback failed: ${fallbackMessage}`,
+          });
+          continue;
+        }
+      }
+
       results.push({
         contactItemId: recipient.contactItemId,
         to: recipient.to,
-        provider,
+        provider: recipientProvider,
         ok: false,
         error: message,
       });
@@ -339,8 +410,8 @@ export const sendMarketingEmailBatch = async (args: {
     mondayAccountId: args.identity.accountId,
     mondayAppClientId: args.identity.appClientId,
     actingMondayUserId: args.identity.userId,
-    provider,
-    reason,
+    provider: effectiveProvider,
+    reason: effectiveReason,
     recipientCount: preparedRecipients.length,
     sentCount,
     failedCount,
@@ -352,8 +423,8 @@ export const sendMarketingEmailBatch = async (args: {
   });
 
   return {
-    provider,
-    reason,
+    provider: effectiveProvider,
+    reason: effectiveReason,
     sentCount,
     failedCount,
     results,
