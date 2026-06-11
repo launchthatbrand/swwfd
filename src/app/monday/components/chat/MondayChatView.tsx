@@ -17,7 +17,7 @@ import type {
   MondayEmailTemplate,
   MondayRecord,
   MondaySubitemEntry,
-  MondaySendEmailResponse,
+  MondaySendEmailBatchResponse,
   OutlookTeamMailboxesResponse,
 } from "../../types";
 import { api } from "@convex-config/_generated/api";
@@ -234,9 +234,7 @@ export const MondayChatView = ({
           !!selectedContactItemId &&
           contactEmail.length > 0 &&
           !contactOwnerQuery.isLoading &&
-          !teamMailboxQuery.isLoading &&
-          senderMailboxUserId.length > 0 &&
-          !!senderMailbox?.connected;
+          senderMailboxUserId.length > 0;
     const emailDisabledReason =
       bulkMode
         ? !sessionToken
@@ -254,11 +252,7 @@ export const MondayChatView = ({
                 ? "Resolving contact owner mailbox..."
               : senderMailboxUserId.length === 0
                 ? "No contact owner mailbox found."
-                : teamMailboxQuery.isLoading
-                  ? "Loading sender mailbox status..."
-                  : !senderMailbox?.connected
-                    ? "Contact owner mailbox is not connected to Outlook."
-                    : undefined;
+                : undefined;
 
     const smsEnabled =
       bulkMode
@@ -383,15 +377,19 @@ export const MondayChatView = ({
               paragraph ? `<p>${paragraph.replaceAll("\n", "<br/>")}</p>` : "<p><br/></p>",
             )
             .join("");
-    const sendEmailResult = await fetchMondayApi<MondaySendEmailResponse>("/api/monday/email/send", {
+    const sendEmailResult = await fetchMondayApi<MondaySendEmailBatchResponse>("/api/monday/email/send/batch", {
       sessionToken,
       method: "POST",
       body: {
-        to: email,
         subject,
         html,
-        contactItemId: targetRecordId,
-        ownerMondayUserId: ownerMondayUserId || undefined,
+        recipients: [
+          {
+            to: email,
+            contactItemId: targetRecordId,
+            ownerMondayUserId: ownerMondayUserId || undefined,
+          },
+        ],
       },
     });
     if (!sendEmailResult.ok) {
@@ -595,25 +593,97 @@ export const MondayChatView = ({
           }
           let sentCount = 0;
           let failedCount = 0;
-          for (const record of selectedBulkRecords) {
-            try {
-              if (channel === "email") {
-                await sendEmailToRecord({
+          if (channel === "email") {
+            const recipientPayload = selectedBulkRecords
+              .map((record) => {
+                const contactItemId = (record.contactId ?? record.id ?? "").trim();
+                const to = record.email?.trim() ?? "";
+                if (!contactItemId || !to) return null;
+                const ownerMondayUserId = (record.ownerIds[0] ?? "").trim() || undefined;
+                const subject = template
+                  ? `${template.name} - ${record.name || "Contact"}`
+                  : `Support update for ${record.name || "Contact"}`;
+                const html =
+                  template?.renderedHtml?.trim().length
+                    ? template.renderedHtml
+                    : trimmedBody
+                        .split("\n\n")
+                        .map((paragraph) =>
+                          paragraph ? `<p>${paragraph.replaceAll("\n", "<br/>")}</p>` : "<p><br/></p>",
+                        )
+                        .join("");
+                return {
                   record,
-                  body: trimmedBody,
-                  template,
-                  intent: "campaign",
-                });
-              } else {
+                  payload: {
+                    to,
+                    contactItemId,
+                    ownerMondayUserId,
+                    subject,
+                    html,
+                  },
+                };
+              })
+              .filter(
+                (
+                  entry,
+                ): entry is {
+                  record: MondayRecord;
+                  payload: {
+                    to: string;
+                    contactItemId: string;
+                    ownerMondayUserId?: string;
+                    subject: string;
+                    html: string;
+                  };
+                } => !!entry,
+              );
+
+            if (recipientPayload.length === 0) {
+              toast.error("No selected contacts have email.");
+              return;
+            }
+
+            const batchResult = await fetchMondayApi<MondaySendEmailBatchResponse>(
+              "/api/monday/email/send/batch",
+              {
+                sessionToken,
+                method: "POST",
+                body: {
+                  recipients: recipientPayload.map((entry) => entry.payload),
+                },
+              },
+            );
+            const results = batchResult.results ?? [];
+            sentCount = results.filter((entry) => entry.ok).length;
+            failedCount = results.length - sentCount;
+            const successfulIds = new Set(
+              results.filter((entry) => entry.ok).map((entry) => entry.contactItemId),
+            );
+            for (const entry of recipientPayload) {
+              if (!successfulIds.has(entry.payload.contactItemId)) continue;
+              await createRecordUpdateAction({
+                sessionToken,
+                itemId: entry.payload.contactItemId,
+                body: `Campaign Email Sent - ${entry.payload.subject}`,
+                updateType: "general",
+                intent: "campaign",
+                date: todayYmd(),
+                methodOfCommunication: "Email",
+                internalExternalStatus: "External",
+              });
+            }
+          } else {
+            for (const record of selectedBulkRecords) {
+              try {
                 await sendSmsToRecord({
                   record,
                   body: trimmedBody,
                   intent: "campaign",
                 });
+                sentCount += 1;
+              } catch {
+                failedCount += 1;
               }
-              sentCount += 1;
-            } catch {
-              failedCount += 1;
             }
           }
           if (sentCount > 0 && failedCount === 0) {

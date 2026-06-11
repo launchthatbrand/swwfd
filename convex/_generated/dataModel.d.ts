@@ -170,6 +170,55 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  emailSendEvents: {
+    document: {
+      actingMondayUserId: string;
+      contactItemIds: Array<string>;
+      createdAt: number;
+      errorMessage: string | null;
+      failedCount: number;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      ownerMondayUserIds: Array<string>;
+      provider: "outlook" | "zoho";
+      reason: "single_outlook" | "single_fallback_zoho" | "multi_zoho";
+      recipientCount: number;
+      sentCount: number;
+      status: "sent" | "failed" | "partial";
+      subject: string;
+      _id: Id<"emailSendEvents">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "actingMondayUserId"
+      | "contactItemIds"
+      | "createdAt"
+      | "errorMessage"
+      | "failedCount"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "ownerMondayUserIds"
+      | "provider"
+      | "reason"
+      | "recipientCount"
+      | "sentCount"
+      | "status"
+      | "subject";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_createdAt: [
+        "mondayAccountId",
+        "createdAt",
+        "_creationTime",
+      ];
+      by_provider_and_createdAt: ["provider", "createdAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   jobApplications: {
     document: {
       coverLetter?: string;
@@ -336,6 +385,8 @@ export type DataModel = {
       replyToEmails?: Array<string>;
       updatedAt: number;
       updatedByMondayUserId: string;
+      zohoReplyToFallbackEmail?: string | null;
+      zohoSenderEmail?: string | null;
       _id: Id<"mondayGlobalSettings">;
       _creationTime: number;
     };
@@ -350,7 +401,9 @@ export type DataModel = {
       | "monthlyBoardMappings"
       | "replyToEmails"
       | "updatedAt"
-      | "updatedByMondayUserId";
+      | "updatedByMondayUserId"
+      | "zohoReplyToFallbackEmail"
+      | "zohoSenderEmail";
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
@@ -1327,6 +1380,101 @@ export type DataModel = {
       by_creation_time: ["_creationTime"];
       by_isAdmin: ["isAdmin", "_creationTime"];
       email: ["email", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  zohoConnections: {
+    document: {
+      accessTokenExpiresAt: number;
+      connectedByMondayUserId: string;
+      createdAt: number;
+      encryptedAccessToken: string | null;
+      encryptedRefreshToken: string;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      scopes: Array<string>;
+      senderEmail: string | null;
+      senderName: string | null;
+      updatedAt: number;
+      _id: Id<"zohoConnections">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "accessTokenExpiresAt"
+      | "connectedByMondayUserId"
+      | "createdAt"
+      | "encryptedAccessToken"
+      | "encryptedRefreshToken"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "scopes"
+      | "senderEmail"
+      | "senderName"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account: ["mondayAccountId", "_creationTime"];
+      by_account_and_app: [
+        "mondayAccountId",
+        "mondayAppClientId",
+        "_creationTime",
+      ];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  zohoOutboundMessages: {
+    document: {
+      actingMondayUserId: string;
+      contactItemId: string;
+      createdAt: number;
+      errorMessage: string | null;
+      mondayAccountId: string;
+      mondayAppClientId: string | null;
+      ownerEmail: string | null;
+      ownerMondayUserId: string;
+      recipientEmail: string;
+      replyToEmail: string | null;
+      senderEmail: string | null;
+      sentAt: number;
+      status: "sent" | "failed";
+      subject: string;
+      updatedAt: number;
+      zohoCampaignId: string | null;
+      zohoMessageId: string | null;
+      _id: Id<"zohoOutboundMessages">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "actingMondayUserId"
+      | "contactItemId"
+      | "createdAt"
+      | "errorMessage"
+      | "mondayAccountId"
+      | "mondayAppClientId"
+      | "ownerEmail"
+      | "ownerMondayUserId"
+      | "recipientEmail"
+      | "replyToEmail"
+      | "senderEmail"
+      | "sentAt"
+      | "status"
+      | "subject"
+      | "updatedAt"
+      | "zohoCampaignId"
+      | "zohoMessageId";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_account_and_sentAt: ["mondayAccountId", "sentAt", "_creationTime"];
+      by_contactItemId: ["contactItemId", "_creationTime"];
+      by_owner_and_sentAt: ["ownerMondayUserId", "sentAt", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};

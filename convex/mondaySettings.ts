@@ -26,6 +26,12 @@ const normalizeEmails = (values: string[]) => {
   );
 };
 
+const normalizeNullableEmail = (value: string | null | undefined) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const isValidMonthKey = (value: string) => /^\d{4}-\d{2}$/.test(value);
 
 const normalizeMonthlyBoardMappings = (
@@ -90,6 +96,8 @@ export const getPlatformSettings = query({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    zohoSenderEmail: v.union(v.string(), v.null()),
+    zohoReplyToFallbackEmail: v.union(v.string(), v.null()),
     emailSystemTags: v.array(
       v.object({
         tag: v.string(),
@@ -115,6 +123,10 @@ export const getPlatformSettings = query({
       adminUserIds: normalizeUserIds(settings?.adminUserIds ?? DEFAULT_ADMIN_USER_IDS),
       employeeUserIds: normalizeUserIds(settings?.employeeUserIds ?? []),
       replyToEmails: normalizeEmails(settings?.replyToEmails ?? []),
+      zohoSenderEmail: normalizeNullableEmail(settings?.zohoSenderEmail),
+      zohoReplyToFallbackEmail: normalizeNullableEmail(
+        settings?.zohoReplyToFallbackEmail,
+      ),
       emailSystemTags: normalizeEmailSystemTags(settings?.emailSystemTags ?? []),
       monthlyBoardMappings: normalizeMonthlyBoardMappings(
         settings?.monthlyBoardMappings ?? [],
@@ -164,6 +176,8 @@ export const setPlatformSettings = mutation({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    zohoSenderEmail: v.union(v.string(), v.null()),
+    zohoReplyToFallbackEmail: v.union(v.string(), v.null()),
     emailSystemTags: v.array(
       v.object({
         tag: v.string(),
@@ -184,6 +198,8 @@ export const setPlatformSettings = mutation({
     adminUserIds: v.array(v.string()),
     employeeUserIds: v.array(v.string()),
     replyToEmails: v.array(v.string()),
+    zohoSenderEmail: v.union(v.string(), v.null()),
+    zohoReplyToFallbackEmail: v.union(v.string(), v.null()),
     emailSystemTags: v.array(
       v.object({
         tag: v.string(),
@@ -211,6 +227,10 @@ export const setPlatformSettings = mutation({
     ]);
     const employeeUserIds = normalizeUserIds(args.employeeUserIds);
     const replyToEmails = normalizeEmails(args.replyToEmails);
+    const zohoSenderEmail = normalizeNullableEmail(args.zohoSenderEmail);
+    const zohoReplyToFallbackEmail = normalizeNullableEmail(
+      args.zohoReplyToFallbackEmail,
+    );
     const emailSystemTags = normalizeEmailSystemTags(args.emailSystemTags);
     const monthlyBoardMappings = normalizeMonthlyBoardMappings(
       args.monthlyBoardMappings,
@@ -221,6 +241,8 @@ export const setPlatformSettings = mutation({
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        zohoSenderEmail,
+        zohoReplyToFallbackEmail,
         emailSystemTags,
         monthlyBoardMappings,
         updatedAt: now,
@@ -233,6 +255,8 @@ export const setPlatformSettings = mutation({
         adminUserIds,
         employeeUserIds,
         replyToEmails,
+        zohoSenderEmail,
+        zohoReplyToFallbackEmail,
         emailSystemTags,
         monthlyBoardMappings,
         updatedAt: now,
@@ -245,6 +269,8 @@ export const setPlatformSettings = mutation({
       adminUserIds,
       employeeUserIds,
       replyToEmails,
+      zohoSenderEmail,
+      zohoReplyToFallbackEmail,
       emailSystemTags,
       monthlyBoardMappings,
     };

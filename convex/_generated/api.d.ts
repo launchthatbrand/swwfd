@@ -63,6 +63,28 @@ export declare const api: {
       boolean
     >;
   };
+  emailSendEvents: {
+    record: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actingMondayUserId: string;
+        contactItemIds: Array<string>;
+        errorMessage?: string;
+        failedCount: number;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        ownerMondayUserIds: Array<string>;
+        provider: "outlook" | "zoho";
+        reason: "single_outlook" | "single_fallback_zoho" | "multi_zoho";
+        recipientCount: number;
+        sentCount: number;
+        status: "sent" | "failed" | "partial";
+        subject: string;
+      },
+      { eventId: Id<"emailSendEvents"> }
+    >;
+  };
   jobApplications: {
     apply: FunctionReference<
       "mutation",
@@ -1023,6 +1045,8 @@ export declare const api: {
         masterAdminUserId: string;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
+        zohoReplyToFallbackEmail: string | null;
+        zohoSenderEmail: string | null;
       }
     >;
     setFeatureFlags: FunctionReference<
@@ -1045,6 +1069,8 @@ export declare const api: {
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
         updatedByMondayUserId: string;
+        zohoReplyToFallbackEmail: string | null;
+        zohoSenderEmail: string | null;
       },
       {
         adminUserIds: Array<string>;
@@ -1057,6 +1083,8 @@ export declare const api: {
         masterAdminUserId: string;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         replyToEmails: Array<string>;
+        zohoReplyToFallbackEmail: string | null;
+        zohoSenderEmail: string | null;
       }
     >;
   };
@@ -2469,6 +2497,74 @@ export declare const api: {
         name?: string;
         userId: Id<"users">;
       }
+    >;
+  };
+  zohoConnections: {
+    getByMondayAccount: FunctionReference<
+      "query",
+      "public",
+      { mondayAccountId: string; mondayAppClientId?: string },
+      {
+        _creationTime: number;
+        _id: Id<"zohoConnections">;
+        accessTokenExpiresAt: number;
+        connectedByMondayUserId: string;
+        createdAt: number;
+        encryptedAccessToken: string | null;
+        encryptedRefreshToken: string;
+        mondayAccountId: string;
+        mondayAppClientId: string | null;
+        scopes: Array<string>;
+        senderEmail: string | null;
+        senderName: string | null;
+        updatedAt: number;
+      } | null
+    >;
+    removeByMondayAccount: FunctionReference<
+      "mutation",
+      "public",
+      { mondayAccountId: string; mondayAppClientId?: string },
+      { removedCount: number }
+    >;
+    upsertByMondayAccount: FunctionReference<
+      "mutation",
+      "public",
+      {
+        accessTokenExpiresAt: number;
+        connectedByMondayUserId: string;
+        encryptedAccessToken?: string;
+        encryptedRefreshToken: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        scopes: Array<string>;
+        senderEmail?: string;
+        senderName?: string;
+      },
+      { connectionId: Id<"zohoConnections"> }
+    >;
+  };
+  zohoOutbound: {
+    recordSendResult: FunctionReference<
+      "mutation",
+      "public",
+      {
+        actingMondayUserId: string;
+        contactItemId: string;
+        errorMessage?: string;
+        mondayAccountId: string;
+        mondayAppClientId?: string;
+        ownerEmail?: string;
+        ownerMondayUserId: string;
+        recipientEmail: string;
+        replyToEmail?: string;
+        senderEmail?: string;
+        sentAt: number;
+        status: "sent" | "failed";
+        subject: string;
+        zohoCampaignId?: string;
+        zohoMessageId?: string;
+      },
+      { outboundMessageId: Id<"zohoOutboundMessages"> }
     >;
   };
 };

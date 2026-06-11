@@ -16,6 +16,8 @@
   ],
   "exclude": [
     "node_modules",
+    "src/**/*.test.ts",
+    "src/**/*.spec.ts",
     "src/app/**/page.tsx",
     "src/app/**/layout.tsx",
     "src/app/**/template.tsx",

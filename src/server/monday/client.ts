@@ -2051,6 +2051,7 @@ const mapUserRecordsWithConcurrency = async <TValue, TResult>(
 const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
   itemIds: string[];
   progressColumnConfig: ProgressColumnConfig | null;
+  approvalSteps: MondayApprovalStep[];
 }) => {
   const MONDAY_ITEMS_BY_IDS_CHUNK_SIZE = 25;
   const chunks: string[][] = [];
@@ -2170,6 +2171,11 @@ const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
       details.push({ label: "Phone", value: phoneColumn?.text ?? "" });
     }
     if (address) details.push({ label: "Address", value: address });
+    for (const step of args.approvalSteps) {
+      const stepValue = byId(step.id)?.text?.trim() ?? "";
+      if (!stepValue) continue;
+      details.push({ label: step.title, value: stepValue });
+    }
 
     return {
       id: item.id,
@@ -2536,6 +2542,7 @@ export const listMondayUserRecords = async (
   const contactFetchResult = await fetchMondayContactRecordsByIdsForUserRecords({
     itemIds: contactIds,
     progressColumnConfig,
+    approvalSteps,
   });
   const contactMap = contactFetchResult.recordsById;
 

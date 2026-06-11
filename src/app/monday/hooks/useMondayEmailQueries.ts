@@ -7,6 +7,7 @@ import { fetchMondayApi } from "../services/monday-api";
 import type {
   MondayEmailTemplatesResponse,
   MondayRecord,
+  MondayApiResponse,
   OutlookConnectionStatusResponse,
   OutlookTeamMailboxesResponse,
 } from "../types";
@@ -70,6 +71,31 @@ export const useMondayEmailQueries = ({
     staleTime: 30_000,
   });
 
+  const zohoStatusQuery = useQuery({
+    queryKey: ["monday-zoho-status", sessionToken, identityUserId, settingsOpen],
+    enabled: !!sessionToken && !!identityUserId && settingsOpen && !staticMode,
+    queryFn: async () => {
+      const data = await fetchMondayApi<
+        MondayApiResponse<{
+          connected?: boolean;
+          callbackPath?: string;
+          connection?: {
+            senderEmail?: string | null;
+            senderName?: string | null;
+            accessTokenExpiresAt: number;
+            scopes: string[];
+            updatedAt: number;
+          } | null;
+        }>
+      >("/api/monday/email/zoho/status", { sessionToken });
+      if (!data.ok) {
+        throw new Error(data.error ?? "Failed to load Zoho connection status");
+      }
+      return data;
+    },
+    staleTime: 30_000,
+  });
+
   const sendEmailContactOwnerId = sendEmailRecord?.ownerIds[0]?.trim() ?? "";
 
   const outlookTeamMailboxesQuery = useQuery({
@@ -105,6 +131,7 @@ export const useMondayEmailQueries = ({
   return {
     emailTemplatesQuery,
     outlookStatusQuery,
+    zohoStatusQuery,
     outlookTeamMailboxesQuery,
     sendEmailContactOwnerId,
   };

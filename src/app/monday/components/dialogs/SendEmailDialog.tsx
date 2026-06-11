@@ -41,6 +41,7 @@ type SendEmailDialogProps = {
   ownerUserId: string;
   onOwnerUserIdChange: (value: string) => void;
   selectedMailbox: OutlookTeamMailboxesResponse["mailboxes"][number] | null;
+  providerHint?: string;
   canSubmit: boolean;
   isSending: boolean;
   onConfirmSend: () => void;
@@ -66,6 +67,7 @@ export const SendEmailDialog = ({
   ownerUserId,
   onOwnerUserIdChange,
   selectedMailbox,
+  providerHint,
   canSubmit,
   isSending,
   onConfirmSend,
@@ -220,6 +222,9 @@ export const SendEmailDialog = ({
                 <p className="text-sm font-medium">Step 3: Confirm send</p>
                 <div className="space-y-3 rounded-md border p-4 text-sm">
                   <p>Are you sure you want to send this email?</p>
+                  {providerHint ? (
+                    <p className="text-muted-foreground text-xs">{providerHint}</p>
+                  ) : null}
                   <div className="space-y-1">
                     <p className="text-xs font-semibold tracking-wide uppercase">From mailbox</p>
                     {mailboxLoading ? (
@@ -262,7 +267,7 @@ export const SendEmailDialog = ({
                       >
                         {selectedMailbox.connected
                           ? "Selected mailbox is connected and ready."
-                          : "Selected mailbox is not connected. Connect Outlook before sending."}
+                          : "Selected mailbox is not connected to Outlook. This send will use Zoho fallback."}
                       </p>
                     ) : null}
                   </div>
