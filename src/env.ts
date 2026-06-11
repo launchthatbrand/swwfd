@@ -53,6 +53,7 @@ export const env = createEnv({
     ZOHO_OAUTH_STATE_SECRET: z.string().min(1).optional(),
     ZOHO_OAUTH_REDIRECT_URI: z.url().optional(),
     ZOHO_OAUTH_ACCOUNTS_BASE_URL: z.url().optional(),
+    ZOHO_OAUTH_SCOPES: z.string().min(1).optional(),
     ZOHO_CAMPAIGNS_API_BASE_URL: z.url().optional(),
     ZOHO_CAMPAIGNS_SEND_PATH: z.string().min(1).optional(),
     ZOHO_CAMPAIGNS_DEFAULT_SENDER_EMAIL: z.string().email().optional(),

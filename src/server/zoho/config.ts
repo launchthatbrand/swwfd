@@ -27,9 +27,12 @@ const splitScopes = (value: string | undefined, fallback: string[]) => {
 };
 
 const DEFAULT_ZOHO_SCOPES = [
+  "AaaServer.profile.READ",
   "ZohoCampaigns.campaign.READ",
   "ZohoCampaigns.campaign.CREATE",
+  "ZohoCampaigns.campaign.UPDATE",
   "ZohoCampaigns.contact.CREATE",
+  "ZohoCampaigns.contact.READ",
   "ZohoCampaigns.contact.UPDATE",
 ];
 
@@ -55,7 +58,7 @@ export const getZohoOAuthConfig = (requestOrigin?: string) => {
     );
   }
 
-  const scopes = splitScopes(undefined, DEFAULT_ZOHO_SCOPES);
+  const scopes = splitScopes(env.ZOHO_OAUTH_SCOPES, DEFAULT_ZOHO_SCOPES);
 
   return {
     clientId,
