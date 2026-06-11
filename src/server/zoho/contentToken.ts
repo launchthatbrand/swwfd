@@ -1,5 +1,6 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
 import { EncryptJWT, jwtDecrypt } from "jose";
 import type { JWTPayload } from "jose";
 import { env } from "~/env";
@@ -18,7 +19,9 @@ const getContentTokenSecret = () => {
       "ZOHO_OAUTH_STATE_SECRET is missing. Set it (or OUTLOOK_OAUTH_STATE_SECRET / MONDAY_SIGNING_SECRET fallback).",
     );
   }
-  return new TextEncoder().encode(secret);
+  // A256GCM with direct encryption requires exactly 32 bytes.
+  // Hashing gives us a deterministic 256-bit key regardless of secret length.
+  return createHash("sha256").update(secret, "utf8").digest();
 };
 
 export const createZohoContentToken = async (payload: ZohoContentTokenPayload) => {
