@@ -26,6 +26,12 @@ const splitScopes = (value: string | undefined, fallback: string[]) => {
     .filter((entry) => entry.length > 0);
 };
 
+const normalizeSendPath = (value: string | undefined) => {
+  const path = value?.trim();
+  if (!path || path === "/campaigns/email/send") return "/sendcampaign";
+  return path;
+};
+
 const DEFAULT_ZOHO_SCOPES = [
   "AaaServer.profile.READ",
   "ZohoCampaigns.campaign.READ",
@@ -73,7 +79,10 @@ export const getZohoOAuthConfig = (requestOrigin?: string) => {
       env.ZOHO_CAMPAIGNS_API_BASE_URL?.trim() ||
       "https://campaigns.zoho.com/api/v1.1"
     ).replace(/\/+$/, ""),
-    campaignsSendPath: env.ZOHO_CAMPAIGNS_SEND_PATH?.trim() || "/campaigns/email/send",
+    campaignsSendPath: normalizeSendPath(env.ZOHO_CAMPAIGNS_SEND_PATH),
+    campaignsListKey: env.ZOHO_CAMPAIGNS_LIST_KEY?.trim() || null,
+    campaignsTopicId: env.ZOHO_CAMPAIGNS_TOPIC_ID?.trim() || null,
+    publicContentOrigin: env.NEXT_PUBLIC_APP_URL?.trim() || null,
     defaultSenderEmail:
       env.ZOHO_CAMPAIGNS_DEFAULT_SENDER_EMAIL?.trim().toLowerCase() || null,
     defaultSenderName: env.ZOHO_CAMPAIGNS_DEFAULT_SENDER_NAME?.trim() || null,

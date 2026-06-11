@@ -41,9 +41,11 @@ export const GET = async (request: Request) => {
       mondayAccountId: identity.accountId,
       mondayAppClientId: identity.appClientId,
     });
+    const envRefreshTokenConfigured = !!env.ZOHO_OAUTH_REFRESH_TOKEN?.trim();
+    const connected = !!connection || envRefreshTokenConfigured;
     return toJson({
       ok: true,
-      connected: !!connection,
+      connected,
       connection: connection
         ? {
             senderEmail: connection.senderEmail ?? null,
@@ -52,7 +54,16 @@ export const GET = async (request: Request) => {
             scopes: connection.scopes,
             updatedAt: connection.updatedAt,
           }
-        : null,
+        : envRefreshTokenConfigured
+          ? {
+              senderEmail: env.ZOHO_CAMPAIGNS_DEFAULT_SENDER_EMAIL ?? null,
+              senderName: env.ZOHO_CAMPAIGNS_DEFAULT_SENDER_NAME ?? null,
+              accessTokenExpiresAt: null,
+              scopes: [],
+              updatedAt: null,
+            }
+          : null,
+      connectionSource: connection ? "oauth_connection" : envRefreshTokenConfigured ? "env_refresh_token" : "none",
       callbackPath: "/api/monday/email/zoho/callback",
     });
   } catch (error) {
