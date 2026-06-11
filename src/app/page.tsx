@@ -48,9 +48,6 @@ export default function HomePage() {
         <Link className="underline" href="/sign-in">
           Sign in
         </Link>
-        <Link className="underline" href="/sign-up">
-          Create account
-        </Link>
       </div>
     </main>
   );

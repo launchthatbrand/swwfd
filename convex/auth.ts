@@ -5,6 +5,11 @@ import type { DataModel } from "./_generated/dataModel";
 
 const PasswordProvider = Password<DataModel>({
   profile(params) {
+    const flow = typeof params.flow === "string" ? params.flow : "";
+    if (flow === "signUp") {
+      throw new Error("Account creation is disabled.");
+    }
+
     const email = typeof params.email === "string" ? params.email : "";
     const name = typeof params.name === "string" ? params.name : undefined;
     return {

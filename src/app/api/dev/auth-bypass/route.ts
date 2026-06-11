@@ -70,39 +70,19 @@ const setAuthCookies = (res: NextResponse, tokens: Tokens) => {
   });
 };
 
-const signInOrUp = async (email: string, password: string, name: string): Promise<Tokens> => {
-  // Password sign-in/sign-up (requires the correct password for existing accounts).
-  // Try signIn first (normal case), then signUp (first time), then signIn again.
+const signIn = async (email: string, password: string): Promise<Tokens> => {
+  // Password sign-in only. Account creation is intentionally disabled.
   const baseArgs = {
     provider: "password",
     calledBy: "swwfd-dev-auth-bypass",
   };
 
-  const trySignIn = async () => {
-    return (await fetchAction(api.auth.signIn, {
-      ...baseArgs,
-      params: { flow: "signIn", email, password },
-    })) as unknown;
-  };
-
-  const trySignUp = async () => {
-    return (await fetchAction(api.auth.signIn, {
-      ...baseArgs,
-      params: { flow: "signUp", email, password, name },
-    })) as unknown;
-  };
-
-  const a = await trySignIn().catch((): null => null);
-  const aTokens = extractTokens(a);
-  if (aTokens) return aTokens;
-
-  const b = await trySignUp().catch((): null => null);
-  const bTokens = extractTokens(b);
-  if (bTokens) return bTokens;
-
-  const c = await trySignIn().catch((): null => null);
-  const cTokens = extractTokens(c);
-  if (cTokens) return cTokens;
+  const result = (await fetchAction(api.auth.signIn, {
+    ...baseArgs,
+    params: { flow: "signIn", email, password },
+  }).catch((): null => null)) as unknown;
+  const tokens = extractTokens(result);
+  if (tokens) return tokens;
 
   throw new Error("Unable to sign in via dev bypass.");
 };
@@ -128,7 +108,7 @@ export const GET = async (request: NextRequest) => {
     );
   }
 
-  const tokens = await signInOrUp(email, password, "Desmond");
+  const tokens = await signIn(email, password);
 
   // Ensure this viewer is admin (DEV-only, gated by Convex env var).
   await fetchMutation(
