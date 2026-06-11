@@ -4223,9 +4223,10 @@ export const listMondayRecordUpdates = async (args: {
     name: string;
     typeLabel: string | null;
     updateType: MondayUpdateType;
-  intent: "internal_note" | "conversation" | "campaign";
+    intent: "internal_note" | "conversation" | "campaign";
     methodOfCommunication: string | null;
     createdAt: string | null;
+    creatorUserId: string | null;
     creatorProfile: SubitemCreatorProfile | null;
     updates: {
       id: string;
@@ -4357,6 +4358,7 @@ export const listMondayRecordUpdates = async (args: {
         intent: normalizeIntentLabel(intentText),
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
+        creatorUserId: firstPersonId ?? null,
         creatorProfile,
         updates: subitemUpdateList.sort((a, b) =>
           toSortableTime(b.createdAt) - toSortableTime(a.createdAt),

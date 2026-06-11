@@ -24,6 +24,7 @@ export const ConversationThreadPane = ({
   selectedComposerChannel,
   onComposerChannelChange,
   currentUserId,
+  contactOwnerUserId,
   onSendMessage,
   onSendBulkMessage,
   bulkSelectionCount,
@@ -97,6 +98,7 @@ export const ConversationThreadPane = ({
             }}
             isSubmitting={false}
             currentUserId={currentUserId}
+            alignmentOwnerUserId={contactOwnerUserId}
             hideComposer
           />
         )}

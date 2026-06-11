@@ -194,6 +194,15 @@ const subitemEntryValidator = v.object({
   intent: v.union(v.literal("internal_note"), v.literal("conversation"), v.literal("campaign")),
   methodOfCommunication: v.union(v.string(), v.null()),
   createdAt: v.union(v.string(), v.null()),
+  creatorUserId: v.union(v.string(), v.null()),
+  creatorProfile: v.union(
+    v.object({
+      id: v.string(),
+      name: v.union(v.string(), v.null()),
+      photoThumb: v.union(v.string(), v.null()),
+    }),
+    v.null(),
+  ),
   updates: v.array(
     v.object({
       id: v.string(),
@@ -1865,6 +1874,12 @@ const listMondayRecordUpdatesImpl = async (args: {
     intent: "internal_note" | "conversation" | "campaign";
     methodOfCommunication: string | null;
     createdAt: string | null;
+    creatorUserId: string | null;
+    creatorProfile: {
+      id: string;
+      name: string | null;
+      photoThumb: string | null;
+    } | null;
     updates: Array<{
       id: string;
       body: string;
@@ -1883,6 +1898,8 @@ const listMondayRecordUpdatesImpl = async (args: {
     const methodText =
       subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ??
       null;
+    const personValue =
+      subitem.column_values?.find((c) => c.id === personColId)?.value ?? null;
     const intentText = subitem.column_values?.find((c) => c.id === intentColId)?.text ?? null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
     const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
@@ -1905,6 +1922,21 @@ const listMondayRecordUpdatesImpl = async (args: {
       deriveUpdateTypeFromColumnValue(typeColText) ??
       deriveUpdateTypeFromColumnValue(methodText) ??
       deriveUpdateTypeFromSubitemName(subitemName);
+    let creatorUserId: string | null = null;
+    if (personValue) {
+      try {
+        const parsed = JSON.parse(personValue) as {
+          personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+        };
+        const firstPersonId = (parsed.personsAndTeams ?? []).find(
+          (entry) => entry.kind === "person" && entry.id != null,
+        )?.id;
+        creatorUserId =
+          firstPersonId == null ? null : String(firstPersonId).trim() || null;
+      } catch {
+        creatorUserId = null;
+      }
+    }
 
     const subitemUpdateList: (typeof subitems)[number]["updates"] = [];
     for (const update of subitem.updates ?? []) {
@@ -1941,6 +1973,8 @@ const listMondayRecordUpdatesImpl = async (args: {
         intent: normalizeIntentLabel(intentText),
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
+        creatorUserId,
+        creatorProfile: null,
         updates: subitemUpdateList.sort(
           (a, b) => toSortableTime(b.createdAt) - toSortableTime(a.createdAt),
         ),

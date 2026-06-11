@@ -115,6 +115,7 @@ interface MessageBubbleProps {
   subitem: MondaySubitemEntry;
   canEdit: boolean;
   isMine: boolean;
+  ownerLabel: string;
   onDelete: (subitemId: string) => void;
   onEditDate: (subitemId: string, currentDate: string | null) => void;
 }
@@ -123,6 +124,7 @@ const MessageBubble = ({
   subitem,
   canEdit,
   isMine,
+  ownerLabel,
   onDelete,
   onEditDate,
 }: MessageBubbleProps) => {
@@ -162,7 +164,7 @@ const MessageBubble = ({
             className={`flex items-center gap-1.5 px-1 ${isMine ? "flex-row-reverse" : ""}`}
           >
             <span className="text-muted-foreground text-[11px] font-medium">
-              {creator?.name ?? "System"}
+              {ownerLabel}
             </span>
             <span className="text-[11px] text-black dark:text-white">
               {subitem.createdAt ? formatUpdatedAt(subitem.createdAt) : ""}
@@ -249,6 +251,7 @@ interface ContactUpdatesProps {
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmitting: boolean;
   currentUserId: string | null;
+  alignmentOwnerUserId?: string | null;
   hideComposer?: boolean;
 }
 
@@ -264,6 +267,7 @@ export const ContactUpdates = ({
   onUpdateSubitemDate,
   isSubmitting,
   currentUserId,
+  alignmentOwnerUserId = null,
   hideComposer = false,
 }: ContactUpdatesProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -374,23 +378,40 @@ export const ContactUpdates = ({
             </div>
           ) : (
             <div className="space-y-4">
-              {sortedSubitems.map((subitem) => (
-                <MessageBubble
-                  key={subitem.id}
-                  subitem={subitem}
-                  canEdit={isWithin7Days(subitem.createdAt)}
-                  isMine={
-                    currentUserId != null &&
-                    subitem.creatorProfile?.id === currentUserId
-                  }
-                  onDelete={setDeleteTargetId}
-                  onEditDate={(id, date) => {
-                    setEditDateTarget({ subitemId: id, currentDate: date });
-                    const parsed = date ? date.slice(0, 10) : toYMD(new Date());
-                    setEditDateValue(parsed);
-                  }}
-                />
-              ))}
+              {sortedSubitems.map((subitem) => {
+                const creatorId =
+                  subitem.creatorProfile?.id?.trim() ??
+                  subitem.creatorUserId?.trim() ??
+                  "";
+                const alignmentId =
+                  alignmentOwnerUserId?.trim() || currentUserId?.trim() || "";
+                const isMine =
+                  creatorId.length > 0 &&
+                  alignmentId.length > 0 &&
+                  creatorId === alignmentId;
+                const ownerLabel =
+                  subitem.creatorProfile?.name?.trim() ||
+                  (creatorId.length > 0
+                    ? alignmentOwnerUserId && creatorId === alignmentOwnerUserId
+                      ? "Contact Owner"
+                      : `User ${creatorId}`
+                    : "System");
+                return (
+                  <MessageBubble
+                    key={subitem.id}
+                    subitem={subitem}
+                    canEdit={isWithin7Days(subitem.createdAt)}
+                    isMine={isMine}
+                    ownerLabel={ownerLabel}
+                    onDelete={setDeleteTargetId}
+                    onEditDate={(id, date) => {
+                      setEditDateTarget({ subitemId: id, currentDate: date });
+                      const parsed = date ? date.slice(0, 10) : toYMD(new Date());
+                      setEditDateValue(parsed);
+                    }}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
