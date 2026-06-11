@@ -19,11 +19,15 @@ export const canUseMondayDevBypass = () => {
   return env.NODE_ENV === "development" && !!env.MONDAY_API_KEY?.trim();
 };
 
+const canUseMondayApiKeyServiceIdentity = () => {
+  return !!env.MONDAY_API_KEY?.trim();
+};
+
 let cachedDevIdentity: MondaySessionIdentity | null = null;
 
 export const getMondayDevBypassIdentity = async (): Promise<MondaySessionIdentity> => {
-  if (!canUseMondayDevBypass()) {
-    throw new Error("Monday dev bypass is disabled");
+  if (!canUseMondayApiKeyServiceIdentity()) {
+    throw new Error("Monday API key identity is unavailable");
   }
   if (cachedDevIdentity) {
     return cachedDevIdentity;
@@ -80,6 +84,13 @@ export const getMondayDevBypassIdentity = async (): Promise<MondaySessionIdentit
 
   cachedDevIdentity = { userId, accountId };
   return cachedDevIdentity;
+};
+
+export const getMondayApiKeyServiceIdentity = async (): Promise<MondaySessionIdentity> => {
+  if (!canUseMondayApiKeyServiceIdentity()) {
+    throw new Error("Monday API key identity is unavailable");
+  }
+  return await getMondayDevBypassIdentity();
 };
 
 const getSigningSecret = () => {

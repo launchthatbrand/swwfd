@@ -309,13 +309,21 @@ export default function MondayToolsPage() {
   const [zohoStatusError, setZohoStatusError] = useState<string | null>(null);
   const [isConnectingZoho, setIsConnectingZoho] = useState(false);
   const [isDisconnectingZoho, setIsDisconnectingZoho] = useState(false);
+  const toolsSessionToken = useMemo(() => {
+    if (typeof window === "undefined") return undefined;
+    const host = window.location.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1") {
+      return MONDAY_DEV_BYPASS_TOKEN;
+    }
+    return undefined;
+  }, []);
 
   const refreshZohoStatus = async () => {
     setZohoStatusLoading(true);
     setZohoStatusError(null);
     try {
       const data = await fetchMondayApi<ZohoStatusResponse>("/api/monday/email/zoho/status", {
-        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+        sessionToken: toolsSessionToken,
       });
       if (!data.ok) {
         throw new Error(data.error ?? "Failed to load Zoho status");
@@ -335,7 +343,7 @@ export default function MondayToolsPage() {
     setIsConnectingZoho(true);
     try {
       const data = await fetchMondayApi<ZohoConnectResponse>("/api/monday/email/zoho/connect", {
-        sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+        sessionToken: toolsSessionToken,
       });
       if (!data.ok || !data.authorizeUrl) {
         throw new Error(data.error ?? "Failed to initialize Zoho OAuth");
@@ -360,7 +368,7 @@ export default function MondayToolsPage() {
         "/api/monday/email/zoho/disconnect",
         {
           method: "POST",
-          sessionToken: MONDAY_DEV_BYPASS_TOKEN,
+          sessionToken: toolsSessionToken,
         },
       );
       if (!data.ok) {
@@ -905,6 +913,15 @@ export default function MondayToolsPage() {
             Uses dev bypass session token to call Monday OAuth endpoints from this tools page.
             Intended for local debugging outside embedded iframe context.
           </p>
+          {toolsSessionToken ? (
+            <p className="text-muted-foreground text-xs">
+              Localhost mode: using Monday dev bypass identity.
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              Hosted mode: using authenticated app session (outside-iframe tools bridge must be enabled server-side).
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button
               onClick={() => void handleConnectZohoFromTools()}
