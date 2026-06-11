@@ -1,16 +1,41 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { isAuthenticatedNextjs } from "@convex-dev/auth/nextjs/server";
 
+import { env } from "~/env";
 import { getRequestOrigin } from "~/server/http/requestOrigin";
-import { requireVerifiedMondaySession } from "~/server/monday/session";
+import {
+  getMondayApiKeyServiceIdentity,
+  requireVerifiedMondaySession,
+} from "~/server/monday/session";
 import { getZohoOAuthConfig } from "~/server/zoho/config";
 import { signZohoOAuthState } from "~/server/zoho/state";
 
 export const runtime = "nodejs";
 
+const resolveZohoOAuthIdentity = async (request: Request) => {
+  try {
+    return await requireVerifiedMondaySession(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unauthorized";
+    if (
+      env.MONDAY_ALLOW_OUTSIDE_IFRAME_OAUTH_TOOLS === "true" &&
+      (message.includes("Missing Monday session token") ||
+        message.includes("signature verification failed"))
+    ) {
+      const isAuthed = await isAuthenticatedNextjs();
+      if (!isAuthed) {
+        throw new Error("Unauthorized");
+      }
+      return await getMondayApiKeyServiceIdentity();
+    }
+    throw error;
+  }
+};
+
 export const GET = async (request: Request) => {
   try {
-    const identity = await requireVerifiedMondaySession(request);
+    const identity = await resolveZohoOAuthIdentity(request);
     const origin = getRequestOrigin(request);
     const oauth = getZohoOAuthConfig(origin);
     const state = await signZohoOAuthState({
