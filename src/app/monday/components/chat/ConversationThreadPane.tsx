@@ -23,7 +23,6 @@ export const ConversationThreadPane = ({
   composerChannels,
   selectedComposerChannel,
   onComposerChannelChange,
-  currentUserId,
   contactOwnerUserId,
   onSendMessage,
   onSendBulkMessage,
@@ -97,7 +96,6 @@ export const ConversationThreadPane = ({
               await onUpdateMessageDate(subitemId, date);
             }}
             isSubmitting={false}
-            currentUserId={currentUserId}
             alignmentOwnerUserId={contactOwnerUserId}
             hideComposer
           />

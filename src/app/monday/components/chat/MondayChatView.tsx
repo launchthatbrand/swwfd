@@ -502,7 +502,6 @@ export const MondayChatView = ({
         composerChannels={composerChannels}
         selectedComposerChannel={composerChannel}
         onComposerChannelChange={setComposerChannel}
-        currentUserId={userId}
         contactOwnerUserId={contactOwnerUserId || null}
         onSendMessage={async ({ body, channel, emailTemplateId }) => {
           if (!sessionToken || !selectedContactItemId || !selectedRecord) return;
@@ -655,9 +654,15 @@ export const MondayChatView = ({
                 },
               },
             );
+            if (!batchResult.ok) {
+              throw new Error(batchResult.error ?? "Bulk email request failed.");
+            }
             const results = batchResult.results ?? [];
             sentCount = results.filter((entry) => entry.ok).length;
-            failedCount = results.length - sentCount;
+            failedCount =
+              results.length > 0
+                ? results.length - sentCount
+                : recipientPayload.length - sentCount;
             const successfulIds = new Set(
               results.filter((entry) => entry.ok).map((entry) => entry.contactItemId),
             );

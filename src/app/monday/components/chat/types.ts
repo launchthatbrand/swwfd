@@ -43,7 +43,6 @@ export type ConversationThreadPaneProps = {
   }[];
   selectedComposerChannel: "email" | "sms";
   onComposerChannelChange: (channel: "email" | "sms") => void;
-  currentUserId: string | null;
   contactOwnerUserId: string | null;
   onSendMessage: (payload: {
     channel: "email" | "sms";

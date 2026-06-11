@@ -250,7 +250,6 @@ interface ContactUpdatesProps {
   onDeleteSubitem: (subitemId: string) => Promise<void>;
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmitting: boolean;
-  currentUserId: string | null;
   alignmentOwnerUserId?: string | null;
   hideComposer?: boolean;
 }
@@ -266,7 +265,6 @@ export const ContactUpdates = ({
   onDeleteSubitem,
   onUpdateSubitemDate,
   isSubmitting,
-  currentUserId,
   alignmentOwnerUserId = null,
   hideComposer = false,
 }: ContactUpdatesProps) => {
@@ -383,19 +381,14 @@ export const ContactUpdates = ({
                   subitem.creatorProfile?.id?.trim() ??
                   subitem.creatorUserId?.trim() ??
                   "";
-                const alignmentId =
-                  alignmentOwnerUserId?.trim() || currentUserId?.trim() || "";
+                const alignmentId = alignmentOwnerUserId?.trim() || "";
                 const isMine =
                   creatorId.length > 0 &&
                   alignmentId.length > 0 &&
                   creatorId === alignmentId;
                 const ownerLabel =
                   subitem.creatorProfile?.name?.trim() ||
-                  (creatorId.length > 0
-                    ? alignmentOwnerUserId && creatorId === alignmentOwnerUserId
-                      ? "Contact Owner"
-                      : `User ${creatorId}`
-                    : "System");
+                  (creatorId.length > 0 ? `User ${creatorId}` : "System");
                 return (
                   <MessageBubble
                     key={subitem.id}
