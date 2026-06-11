@@ -2172,7 +2172,8 @@ const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
     }
     if (address) details.push({ label: "Address", value: address });
     for (const step of args.approvalSteps) {
-      const stepValue = byId(step.id)?.text?.trim() ?? "";
+      const stepColumn = byId(step.id);
+      const stepValue = toColumnDisplayValue(stepColumn?.text, stepColumn?.value).trim();
       if (!stepValue) continue;
       details.push({ label: step.title, value: stepValue });
     }
