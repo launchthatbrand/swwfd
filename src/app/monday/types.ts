@@ -146,6 +146,7 @@ export interface MondaySubitemEntry {
   intent: MondayUpdateIntent;
   methodOfCommunication: string | null;
   createdAt: string | null;
+  creatorUserId: string | null;
   creatorProfile: {
     id: string;
     name: string | null;

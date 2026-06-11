@@ -904,6 +904,12 @@ export declare const api: {
         itemName: string | null;
         subitems: Array<{
           createdAt: string | null;
+          creatorProfile: {
+            id: string;
+            name: string | null;
+            photoThumb: string | null;
+          } | null;
+          creatorUserId: string | null;
           id: string;
           intent: "internal_note" | "conversation" | "campaign";
           methodOfCommunication: string | null;

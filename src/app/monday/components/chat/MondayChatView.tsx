@@ -196,6 +196,7 @@ export const MondayChatView = ({
       >;
       return subitems.map((subitem) => ({
         ...subitem,
+        creatorUserId: subitem.creatorUserId ?? null,
         creatorProfile: subitem.creatorProfile ?? null,
       }));
     },
@@ -502,6 +503,7 @@ export const MondayChatView = ({
         selectedComposerChannel={composerChannel}
         onComposerChannelChange={setComposerChannel}
         currentUserId={userId}
+        contactOwnerUserId={contactOwnerUserId || null}
         onSendMessage={async ({ body, channel, emailTemplateId }) => {
           if (!sessionToken || !selectedContactItemId || !selectedRecord) return;
           const trimmedBody = body.trim();
