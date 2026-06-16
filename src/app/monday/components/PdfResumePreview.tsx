@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export const PdfResumePreview = (props: {
   fileUrl: string;
   fileName: string;
+  sessionToken?: string | null;
 }) => {
   const [pdfModule, setPdfModule] = useState<null | typeof import("react-pdf")>(null);
   const [numPages, setNumPages] = useState(0);
@@ -76,6 +77,24 @@ export const PdfResumePreview = (props: {
     if (numPages <= 0) return [];
     return Array.from({ length: numPages }, (_, index) => index + 1);
   }, [numPages]);
+  const documentFileSource = useMemo(() => {
+    const isInternalMondayAsset = props.fileUrl.startsWith(
+      "/api/monday/email-templates/assets/",
+    );
+    if (
+      isInternalMondayAsset &&
+      typeof props.sessionToken === "string" &&
+      props.sessionToken.trim().length > 0
+    ) {
+      return {
+        url: props.fileUrl,
+        httpHeaders: {
+          "x-monday-session-token": props.sessionToken.trim(),
+        },
+      };
+    }
+    return props.fileUrl;
+  }, [props.fileUrl, props.sessionToken]);
 
   if (errorMessage) {
     return (
@@ -108,7 +127,7 @@ export const PdfResumePreview = (props: {
   return (
     <div ref={containerRef} className="h-full overflow-auto p-3">
       <Document
-        file={props.fileUrl}
+        file={documentFileSource}
         loading={
           <div className="text-muted-foreground py-8 text-center text-sm">Loading PDF…</div>
         }

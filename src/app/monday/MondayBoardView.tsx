@@ -3864,9 +3864,17 @@ export function MondayBoardView({
         </div>
         <div className={`bg-muted/20 ${previewHeightClass} overflow-hidden rounded-md border`}>
           {isPdf ? (
-            <PdfResumePreview fileUrl={href} fileName={fileName} />
+            <PdfResumePreview
+              fileUrl={href}
+              fileName={fileName}
+              sessionToken={sessionToken}
+            />
           ) : isDocxDocument ? (
-            <DocxResumePreview fileUrl={href} fileName={fileName} />
+            <DocxResumePreview
+              fileUrl={href}
+              fileName={fileName}
+              sessionToken={sessionToken}
+            />
           ) : isLegacyWordDocument ? (
             <iframe
               src={officeEmbedUrl}

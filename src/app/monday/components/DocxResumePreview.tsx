@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 export const DocxResumePreview = (props: {
   fileUrl: string;
   fileName: string;
+  sessionToken?: string | null;
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -24,8 +25,17 @@ export const DocxResumePreview = (props: {
 
       try {
         const { renderAsync } = await import("docx-preview");
+        const isInternalMondayAsset =
+          props.fileUrl.startsWith("/api/monday/email-templates/assets/");
+        const headers =
+          isInternalMondayAsset &&
+          typeof props.sessionToken === "string" &&
+          props.sessionToken.trim().length > 0
+            ? { "x-monday-session-token": props.sessionToken.trim() }
+            : undefined;
         const response = await fetch(props.fileUrl, {
           signal: abortController.signal,
+          headers,
         });
 
         if (!response.ok) {
