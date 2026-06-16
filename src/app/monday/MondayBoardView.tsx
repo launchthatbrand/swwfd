@@ -835,11 +835,8 @@ export function MondayBoardView({
   const boardSettingsReady =
     !shouldGateRecordsForBoardSettings || boardSettingsReadyOwnerId === presetScopeOwnerId;
   const useUserRecordsEndpoint =
-    boardSettingsReady &&
     isTouchScopedView &&
-    !canOverrideUserScopeOwner &&
-    boardGeneralSettings.recordSource === "touched_in_month" &&
-    debouncedSearch.trim().length < 2;
+    boardGeneralSettings.recordSource === "touched_in_month";
   const activeAdvancedFilterConditions = useMemo(
     () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
     [advancedFilterConditions],
@@ -3492,6 +3489,23 @@ export function MondayBoardView({
     setOwnerDraft(record.ownerIds[0] ?? "");
   };
   const openContactHistoryDialog = (record: MondayRecord) => {
+    console.info("[MondayUI] Open contact dialog", {
+      useUserRecordsEndpoint,
+      viewMode,
+      recordSource: boardGeneralSettings.recordSource,
+      boardSettingsReady,
+      hasResolvedUserScopeOwner,
+      recordId: record.id,
+      contactId: record.contactId ?? null,
+      touchItemId: record.touchItemId ?? null,
+      recordName: record.name,
+      resumeFilesCount: record.resumeFiles.length,
+      resumeFiles: record.resumeFiles.map((file) => ({
+        assetId: file.assetId,
+        name: file.name,
+        hasUrl: !!file.url,
+      })),
+    });
     setContactHistoryDialogRecord(record);
     setContactUpdateDraft("");
     setContactUpdateType("general");
@@ -3545,6 +3559,37 @@ export function MondayBoardView({
   const contactDialogResumeHref = contactDialogResumeFile
     ? getResumeFileHref(contactDialogResumeFile)
     : null;
+  useEffect(() => {
+    if (!contactHistoryDialogRecord) return;
+    console.info("[MondayUI] Contact dialog resume state", {
+      useUserRecordsEndpoint,
+      viewMode,
+      recordSource: boardGeneralSettings.recordSource,
+      boardSettingsReady,
+      hasResolvedUserScopeOwner,
+      recordId: contactHistoryDialogRecord.id,
+      contactId: contactHistoryDialogRecord.contactId ?? null,
+      touchItemId: contactHistoryDialogRecord.touchItemId ?? null,
+      resumeFilesCount: contactDialogResumeFiles.length,
+      selectedResumeIndex: contactDialogSelectedResumeIndex,
+      selectedResumeKey: contactDialogSelectedResumeKey,
+      selectedResumeFileName: contactDialogResumeFile?.name ?? null,
+      hasSelectedResumeHref: !!contactDialogResumeHref,
+      resumeFileNames: contactDialogResumeFiles.map((file) => file.name),
+    });
+  }, [
+    contactHistoryDialogRecord,
+    contactDialogResumeFiles,
+    contactDialogSelectedResumeIndex,
+    contactDialogSelectedResumeKey,
+    contactDialogResumeFile?.name,
+    contactDialogResumeHref,
+    useUserRecordsEndpoint,
+    viewMode,
+    boardGeneralSettings.recordSource,
+    boardSettingsReady,
+    hasResolvedUserScopeOwner,
+  ]);
   const isContactDialogUploadingResume = contactHistoryDialogRecord
     ? uploadingResumeByRecordId[contactHistoryDialogRecord.id] === true
     : false;

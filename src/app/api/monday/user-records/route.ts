@@ -71,11 +71,22 @@ export const GET = async (request: Request) => {
       dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
       hydrateWholeMonth,
     });
+    const recordsWithResumes = result.records.filter(
+      (record) => record.resumeFiles.length > 0,
+    );
 
     console.info("[MondayUserRecordsRoute] GET completed", {
       durationMs: Date.now() - startedAt,
       requestedLimit: limit,
       returnedRows: result.records.length,
+      returnedRowsWithResumes: recordsWithResumes.length,
+      sampleResumeRecords: recordsWithResumes.slice(0, 5).map((record) => ({
+        id: record.id,
+        contactId: record.contactId ?? null,
+        name: record.name,
+        resumeFilesCount: record.resumeFiles.length,
+        resumeFileNames: record.resumeFiles.map((file) => file.name),
+      })),
       matchedTouches: result.stats.matchedTouches,
       loadedContacts: result.stats.loadedContacts,
       hasNextCursor: !!result.nextCursor,

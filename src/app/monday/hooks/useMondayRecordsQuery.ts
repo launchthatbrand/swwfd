@@ -58,7 +58,7 @@ export const useMondayRecordsQuery = ({
       !!sessionToken &&
       !staticMode &&
       hasResolvedUserScopeOwner &&
-      boardSettingsReady,
+      (useUserRecordsEndpoint || boardSettingsReady),
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const normalizedSearch = debouncedSearch.trim();

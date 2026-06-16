@@ -834,6 +834,26 @@ export const listMondayBoardRecords = async (args?: {
     const resumeFilesColumn = columns.find(
       (column) => column.id === RESUME_FILES_COLUMN_ID,
     );
+    const parsedResumeFiles = parseFilesColumnValue(resumeFilesColumn?.value);
+    if (resumeFilesColumn?.value) {
+      let rawFilesCount = 0;
+      try {
+        const parsed = JSON.parse(resumeFilesColumn.value) as {
+          files?: unknown[];
+        };
+        rawFilesCount = Array.isArray(parsed.files) ? parsed.files.length : 0;
+      } catch {
+        rawFilesCount = 0;
+      }
+      console.info("[MondayRecords] Resume column mapping", {
+        itemId: item.id,
+        itemName: item.name ?? null,
+        hasFilesColumnValue: true,
+        rawFilesCount,
+        parsedResumeFilesCount: parsedResumeFiles.length,
+        parsedResumeFileNames: parsedResumeFiles.map((file) => file.name),
+      });
+    }
     const addressLine1 = columns.find((column) => column.id === "text6__1")?.text;
     const addressLine2 = columns.find((column) => column.id === "text60__1")?.text;
     const city = columns.find((column) => column.id === "text1__1")?.text;
@@ -990,7 +1010,7 @@ export const listMondayBoardRecords = async (args?: {
       updatedAt: updatedAtFromPulseColumn ?? null,
       lastTouchpointAt: lastTouchpointAtFromColumn ?? null,
       contactDetails,
-      resumeFiles: parseFilesColumnValue(resumeFilesColumn?.value),
+      resumeFiles: parsedResumeFiles,
     };
   };
 
@@ -1664,41 +1684,7 @@ const parseUserRecordsResumeFiles = (
   columns: MondayColumnValue[],
 ): MondayRecord["resumeFiles"] => {
   const filesColumn = columns.find((c) => c.id === RESUME_FILES_COLUMN_ID);
-  if (!filesColumn?.value) return [];
-  try {
-    const parsed = JSON.parse(filesColumn.value) as {
-      files?: Array<{
-        assetId?: number | string | null;
-        name?: string | null;
-        fileType?: string | null;
-        url?: string | null;
-        public_url?: string | null;
-      }>;
-    };
-    return (parsed.files ?? [])
-      .filter((f) => {
-        const name = (f.name ?? "").toLowerCase();
-        return (
-          name.includes("resume") ||
-          name.includes("cv") ||
-          name.endsWith(".pdf") ||
-          name.endsWith(".doc") ||
-          name.endsWith(".docx")
-        );
-      })
-      .map((f) => ({
-        assetId: f.assetId != null ? String(f.assetId) : null,
-        name: f.name ?? "Resume",
-        url:
-          typeof f.public_url === "string" && f.public_url.trim().length > 0
-            ? f.public_url.trim()
-            : typeof f.url === "string" && f.url.trim().length > 0
-              ? f.url.trim()
-              : null,
-      }));
-  } catch {
-    return [];
-  }
+  return parseFilesColumnValue(filesColumn?.value);
 };
 
 const resolveUserRecordsContactBoardMeta = async (
@@ -2130,6 +2116,7 @@ const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
     const dateColumn = byId(API_BOARD_CREATED_AT_COLUMN_ID);
     const pulseUpdatedColumn = byId(API_BOARD_UPDATED_AT_COLUMN_ID);
     const lastTouchpointColumn = byId(LAST_INTERACTION_DATE_COLUMN_ID);
+    const resumeFilesColumn = byId(RESUME_FILES_COLUMN_ID);
 
     const addressParts = [
       byId("text6__1")?.text,
@@ -2161,6 +2148,27 @@ const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
     const createdAt = parseUserRecordsDateValue(dateColumn);
     const updatedAt = parseUserRecordsDateValue(pulseUpdatedColumn);
     const lastTouchpointAt = parseUserRecordsDateValue(lastTouchpointColumn);
+    const resumeFiles = parseUserRecordsResumeFiles(columns);
+
+    if (resumeFilesColumn?.value) {
+      let rawFilesCount = 0;
+      try {
+        const parsed = JSON.parse(resumeFilesColumn.value) as {
+          files?: unknown[];
+        };
+        rawFilesCount = Array.isArray(parsed.files) ? parsed.files.length : 0;
+      } catch {
+        rawFilesCount = 0;
+      }
+      console.info("[MondayUserRecords] Resume column mapping", {
+        contactItemId: item.id,
+        contactName: item.name ?? null,
+        hasFilesColumnValue: true,
+        rawFilesCount,
+        parsedResumeFilesCount: resumeFiles.length,
+        parsedResumeFileNames: resumeFiles.map((file) => file.name),
+      });
+    }
 
     const details: Array<{ label: string; value: string }> = [];
     if ((item.name ?? "").trim()) details.push({ label: "Name", value: item.name ?? "" });
@@ -2207,7 +2215,7 @@ const fetchMondayContactRecordsByIdsForUserRecords = async (args: {
       updatedAt: updatedAt ?? null,
       lastTouchpointAt: lastTouchpointAt ?? null,
       contactDetails: details,
-      resumeFiles: parseUserRecordsResumeFiles(columns),
+      resumeFiles,
     };
   };
 
