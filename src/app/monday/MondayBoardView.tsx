@@ -3522,9 +3522,66 @@ export function MondayBoardView({
     index: contactDialogIndex,
     total: filteredRecords.length,
   });
+  const contactDialogColumnResumeFiles = useMemo(() => {
+    const columns = contactColumnsQuery.data?.columns ?? [];
+    const filesColumn =
+      columns.find((column) => column.id === "files__1") ??
+      columns.find((column) => {
+        const normalizedType = column.type.trim().toLowerCase();
+        return normalizedType === "file" || normalizedType === "files";
+      });
+    const rawValue = filesColumn?.value;
+    if (!rawValue || rawValue.trim().length === 0) return [];
+    try {
+      const parsed = JSON.parse(rawValue) as {
+        files?: Array<{
+          assetId?: number | string | null;
+          name?: string | null;
+          url?: string | null;
+          public_url?: string | null;
+        }>;
+      };
+      const files = Array.isArray(parsed.files) ? parsed.files : [];
+      return files
+        .map((file) => {
+          const assetId =
+            typeof file.assetId === "number"
+              ? String(file.assetId)
+              : typeof file.assetId === "string" && file.assetId.trim().length > 0
+                ? file.assetId.trim()
+                : null;
+          const url =
+            typeof file.public_url === "string" && file.public_url.trim().length > 0
+              ? file.public_url.trim()
+              : typeof file.url === "string" && file.url.trim().length > 0
+                ? file.url.trim()
+                : null;
+          if (!assetId && !url) return null;
+          return {
+            assetId,
+            name:
+              typeof file.name === "string" && file.name.trim().length > 0
+                ? file.name.trim()
+                : "File",
+            url,
+          };
+        })
+        .filter(
+          (
+            file,
+          ): file is { assetId: string | null; name: string; url: string | null } =>
+            file !== null,
+        );
+    } catch {
+      return [];
+    }
+  }, [contactColumnsQuery.data?.columns]);
   const contactDialogResumeFiles = useMemo(
-    () => contactHistoryDialogRecord?.resumeFiles ?? [],
-    [contactHistoryDialogRecord?.resumeFiles],
+    () =>
+      contactDialogColumnResumeFiles.length > 0
+        ? contactDialogColumnResumeFiles
+        : (contactHistoryDialogRecord?.resumeFiles ?? []),
+    [contactDialogColumnResumeFiles, contactHistoryDialogRecord?.resumeFiles],
   );
   const getResumeFileKey = useCallback(
     (

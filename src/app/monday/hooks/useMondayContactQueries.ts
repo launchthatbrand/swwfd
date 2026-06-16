@@ -111,7 +111,7 @@ export const useMondayContactQueries = ({
       !!sessionToken &&
       !!contactHistoryDialogRecord &&
       !staticMode &&
-      contactDialogTab === "info",
+      (contactDialogTab === "info" || contactDialogTab === "resume"),
     queryFn: async () => {
       const contactId = contactHistoryDialogRecord?.contactId?.trim();
       const targetRecordId =
