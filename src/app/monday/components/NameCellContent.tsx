@@ -44,7 +44,6 @@ export const NameCellContent = (props: {
             progressValue={item.batteryProgress}
             steps={approvalSteps}
             rawProgressValue={item.batteryRawValue}
-            className="-mt-2"
             onHoverChange={setProgressHovered}
             hoverPopoversEnabled={hoverPopoversEnabled}
           />
@@ -72,7 +71,6 @@ export const NameCellContent = (props: {
             progressValue={item.batteryProgress}
             steps={approvalSteps}
             rawProgressValue={item.batteryRawValue}
-            className="-mt-2"
             onHoverChange={setProgressHovered}
             hoverPopoversEnabled={hoverPopoversEnabled}
           />

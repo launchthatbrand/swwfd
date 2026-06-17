@@ -3,18 +3,22 @@ import { useAction } from "convex/react";
 
 import { api } from "@convex-config/_generated/api";
 
-import { fetchMondayApi } from "../services/monday-api";
+import {
+  buildMondayRecordsActionPayload,
+  buildMondayRecordsQueryKey,
+} from "./mondayRecordsQuery.shared";
 import type {
   AdvancedFilterCondition,
   AdvancedFilterMatchMode,
   MondayResponse,
+  UserBoardRecordSource,
 } from "../types";
 
 interface UseMondayRecordsQueryArgs {
   sessionToken: string | null;
   staticMode: boolean;
   viewMode: string;
-  useUserRecordsEndpoint: boolean;
+  recordSource: UserBoardRecordSource;
   isGlobalDateScope: boolean;
   monthBounds: { from: string; to: string };
   debouncedSearch: string;
@@ -29,7 +33,7 @@ export const useMondayRecordsQuery = ({
   sessionToken,
   staticMode,
   viewMode,
-  useUserRecordsEndpoint,
+  recordSource,
   isGlobalDateScope,
   monthBounds,
   debouncedSearch,
@@ -42,67 +46,37 @@ export const useMondayRecordsQuery = ({
   const listRecords = useAction(api.mondayRecordsNode.listRecords);
 
   return useInfiniteQuery({
-    queryKey: [
-      "monday-records",
+    queryKey: buildMondayRecordsQueryKey({
       viewMode,
-      useUserRecordsEndpoint ? "user-records" : "records",
-      isGlobalDateScope ? "__global__" : monthBounds.from,
-      isGlobalDateScope ? "__global__" : monthBounds.to,
+      recordSource,
+      isGlobalDateScope,
+      monthBounds,
       debouncedSearch,
       ownerFilter,
-      JSON.stringify(activeAdvancedFilterConditions),
+      activeAdvancedFilterConditions,
       advancedFilterMatchMode,
       sessionToken,
-    ],
+    }),
     enabled:
       !!sessionToken &&
       !staticMode &&
       hasResolvedUserScopeOwner &&
-      (useUserRecordsEndpoint || boardSettingsReady),
+      boardSettingsReady,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const normalizedSearch = debouncedSearch.trim();
-      const isFullDbSearch = normalizedSearch.length >= 2 && !useUserRecordsEndpoint;
-      const shouldApplyDateWindow = !isGlobalDateScope && !isFullDbSearch;
-
-      if (useUserRecordsEndpoint) {
-        const params = new URLSearchParams();
-        params.set("limit", "50");
-        if (pageParam) params.set("cursor", pageParam);
-        if (normalizedSearch.length >= 2) params.set("search", normalizedSearch);
-        if (ownerFilter.trim()) params.set("owner", ownerFilter.trim());
-        if (shouldApplyDateWindow) {
-          params.set("dateFrom", monthBounds.from);
-          params.set("dateTo", monthBounds.to);
-        }
-
-        const data = await fetchMondayApi<MondayResponse>(
-          `/api/monday/user-records?${params.toString()}`,
-          { sessionToken },
-        );
-        if (!data.ok) {
-          throw new Error(data.error ?? "Failed to load Monday records");
-        }
-        return data;
-      }
-
-      const result = await listRecords({
-        sessionToken: sessionToken!,
-        cursor: pageParam,
-        limit: 100,
-        search: normalizedSearch.length >= 2 ? normalizedSearch : undefined,
-        owner: ownerFilter.trim() || undefined,
-        dateFrom: shouldApplyDateWindow ? monthBounds.from : undefined,
-        dateTo: shouldApplyDateWindow ? monthBounds.to : undefined,
-        advancedFilterConditions:
-          activeAdvancedFilterConditions.length > 0
-            ? activeAdvancedFilterConditions
-            : undefined,
-        advancedFilterMatchMode:
-          activeAdvancedFilterConditions.length > 0
-            ? advancedFilterMatchMode
-            : undefined,
-      });
+      const result = await listRecords(
+        buildMondayRecordsActionPayload({
+          sessionToken: sessionToken!,
+          pageParam,
+          recordSource,
+          isGlobalDateScope,
+          monthBounds,
+          debouncedSearch,
+          ownerFilter,
+          activeAdvancedFilterConditions,
+          advancedFilterMatchMode,
+        }),
+      );
 
       return {
         ok: true,
@@ -113,6 +87,6 @@ export const useMondayRecordsQuery = ({
       } as MondayResponse;
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
-    staleTime: useUserRecordsEndpoint ? 60_000 : 30_000,
+    staleTime: 30_000,
   });
 };

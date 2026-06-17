@@ -286,6 +286,7 @@ const HIRED_STEP_COLUMN_ID = "color_mm1d80yc";
 const SCREENING_STEP_COLUMN_ID =
   APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE.questionnaire ?? "color_mm1dwr4k";
 const RESUME_STEP_COLUMN_ID = APPROVAL_STEP_COLUMN_ID_BY_UPDATE_TYPE.resume ?? "color_mm1dnr11";
+const INITIAL_PRELOAD_TARGET = 95;
 
 export function MondayBoardView({
   viewMode = "all",
@@ -294,8 +295,7 @@ export function MondayBoardView({
 }: MondayBoardViewProps) {
   const isTouchScopedView = viewMode === "userScoped";
   const [userScopedDisplayMode, setUserScopedDisplayMode] = useState<UserBoardDisplayMode>("table");
-  const isViewportLockedBoardMode =
-    userScopedDisplayMode === "kanban" || userScopedDisplayMode === "chat";
+  const isViewportLockedBoardMode = isTouchScopedView;
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -834,9 +834,6 @@ export function MondayBoardView({
     !isTouchScopedView || presetScopeOwnerId.length > 0;
   const boardSettingsReady =
     !shouldGateRecordsForBoardSettings || boardSettingsReadyOwnerId === presetScopeOwnerId;
-  const useUserRecordsEndpoint =
-    isTouchScopedView &&
-    boardGeneralSettings.recordSource === "touched_in_month";
   const activeAdvancedFilterConditions = useMemo(
     () => advancedFilterConditions.filter((condition) => isAdvancedConditionActive(condition)),
     [advancedFilterConditions],
@@ -857,6 +854,26 @@ export function MondayBoardView({
     () => buildUserBoardThemeInlineStyles(boardGeneralSettingsDraft),
     [boardGeneralSettingsDraft],
   );
+  const tableScrollbarStyle = useMemo<React.CSSProperties | undefined>(() => {
+    const customActionColor =
+      typeof boardThemeInlineStyles.actionButtonStyle?.backgroundColor === "string"
+        ? boardThemeInlineStyles.actionButtonStyle.backgroundColor
+        : undefined;
+    const defaultActionColorByTheme: Record<Exclude<UserBoardColorTheme, "custom">, string> = {
+      neutral: "#475569",
+      sky: "#0ea5e9",
+      emerald: "#10b981",
+      violet: "#8b5cf6",
+      rose: "#f43f5e",
+    };
+    const fallbackColor =
+      boardGeneralSettings.colorTheme === "custom"
+        ? "#0ea5e9"
+        : defaultActionColorByTheme[boardGeneralSettings.colorTheme];
+    return {
+      "--table-scrollbar-color": customActionColor ?? fallbackColor,
+    } as React.CSSProperties;
+  }, [boardGeneralSettings.colorTheme, boardThemeInlineStyles.actionButtonStyle]);
   const boardFontScale = USER_BOARD_FONT_SIZE_SCALE[boardGeneralSettings.fontSize];
   const boardFontScalePercent = Math.round(boardFontScale * 100);
   const quickActionButtonSizeClass =
@@ -897,7 +914,7 @@ export function MondayBoardView({
     sessionToken,
     staticMode,
     viewMode,
-    useUserRecordsEndpoint,
+    recordSource: boardGeneralSettings.recordSource,
     isGlobalDateScope,
     monthBounds,
     debouncedSearch,
@@ -1588,6 +1605,43 @@ export function MondayBoardView({
       return true;
     });
   }, [apiRecords, debouncedSearch, ownerFilter, staticMode, staticRecords, statusFilter]);
+  const shouldPrefetchInitialRows =
+    !staticMode &&
+    debouncedSearch.trim().length === 0 &&
+    statusFilter.trim().length === 0 &&
+    activeAdvancedFilterConditions.length === 0 &&
+    records.length < INITIAL_PRELOAD_TARGET;
+  const shouldExhaustUserScopedPages =
+    !staticMode &&
+    isTouchScopedView &&
+    debouncedSearch.trim().length === 0 &&
+    statusFilter.trim().length === 0 &&
+    activeAdvancedFilterConditions.length === 0;
+  useEffect(() => {
+    if (!shouldPrefetchInitialRows) return;
+    if (recordsQuery.isLoading || recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  }, [
+    records.length,
+    recordsQuery,
+    recordsQuery.hasNextPage,
+    recordsQuery.isFetchingNextPage,
+    recordsQuery.isLoading,
+    shouldPrefetchInitialRows,
+  ]);
+  useEffect(() => {
+    if (!shouldExhaustUserScopedPages) return;
+    if (recordsQuery.isLoading || recordsQuery.isFetchingNextPage) return;
+    if (!recordsQuery.hasNextPage) return;
+    void recordsQuery.fetchNextPage();
+  }, [
+    recordsQuery,
+    recordsQuery.hasNextPage,
+    recordsQuery.isFetchingNextPage,
+    recordsQuery.isLoading,
+    shouldExhaustUserScopedPages,
+  ]);
   const boardName = staticMode
     ? "Static Test Board (50 records)"
     : recordsQuery.data?.pages[0]?.boardName ?? "Monday Board";
@@ -2852,8 +2906,8 @@ export function MondayBoardView({
   );
   const filteredRecords = useMemo(() => {
     if (activeAdvancedFilterConditions.length === 0) return records;
-    if (!staticMode && !useUserRecordsEndpoint) {
-      // Advanced conditions are applied on the server for the main records endpoint.
+    if (!staticMode) {
+      // Advanced conditions are applied on the server in unified records mode.
       return records;
     }
     return records.filter((record) =>
@@ -2868,7 +2922,6 @@ export function MondayBoardView({
     advancedFilterMatchMode,
     records,
     staticMode,
-    useUserRecordsEndpoint,
   ]);
   useEffect(() => {
     const shouldDebugFilters =
@@ -2983,12 +3036,16 @@ export function MondayBoardView({
   }, [approvalSteps, selectedCrossViewRecords]);
   const isHydratingGlobalRecords =
     !staticMode &&
-    shouldAutoLoadMore &&
+    (shouldAutoLoadMore || shouldPrefetchInitialRows) &&
     !!recordsQuery.hasNextPage &&
     (recordsQuery.isLoading || recordsQuery.isFetchingNextPage);
   const filteredRecordCountLabel = isHydratingGlobalRecords
     ? `${filteredRecords.length} loaded contact${filteredRecords.length === 1 ? "" : "s"} (loading all...)`
     : `${filteredRecords.length} total contact${filteredRecords.length === 1 ? "" : "s"}`;
+  const tablePlaceholderRowCount =
+    shouldPrefetchInitialRows && !authLoading
+      ? Math.max(0, INITIAL_PRELOAD_TARGET - filteredRecords.length)
+      : 0;
   const sessionState = useMondaySession({
     sessionToken,
     staticMode,
@@ -3490,7 +3547,6 @@ export function MondayBoardView({
   };
   const openContactHistoryDialog = (record: MondayRecord) => {
     console.info("[MondayUI] Open contact dialog", {
-      useUserRecordsEndpoint,
       viewMode,
       recordSource: boardGeneralSettings.recordSource,
       boardSettingsReady,
@@ -3619,7 +3675,6 @@ export function MondayBoardView({
   useEffect(() => {
     if (!contactHistoryDialogRecord) return;
     console.info("[MondayUI] Contact dialog resume state", {
-      useUserRecordsEndpoint,
       viewMode,
       recordSource: boardGeneralSettings.recordSource,
       boardSettingsReady,
@@ -3641,7 +3696,6 @@ export function MondayBoardView({
     contactDialogSelectedResumeKey,
     contactDialogResumeFile?.name,
     contactDialogResumeHref,
-    useUserRecordsEndpoint,
     viewMode,
     boardGeneralSettings.recordSource,
     boardSettingsReady,
@@ -6710,11 +6764,11 @@ export function MondayBoardView({
     <GuidedTourProvider>
       <UserSettingsProvider settings={boardGeneralSettings}>
         <div
-          className={`monday-like-page mx-auto ${isViewportLockedBoardMode ? "h-[calc(100vh-20px)] overflow-hidden pb-0" : "pb-10"}`}
+          className={`monday-like-page mx-auto ${isViewportLockedBoardMode ? "flex h-[calc(100vh)] min-h-0 flex-col overflow-hidden pb-0" : "pb-10"}`}
         >
           <div
             data-board-filter-bar
-            className={`sticky top-0 z-50 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
+            className={`sticky top-0 z-50 shrink-0 rounded-lg border px-2 py-1.5 ${boardThemeStyles.shellCardClassName}`}
             style={boardThemeInlineStyles.shellCardStyle}
           >
             <div className="flex min-w-0 items-center gap-1.5">
@@ -6792,7 +6846,7 @@ export function MondayBoardView({
                     )}
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
+                <DialogContent className="max-h-[95vh] max-w-4xl overflow-hidden border-2 border-border/80 bg-linear-to-b from-background to-muted/20 p-0 shadow-xl">
                   <DialogHeader className="border-b-2 border-border/70 bg-muted/35 px-6 py-4">
                     <DialogTitle>Advanced Filters</DialogTitle>
                     <DialogDescription>
@@ -8638,11 +8692,7 @@ export function MondayBoardView({
             </div>
           </div>
           <div
-            className={
-              userScopedDisplayMode === "chat"
-                ? "w-full"
-                : "max-w-[1600px] container"
-            }
+            className={`${userScopedDisplayMode === "chat" ? "w-full" : "max-w-[1600px] container"} ${isViewportLockedBoardMode ? "flex min-h-0 flex-1 flex-col overflow-hidden" : ""}`}
           >
 
             <AddContactDialog
@@ -8967,157 +9017,88 @@ export function MondayBoardView({
               />
             ) : null}
 
-            {userScopedDisplayMode === "chat" ? (
-              <MondayChatView
-                accountId={identity?.accountId ?? null}
-                userId={identity?.userId ?? null}
-                userName={userProfileQuery.data?.name ?? null}
-                sessionToken={sessionToken}
-                records={filteredRecords}
-                approvalSteps={approvalSteps}
-                isLoadingRecords={
-                  sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)
-                }
-              />
-            ) : userScopedDisplayMode === "kanban" ? (
-              <KanbanBoardView
-                records={filteredRecords}
-                approvalSteps={approvalSteps}
-                isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
-                selectedCrossViewRecords={selectedCrossViewRecords}
-                selectedKanbanStepIndex={selectedKanbanStepIndex}
-                selectedRecordIds={crossViewSelectedRecordIds}
-                isExecutingKanbanMove={kanbanActionsState.isExecuting}
-                onKanbanBulkMoveForward={() => {
-                  void handleKanbanBulkMoveForward();
-                }}
-                onClearCrossViewSelection={clearCrossViewSelection}
-                onKanbanMoveRequest={setKanbanMoveConfirmation}
-                onRecordClick={openContactHistoryDialog}
-                onHelpDesk={(r) => {
-                  setHelpDeskLinkedContact(r);
-                  setHelpDeskOpen(true);
-                }}
-                onToggleKanbanRecordSelection={toggleKanbanRecordSelection}
-              />
-            ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
-              <GridBoardView
-                records={sortedGridRecords}
-                approvalSteps={approvalSteps}
-                isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
-                selectedRecordIds={crossViewSelectedRecordIds}
-                selectedCrossViewRecords={selectedCrossViewRecords}
-                onRecordClick={openContactHistoryDialog}
-                onHelpDesk={(r) => {
-                  setHelpDeskLinkedContact(r);
-                  setHelpDeskOpen(true);
-                }}
-                onToggleGridRecordSelection={toggleGridRecordSelection}
-                onClearCrossViewSelection={clearCrossViewSelection}
-                renderBulkActionsBar={renderBulkActionsBar}
-              />
-            ) : (
-              <TableBoardView
-                records={filteredRecords}
-                columns={columns}
-                isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
-                entityActions={entityActions}
-                shouldAutoLoadMore={shouldAutoLoadMore}
-                hasNextPage={!!(boardQueriesState.recordsQuery as typeof recordsQuery).hasNextPage}
-                isFetchingNextPage={
-                  (boardQueriesState.recordsQuery as typeof recordsQuery).isFetchingNextPage
-                }
-                onLoadMore={handleLoadMoreRecords}
-                renderBulkActionsBar={renderBulkActionsBar}
-              />
-            )}
+            <div className={isViewportLockedBoardMode ? "min-h-0 flex-1 overflow-hidden" : ""}>
+              {userScopedDisplayMode === "chat" ? (
+                <MondayChatView
+                  accountId={identity?.accountId ?? null}
+                  userId={identity?.userId ?? null}
+                  userName={userProfileQuery.data?.name ?? null}
+                  sessionToken={sessionToken}
+                  records={filteredRecords}
+                  approvalSteps={approvalSteps}
+                  isLoadingRecords={
+                    sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)
+                  }
+                />
+              ) : userScopedDisplayMode === "kanban" ? (
+                <KanbanBoardView
+                  records={filteredRecords}
+                  approvalSteps={approvalSteps}
+                  isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
+                  selectedCrossViewRecords={selectedCrossViewRecords}
+                  selectedKanbanStepIndex={selectedKanbanStepIndex}
+                  selectedRecordIds={crossViewSelectedRecordIds}
+                  isExecutingKanbanMove={kanbanActionsState.isExecuting}
+                  onKanbanBulkMoveForward={() => {
+                    void handleKanbanBulkMoveForward();
+                  }}
+                  onClearCrossViewSelection={clearCrossViewSelection}
+                  onKanbanMoveRequest={setKanbanMoveConfirmation}
+                  onRecordClick={openContactHistoryDialog}
+                  onHelpDesk={(r) => {
+                    setHelpDeskLinkedContact(r);
+                    setHelpDeskOpen(true);
+                  }}
+                  onToggleKanbanRecordSelection={toggleKanbanRecordSelection}
+                />
+              ) : isTouchScopedView && userScopedDisplayMode === "grid" ? (
+                <GridBoardView
+                  records={sortedGridRecords}
+                  approvalSteps={approvalSteps}
+                  isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
+                  selectedRecordIds={crossViewSelectedRecordIds}
+                  selectedCrossViewRecords={selectedCrossViewRecords}
+                  onRecordClick={openContactHistoryDialog}
+                  onHelpDesk={(r) => {
+                    setHelpDeskLinkedContact(r);
+                    setHelpDeskOpen(true);
+                  }}
+                  onToggleGridRecordSelection={toggleGridRecordSelection}
+                  onClearCrossViewSelection={clearCrossViewSelection}
+                  renderBulkActionsBar={renderBulkActionsBar}
+                />
+              ) : (
+                <TableBoardView
+                  records={filteredRecords}
+                  columns={columns}
+                  isLoading={sessionState.authLoading || (!sessionState.staticMode && recordsQuery.isLoading)}
+                  initialSortId={
+                    boardGeneralSettings.recordSource === "touched_in_month"
+                      ? "lastTouchpointAt"
+                      : "createdAt"
+                  }
+                  placeholderRowCount={tablePlaceholderRowCount}
+                  entityActions={entityActions}
+                  shouldAutoLoadMore={shouldAutoLoadMore}
+                  hasNextPage={!!(boardQueriesState.recordsQuery as typeof recordsQuery).hasNextPage}
+                  isFetchingNextPage={
+                    (boardQueriesState.recordsQuery as typeof recordsQuery).isFetchingNextPage
+                  }
+                  onLoadMore={handleLoadMoreRecords}
+                  fillHeight={isViewportLockedBoardMode}
+                  scrollbarStyle={tableScrollbarStyle}
+                  renderBulkActionsBar={renderBulkActionsBar}
+                />
+              )}
+            </div>
 
-            <p className="text-muted-foreground px-1 text-xs font-medium">
-              {bulkActionsState.selectedCount > 0
-                ? `${filteredRecordCountLabel} • ${bulkActionsState.selectedCount} selected`
-                : filteredRecordCountLabel}
-            </p>
-
-            <BulkQuestionnaireDialogs
-              bulkQuickActionConfirmation={bulkQuickActionConfirmation}
-              setBulkQuickActionConfirmation={setBulkQuickActionConfirmation}
-              bulkQuickActionType={bulkQuickActionType}
-              isSendingBulkQuestionnaireEmail={isSendingBulkQuestionnaireEmail}
-              openBulkQuickEmailDialog={openBulkQuickEmailDialog}
-              handleBulkQuickActionUpdates={handleBulkQuickActionUpdates}
-              clearBulkSelection={() => bulkClearSelectionRef.current?.()}
-              bulkQuestionnaireDialogOpen={bulkQuestionnaireDialogOpen}
-              closeBulkQuestionnaireEmailDialog={closeBulkQuestionnaireEmailDialog}
-              bulkQuickEmailAction={bulkQuickEmailAction}
-              bulkQuestionnaireEmailIndex={bulkQuestionnaireEmailIndex}
-              setBulkQuestionnaireEmailIndex={setBulkQuestionnaireEmailIndex}
-              bulkQuestionnaireEmailRecords={bulkQuestionnaireEmailRecords}
-              bulkQuestionnaireActiveRecord={bulkQuestionnaireActiveRecord}
-              bulkQuestionnaireActiveAlreadySent={bulkQuestionnaireActiveAlreadySent}
-              bulkQuestionnaireResolvedTemplate={bulkQuestionnaireResolvedTemplate}
-              bulkQuestionnaireTemplate={bulkQuestionnaireTemplate}
-              bulkQuestionnaireContactColumnsLoading={bulkQuestionnaireContactColumnsQuery.isLoading}
-              emailTemplatesLoading={emailTemplatesQuery.isLoading}
-              bulkQuestionnairePendingCount={bulkActionsState.pendingCount}
-              bulkQuestionnaireSentCount={bulkQuestionnaireSentTargetIds.size}
-              handleSendBulkQuestionnaireToAll={handleSendBulkQuestionnaireToAll}
-              handleSendBulkQuestionnaireToActiveRecord={handleSendBulkQuestionnaireToActiveRecord}
-            />
-
-            <BoardAuxDialogs
-              mergeDialogState={mergeDialogState}
-              setMergeDialogState={setMergeDialogState}
-              isMergingRecords={isMergingRecords}
-              handleConfirmMergeRecords={handleConfirmMergeRecords}
-              getMergeTargetRecordId={getMergeTargetRecordId}
-              getMergeFieldDisplayValue={getMergeFieldDisplayValue}
-              kanbanMoveConfirmation={kanbanActionsState.confirmation}
-              setKanbanMoveConfirmation={setKanbanMoveConfirmation}
-              isExecutingKanbanMove={kanbanActionsState.isExecuting}
-              approvalSteps={approvalSteps}
-              handleKanbanStepMove={handleKanbanStepMove}
-              resumePreview={resumePreview}
-              setResumePreview={setResumePreview}
-              renderResumePreviewContent={renderResumePreviewContent}
-            />
-
-            <SendEmailDialog
-              open={sendEmailState.isOpen}
-              onOpenChange={(open) => {
-                if (!open) closeSendEmailDialog();
-              }}
-              onClose={closeSendEmailDialog}
-              record={sendEmailState.sendEmailRecord}
-              title={
-                sendEmailProgressUpdate?.updateType === "followup"
-                  ? "Send Questionnaire Email"
-                  : sendEmailProgressUpdate?.updateType === "welcome_email"
-                    ? "Send Welcome Email"
-                    : "Send Email"
-              }
-              step={sendEmailState.sendEmailStep}
-              onStepChange={setSendEmailStep}
-              templates={emailTemplates}
-              templatesLoading={emailTemplatesQuery.isLoading}
-              templateId={sendEmailTemplateId}
-              onTemplateIdChange={setSendEmailTemplateId}
-              template={sendEmailTemplate}
-              templateVariables={sendEmailTemplateVariables}
-              resolvedTemplate={sendEmailResolvedTemplate}
-              mailboxOptions={sendEmailMailboxOptions}
-              mailboxLoading={
-                outlookTeamMailboxesQuery.isLoading || outlookTeamMailboxesQuery.isFetching
-              }
-              ownerUserId={sendEmailOwnerUserId}
-              onOwnerUserIdChange={setSendEmailOwnerUserId}
-              selectedMailbox={selectedSendEmailMailbox}
-              providerHint={sendEmailProviderHint}
-              canSubmit={sendEmailCanSubmit}
-              isSending={sendEmailState.isSendingEmail}
-              onConfirmSend={() => {
-                void handleConfirmSendEmail();
-              }}
-            />
+            {!isViewportLockedBoardMode ? (
+              <p className="text-muted-foreground px-1 text-xs font-medium">
+                {bulkActionsState.selectedCount > 0
+                  ? `${filteredRecordCountLabel} • ${bulkActionsState.selectedCount} selected`
+                  : filteredRecordCountLabel}
+              </p>
+            ) : null}
           </div>
           <HelpDeskDialog
             open={helpDeskOpen}
@@ -9128,6 +9109,87 @@ export function MondayBoardView({
             linkedContact={helpDeskLinkedContact}
             sessionToken={sessionToken}
             currentUserId={forcedOwnerId || identity?.userId || null}
+          />
+
+          <BulkQuestionnaireDialogs
+            bulkQuickActionConfirmation={bulkQuickActionConfirmation}
+            setBulkQuickActionConfirmation={setBulkQuickActionConfirmation}
+            bulkQuickActionType={bulkQuickActionType}
+            isSendingBulkQuestionnaireEmail={isSendingBulkQuestionnaireEmail}
+            openBulkQuickEmailDialog={openBulkQuickEmailDialog}
+            handleBulkQuickActionUpdates={handleBulkQuickActionUpdates}
+            clearBulkSelection={() => bulkClearSelectionRef.current?.()}
+            bulkQuestionnaireDialogOpen={bulkQuestionnaireDialogOpen}
+            closeBulkQuestionnaireEmailDialog={closeBulkQuestionnaireEmailDialog}
+            bulkQuickEmailAction={bulkQuickEmailAction}
+            bulkQuestionnaireEmailIndex={bulkQuestionnaireEmailIndex}
+            setBulkQuestionnaireEmailIndex={setBulkQuestionnaireEmailIndex}
+            bulkQuestionnaireEmailRecords={bulkQuestionnaireEmailRecords}
+            bulkQuestionnaireActiveRecord={bulkQuestionnaireActiveRecord}
+            bulkQuestionnaireActiveAlreadySent={bulkQuestionnaireActiveAlreadySent}
+            bulkQuestionnaireResolvedTemplate={bulkQuestionnaireResolvedTemplate}
+            bulkQuestionnaireTemplate={bulkQuestionnaireTemplate}
+            bulkQuestionnaireContactColumnsLoading={bulkQuestionnaireContactColumnsQuery.isLoading}
+            emailTemplatesLoading={emailTemplatesQuery.isLoading}
+            bulkQuestionnairePendingCount={bulkActionsState.pendingCount}
+            bulkQuestionnaireSentCount={bulkQuestionnaireSentTargetIds.size}
+            handleSendBulkQuestionnaireToAll={handleSendBulkQuestionnaireToAll}
+            handleSendBulkQuestionnaireToActiveRecord={handleSendBulkQuestionnaireToActiveRecord}
+          />
+
+          <BoardAuxDialogs
+            mergeDialogState={mergeDialogState}
+            setMergeDialogState={setMergeDialogState}
+            isMergingRecords={isMergingRecords}
+            handleConfirmMergeRecords={handleConfirmMergeRecords}
+            getMergeTargetRecordId={getMergeTargetRecordId}
+            getMergeFieldDisplayValue={getMergeFieldDisplayValue}
+            kanbanMoveConfirmation={kanbanActionsState.confirmation}
+            setKanbanMoveConfirmation={setKanbanMoveConfirmation}
+            isExecutingKanbanMove={kanbanActionsState.isExecuting}
+            approvalSteps={approvalSteps}
+            handleKanbanStepMove={handleKanbanStepMove}
+            resumePreview={resumePreview}
+            setResumePreview={setResumePreview}
+            renderResumePreviewContent={renderResumePreviewContent}
+          />
+
+          <SendEmailDialog
+            open={sendEmailState.isOpen}
+            onOpenChange={(open) => {
+              if (!open) closeSendEmailDialog();
+            }}
+            onClose={closeSendEmailDialog}
+            record={sendEmailState.sendEmailRecord}
+            title={
+              sendEmailProgressUpdate?.updateType === "followup"
+                ? "Send Questionnaire Email"
+                : sendEmailProgressUpdate?.updateType === "welcome_email"
+                  ? "Send Welcome Email"
+                  : "Send Email"
+            }
+            step={sendEmailState.sendEmailStep}
+            onStepChange={setSendEmailStep}
+            templates={emailTemplates}
+            templatesLoading={emailTemplatesQuery.isLoading}
+            templateId={sendEmailTemplateId}
+            onTemplateIdChange={setSendEmailTemplateId}
+            template={sendEmailTemplate}
+            templateVariables={sendEmailTemplateVariables}
+            resolvedTemplate={sendEmailResolvedTemplate}
+            mailboxOptions={sendEmailMailboxOptions}
+            mailboxLoading={
+              outlookTeamMailboxesQuery.isLoading || outlookTeamMailboxesQuery.isFetching
+            }
+            ownerUserId={sendEmailOwnerUserId}
+            onOwnerUserIdChange={setSendEmailOwnerUserId}
+            selectedMailbox={selectedSendEmailMailbox}
+            providerHint={sendEmailProviderHint}
+            canSubmit={sendEmailCanSubmit}
+            isSending={sendEmailState.isSendingEmail}
+            onConfirmSend={() => {
+              void handleConfirmSendEmail();
+            }}
           />
 
           {!sessionState.staticMode &&

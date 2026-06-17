@@ -110,12 +110,27 @@ const truncateForLog = (value: string | null | undefined, limit = 240) => {
 
 const mondayRecordValidator = v.object({
   id: v.string(),
+  contactId: v.optional(v.union(v.string(), v.null())),
+  touchItemId: v.optional(v.union(v.string(), v.null())),
+  touchedAt: v.optional(v.union(v.string(), v.null())),
+  touchedBy: v.optional(v.union(v.string(), v.null())),
+  touchSource: v.optional(v.union(v.string(), v.null())),
   name: v.string(),
   url: v.union(v.string(), v.null()),
   groupTitle: v.union(v.string(), v.null()),
   statusText: v.union(v.string(), v.null()),
   peopleText: v.union(v.string(), v.null()),
   ownerIds: v.array(v.string()),
+  ownerProfiles: v.optional(
+    v.array(
+      v.object({
+        id: v.string(),
+        name: v.union(v.string(), v.null()),
+        email: v.optional(v.union(v.string(), v.null())),
+        photoThumb: v.union(v.string(), v.null()),
+      }),
+    ),
+  ),
   email: v.union(v.string(), v.null()),
   phone: v.union(v.string(), v.null()),
   address: v.union(v.string(), v.null()),
@@ -136,6 +151,15 @@ const mondayRecordValidator = v.object({
   createdAt: v.union(v.string(), v.null()),
   updatedAt: v.union(v.string(), v.null()),
   lastTouchpointAt: v.union(v.string(), v.null()),
+  resumeFiles: v.optional(
+    v.array(
+      v.object({
+        assetId: v.union(v.string(), v.null()),
+        name: v.string(),
+        url: v.union(v.string(), v.null()),
+      }),
+    ),
+  ),
 });
 
 const approvalStepValidator = v.object({
@@ -259,6 +283,10 @@ const advancedFilterOperatorValidator = v.union(
 );
 
 const advancedFilterMatchModeValidator = v.union(v.literal("all"), v.literal("any"));
+const recordSourceValidator = v.union(
+  v.literal("created_in_month"),
+  v.literal("touched_in_month"),
+);
 
 const advancedFilterConditionValidator = v.object({
   id: v.string(),
@@ -771,12 +799,62 @@ const boardItemToRecord = (item: BoardItem) => {
   };
 };
 
+const enrichMappedRecordsWithColumnDetails = (
+  mappedRecords: Array<ReturnType<typeof boardItemToRecord>>,
+  sourceItems: BoardItem[],
+  columnIds: Awaited<ReturnType<typeof resolveBoardColumnIds>>,
+  approvalSteps: Array<{ id: string; title: string }>,
+) => {
+  for (let index = 0; index < mappedRecords.length; index += 1) {
+    const record = mappedRecords[index];
+    const sourceItem = sourceItems[index];
+    if (!record || !sourceItem) continue;
+    const columns = sourceItem.column_values ?? [];
+    for (const column of columns) {
+      const columnId = column.id?.trim() ?? "";
+      if (!columnId) continue;
+      if ((column.type ?? "").trim().toLowerCase() === "creation_log") continue;
+      const value = toOptionAwareColumnDisplayValue({
+        text: column.text,
+        value: column.value,
+        optionLabelMap: columnIds.optionLabelMapById[columnId],
+      }).trim();
+      if (!value) continue;
+      const label = columnIds.columnTitleById[columnId]?.trim() || columnId;
+      const hasLabelValue = record.contactDetails.some(
+        (detail) =>
+          detail.label.trim().toLowerCase() === label.toLowerCase() &&
+          detail.value.trim().toLowerCase() === value.toLowerCase(),
+      );
+      if (!hasLabelValue) {
+        record.contactDetails.push({ label, value });
+      }
+    }
+    for (const step of approvalSteps) {
+      const value = columns
+        .find((column) => column.id === step.id)
+        ?.text?.trim();
+      if (!value) continue;
+      const hasLabel = record.contactDetails.some(
+        (detail) => detail.label.trim().toLowerCase() === step.title.trim().toLowerCase(),
+      );
+      if (!hasLabel) {
+        record.contactDetails.push({
+          label: step.title,
+          value,
+        });
+      }
+    }
+  }
+};
+
 const listMondayBoardRecordsImpl = async (args: {
   cursor?: string;
   limit?: number;
   search?: string;
   dateFrom?: string;
   dateTo?: string;
+  dateColumnIdOverride?: string;
   owner?: string;
   status?: string;
   advancedFilterConditions?: AdvancedFilterCondition[];
@@ -787,6 +865,7 @@ const listMondayBoardRecordsImpl = async (args: {
   const cursorArg = args.cursor?.trim() || undefined;
   const searchArg = args.search?.trim() ?? "";
   const statusArg = args.status?.trim() ?? "";
+  const ownerArg = args.owner?.trim() ?? "";
   const dateFromArg = args.dateFrom;
   const dateToArg = args.dateTo;
   const shouldFilterByDateRange =
@@ -797,11 +876,35 @@ const listMondayBoardRecordsImpl = async (args: {
 
   const appliedFilters = { date: false, owner: false, status: false };
   const rules: string[] = [];
+  const requestedDateSortColumnId =
+    args.dateColumnIdOverride?.trim() || API_BOARD_CREATED_AT_COLUMN_ID;
+  let safeDateSortColumnId =
+    /^[a-zA-Z0-9_]+$/.test(requestedDateSortColumnId) && requestedDateSortColumnId.length > 0
+      ? requestedDateSortColumnId
+      : API_BOARD_CREATED_AT_COLUMN_ID;
+
+  // Cursor pagination in Monday continues the filtered result set from the
+  // first page. Mark date/status as server-applied so client-side fallback
+  // filtering doesn't re-run against the wrong fields.
+  if (cursorArg) {
+    if (shouldFilterByDateRange) {
+      appliedFilters.date = true;
+    }
+    if (statusArg.length > 0) {
+      appliedFilters.status = true;
+    }
+  }
 
   if (!cursorArg) {
     try {
       const columnIds = await resolveBoardColumnIds(boardId);
-      const dateColumnId = columnIds.dateColumnId ?? API_BOARD_CREATED_AT_COLUMN_ID;
+      const dateColumnId =
+        args.dateColumnIdOverride?.trim() ||
+        columnIds.dateColumnId ||
+        API_BOARD_CREATED_AT_COLUMN_ID;
+      if (/^[a-zA-Z0-9_]+$/.test(dateColumnId) && dateColumnId.length > 0) {
+        safeDateSortColumnId = dateColumnId;
+      }
       if (
         shouldFilterByDateRange &&
         /^\d{4}-\d{2}-\d{2}$/.test(dateFromArg!) &&
@@ -814,6 +917,22 @@ const listMondayBoardRecordsImpl = async (args: {
           operator: between
         }`);
         appliedFilters.date = true;
+      }
+      if (
+        ownerArg.length > 0 &&
+        columnIds.peopleColumnId &&
+        /^[a-zA-Z0-9_]+$/.test(columnIds.peopleColumnId)
+      ) {
+        const normalizedOwnerValue = ownerArg.startsWith("person-")
+          ? ownerArg
+          : `person-${ownerArg}`;
+        const escapedOwner = JSON.stringify(normalizedOwnerValue);
+        rules.push(`{
+          column_id: "${columnIds.peopleColumnId}"
+          compare_value: [${escapedOwner}]
+          operator: any_of
+        }`);
+        appliedFilters.owner = true;
       }
       if (
         statusArg.length > 0 &&
@@ -850,9 +969,12 @@ const listMondayBoardRecordsImpl = async (args: {
           limit: $limit
           ${includeCursor ? "cursor: $cursor" : ""}
           ${
-            queryRules.length > 0
-              ? `query_params: { rules: [${queryRules.join("\n")}] }`
-              : ""
+            includeCursor
+              ? ""
+              : `query_params: {
+                  ${queryRules.length > 0 ? `rules: [${queryRules.join("\n")}]` : ""}
+                  order_by: [{ column_id: "${safeDateSortColumnId}", direction: desc }]
+                }`
           }
         ) {
           cursor
@@ -939,47 +1061,7 @@ const listMondayBoardRecordsImpl = async (args: {
   }));
 
   const mappedRecords = firstItems.map(boardItemToRecord);
-  for (let index = 0; index < mappedRecords.length; index += 1) {
-    const record = mappedRecords[index];
-    const sourceItem = firstItems[index];
-    if (!record || !sourceItem) continue;
-    const columns = sourceItem.column_values ?? [];
-    for (const column of columns) {
-      const columnId = column.id?.trim() ?? "";
-      if (!columnId) continue;
-      if ((column.type ?? "").trim().toLowerCase() === "creation_log") continue;
-      const value = toOptionAwareColumnDisplayValue({
-        text: column.text,
-        value: column.value,
-        optionLabelMap: columnIds.optionLabelMapById[columnId],
-      }).trim();
-      if (!value) continue;
-      const label = columnIds.columnTitleById[columnId]?.trim() || columnId;
-      const hasLabelValue = record.contactDetails.some(
-        (detail) =>
-          detail.label.trim().toLowerCase() === label.toLowerCase() &&
-          detail.value.trim().toLowerCase() === value.toLowerCase(),
-      );
-      if (!hasLabelValue) {
-        record.contactDetails.push({ label, value });
-      }
-    }
-    for (const step of approvalSteps) {
-      const value = columns
-        .find((column) => column.id === step.id)
-        ?.text?.trim();
-      if (!value) continue;
-      const hasLabel = record.contactDetails.some(
-        (detail) => detail.label.trim().toLowerCase() === step.title.trim().toLowerCase(),
-      );
-      if (!hasLabel) {
-        record.contactDetails.push({
-          label: step.title,
-          value,
-        });
-      }
-    }
-  }
+  enrichMappedRecordsWithColumnDetails(mappedRecords, firstItems, columnIds, approvalSteps);
   if (SHOULD_DEBUG_PROGRESS) {
     const withProgress = mappedRecords.filter(
       (record) => typeof record.batteryProgress === "number",
@@ -1005,6 +1087,920 @@ const listMondayBoardRecordsImpl = async (args: {
     nextCursor,
     boardName,
     appliedFilters,
+    approvalSteps,
+  };
+};
+
+const parsePeopleIdsFromColumnValue = (value: string | null | undefined) => {
+  if (!value) return [] as string[];
+  try {
+    const parsed = JSON.parse(value) as {
+      personsAndTeams?: Array<{ id?: number | string; kind?: string }>;
+    };
+    return (parsed.personsAndTeams ?? [])
+      .filter((entry) => entry.kind === "person" && entry.id != null)
+      .map((entry) => String(entry.id).trim())
+      .filter((entry) => entry.length > 0);
+  } catch {
+    return [] as string[];
+  }
+};
+
+const resolveSubitemBoardIdFromMainBoard = async (boardId: string) => {
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        type?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<BoardColumnsData>(
+    `query ResolveSubitemBoardId($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns { id type settings_str }
+      }
+    }`,
+    { boardId },
+  );
+  const subtasksColumn = (data.boards?.[0]?.columns ?? []).find(
+    (column) => (column.type ?? "").trim().toLowerCase() === "subtasks",
+  );
+  if (!subtasksColumn?.settings_str) return null;
+  try {
+    const parsed = JSON.parse(subtasksColumn.settings_str) as {
+      boardIds?: Array<number | string>;
+    };
+    const firstBoardId = parsed.boardIds?.[0];
+    if (firstBoardId == null) return null;
+    const normalized = String(firstBoardId).trim();
+    return normalized.length > 0 ? normalized : null;
+  } catch {
+    return null;
+  }
+};
+
+const resolveSubitemTouchColumnIds = async (subitemBoardId: string) => {
+  interface Data {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        title?: string | null;
+        type?: string | null;
+      }>;
+    }>;
+  }
+  const data = await callMondayGraphQL<Data>(
+    `query ResolveSubitemTouchColumns($boardId: ID!) {
+      boards(ids: [$boardId]) {
+        columns { id title type }
+      }
+    }`,
+    { boardId: subitemBoardId },
+  );
+  const columns = data.boards?.[0]?.columns ?? [];
+  const byTitle = (needle: string) =>
+    columns.find((column) =>
+      (column.title ?? "").toLowerCase().includes(needle.toLowerCase()),
+    )?.id?.trim() ?? null;
+  const byType = (type: string) =>
+    columns.find((column) => (column.type ?? "").toLowerCase() === type)?.id?.trim() ?? null;
+  return {
+    dateColumnId: byTitle("date") ?? byType("date") ?? SUBITEM_DATE_COLUMN_ID,
+    typeColumnId: byTitle("type") ?? byType("status") ?? SUBITEM_TYPE_COLUMN_ID,
+  };
+};
+
+const listTouchedMonthRecordsImpl = async (args: {
+  cursor?: string;
+  limit?: number;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  owner?: string;
+  status?: string;
+}) => {
+  const { boardId } = getMondayBoardEnv();
+  const limit = parseLimit(args.limit);
+  const ownerFilterRaw = args.owner?.trim() ?? "";
+  const ownerFilter = ownerFilterRaw.toLowerCase();
+  const ownerFilterId = ownerFilter.startsWith("person-")
+    ? ownerFilter.slice("person-".length).trim()
+    : ownerFilter;
+  const searchFilter = args.search?.trim().toLowerCase() ?? "";
+  const statusFilter = args.status?.trim().toLowerCase() ?? "";
+  const dateFrom = parseIsoDateOnly(args.dateFrom);
+  const dateTo = parseIsoDateOnly(args.dateTo);
+  const ownerAwareColumns = await resolveBoardColumnIds(boardId);
+  const approvalSteps = APPROVAL_STEP_COLUMN_IDS.map((id, index) => ({
+    id,
+    title: ownerAwareColumns.columnTitleById[id]?.trim() || `Approval Step ${index + 1}`,
+  }));
+  const subitemBoardId = await resolveSubitemBoardIdFromMainBoard(boardId);
+  if (!subitemBoardId) {
+    throw new Error("Unable to resolve subitem board for touched records.");
+  }
+  const { dateColumnId, typeColumnId } = await resolveSubitemTouchColumnIds(subitemBoardId);
+  const ownerColumnId = ownerAwareColumns.peopleColumnId;
+
+  interface SubitemRow {
+    id: string;
+    created_at?: string | null;
+    parent_item?: {
+      id?: string | null;
+      name?: string | null;
+      url?: string | null;
+      updated_at?: string | null;
+      group?: { title?: string | null } | null;
+      column_values?: Array<{
+        id?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    } | null;
+    column_values?: Array<{
+      id?: string | null;
+      text?: string | null;
+      value?: string | null;
+    }>;
+  }
+  interface SubitemData {
+    boards?: Array<{
+      name?: string | null;
+      items_page?: {
+        cursor?: string | null;
+        items?: SubitemRow[];
+      };
+    }>;
+  }
+  interface TouchedCursorState {
+    mondayCursor: string | null;
+    emittedParentIds: string[];
+    pendingCandidates?: Array<{
+      contactId: string;
+      touchItemId: string;
+      touchedAt: string | null;
+      touchedBy: string | null;
+      touchSource: string | null;
+    }>;
+  }
+
+  const safeDateColumnId = dateColumnId.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeTypeColumnId = typeColumnId.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeSubitemPersonColumnId = SUBITEM_PERSON_COLUMN_ID.replace(/[^a-zA-Z0-9_]/g, "");
+  const safeParentOwnerColumnId = (ownerColumnId ?? "").replace(
+    /[^a-zA-Z0-9_]/g,
+    "",
+  );
+  const safeCreatedDateColumnId = (ownerAwareColumns.dateColumnId ?? API_BOARD_CREATED_AT_COLUMN_ID).replace(
+    /[^a-zA-Z0-9_]/g,
+    "",
+  );
+  const hasDateRangeArgs =
+    /^\d{4}-\d{2}-\d{2}$/.test(args.dateFrom ?? "") &&
+    /^\d{4}-\d{2}-\d{2}$/.test(args.dateTo ?? "");
+  const decodeTouchedCursorState = (cursorArg: string | undefined) => {
+    const trimmed = cursorArg?.trim() ?? "";
+    if (!trimmed) return { mondayCursor: null, emittedParentIds: [] as string[] };
+    if (!trimmed.startsWith("touch_v1:")) {
+      return { mondayCursor: trimmed, emittedParentIds: [] as string[] };
+    }
+    try {
+      const payload = trimmed.slice("touch_v1:".length);
+      const decoded = Buffer.from(payload, "base64url").toString("utf8");
+      const parsed = JSON.parse(decoded) as Partial<TouchedCursorState>;
+      const mondayCursor =
+        typeof parsed.mondayCursor === "string" && parsed.mondayCursor.trim().length > 0
+          ? parsed.mondayCursor
+          : null;
+      const emittedParentIds = Array.isArray(parsed.emittedParentIds)
+        ? parsed.emittedParentIds
+            .map((id) => String(id ?? "").trim())
+            .filter((id) => id.length > 0)
+        : [];
+      const pendingCandidates = Array.isArray(parsed.pendingCandidates)
+        ? parsed.pendingCandidates
+            .map((candidate) => {
+              const contactId = String(candidate?.contactId ?? "").trim();
+              const touchItemId = String(candidate?.touchItemId ?? "").trim();
+              if (!contactId || !touchItemId) return null;
+              return {
+                contactId,
+                touchItemId,
+                touchedAt:
+                  typeof candidate?.touchedAt === "string" ? candidate.touchedAt : null,
+                touchedBy:
+                  typeof candidate?.touchedBy === "string" ? candidate.touchedBy : null,
+                touchSource:
+                  typeof candidate?.touchSource === "string" ? candidate.touchSource : null,
+              };
+            })
+            .filter(
+              (
+                candidate,
+              ): candidate is {
+                contactId: string;
+                touchItemId: string;
+                touchedAt: string | null;
+                touchedBy: string | null;
+                touchSource: string | null;
+              } => candidate !== null,
+            )
+        : [];
+      return { mondayCursor, emittedParentIds, pendingCandidates };
+    } catch {
+      return {
+        mondayCursor: trimmed,
+        emittedParentIds: [] as string[],
+        pendingCandidates: [] as Array<{
+          contactId: string;
+          touchItemId: string;
+          touchedAt: string | null;
+          touchedBy: string | null;
+          touchSource: string | null;
+        }>,
+      };
+    }
+  };
+  const encodeTouchedCursorState = (state: TouchedCursorState) =>
+    `touch_v1:${Buffer.from(JSON.stringify(state), "utf8").toString("base64url")}`;
+  const decodedCursor = decodeTouchedCursorState(args.cursor);
+  const requestDebugId = `touchdbg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const dateRuleAvailable =
+    !decodedCursor.mondayCursor &&
+    safeDateColumnId.length > 0 &&
+    hasDateRangeArgs;
+  const requestHasOwnerFilter = ownerFilter.length > 0;
+  const ownerRuleAvailable =
+    requestHasOwnerFilter && safeSubitemPersonColumnId.length > 0 && ownerFilterId.length > 0;
+  const strictOwnerFilterUnavailable =
+    requestHasOwnerFilter &&
+    (safeParentOwnerColumnId.length === 0 || safeSubitemPersonColumnId.length === 0);
+  const subitemRules: string[] = [];
+  if (dateRuleAvailable) {
+    subitemRules.push(`{
+      column_id: "${safeDateColumnId}"
+      compare_value: ["${args.dateFrom}", "${args.dateTo}"]
+      operator: between
+    }`);
+  }
+  if (ownerRuleAvailable) {
+    subitemRules.push(`{
+      column_id: "${safeSubitemPersonColumnId}"
+      compare_value: ["person-${ownerFilterId}"]
+      operator: any_of
+    }`);
+  }
+  const createdSourceRules: string[] = [];
+  if (
+    hasDateRangeArgs &&
+    safeCreatedDateColumnId.length > 0 &&
+    /^[a-zA-Z0-9_]+$/.test(safeCreatedDateColumnId)
+  ) {
+    createdSourceRules.push(`{
+      column_id: "${safeCreatedDateColumnId}"
+      compare_value: ["${args.dateFrom}", "${args.dateTo}"]
+      operator: between
+    }`);
+  }
+  if (requestHasOwnerFilter && safeParentOwnerColumnId.length > 0) {
+    createdSourceRules.push(`{
+      column_id: "${safeParentOwnerColumnId}"
+      compare_value: ["person-${ownerFilterId}"]
+      operator: any_of
+    }`);
+  }
+  const subitemInitialQuery = `query ListTouchedSubitemsInitial($boardId: ID!, $limit: Int!) {
+    boards(ids: [$boardId]) {
+      name
+      items_page(
+        limit: $limit
+        hierarchy_scope_config: "parentItems"
+        query_params: {
+          ${subitemRules.length > 0 ? `rules: [${subitemRules.join("\n")}]` : ""}
+          order_by: [{ column_id: "${safeDateColumnId}", direction: desc }]
+        }
+      ) {
+        cursor
+        items {
+          id
+          created_at
+          parent_item {
+            id
+            name
+            url
+            updated_at
+            group { title }
+            ${
+              safeParentOwnerColumnId.length > 0
+                ? `column_values(ids: ["${safeParentOwnerColumnId}"]) {
+                    id
+                    text
+                    value
+                  }`
+                : ""
+            }
+          }
+          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+            id
+            text
+            value
+          }
+        }
+      }
+    }
+  }`;
+  const subitemCursorQuery = `query ListTouchedSubitemsCursor($boardId: ID!, $limit: Int!, $cursor: String!) {
+    boards(ids: [$boardId]) {
+      name
+      items_page(
+        limit: $limit
+        cursor: $cursor
+        hierarchy_scope_config: "parentItems"
+      ) {
+        cursor
+        items {
+          id
+          created_at
+          parent_item {
+            id
+            name
+            url
+            updated_at
+            group { title }
+            ${
+              safeParentOwnerColumnId.length > 0
+                ? `column_values(ids: ["${safeParentOwnerColumnId}"]) {
+                    id
+                    text
+                    value
+                  }`
+                : ""
+            }
+          }
+          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+            id
+            text
+            value
+          }
+        }
+      }
+    }
+  }`;
+  const touchedCandidatesByParentId = new Map<
+    string,
+    {
+      contactId: string;
+      touchItemId: string;
+      touchedAt: string | null;
+      touchedBy: string | null;
+      touchSource: string | null;
+      seenOrder: number;
+    }
+  >();
+  const emittedParentIds = new Set(decodedCursor.emittedParentIds);
+  const pendingCandidates = decodedCursor.pendingCandidates ?? [];
+  const debugStats = {
+    pagesScanned: 0,
+    rowsScanned: 0,
+    rowsAccepted: 0,
+    skippedMissingContactId: 0,
+    skippedAlreadyEmitted: 0,
+    skippedOwnerFilterMismatch: 0,
+    skippedContactOwnerMismatch: 0,
+    skippedDateWindow: 0,
+  };
+  console.log("[monday.touch.debug] start", {
+    requestDebugId,
+    incomingCursorPresent: Boolean(args.cursor?.trim()),
+    decodedCursorPresent: Boolean(decodedCursor.mondayCursor),
+    emittedParentIdsFromCursor: decodedCursor.emittedParentIds.length,
+    limit,
+    ownerFilter,
+    ownerFilterId,
+    dateFrom: args.dateFrom ?? null,
+    dateTo: args.dateTo ?? null,
+    dateRuleAvailable,
+    ownerRuleAvailable,
+    strictOwnerFilterUnavailable,
+  });
+  const compareTouchCandidates = (
+    left: { touchedAt: string | null; touchItemId: string },
+    right: { touchedAt: string | null; touchItemId: string },
+  ) => {
+    const leftTs = left.touchedAt ? Date.parse(left.touchedAt) : Number.NEGATIVE_INFINITY;
+    const rightTs = right.touchedAt ? Date.parse(right.touchedAt) : Number.NEGATIVE_INFINITY;
+    const leftValid = Number.isFinite(leftTs);
+    const rightValid = Number.isFinite(rightTs);
+    if (leftValid && rightValid && leftTs !== rightTs) {
+      return rightTs - leftTs;
+    }
+    if (leftValid !== rightValid) {
+      return rightValid ? 1 : -1;
+    }
+    return right.touchItemId.localeCompare(left.touchItemId);
+  };
+  const candidateTarget = searchFilter.length > 0 || statusFilter.length > 0 ? limit * 3 : limit;
+  // Keep Monday page size aligned with requested result page size so we don't
+  // skip/lose overflow candidates within a single backend page.
+  const pageLimit = Math.min(500, Math.max(limit, 1));
+  let cursor: string | null = decodedCursor.mondayCursor;
+  let boardName: string | null = null;
+  let scannedPages = 0;
+  let seenOrder = 0;
+  for (const pending of pendingCandidates) {
+    if (emittedParentIds.has(pending.contactId)) continue;
+    if (touchedCandidatesByParentId.has(pending.contactId)) continue;
+    touchedCandidatesByParentId.set(pending.contactId, {
+      ...pending,
+      seenOrder: seenOrder++,
+    });
+  }
+  while (scannedPages < 20 && touchedCandidatesByParentId.size < candidateTarget) {
+    if (strictOwnerFilterUnavailable) break;
+    const page = cursor
+      ? await callMondayGraphQL<SubitemData>(subitemCursorQuery, {
+          boardId: subitemBoardId,
+          limit: pageLimit,
+          cursor,
+        })
+      : await callMondayGraphQL<SubitemData>(subitemInitialQuery, {
+          boardId: subitemBoardId,
+          limit: pageLimit,
+        });
+    boardName = boardName ?? page.boards?.[0]?.name ?? null;
+    cursor = page.boards?.[0]?.items_page?.cursor ?? null;
+    scannedPages += 1;
+    debugStats.pagesScanned = scannedPages;
+    const rows = page.boards?.[0]?.items_page?.items ?? [];
+    debugStats.rowsScanned += rows.length;
+    const candidatesBeforePage = touchedCandidatesByParentId.size;
+    let pageAccepted = 0;
+    let pageSkippedMissingContactId = 0;
+    let pageSkippedAlreadyEmitted = 0;
+    let pageSkippedOwnerFilterMismatch = 0;
+    let pageSkippedContactOwnerMismatch = 0;
+    let pageSkippedDateWindow = 0;
+    for (const row of rows) {
+      const contactId = row.parent_item?.id?.trim() ?? "";
+      if (!contactId) {
+        pageSkippedMissingContactId += 1;
+        continue;
+      }
+      if (emittedParentIds.has(contactId)) {
+        pageSkippedAlreadyEmitted += 1;
+        continue;
+      }
+      const parentOwnerColumn = row.parent_item?.column_values?.find(
+        (column) => (column.id ?? "").trim() === safeParentOwnerColumnId,
+      );
+      const parentOwnerIds = parsePeopleIdsFromColumnValue(parentOwnerColumn?.value).map((entry) =>
+        entry.toLowerCase(),
+      );
+      const parentOwnerText = parentOwnerColumn?.text?.trim().toLowerCase() ?? "";
+      const personColumn = (row.column_values ?? []).find(
+        (column) => (column.id ?? "").trim() === SUBITEM_PERSON_COLUMN_ID,
+      );
+      const subitemOwnerIds = parsePeopleIdsFromColumnValue(personColumn?.value).map((entry) =>
+        entry.toLowerCase(),
+      );
+      if (requestHasOwnerFilter) {
+        const ownerMatches =
+          subitemOwnerIds.includes(ownerFilter) ||
+          subitemOwnerIds.includes(ownerFilterId) ||
+          parentOwnerIds.includes(ownerFilter) ||
+          parentOwnerIds.includes(ownerFilterId) ||
+          parentOwnerText === ownerFilter;
+        if (!ownerMatches) {
+          pageSkippedOwnerFilterMismatch += 1;
+          continue;
+        }
+      }
+      // Keep only touchpoints where subitem touch owner matches the parent contact owner.
+      const matchesContactOwner =
+        parentOwnerIds.length > 0 &&
+        subitemOwnerIds.some((ownerId) => parentOwnerIds.includes(ownerId));
+      if (!matchesContactOwner) {
+        pageSkippedContactOwnerMismatch += 1;
+        continue;
+      }
+      const dateColumn = (row.column_values ?? []).find(
+        (column) => (column.id ?? "").trim() === safeDateColumnId,
+      );
+      const touchedAt =
+        parseTimestampFromColumn(dateColumn?.value ?? null, dateColumn?.text ?? null) ??
+        row.created_at ??
+        null;
+      if (dateFrom || dateTo) {
+        const parsedTouchedAt = touchedAt ? new Date(touchedAt) : null;
+        if (!parsedTouchedAt || Number.isNaN(parsedTouchedAt.getTime())) {
+          pageSkippedDateWindow += 1;
+          continue;
+        }
+        if (dateFrom && parsedTouchedAt < dateFrom) {
+          pageSkippedDateWindow += 1;
+          continue;
+        }
+        if (dateTo) {
+          const end = new Date(dateTo);
+          end.setUTCHours(23, 59, 59, 999);
+          if (parsedTouchedAt > end) {
+            pageSkippedDateWindow += 1;
+            continue;
+          }
+        }
+      }
+      const typeColumn = (row.column_values ?? []).find(
+        (column) => (column.id ?? "").trim() === safeTypeColumnId,
+      );
+      const current = touchedCandidatesByParentId.get(contactId);
+      const nextCandidate = {
+        contactId,
+        touchItemId: row.id,
+        touchedAt,
+        touchedBy: personColumn?.text?.trim() || null,
+        touchSource: typeColumn?.text?.trim() || null,
+        seenOrder: current?.seenOrder ?? seenOrder++,
+      };
+      if (!current || compareTouchCandidates(current, nextCandidate) > 0) {
+        touchedCandidatesByParentId.set(contactId, nextCandidate);
+      }
+      pageAccepted += 1;
+    }
+    debugStats.rowsAccepted += pageAccepted;
+    debugStats.skippedMissingContactId += pageSkippedMissingContactId;
+    debugStats.skippedAlreadyEmitted += pageSkippedAlreadyEmitted;
+    debugStats.skippedOwnerFilterMismatch += pageSkippedOwnerFilterMismatch;
+    debugStats.skippedContactOwnerMismatch += pageSkippedContactOwnerMismatch;
+    debugStats.skippedDateWindow += pageSkippedDateWindow;
+    console.log("[monday.touch.debug] page", {
+      requestDebugId,
+      pageNumber: scannedPages,
+      mondayRows: rows.length,
+      candidatesBeforePage,
+      candidatesAfterPage: touchedCandidatesByParentId.size,
+      pageAccepted,
+      pageSkippedMissingContactId,
+      pageSkippedAlreadyEmitted,
+      pageSkippedOwnerFilterMismatch,
+      pageSkippedContactOwnerMismatch,
+      pageSkippedDateWindow,
+      nextCursorPresent: Boolean(cursor),
+    });
+    if (!cursor) break;
+  }
+  const fetchCreatedMonthCandidates = async () => {
+    if (createdSourceRules.length === 0) return [] as Array<{
+      contactId: string;
+      createdAt: string | null;
+    }>;
+    interface CreatedBoardItem {
+      id?: string | null;
+      created_at?: string | null;
+      column_values?: Array<{
+        id?: string | null;
+        text?: string | null;
+        value?: string | null;
+      }>;
+    }
+    interface CreatedData {
+      boards?: Array<{
+        items_page?: {
+          cursor?: string | null;
+          items?: CreatedBoardItem[];
+        };
+      }>;
+    }
+    const createdInitialQuery = `query ListCreatedSourceInitial($boardId: ID!, $limit: Int!) {
+      boards(ids: [$boardId]) {
+        items_page(
+          limit: $limit
+          query_params: {
+            rules: [${createdSourceRules.join("\n")}]
+            order_by: [{ column_id: "${safeCreatedDateColumnId}", direction: desc }]
+          }
+        ) {
+          cursor
+          items {
+            id
+            created_at
+            column_values(ids: ["${safeCreatedDateColumnId}"]) { id text value }
+          }
+        }
+      }
+    }`;
+    const createdCursorQuery = `query ListCreatedSourceCursor($boardId: ID!, $limit: Int!, $cursor: String!) {
+      boards(ids: [$boardId]) {
+        items_page(limit: $limit, cursor: $cursor) {
+          cursor
+          items {
+            id
+            created_at
+            column_values(ids: ["${safeCreatedDateColumnId}"]) { id text value }
+          }
+        }
+      }
+    }`;
+    const entries: Array<{ contactId: string; createdAt: string | null }> = [];
+    let createdCursor: string | null = null;
+    let pageCount = 0;
+    do {
+      const createdPage = createdCursor
+        ? await callMondayGraphQL<CreatedData>(createdCursorQuery, {
+            boardId,
+            limit: 500,
+            cursor: createdCursor,
+          })
+        : await callMondayGraphQL<CreatedData>(createdInitialQuery, {
+            boardId,
+            limit: 500,
+          });
+      const items = createdPage.boards?.[0]?.items_page?.items ?? [];
+      for (const item of items) {
+        const contactId = item.id?.trim() ?? "";
+        if (!contactId) continue;
+        const createdColumn = (item.column_values ?? []).find(
+          (column) => (column.id ?? "").trim() === safeCreatedDateColumnId,
+        );
+        const createdAt =
+          parseTimestampFromColumn(createdColumn?.value ?? null, createdColumn?.text ?? null) ??
+          item.created_at ??
+          null;
+        entries.push({ contactId, createdAt });
+      }
+      createdCursor = createdPage.boards?.[0]?.items_page?.cursor ?? null;
+      pageCount += 1;
+    } while (createdCursor && pageCount < 20);
+    return entries;
+  };
+  const createdFallbackCandidates = await fetchCreatedMonthCandidates();
+  let createdFallbackAdded = 0;
+  for (const created of createdFallbackCandidates) {
+    if (!created.contactId || emittedParentIds.has(created.contactId)) continue;
+    if (touchedCandidatesByParentId.has(created.contactId)) continue;
+    touchedCandidatesByParentId.set(created.contactId, {
+      contactId: created.contactId,
+      touchItemId: `created_${created.contactId}`,
+      touchedAt: created.createdAt,
+      touchedBy: null,
+      touchSource: "user_joined_system",
+      seenOrder: seenOrder++,
+    });
+    createdFallbackAdded += 1;
+  }
+
+  const touchedCandidates = Array.from(touchedCandidatesByParentId.values()).sort(
+    (left, right) => {
+      const byTouchedAt = compareTouchCandidates(left, right);
+      if (byTouchedAt !== 0) return byTouchedAt;
+      return left.seenOrder - right.seenOrder;
+    },
+  );
+  const candidateContactIds = touchedCandidates.map((candidate) => candidate.contactId);
+  const chunkIds = (ids: string[], chunkSize: number) => {
+    const chunks: string[][] = [];
+    for (let index = 0; index < ids.length; index += chunkSize) {
+      chunks.push(ids.slice(index, index + chunkSize));
+    }
+    return chunks;
+  };
+  interface ContactByIdData {
+    items?: BoardItem[];
+  }
+  const contactItems: BoardItem[] = [];
+  for (const idChunk of chunkIds(candidateContactIds, 25)) {
+    if (idChunk.length === 0) continue;
+    const contactsData = await callMondayGraphQL<ContactByIdData>(
+      `query ListTouchedContactsById($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          name
+          url
+          updated_at
+          group { title }
+          column_values { id type text value }
+        }
+      }`,
+      { itemIds: idChunk },
+    );
+    contactItems.push(...(contactsData.items ?? []));
+  }
+  const contactsById = new Map(
+    contactItems.map((item) => {
+      const base = boardItemToRecord(item);
+      return [
+        item.id,
+        {
+          ...base,
+          id: item.id,
+          contactId: item.id,
+          ownerProfiles: [] as Array<{
+            id: string;
+            name: string | null;
+            email: string | null;
+            photoThumb: string | null;
+          }>,
+          resumeFiles: [] as Array<{
+            assetId: string | null;
+            name: string;
+            url: string | null;
+          }>,
+        },
+      ] as const;
+    }),
+  );
+  const mappedTouchedContacts: Array<ReturnType<typeof boardItemToRecord>> = [];
+  const mappedTouchedSourceItems: BoardItem[] = [];
+  for (const item of contactItems) {
+    const mapped = contactsById.get(item.id);
+    if (!mapped) continue;
+    mappedTouchedContacts.push(mapped);
+    mappedTouchedSourceItems.push(item);
+  }
+  enrichMappedRecordsWithColumnDetails(
+    mappedTouchedContacts,
+    mappedTouchedSourceItems,
+    ownerAwareColumns,
+    approvalSteps,
+  );
+
+  const resolvedOwnerIds = Array.from(
+    new Set(Array.from(contactsById.values()).flatMap((record) => record.ownerIds)),
+  );
+  const ownerUsers: Array<{
+    id?: string | number | null;
+    name?: string | null;
+    email?: string | null;
+    photo_thumb?: string | null;
+  }> = [];
+  for (const idChunk of chunkIds(resolvedOwnerIds, 100)) {
+    if (idChunk.length === 0) continue;
+    const ownerProfilesById = await callMondayGraphQL<{
+      users?: Array<{
+        id?: string | number | null;
+        name?: string | null;
+        email?: string | null;
+        photo_thumb?: string | null;
+      }>;
+    }>(
+      `query ResolveUsersForTouched($userIds: [ID!]) {
+        users(ids: $userIds) { id name email photo_thumb }
+      }`,
+      { userIds: idChunk },
+    );
+    ownerUsers.push(...(ownerProfilesById.users ?? []));
+  }
+  const ownerProfileMap = new Map(
+    ownerUsers
+      .map((user) => {
+        if (user.id == null) return null;
+        const id = String(user.id).trim();
+        if (!id) return null;
+        return [
+          id,
+          {
+            id,
+            name: user.name?.trim() ?? null,
+            email: user.email?.trim() ?? null,
+            photoThumb: user.photo_thumb?.trim() ?? null,
+          },
+        ] as const;
+      })
+      .filter(
+        (
+          entry,
+        ): entry is readonly [
+          string,
+          { id: string; name: string | null; email: string | null; photoThumb: string | null },
+        ] => !!entry,
+      ),
+  );
+  const contactsWithOwnersById = new Map(
+    Array.from(contactsById.entries()).map(([contactId, contact]) => [
+      contactId,
+      {
+        ...contact,
+        ownerProfiles: contact.ownerIds
+          .map((ownerId) => ownerProfileMap.get(ownerId))
+          .filter(
+            (
+              entry,
+            ): entry is {
+              id: string;
+              name: string | null;
+              email: string | null;
+              photoThumb: string | null;
+            } => entry !== undefined,
+          ),
+      },
+    ]),
+  );
+
+  const mergedRecords: Array<ReturnType<typeof boardItemToRecord> & {
+    touchItemId: string;
+    contactId: string;
+    touchedAt: string | null;
+    touchedBy: string | null;
+    touchSource: string | null;
+    ownerProfiles: Array<{
+      id: string;
+      name: string | null;
+      email: string | null;
+      photoThumb: string | null;
+    }>;
+    resumeFiles: Array<{
+      assetId: string | null;
+      name: string;
+      url: string | null;
+    }>;
+  }> = [];
+  const maxRecordsToReturn = cursor ? limit : Number.MAX_SAFE_INTEGER;
+  for (const touch of touchedCandidates) {
+    const contact = contactsWithOwnersById.get(touch.contactId);
+    if (!contact) continue;
+    const merged = {
+      ...contact,
+      id: touch.contactId,
+      contactId: touch.contactId,
+      touchItemId: touch.touchItemId,
+      touchedAt: touch.touchedAt,
+      touchedBy: touch.touchedBy,
+      touchSource: touch.touchSource,
+      lastTouchpointAt: touch.touchedAt ?? contact.lastTouchpointAt,
+      contactDetails: [
+        ...(touch.touchedAt ? [{ label: "touched_at", value: touch.touchedAt }] : []),
+        ...(touch.touchedBy ? [{ label: "touched_by", value: touch.touchedBy }] : []),
+        ...(touch.touchSource ? [{ label: "touch_source", value: touch.touchSource }] : []),
+        ...contact.contactDetails,
+      ],
+    };
+    if (statusFilter.length > 0 && (merged.statusText ?? "").toLowerCase() !== statusFilter) {
+      continue;
+    }
+    if (searchFilter.length > 0) {
+      const haystack = [
+        merged.name,
+        merged.id,
+        merged.email ?? "",
+        merged.phone ?? "",
+        merged.address ?? "",
+        merged.peopleText ?? "",
+        merged.statusText ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(searchFilter)) continue;
+    }
+    mergedRecords.push(merged);
+    if (mergedRecords.length >= maxRecordsToReturn) break;
+  }
+  const returnedContactIds = mergedRecords.map((record) => record.contactId);
+  for (const parentId of returnedContactIds) {
+    emittedParentIds.add(parentId);
+  }
+  const overflowCandidates =
+    cursor && mergedRecords.length < touchedCandidates.length
+      ? touchedCandidates.slice(mergedRecords.length).map((candidate) => ({
+          contactId: candidate.contactId,
+          touchItemId: candidate.touchItemId,
+          touchedAt: candidate.touchedAt,
+          touchedBy: candidate.touchedBy,
+          touchSource: candidate.touchSource,
+        }))
+      : [];
+  const nextCursor =
+    cursor && cursor.trim().length > 0
+      ? encodeTouchedCursorState({
+          mondayCursor: cursor,
+          emittedParentIds: Array.from(emittedParentIds),
+          pendingCandidates: overflowCandidates,
+        })
+      : null;
+  console.log("[monday.touch.debug] finish", {
+    requestDebugId,
+    boardName,
+    candidateTarget,
+    touchedCandidatesCount: touchedCandidates.length,
+    createdFallbackCandidatesFetched: createdFallbackCandidates.length,
+    createdFallbackCandidatesAdded: createdFallbackAdded,
+    contactItemsHydrated: contactItems.length,
+    mergedReturned: mergedRecords.length,
+    emittedParentIdsSize: emittedParentIds.size,
+    pendingCandidatesForNextPage: overflowCandidates.length,
+    nextCursorPresent: Boolean(nextCursor),
+    debugStats,
+  });
+
+  return {
+    records: mergedRecords,
+    nextCursor,
+    boardName: boardName ?? "Monday Board",
+    appliedFilters: {
+      date: hasDateRangeArgs,
+      owner: false,
+      status: false,
+    },
     approvalSteps,
   };
 };
@@ -2258,6 +3254,7 @@ export const listRecords = mondayAction({
   args: {
     cursor: v.optional(v.string()),
     limit: v.optional(v.number()),
+    recordSource: v.optional(recordSourceValidator),
     search: v.optional(v.string()),
     group: v.optional(v.string()),
     status: v.optional(v.string()),
@@ -2283,22 +3280,34 @@ export const listRecords = mondayAction({
     const group = args.group?.trim().toLowerCase() ?? "";
     const status = args.status?.trim().toLowerCase() ?? "";
     const owner = args.owner?.trim().toLowerCase() ?? "";
+    const recordSource = args.recordSource ?? "created_in_month";
     const dateFrom = parseIsoDateOnly(args.dateFrom);
     const dateTo = parseIsoDateOnly(args.dateTo);
     const advancedFilterConditions = args.advancedFilterConditions ?? [];
     const advancedFilterMatchMode = args.advancedFilterMatchMode ?? "all";
 
-    const result = await listMondayBoardRecordsImpl({
-      cursor: args.cursor,
-      limit: args.limit,
-      search: search || undefined,
-      dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
-      dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
-      owner: owner || undefined,
-      status: status || undefined,
-      advancedFilterConditions,
-      advancedFilterMatchMode,
-    });
+    const result =
+      recordSource === "touched_in_month"
+        ? await listTouchedMonthRecordsImpl({
+            cursor: args.cursor,
+            limit: args.limit,
+            search: search || undefined,
+            dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
+            dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
+            owner: owner || undefined,
+            status: status || undefined,
+          })
+        : await listMondayBoardRecordsImpl({
+            cursor: args.cursor,
+            limit: args.limit,
+            search: search || undefined,
+            dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
+            dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
+            owner: owner || undefined,
+            status: status || undefined,
+            advancedFilterConditions,
+            advancedFilterMatchMode,
+          });
 
     const clientFiltered = filterRecordsClientSide(result.records, {
       search,
@@ -2314,10 +3323,40 @@ export const listRecords = mondayAction({
       advancedFilterConditions,
       advancedFilterMatchMode,
     );
+    const normalizedRecords =
+      recordSource === "touched_in_month"
+        ? filtered.map((record) => {
+            const touchedRecord = record as typeof record & {
+              contactId?: string | null;
+              touchItemId?: string | null;
+              touchedAt?: string | null;
+              touchedBy?: string | null;
+              touchSource?: string | null;
+            };
+            return {
+              ...record,
+              contactId: touchedRecord.contactId ?? record.id,
+              touchItemId: touchedRecord.touchItemId ?? null,
+              touchedAt: touchedRecord.touchedAt ?? record.lastTouchpointAt ?? null,
+              touchedBy: touchedRecord.touchedBy ?? null,
+              touchSource: touchedRecord.touchSource ?? null,
+            };
+          })
+        : filtered;
+    if (recordSource === "touched_in_month") {
+      console.log("[monday.touch.debug] listRecords", {
+        incomingCursorPresent: Boolean(args.cursor?.trim()),
+        resultNextCursorPresent: Boolean(result.nextCursor),
+        resultRecords: result.records.length,
+        clientFiltered: clientFiltered.length,
+        advancedFiltered: filtered.length,
+        normalizedReturned: normalizedRecords.length,
+      });
+    }
 
     return {
       boardName: result.boardName,
-      records: filtered,
+      records: normalizedRecords,
       nextCursor: result.nextCursor,
       approvalSteps: result.approvalSteps,
       appliedFilters: result.appliedFilters,
