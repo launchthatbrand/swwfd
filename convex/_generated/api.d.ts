@@ -884,6 +884,7 @@ export declare const api: {
           id: string;
           interviewingWithContractors: string | null;
           lastTouchpointAt: string | null;
+          latestInternalNote?: string | null;
           name: string;
           ownerIds: Array<string>;
           ownerProfiles?: Array<{
@@ -929,6 +930,7 @@ export declare const api: {
           creatorUserId: string | null;
           id: string;
           intent: "internal_note" | "conversation" | "campaign";
+          internalExternalStatus: "Internal" | "External" | null;
           methodOfCommunication: string | null;
           name: string;
           typeLabel: string | null;

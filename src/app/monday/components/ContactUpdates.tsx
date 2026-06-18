@@ -252,6 +252,7 @@ interface ContactUpdatesProps {
   isSubmitting: boolean;
   alignmentOwnerUserId?: string | null;
   hideComposer?: boolean;
+  composerMode?: "default" | "internal_notes";
 }
 
 export const ContactUpdates = ({
@@ -267,6 +268,7 @@ export const ContactUpdates = ({
   isSubmitting,
   alignmentOwnerUserId = null,
   hideComposer = false,
+  composerMode = "default",
 }: ContactUpdatesProps) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -300,10 +302,14 @@ export const ContactUpdates = ({
   const handleSendClick = useCallback(() => {
     const body = draft.trim();
     if (!body || isSubmitting) return;
+    if (composerMode === "internal_notes") {
+      onSubmit({ updateType: "general", date: toYMD(new Date()) });
+      return;
+    }
     setSelectedType("general");
     setSelectedDate(toYMD(new Date()));
     setShowTypeDialog(true);
-  }, [draft, isSubmitting]);
+  }, [composerMode, draft, isSubmitting, onSubmit]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
@@ -371,7 +377,9 @@ export const ContactUpdates = ({
             <div className="flex h-full flex-col items-center justify-center gap-2">
               <MessageSquare className="text-muted-foreground/40 h-10 w-10" />
               <p className="text-muted-foreground text-sm">
-                No updates yet. Start the conversation below.
+                {composerMode === "internal_notes"
+                  ? "No internal notes yet. Add one below."
+                  : "No updates yet. Start the conversation below."}
               </p>
             </div>
           ) : (
@@ -411,7 +419,40 @@ export const ContactUpdates = ({
 
         {hideComposer ? null : (
           <div className="sticky bottom-0 mt-3 border-t bg-background pt-3">
-          {showAdvancedComposer ? (
+          {composerMode === "internal_notes" ? (
+            <>
+              <div className="flex items-end gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => onDraftChange(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Write an internal note..."
+                    rows={1}
+                    disabled={isSubmitting}
+                    className="max-h-[120px] min-h-[36px] resize-none pr-10 text-sm"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="absolute right-1 bottom-1 h-7 w-7"
+                    onClick={handleSendClick}
+                    disabled={isSubmitting || draft.trim().length === 0}
+                  >
+                    <SendHorizontal className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <p className="text-muted-foreground mt-1 text-[11px]">
+                Press{" "}
+                {typeof navigator !== "undefined" &&
+                /Mac/.test(navigator.userAgent)
+                  ? "⌘"
+                  : "Ctrl"}
+                +Enter to save
+              </p>
+            </>
+          ) : showAdvancedComposer ? (
             <>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-muted-foreground text-[11px]">
@@ -482,7 +523,7 @@ export const ContactUpdates = ({
 
       {/* Post-submit: pick type & date */}
       <Dialog
-        open={!hideComposer && showTypeDialog}
+        open={!hideComposer && composerMode !== "internal_notes" && showTypeDialog}
         onOpenChange={setShowTypeDialog}
       >
         <DialogContent className="sm:max-w-[380px]">

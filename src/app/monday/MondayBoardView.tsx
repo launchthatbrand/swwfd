@@ -146,6 +146,7 @@ import {
   QUESTIONNAIRE_WORK_SCHEDULE,
   QUESTIONNAIRE_YES_NO,
   SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+  SUBITEM_INTENT_COLUMN_ID,
   SUBITEM_NOTES_COLUMN_ID,
   SUBITEM_TYPE_COLUMN_ID,
   SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE,
@@ -671,6 +672,8 @@ export function MondayBoardView({
   }, [monday]);
 
   const monthBounds = useMemo(() => getMonthBounds(activeMonth), [activeMonth]);
+  const forceGlobalDateScopeForSearch = debouncedSearch.trim().length >= 2;
+  const effectiveIsGlobalDateScope = isGlobalDateScope || forceGlobalDateScopeForSearch;
   const normalizedIdentityUserId = identity?.userId?.trim() ?? "";
   const masterAdminUserId = platformSettings.masterAdminUserId || MASTER_ADMIN_USER_ID;
   const configuredAdminUserIds = useMemo(
@@ -915,7 +918,7 @@ export function MondayBoardView({
     staticMode,
     viewMode,
     recordSource: boardGeneralSettings.recordSource,
-    isGlobalDateScope,
+    isGlobalDateScope: effectiveIsGlobalDateScope,
     monthBounds,
     debouncedSearch,
     ownerFilter,
@@ -928,7 +931,7 @@ export function MondayBoardView({
   const shouldAutoLoadMore =
     !staticMode &&
     activeAdvancedFilterConditions.length === 0 &&
-    (boardGeneralSettings.pageSize === 0 || isGlobalDateScope);
+    (boardGeneralSettings.pageSize === 0 || effectiveIsGlobalDateScope);
   const handleLoadMoreRecords = () => {
     if (recordsQuery.isFetchingNextPage) return;
     if (!recordsQuery.hasNextPage) return;
@@ -1461,12 +1464,12 @@ export function MondayBoardView({
 
   useEffect(() => {
     if (staticMode) return;
-    if (!isGlobalDateScope) return;
+    if (!effectiveIsGlobalDateScope) return;
     if (recordsQuery.isLoading || recordsQuery.isFetchingNextPage) return;
     if (!recordsQuery.hasNextPage) return;
     void recordsQuery.fetchNextPage();
   }, [
-    isGlobalDateScope,
+    effectiveIsGlobalDateScope,
     recordsQuery,
     recordsQuery.hasNextPage,
     recordsQuery.isFetchingNextPage,
@@ -1605,6 +1608,22 @@ export function MondayBoardView({
       return true;
     });
   }, [apiRecords, debouncedSearch, ownerFilter, staticMode, staticRecords, statusFilter]);
+  useEffect(() => {
+    if (staticMode) return;
+    console.info("[MondayUI][notes.debug] records snapshot", {
+      pages: recordsQuery.data?.pages?.length ?? 0,
+      records: records.length,
+      withLatestInternalNote: records.filter(
+        (record) =>
+          typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
+      ).length,
+      sample: records.slice(0, 5).map((record) => ({
+        id: record.id,
+        name: record.name,
+        latestInternalNote: record.latestInternalNote ?? null,
+      })),
+    });
+  }, [records, recordsQuery.data?.pages, staticMode]);
   const shouldPrefetchInitialRows =
     !staticMode &&
     debouncedSearch.trim().length === 0 &&
@@ -3568,6 +3587,17 @@ export function MondayBoardView({
     setContactDialogTab("updates");
     setContactDialogSelectedResumeKey(null);
   };
+  const openContactNotesDialogTab = (record: MondayRecord) => {
+    console.info("[MondayUI][notes.debug] open notes tab", {
+      recordId: record.id,
+      contactId: record.contactId ?? null,
+      recordName: record.name,
+      latestInternalNote: record.latestInternalNote ?? null,
+      contactDetailsPreview: record.contactDetails.slice(0, 5),
+    });
+    openContactHistoryDialog(record);
+    setContactDialogTab("notes");
+  };
 
   const contactDialogIndex = useMemo(() => {
     if (!contactHistoryDialogRecord) return -1;
@@ -4358,6 +4388,7 @@ export function MondayBoardView({
     itemId: string;
     body: string;
     updateType?: ContactUpdateType;
+    intent?: "internal_note" | "conversation" | "campaign";
     date?: string;
     dateTime?: string;
     methodOfCommunication?: string;
@@ -4371,6 +4402,7 @@ export function MondayBoardView({
       throw new Error("Missing Monday update context");
     }
     const updateType = args.updateType ?? "general";
+    const intent = args.intent ?? "conversation";
     const suppressApprovalStepMarking = args.suppressApprovalStepMarking === true;
     const subitemTypeLabel = SUBITEM_TYPE_LABEL_BY_UPDATE_TYPE[updateType];
     const normalizedSubitemNameOverride = args.subitemNameOverride?.trim();
@@ -4398,6 +4430,7 @@ export function MondayBoardView({
     if (internalExternalStatus) {
       columnValues[SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID] = { label: internalExternalStatus };
     }
+    columnValues[SUBITEM_INTENT_COLUMN_ID] = { label: intent };
     columnValues[SUBITEM_NOTES_COLUMN_ID] = { text: body };
     const normalizedDateTime = args.dateTime?.trim();
     const parsedDateTime = normalizedDateTime
@@ -4614,6 +4647,7 @@ export function MondayBoardView({
     options?: {
       body?: string;
       updateType?: ContactUpdateType;
+      intent?: "internal_note" | "conversation" | "campaign";
       keepSelectedType?: boolean;
       date?: string;
       dateTime?: string;
@@ -4691,6 +4725,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
+          intent: options?.intent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4704,6 +4739,7 @@ export function MondayBoardView({
           itemId: targetRecordId,
           body,
           updateType,
+          intent: options?.intent,
           date: options?.date,
           dateTime: options?.dateTime,
           methodOfCommunication: resolvedMethodOfCommunication,
@@ -4793,6 +4829,34 @@ export function MondayBoardView({
 
     setIsCreatingContactUpdate(false);
   };
+  const handleSubmitInternalNote = useCallback(
+    async ({ date }: { updateType: ContactUpdateType; date?: string }) => {
+      if (!contactHistoryDialogRecord) return;
+      const body = contactUpdateDraft.trim();
+      if (!body) {
+        toast.error("Enter a note before saving");
+        return;
+      }
+      await handleCreateContactUpdate({
+        targetRecordId: resolveContactUpdateTargetRecordId(contactHistoryDialogRecord),
+        body,
+        updateType: "general",
+        intent: "internal_note",
+        internalExternalStatus: "Internal",
+        keepSelectedType: true,
+        date: date?.trim() || undefined,
+      });
+      setContactUpdateDraft("");
+      await contactUpdatesQuery.refetch();
+    },
+    [
+      contactHistoryDialogRecord,
+      contactUpdateDraft,
+      contactUpdatesQuery,
+      handleCreateContactUpdate,
+      resolveContactUpdateTargetRecordId,
+    ],
+  );
 
   const handleSubmitCommunicationQuickAction = async (values: {
     body: string;
@@ -6712,6 +6776,7 @@ export function MondayBoardView({
     onOpenOwner: openOwnerDialog,
     onOpenRetention: openRetentionDialog,
     onOpenTags: openTagsDialog,
+    onOpenNotes: openContactNotesDialogTab,
     onUploadResume: handleUploadResume,
     getResumeFileHref,
     onPreviewResume: ({ record, file, href }) => {
@@ -7206,11 +7271,11 @@ export function MondayBoardView({
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
                 title={
-                  isGlobalDateScope
+                  effectiveIsGlobalDateScope
                     ? "Global mode active. Click Global to return to month mode."
                     : "Previous month"
                 }
-                disabled={isGlobalDateScope}
+                disabled={effectiveIsGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
@@ -7222,29 +7287,31 @@ export function MondayBoardView({
               </Button>
               <Button
                 size="sm"
-                variant={isGlobalDateScope ? "secondary" : "outline"}
+                variant={effectiveIsGlobalDateScope ? "secondary" : "outline"}
                 className="h-8 shrink-0 rounded-sm px-2.5 text-xs whitespace-nowrap"
                 title={
-                  isGlobalDateScope
+                  effectiveIsGlobalDateScope
                     ? "Switch back to month mode"
                     : "Switch to global mode (all records)"
                 }
                 onClick={() => {
+                  if (forceGlobalDateScopeForSearch) return;
                   setIsGlobalDateScope((prev) => !prev);
                 }}
+                disabled={forceGlobalDateScopeForSearch}
               >
-                {isGlobalDateScope ? "Global" : monthBounds.label}
+                {effectiveIsGlobalDateScope ? "Global" : monthBounds.label}
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-8 shrink-0 px-2"
                 title={
-                  isGlobalDateScope
+                  effectiveIsGlobalDateScope
                     ? "Global mode active. Click Global to return to month mode."
                     : "Next month"
                 }
-                disabled={isGlobalDateScope}
+                disabled={effectiveIsGlobalDateScope}
                 onClick={() => {
                   setActiveMonth(
                     (prev) =>
@@ -8893,6 +8960,9 @@ export function MondayBoardView({
                     setContactUpdateType(updateType);
                     void handleCreateContactUpdate({ updateType, date });
                   }}
+                  onSubmitInternalNote={({ updateType, date }) => {
+                    void handleSubmitInternalNote({ updateType, date });
+                  }}
                   onDeleteSubitem={async (subitemId) => {
                     if (!sessionToken) return;
                     await deleteSubitemAction({ sessionToken, subitemId });
@@ -8948,7 +9018,6 @@ export function MondayBoardView({
                 />
               }
             />
-
             <CommunicationDialogs
               communicationQuickAction={communicationQuickAction}
               setCommunicationQuickAction={setCommunicationQuickAction}

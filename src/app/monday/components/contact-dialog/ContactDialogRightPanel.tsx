@@ -48,6 +48,7 @@ type ContactDialogRightPanelProps = {
   updateDraft: string;
   onUpdateDraftChange: (value: string) => void;
   onSubmitUpdate: (payload: { updateType: ContactUpdateType; date?: string }) => void;
+  onSubmitInternalNote: (payload: { updateType: ContactUpdateType; date?: string }) => void;
   onDeleteSubitem: (subitemId: string) => Promise<void>;
   onUpdateSubitemDate: (subitemId: string, date: string) => Promise<void>;
   isSubmittingUpdate: boolean;
@@ -93,6 +94,7 @@ export const ContactDialogRightPanel = ({
   updateDraft,
   onUpdateDraftChange,
   onSubmitUpdate,
+  onSubmitInternalNote,
   onDeleteSubitem,
   onUpdateSubitemDate,
   isSubmittingUpdate,
@@ -127,11 +129,16 @@ export const ContactDialogRightPanel = ({
   contactJobActions,
   jobsLoading,
 }: ContactDialogRightPanelProps) => {
+  const internalNotes = updates.filter((subitem) => {
+    const status = subitem.internalExternalStatus?.trim().toLowerCase() ?? "";
+    return status === "internal" || subitem.intent === "internal_note";
+  });
   return (
     <div className="flex min-h-0 flex-col">
       <Tabs value={tab} onValueChange={onTabChange} className="flex min-h-0 flex-1 flex-col">
         <TabsList data-tour="contact-tabs">
           <TabsTrigger value="updates">Updates</TabsTrigger>
+          <TabsTrigger value="notes">Notes</TabsTrigger>
           <TabsTrigger value="info">Additional Information</TabsTrigger>
           <TabsTrigger value="resume">Resume</TabsTrigger>
           <TabsTrigger value="jobs">Jobs</TabsTrigger>
@@ -150,6 +157,23 @@ export const ContactDialogRightPanel = ({
             onUpdateSubitemDate={onUpdateSubitemDate}
             isSubmitting={isSubmittingUpdate}
             currentUserId={currentUserId}
+          />
+        </TabsContent>
+
+        <TabsContent value="notes" className="mt-3 flex min-h-0 flex-1 flex-col">
+          <ContactUpdates
+            subitems={internalNotes}
+            isLoading={updatesLoading}
+            isEmpty={internalNotes.length === 0}
+            isStaticMode={staticMode}
+            draft={updateDraft}
+            onDraftChange={onUpdateDraftChange}
+            onSubmit={onSubmitInternalNote}
+            onDeleteSubitem={onDeleteSubitem}
+            onUpdateSubitemDate={onUpdateSubitemDate}
+            isSubmitting={isSubmittingUpdate}
+            alignmentOwnerUserId={currentUserId}
+            composerMode="internal_notes"
           />
         </TabsContent>
 
