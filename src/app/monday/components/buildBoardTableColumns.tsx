@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleHelp, ExternalLink, Mail } from "lucide-react";
+import { CircleHelp, ExternalLink, Mail, MessageSquareText } from "lucide-react";
 import type { ColumnDefinition, EntityAction } from "@launchthatapp/ui/entity-list";
 import { Badge } from "@launchthatapp/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@launchthatapp/ui/tooltip";
@@ -36,6 +36,7 @@ interface BuildBoardTableColumnsArgs {
   onOpenOwner: (record: MondayRecord) => void;
   onOpenRetention: (record: MondayRecord) => void;
   onOpenTags: (record: MondayRecord) => void;
+  onOpenNotes: (record: MondayRecord) => void;
   onUploadResume: (record: MondayRecord, file: File) => Promise<void> | void;
   getResumeFileHref: (
     file: { assetId: string | null; name: string; url: string | null },
@@ -57,6 +58,7 @@ export const buildBoardTableColumns = ({
   onOpenOwner,
   onOpenRetention,
   onOpenTags,
+  onOpenNotes,
   onUploadResume,
   getResumeFileHref,
   onPreviewResume,
@@ -361,6 +363,37 @@ export const buildBoardTableColumns = ({
             <span className="text-muted-foreground text-xs">—</span>
           )}
         </button>
+      );
+    },
+  },
+  {
+    id: "notes",
+    header: "Notes",
+    accessorKey: "id",
+    cell: (item: MondayRecord) => {
+      const fallbackNoteFromDetails =
+        item.contactDetails.find((detail) => {
+          const label = detail.label.trim().toLowerCase();
+          return label.includes("internal note") || label === "notes" || label === "note";
+        })?.value?.trim() ?? "";
+      const latestInternalNote = item.latestInternalNote?.trim() || fallbackNoteFromDetails;
+      return (
+        <div className="flex min-w-0 flex-col gap-1.5 px-2 py-1">
+          <p
+            className="text-muted-foreground line-clamp-1 text-xs leading-tight"
+            title={latestInternalNote || "No internal notes yet"}
+          >
+            {latestInternalNote || "No internal notes yet"}
+          </p>
+          <button
+            type="button"
+            onClick={() => onOpenNotes(item)}
+            className="hover:bg-accent/40 inline-flex w-fit items-center justify-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium"
+          >
+            <MessageSquareText className="h-3.5 w-3.5" />
+            <span>Manage</span>
+          </button>
+        </div>
       );
     },
   },

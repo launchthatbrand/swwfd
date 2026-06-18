@@ -115,6 +115,7 @@ const mondayRecordValidator = v.object({
   touchedAt: v.optional(v.union(v.string(), v.null())),
   touchedBy: v.optional(v.union(v.string(), v.null())),
   touchSource: v.optional(v.union(v.string(), v.null())),
+  latestInternalNote: v.optional(v.union(v.string(), v.null())),
   name: v.string(),
   url: v.union(v.string(), v.null()),
   groupTitle: v.union(v.string(), v.null()),
@@ -216,6 +217,7 @@ const subitemEntryValidator = v.object({
   typeLabel: v.union(v.string(), v.null()),
   updateType: v.string(),
   intent: v.union(v.literal("internal_note"), v.literal("conversation"), v.literal("campaign")),
+  internalExternalStatus: v.union(v.literal("Internal"), v.literal("External"), v.null()),
   methodOfCommunication: v.union(v.string(), v.null()),
   createdAt: v.union(v.string(), v.null()),
   creatorUserId: v.union(v.string(), v.null()),
@@ -520,6 +522,115 @@ const parseTimestampFromColumn = (
   return null;
 };
 
+const parseSubitemNotesText = (
+  value: string | null | undefined,
+  text: string | null | undefined,
+) => {
+  if (value) {
+    try {
+      const parsed = JSON.parse(value) as { text?: unknown };
+      if (typeof parsed.text === "string" && parsed.text.trim().length > 0) {
+        return parsed.text.trim();
+      }
+    } catch {
+      // ignore malformed monday payloads
+    }
+  }
+  const trimmed = text?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+};
+
+const chunkStringIds = (ids: string[], chunkSize: number) => {
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    chunks.push(ids.slice(index, index + chunkSize));
+  }
+  return chunks;
+};
+
+type SubitemNoteSnapshot = {
+  created_at?: string | null;
+  column_values?: Array<{
+    id?: string | null;
+    text?: string | null;
+    value?: string | null;
+  }>;
+};
+
+const selectLatestInternalNoteFromSubitems = (subitems: SubitemNoteSnapshot[]) => {
+  let best: { note: string; sortTime: number } | null = null;
+  for (const subitem of subitems) {
+    const internalExternalColumn = (subitem.column_values ?? []).find(
+      (column) => (column.id ?? "").trim() === SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+    );
+    const internalExternalStatus = internalExternalColumn?.text?.trim().toLowerCase() ?? "";
+    if (internalExternalStatus !== "internal") continue;
+
+    const notesColumn = (subitem.column_values ?? []).find(
+      (column) => (column.id ?? "").trim() === SUBITEM_NOTES_COLUMN_ID,
+    );
+    const note = parseSubitemNotesText(notesColumn?.value ?? null, notesColumn?.text ?? null);
+    if (!note) continue;
+
+    const dateColumn = (subitem.column_values ?? []).find(
+      (column) => (column.id ?? "").trim() === SUBITEM_DATE_COLUMN_ID,
+    );
+    const timestamp =
+      parseTimestampFromColumn(dateColumn?.value ?? null, dateColumn?.text ?? null) ??
+      subitem.created_at ??
+      null;
+    const sortTime = timestamp ? Date.parse(timestamp) : Number.NEGATIVE_INFINITY;
+    const normalizedSortTime = Number.isFinite(sortTime) ? sortTime : Number.NEGATIVE_INFINITY;
+
+    if (!best || normalizedSortTime > best.sortTime) {
+      best = { note, sortTime: normalizedSortTime };
+    }
+  }
+  return best?.note ?? null;
+};
+
+const fetchLatestInternalNotesByItemIds = async (itemIds: string[]) => {
+  const uniqueItemIds = Array.from(
+    new Set(itemIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+  );
+  const byItemId = new Map<string, string | null>();
+  if (uniqueItemIds.length === 0) return byItemId;
+
+  interface ItemsWithSubitemsData {
+    items?: Array<{
+      id?: string | null;
+      subitems?: SubitemNoteSnapshot[];
+    }>;
+  }
+
+  for (const idChunk of chunkStringIds(uniqueItemIds, 25)) {
+    if (idChunk.length === 0) continue;
+    const data = await callMondayGraphQL<ItemsWithSubitemsData>(
+      `query ListItemsForLatestInternalNotes($itemIds: [ID!]) {
+        items(ids: $itemIds) {
+          id
+          subitems {
+            created_at
+            column_values(ids: ["${SUBITEM_DATE_COLUMN_ID}", "${SUBITEM_NOTES_COLUMN_ID}", "${SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID}"]) {
+              id
+              text
+              value
+            }
+          }
+        }
+      }`,
+      { itemIds: idChunk },
+    );
+    for (const item of data.items ?? []) {
+      const itemId = item.id?.trim() ?? "";
+      if (!itemId) continue;
+      byItemId.set(itemId, selectLatestInternalNoteFromSubitems(item.subitems ?? []));
+    }
+  }
+
+  return byItemId;
+};
+
 const resolveBoardColumnIds = async (boardId: string) => {
   interface BoardColumnsData {
     boards?: Array<{
@@ -789,6 +900,7 @@ const boardItemToRecord = (item: BoardItem) => {
     tags: toColumnDisplayValue(tagsColumn?.text, tagsColumn?.value) || null,
     batteryProgress,
     batteryRawValue: batteryColumn?.value ?? null,
+    latestInternalNote: null as string | null,
     contactDetails,
     createdAt: parseTimestampFromColumn(dateColumn?.value, dateColumn?.text),
     updatedAt: item.updated_at ?? null,
@@ -1062,6 +1174,25 @@ const listMondayBoardRecordsImpl = async (args: {
 
   const mappedRecords = firstItems.map(boardItemToRecord);
   enrichMappedRecordsWithColumnDetails(mappedRecords, firstItems, columnIds, approvalSteps);
+  const latestInternalNotesByItemId = await fetchLatestInternalNotesByItemIds(
+    mappedRecords.map((record) => record.id),
+  );
+  for (const record of mappedRecords) {
+    record.latestInternalNote = latestInternalNotesByItemId.get(record.id) ?? null;
+  }
+  console.log("[monday.notes.debug] listMondayBoardRecordsImpl", {
+    cursorPresent: Boolean(cursorArg),
+    fetchedItems: firstItems.length,
+    mappedRecords: mappedRecords.length,
+    withLatestInternalNote: mappedRecords.filter(
+      (record) => typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
+    ).length,
+    sample: mappedRecords.slice(0, 5).map((record) => ({
+      id: record.id,
+      name: record.name,
+      latestInternalNote: record.latestInternalNote,
+    })),
+  });
   if (SHOULD_DEBUG_PROGRESS) {
     const withProgress = mappedRecords.filter(
       (record) => typeof record.batteryProgress === "number",
@@ -1243,6 +1374,7 @@ const listTouchedMonthRecordsImpl = async (args: {
       touchedAt: string | null;
       touchedBy: string | null;
       touchSource: string | null;
+      latestInternalNote: string | null;
     }>;
   }
 
@@ -1294,6 +1426,10 @@ const listTouchedMonthRecordsImpl = async (args: {
                   typeof candidate?.touchedBy === "string" ? candidate.touchedBy : null,
                 touchSource:
                   typeof candidate?.touchSource === "string" ? candidate.touchSource : null,
+                latestInternalNote:
+                  typeof candidate?.latestInternalNote === "string"
+                    ? candidate.latestInternalNote
+                    : null,
               };
             })
             .filter(
@@ -1305,6 +1441,7 @@ const listTouchedMonthRecordsImpl = async (args: {
                 touchedAt: string | null;
                 touchedBy: string | null;
                 touchSource: string | null;
+                latestInternalNote: string | null;
               } => candidate !== null,
             )
         : [];
@@ -1319,6 +1456,7 @@ const listTouchedMonthRecordsImpl = async (args: {
           touchedAt: string | null;
           touchedBy: string | null;
           touchSource: string | null;
+          latestInternalNote: string | null;
         }>,
       };
     }
@@ -1402,7 +1540,7 @@ const listTouchedMonthRecordsImpl = async (args: {
                 : ""
             }
           }
-          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}", "${SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID}", "${SUBITEM_NOTES_COLUMN_ID}"]) {
             id
             text
             value
@@ -1439,7 +1577,7 @@ const listTouchedMonthRecordsImpl = async (args: {
                 : ""
             }
           }
-          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}"]) {
+          column_values(ids: ["${safeDateColumnId}", "${safeTypeColumnId}", "${SUBITEM_PERSON_COLUMN_ID}", "${SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID}", "${SUBITEM_NOTES_COLUMN_ID}"]) {
             id
             text
             value
@@ -1456,6 +1594,7 @@ const listTouchedMonthRecordsImpl = async (args: {
       touchedAt: string | null;
       touchedBy: string | null;
       touchSource: string | null;
+      latestInternalNote: string | null;
       seenOrder: number;
     }
   >();
@@ -1614,6 +1753,13 @@ const listTouchedMonthRecordsImpl = async (args: {
       const typeColumn = (row.column_values ?? []).find(
         (column) => (column.id ?? "").trim() === safeTypeColumnId,
       );
+      const internalExternalColumn = (row.column_values ?? []).find(
+        (column) => (column.id ?? "").trim() === SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID,
+      );
+      const notesColumn = (row.column_values ?? []).find(
+        (column) => (column.id ?? "").trim() === SUBITEM_NOTES_COLUMN_ID,
+      );
+      const internalExternalStatus = internalExternalColumn?.text?.trim().toLowerCase() ?? "";
       const current = touchedCandidatesByParentId.get(contactId);
       const nextCandidate = {
         contactId,
@@ -1621,6 +1767,10 @@ const listTouchedMonthRecordsImpl = async (args: {
         touchedAt,
         touchedBy: personColumn?.text?.trim() || null,
         touchSource: typeColumn?.text?.trim() || null,
+        latestInternalNote:
+          internalExternalStatus === "internal"
+            ? parseSubitemNotesText(notesColumn?.value ?? null, notesColumn?.text ?? null)
+            : null,
         seenOrder: current?.seenOrder ?? seenOrder++,
       };
       if (!current || compareTouchCandidates(current, nextCandidate) > 0) {
@@ -1706,22 +1856,25 @@ const listTouchedMonthRecordsImpl = async (args: {
     let createdCursor: string | null = null;
     let pageCount = 0;
     do {
-      const createdPage = createdCursor
-        ? await callMondayGraphQL<CreatedData>(createdCursorQuery, {
-            boardId,
-            limit: 500,
-            cursor: createdCursor,
-          })
-        : await callMondayGraphQL<CreatedData>(createdInitialQuery, {
-            boardId,
-            limit: 500,
-          });
+      let createdPage: CreatedData;
+      if (createdCursor) {
+        createdPage = await callMondayGraphQL<CreatedData>(createdCursorQuery, {
+          boardId,
+          limit: 500,
+          cursor: createdCursor,
+        });
+      } else {
+        createdPage = await callMondayGraphQL<CreatedData>(createdInitialQuery, {
+          boardId,
+          limit: 500,
+        });
+      }
       const items = createdPage.boards?.[0]?.items_page?.items ?? [];
       for (const item of items) {
         const contactId = item.id?.trim() ?? "";
         if (!contactId) continue;
         const createdColumn = (item.column_values ?? []).find(
-          (column) => (column.id ?? "").trim() === safeCreatedDateColumnId,
+          (column: { id?: string | null }) => (column.id ?? "").trim() === safeCreatedDateColumnId,
         );
         const createdAt =
           parseTimestampFromColumn(createdColumn?.value ?? null, createdColumn?.text ?? null) ??
@@ -1745,6 +1898,7 @@ const listTouchedMonthRecordsImpl = async (args: {
       touchedAt: created.createdAt,
       touchedBy: null,
       touchSource: "user_joined_system",
+      latestInternalNote: null,
       seenOrder: seenOrder++,
     });
     createdFallbackAdded += 1;
@@ -1809,6 +1963,9 @@ const listTouchedMonthRecordsImpl = async (args: {
         },
       ] as const;
     }),
+  );
+  const latestInternalNotesByContactId = await fetchLatestInternalNotesByItemIds(
+    candidateContactIds,
   );
   const mappedTouchedContacts: Array<ReturnType<typeof boardItemToRecord>> = [];
   const mappedTouchedSourceItems: BoardItem[] = [];
@@ -1881,6 +2038,7 @@ const listTouchedMonthRecordsImpl = async (args: {
       contactId,
       {
         ...contact,
+        latestInternalNote: latestInternalNotesByContactId.get(contactId) ?? null,
         ownerProfiles: contact.ownerIds
           .map((ownerId) => ownerProfileMap.get(ownerId))
           .filter(
@@ -1903,6 +2061,7 @@ const listTouchedMonthRecordsImpl = async (args: {
     touchedAt: string | null;
     touchedBy: string | null;
     touchSource: string | null;
+    latestInternalNote: string | null;
     ownerProfiles: Array<{
       id: string;
       name: string | null;
@@ -1927,6 +2086,11 @@ const listTouchedMonthRecordsImpl = async (args: {
       touchedAt: touch.touchedAt,
       touchedBy: touch.touchedBy,
       touchSource: touch.touchSource,
+      latestInternalNote:
+        latestInternalNotesByContactId.get(touch.contactId) ??
+        touch.latestInternalNote ??
+        contact.latestInternalNote ??
+        null,
       lastTouchpointAt: touch.touchedAt ?? contact.lastTouchpointAt,
       contactDetails: [
         ...(touch.touchedAt ? [{ label: "touched_at", value: touch.touchedAt }] : []),
@@ -1967,6 +2131,7 @@ const listTouchedMonthRecordsImpl = async (args: {
           touchedAt: candidate.touchedAt,
           touchedBy: candidate.touchedBy,
           touchSource: candidate.touchSource,
+          latestInternalNote: candidate.latestInternalNote,
         }))
       : [];
   const nextCursor =
@@ -1989,6 +2154,20 @@ const listTouchedMonthRecordsImpl = async (args: {
     emittedParentIdsSize: emittedParentIds.size,
     pendingCandidatesForNextPage: overflowCandidates.length,
     nextCursorPresent: Boolean(nextCursor),
+    withLatestInternalNote: mergedRecords.filter(
+      (record) => typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
+    ).length,
+    sampleInternalNotes: mergedRecords
+      .filter(
+        (record) =>
+          typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
+      )
+      .slice(0, 5)
+      .map((record) => ({
+        id: record.id,
+        touchItemId: record.touchItemId,
+        latestInternalNote: record.latestInternalNote,
+      })),
     debugStats,
   });
 
@@ -2720,6 +2899,7 @@ const listMondayRecordUpdatesImpl = async (args: {
   const personColId = SUBITEM_PERSON_COLUMN_ID;
   const intentColId = SUBITEM_INTENT_COLUMN_ID;
   const notesColId = SUBITEM_NOTES_COLUMN_ID;
+  const internalExternalColId = SUBITEM_INTERNAL_EXTERNAL_COLUMN_ID;
 
   interface MondayItemUpdatesData {
     items?: Array<{
@@ -2811,7 +2991,7 @@ const listMondayRecordUpdatesImpl = async (args: {
         }
         subitems {
           id name created_at
-          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${intentColId}", "${notesColId}"]) {
+          column_values(ids: ["${typeColId}", "${methodColId}", "${dateColId}", "${personColId}", "${intentColId}", "${notesColId}", "${internalExternalColId}"]) {
             id text value
           }
           updates(limit: $limit) {
@@ -2916,6 +3096,7 @@ const listMondayRecordUpdatesImpl = async (args: {
     typeLabel: string | null;
     updateType: string;
     intent: "internal_note" | "conversation" | "campaign";
+    internalExternalStatus: "Internal" | "External" | null;
     methodOfCommunication: string | null;
     createdAt: string | null;
     creatorUserId: string | null;
@@ -2972,6 +3153,9 @@ const listMondayRecordUpdatesImpl = async (args: {
       subitem.column_values?.find((c) => c.id === methodColId)?.text?.trim() ??
       null;
     const intentText = subitem.column_values?.find((c) => c.id === intentColId)?.text ?? null;
+    const internalExternalText =
+      subitem.column_values?.find((c) => c.id === internalExternalColId)?.text?.trim() ??
+      null;
     const dateCol = subitem.column_values?.find((c) => c.id === dateColId);
     const notesCol = subitem.column_values?.find((c) => c.id === notesColId);
     const subitemNotes = readSubitemNotes(notesCol?.value, notesCol?.text);
@@ -3041,6 +3225,10 @@ const listMondayRecordUpdatesImpl = async (args: {
         typeLabel: typeColText ?? methodText,
         updateType,
         intent: normalizeIntentLabel(intentText),
+        internalExternalStatus:
+          internalExternalText === "Internal" || internalExternalText === "External"
+            ? internalExternalText
+            : null,
         methodOfCommunication: methodText,
         createdAt: subitemCreatedAt,
         creatorUserId,
@@ -3288,15 +3476,27 @@ export const listRecords = mondayAction({
 
     const result =
       recordSource === "touched_in_month"
-        ? await listTouchedMonthRecordsImpl({
-            cursor: args.cursor,
-            limit: args.limit,
-            search: search || undefined,
-            dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
-            dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
-            owner: owner || undefined,
-            status: status || undefined,
-          })
+        ? search.length >= 2
+          ? await listMondayBoardRecordsImpl({
+              cursor: args.cursor,
+              limit: args.limit,
+              search: search || undefined,
+              dateFrom: undefined,
+              dateTo: undefined,
+              owner: owner || undefined,
+              status: status || undefined,
+              advancedFilterConditions,
+              advancedFilterMatchMode,
+            })
+          : await listTouchedMonthRecordsImpl({
+              cursor: args.cursor,
+              limit: args.limit,
+              search: search || undefined,
+              dateFrom: dateFrom ? dateFrom.toISOString().slice(0, 10) : undefined,
+              dateTo: dateTo ? dateTo.toISOString().slice(0, 10) : undefined,
+              owner: owner || undefined,
+              status: status || undefined,
+            })
         : await listMondayBoardRecordsImpl({
             cursor: args.cursor,
             limit: args.limit,
@@ -3343,6 +3543,26 @@ export const listRecords = mondayAction({
             };
           })
         : filtered;
+    console.log("[monday.notes.debug] listRecords", {
+      recordSource,
+      incomingCursorPresent: Boolean(args.cursor?.trim()),
+      resultRecords: result.records.length,
+      clientFiltered: clientFiltered.length,
+      normalizedRecords: normalizedRecords.length,
+      withLatestInternalNote: normalizedRecords.filter(
+        (record) =>
+          typeof (record as { latestInternalNote?: string | null }).latestInternalNote ===
+            "string" &&
+          ((record as { latestInternalNote?: string | null }).latestInternalNote?.length ?? 0) > 0,
+      ).length,
+      sample: normalizedRecords.slice(0, 5).map((record) => ({
+        id: record.id,
+        name: record.name,
+        latestInternalNote:
+          (record as { latestInternalNote?: string | null }).latestInternalNote ?? null,
+        contactDetailsCount: record.contactDetails.length,
+      })),
+    });
     if (recordSource === "touched_in_month") {
       console.log("[monday.touch.debug] listRecords", {
         incomingCursorPresent: Boolean(args.cursor?.trim()),
