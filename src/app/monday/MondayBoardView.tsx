@@ -8904,7 +8904,7 @@ export function MondayBoardView({
                 if (!contactHistoryDialogRecord?.url) return;
                 window.open(contactHistoryDialogRecord.url, "_blank", "noopener,noreferrer");
               }}
-              showSyncAction={!staticMode && isMondaySettingsAdmin && !!contactHistoryDialogRecord}
+              showSyncAction={!staticMode && !!contactHistoryDialogRecord}
               syncActionLabel={
                 contactHistoryDialogRecord &&
                   syncingContactIds.has(contactHistoryDialogRecord.id)
