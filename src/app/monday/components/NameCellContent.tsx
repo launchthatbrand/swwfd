@@ -19,6 +19,11 @@ export const NameCellContent = (props: {
   const details = getContactTooltipDetails(item);
   const addressDisplay = getAddressDisplayParts(item.address);
   const isCompact = tableDensity === "compact";
+  const fallbackPhoneFromDetails =
+    item.contactDetails.find((detail) => detail.label.trim().toLowerCase().includes("phone"))
+      ?.value ?? null;
+  const normalizedPhone = item.phone?.trim() ?? "";
+  const displayPhone = normalizedPhone.length > 0 ? normalizedPhone : fallbackPhoneFromDetails;
 
   const content = (
     <button
@@ -55,6 +60,9 @@ export const NameCellContent = (props: {
             <span className="block truncate text-xs">
               {item.email ?? "No email"}
             </span>
+            <span className="text-muted-foreground block text-xs">
+              {displayPhone ?? "No phone"}
+            </span>
             {addressDisplay.localityLine ? (
               <span className="block text-sm font-semibold text-foreground">
                 {addressDisplay.localityLine}
@@ -62,9 +70,6 @@ export const NameCellContent = (props: {
             ) : (
               <span className="text-muted-foreground block text-xs">No address</span>
             )}
-            <span className="text-muted-foreground block text-xs">
-              {item.phone ?? "No phone"}
-            </span>
           </div>
           <ApprovalProgressIndicator
             record={item}

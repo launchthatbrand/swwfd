@@ -452,6 +452,30 @@ const toColumnDisplayValue = (text: string | null | undefined, value: string | n
   return "";
 };
 
+const toPhoneColumnDisplayValue = (
+  text: string | null | undefined,
+  value: string | null | undefined,
+) => {
+  const display = toColumnDisplayValue(text, value).trim();
+  if (display.length > 0) return display;
+  if (!value) return "";
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const fromPhone =
+      typeof parsed.phone === "string"
+        ? parsed.phone.trim()
+        : typeof parsed.phone_number === "string"
+          ? parsed.phone_number.trim()
+          : typeof parsed.number === "string"
+            ? parsed.number.trim()
+            : "";
+    if (fromPhone.length > 0) return fromPhone;
+  } catch {
+    // ignore
+  }
+  return "";
+};
+
 const toOptionAwareColumnDisplayValue = (args: {
   text: string | null | undefined;
   value: string | null | undefined;
@@ -829,13 +853,15 @@ const boardItemToRecord = (item: BoardItem) => {
   };
   const batteryProgress = parseBatteryProgress();
   const address = addressParts.length > 0 ? addressParts.join(", ") : null;
+  const normalizedEmail = toColumnDisplayValue(emailColumn?.text, emailColumn?.value).trim();
+  const normalizedPhone = toPhoneColumnDisplayValue(phoneColumn?.text, phoneColumn?.value).trim();
   const contactDetails: Array<{ label: string; value: string }> = [];
   if ((item.name ?? "").trim()) contactDetails.push({ label: "Name", value: item.name ?? "" });
-  if ((emailColumn?.text ?? "").trim()) {
-    contactDetails.push({ label: "Email", value: emailColumn?.text ?? "" });
+  if (normalizedEmail.length > 0) {
+    contactDetails.push({ label: "Email", value: normalizedEmail });
   }
-  if ((phoneColumn?.text ?? "").trim()) {
-    contactDetails.push({ label: "Phone", value: phoneColumn?.text ?? "" });
+  if (normalizedPhone.length > 0) {
+    contactDetails.push({ label: "Phone", value: normalizedPhone });
   }
   if (address) {
     contactDetails.push({ label: "Address", value: address });
@@ -869,8 +895,8 @@ const boardItemToRecord = (item: BoardItem) => {
     statusText: statusColumn?.text ?? null,
     peopleText: peopleColumn?.text ?? null,
     ownerIds,
-    email: emailColumn?.text ?? null,
-    phone: phoneColumn?.text ?? null,
+    email: normalizedEmail.length > 0 ? normalizedEmail : null,
+    phone: normalizedPhone.length > 0 ? normalizedPhone : null,
     address,
     referredToContractors:
       toColumnDisplayValue(
@@ -3549,6 +3575,12 @@ export const listRecords = mondayAction({
       resultRecords: result.records.length,
       clientFiltered: clientFiltered.length,
       normalizedRecords: normalizedRecords.length,
+      withPhoneField: normalizedRecords.filter(
+        (record) => typeof record.phone === "string" && record.phone.trim().length > 0,
+      ).length,
+      withPhoneInDetails: normalizedRecords.filter((record) =>
+        record.contactDetails.some((detail) => detail.label.trim().toLowerCase().includes("phone")),
+      ).length,
       withLatestInternalNote: normalizedRecords.filter(
         (record) =>
           typeof (record as { latestInternalNote?: string | null }).latestInternalNote ===
@@ -3558,6 +3590,11 @@ export const listRecords = mondayAction({
       sample: normalizedRecords.slice(0, 5).map((record) => ({
         id: record.id,
         name: record.name,
+        phone: record.phone ?? null,
+        phoneDetail:
+          record.contactDetails.find((detail) =>
+            detail.label.trim().toLowerCase().includes("phone"),
+          )?.value ?? null,
         latestInternalNote:
           (record as { latestInternalNote?: string | null }).latestInternalNote ?? null,
         contactDetailsCount: record.contactDetails.length,
