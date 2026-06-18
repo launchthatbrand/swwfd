@@ -54,6 +54,7 @@ import {
   useAction,
   useConvex,
   useMutation as useConvexMutation,
+  useQuery,
 } from "convex/react";
 import { api } from "@convex-config/_generated/api";
 
@@ -1053,7 +1054,7 @@ export function MondayBoardView({
   const patchSubitemAction = useAction(api.mondaySubitemsNode.patchSubitem);
 
   const {
-    bulkSyncJobs,
+    activeAndFailedBulkSyncJobs,
     latestBulkSyncJob,
     syncingContactIds,
     setSyncingContactIds,
@@ -1061,6 +1062,7 @@ export function MondayBoardView({
     startBulkSyncJob,
     cancelBulkSyncJob,
     retryFailedBulkSyncJob,
+    dismissFailedBulkSyncJob,
   } = useBulkSyncMutations({
     sessionToken,
     staticMode,
@@ -3107,6 +3109,10 @@ export function MondayBoardView({
     platformSettings,
     featureFlags,
   });
+  const workflowRuns = useQuery(
+    api.mondayBulkSync.listRecentJobs,
+    settingsState.settingsOpen ? { limit: 250 } : "skip",
+  );
   const onboardingState = useOnboardingWorkflows({
     isSavingMarkAsHiredWorkflow,
     isMergingRecords,
@@ -5313,7 +5319,7 @@ export function MondayBoardView({
         isMergingRecords={isMergingRecords}
         syncingContactIds={syncingContactIds}
         latestBulkSyncJob={latestBulkSyncJob}
-        bulkSyncJobs={bulkSyncJobs}
+        activeAndFailedBulkSyncJobs={activeAndFailedBulkSyncJobs}
         quickActionButtonSizeClass={quickActionButtonSizeClass}
         actionButtonClassName={boardThemeStyles.actionButtonClassName}
         actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}
@@ -5377,6 +5383,9 @@ export function MondayBoardView({
               );
             }
           })();
+        }}
+        onDismissFailedBulkSync={(jobId) => {
+          dismissFailedBulkSyncJob(jobId);
         }}
       />
     );
@@ -5692,7 +5701,7 @@ export function MondayBoardView({
                     source: "update",
                   },
                 },
-              ).catch(() => {});
+              ).catch(() => { });
             }
           } else {
             failedCount += 1;
@@ -7399,6 +7408,12 @@ export function MondayBoardView({
                           >
                             Feature Flags
                           </TabsTrigger>
+                          <TabsTrigger
+                            value="workflow-runs"
+                            className="h-8 shrink-0 whitespace-nowrap rounded-md border border-transparent px-3 text-xs font-medium data-[state=active]:border-border/70 data-[state=active]:bg-background data-[state=active]:shadow-sm"
+                          >
+                            Workflow Runs
+                          </TabsTrigger>
                           {isMasterAdmin ? (
                             <TabsTrigger
                               value="monthly-board-mapping"
@@ -8323,6 +8338,111 @@ export function MondayBoardView({
                                     ) : null}
                                   </div>
                                 </label>
+                              </div>
+                            </div>
+                          </TabsContent>
+                          <TabsContent value="workflow-runs" className="mt-0">
+                            <div className="space-y-4">
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium">Workflow Runs</p>
+                                <p className="text-muted-foreground text-sm">
+                                  Global history of Monday sync workflow runs across all users.
+                                </p>
+                              </div>
+                              <div className="space-y-3 rounded-md border p-4">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-muted-foreground text-xs">
+                                    Showing newest runs first
+                                  </p>
+                                  <p className="text-muted-foreground text-xs">
+                                    {workflowRuns?.length ?? 0} total
+                                  </p>
+                                </div>
+                                <div className="max-h-[520px] overflow-auto rounded-md border">
+                                  <table className="w-full caption-bottom text-sm">
+                                    <thead className="bg-muted/60 sticky top-0 z-10 border-b">
+                                      <tr>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Started
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Run ID
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Requested By
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Status
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Progress
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Results
+                                        </th>
+                                        <th className="h-10 px-3 text-left align-middle text-xs font-medium">
+                                          Workflow ID
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {workflowRuns?.map((run) => {
+                                        const progressPct =
+                                          run.totalContacts > 0
+                                            ? Math.round(
+                                                (run.processedContacts / run.totalContacts) * 100,
+                                              )
+                                            : 0;
+                                        return (
+                                          <tr key={run.jobId} className="border-b last:border-b-0">
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              {new Date(run.startedAt).toLocaleString()}
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              <code>{run.jobId}</code>
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              {run.requestedByMondayUserId}
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              <Badge
+                                                variant={
+                                                  run.status === "running"
+                                                    ? "default"
+                                                    : run.failedContacts > 0
+                                                      ? "destructive"
+                                                      : "secondary"
+                                                }
+                                              >
+                                                {run.status}
+                                              </Badge>
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              {run.processedContacts}/{run.totalContacts} ({progressPct}
+                                              %)
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              {run.succeededContacts} ok / {run.failedContacts} failed
+                                            </td>
+                                            <td className="px-3 py-2 align-middle text-xs">
+                                              <code>{run.workflowId ?? "-"}</code>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                      {workflowRuns && workflowRuns.length === 0 ? (
+                                        <tr>
+                                          <td
+                                            colSpan={7}
+                                            className="text-muted-foreground px-3 py-6 text-center text-xs"
+                                          >
+                                            No workflow runs found.
+                                          </td>
+                                        </tr>
+                                      ) : null}
+                                    </tbody>
+                                  </table>
+                                </div>
                               </div>
                             </div>
                           </TabsContent>

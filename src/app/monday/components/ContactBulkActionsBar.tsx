@@ -26,7 +26,7 @@ export const ContactBulkActionsBar = ({
   isMergingRecords,
   syncingContactIds,
   latestBulkSyncJob,
-  bulkSyncJobs,
+  activeAndFailedBulkSyncJobs,
   quickActionButtonSizeClass,
   actionButtonClassName,
   actionButtonStyle,
@@ -37,6 +37,7 @@ export const ContactBulkActionsBar = ({
   onOpenBulkCommunicationPrompt,
   onCancelBulkSync,
   onRetryFailedBulkSync,
+  onDismissFailedBulkSync,
 }: {
   selectedItems: MondayRecord[];
   clearSelection: () => void;
@@ -47,7 +48,7 @@ export const ContactBulkActionsBar = ({
   isMergingRecords: boolean;
   syncingContactIds: Set<string>;
   latestBulkSyncJob: MondayBulkSyncJob | null;
-  bulkSyncJobs: MondayBulkSyncJob[];
+  activeAndFailedBulkSyncJobs: MondayBulkSyncJob[];
   quickActionButtonSizeClass: string;
   actionButtonClassName: string;
   actionButtonStyle?: CSSProperties;
@@ -66,6 +67,7 @@ export const ContactBulkActionsBar = ({
   ) => void;
   onCancelBulkSync: (jobId: string) => void;
   onRetryFailedBulkSync: (jobId: string) => void;
+  onDismissFailedBulkSync: (jobId: string) => void;
 }) => {
   const eligibleByAction = new Map<string, MondayRecord[]>();
   for (const action of CONTACT_UPDATE_ACTION_BUTTONS) {
@@ -106,8 +108,13 @@ export const ContactBulkActionsBar = ({
   const mergeEligibleRecords = Array.from(mergeCandidatesByTargetId.values());
   const canMergeSelection =
     mergeEligibleRecords.length >= 2 && mergeEligibleRecords.length <= 4;
-  const runningBulkSyncJobs = bulkSyncJobs.filter((job) => job.status === "running");
-  const recentBulkSyncJobs = bulkSyncJobs.slice(0, 6);
+  const runningBulkSyncJobs = activeAndFailedBulkSyncJobs.filter(
+    (job) => job.status === "running",
+  );
+  const failedBulkSyncJobs = activeAndFailedBulkSyncJobs.filter(
+    (job) => job.status !== "running" && job.failedContacts > 0,
+  );
+  const visibleBulkSyncJobs = [...runningBulkSyncJobs, ...failedBulkSyncJobs].slice(0, 8);
 
   return (
     <div className="flex w-full flex-col gap-2">
@@ -234,23 +241,20 @@ export const ContactBulkActionsBar = ({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {latestBulkSyncJob &&
-        latestBulkSyncJob.status === "running" ? (
+        {runningBulkSyncJobs[0] ? (
           <Button
             type="button"
             size="sm"
             variant="outline"
             className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
             onClick={() => {
-              onCancelBulkSync(latestBulkSyncJob.jobId);
+              onCancelBulkSync(runningBulkSyncJobs[0]!.jobId);
             }}
           >
-            Cancel Bulk Sync
+            Cancel Current Run
           </Button>
         ) : null}
-        {latestBulkSyncJob &&
-        latestBulkSyncJob.status !== "running" &&
-        latestBulkSyncJob.failedContacts > 0 ? (
+        {failedBulkSyncJobs[0] ? (
           <Button
             type="button"
             size="sm"
@@ -258,10 +262,10 @@ export const ContactBulkActionsBar = ({
             className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
             disabled={syncingContactIds.has("__bulk_sync__")}
             onClick={() => {
-              onRetryFailedBulkSync(latestBulkSyncJob.jobId);
+              onRetryFailedBulkSync(failedBulkSyncJobs[0]!.jobId);
             }}
           >
-            Retry Failed ({latestBulkSyncJob.failedContacts})
+            Retry Failed ({failedBulkSyncJobs[0]!.failedContacts})
           </Button>
         ) : null}
       </div>
@@ -270,9 +274,9 @@ export const ContactBulkActionsBar = ({
           {runningBulkSyncJobs.length} runs active. You can cancel each run independently below.
         </p>
       ) : null}
-      {recentBulkSyncJobs.length > 0 ? (
+      {visibleBulkSyncJobs.length > 0 ? (
         <div className="space-y-2">
-          {recentBulkSyncJobs.map((job) => {
+          {visibleBulkSyncJobs.map((job) => {
             const progressPercent =
               job.totalContacts > 0
                 ? Math.round((job.processedContacts / job.totalContacts) * 100)
@@ -308,17 +312,30 @@ export const ContactBulkActionsBar = ({
                     </Button>
                   ) : null}
                   {job.status !== "running" && job.failedContacts > 0 ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
-                      onClick={() => {
-                        onRetryFailedBulkSync(job.jobId);
-                      }}
-                    >
-                      Retry Failed ({job.failedContacts})
-                    </Button>
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        onClick={() => {
+                          onRetryFailedBulkSync(job.jobId);
+                        }}
+                      >
+                        Retry Failed ({job.failedContacts})
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className={`justify-start rounded-md ${quickActionButtonSizeClass}`}
+                        onClick={() => {
+                          onDismissFailedBulkSync(job.jobId);
+                        }}
+                      >
+                        Dismiss
+                      </Button>
+                    </>
                   ) : null}
                 </div>
               </div>

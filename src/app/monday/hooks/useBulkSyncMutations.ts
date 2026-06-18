@@ -72,6 +72,9 @@ const normalizeMonthlyBoardMappings = (
   );
 };
 
+const dismissedRunsStorageKey = (accountId: string) =>
+  `monday.bulkSync.dismissedFailedRuns.${accountId}`;
+
 export const useBulkSyncMutations = ({
   sessionToken,
   staticMode,
@@ -97,6 +100,7 @@ export const useBulkSyncMutations = ({
   );
 
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
+  const [dismissedFailedJobIds, setDismissedFailedJobIds] = useState<Set<string>>(new Set());
   const finalizedBulkSyncJobIdsRef = useRef<Set<string>>(new Set());
   const bulkSyncJobs = useMemo(
     () => (rawJobs ?? []).map((job) => toMondayBulkSyncJob(job)),
@@ -105,6 +109,16 @@ export const useBulkSyncMutations = ({
   const latestBulkSyncJob = bulkSyncJobs[0] ?? null;
   const activeBulkSyncJobId =
     bulkSyncJobs.find((job) => job.status === "running")?.jobId ?? null;
+  const activeAndFailedBulkSyncJobs = useMemo(
+    () =>
+      bulkSyncJobs.filter((job) => {
+        if (job.status === "running") return true;
+        const isFailedRun = job.failedContacts > 0;
+        if (!isFailedRun) return false;
+        return !dismissedFailedJobIds.has(job.jobId);
+      }),
+    [bulkSyncJobs, dismissedFailedJobIds],
+  );
 
   const fetchBulkSyncStatus = useCallback(
     async (jobId?: string | null) => {
@@ -242,6 +256,67 @@ export const useBulkSyncMutations = ({
     ],
   );
 
+  const dismissFailedBulkSyncJob = useCallback((jobId: string) => {
+    const normalized = jobId.trim();
+    if (!normalized) return;
+    setDismissedFailedJobIds((prev) => {
+      if (prev.has(normalized)) return prev;
+      const next = new Set(prev);
+      next.add(normalized);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!accountId) {
+      setDismissedFailedJobIds(new Set());
+      return;
+    }
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(dismissedRunsStorageKey(accountId));
+      if (!raw) {
+        setDismissedFailedJobIds(new Set());
+        return;
+      }
+      const parsed = JSON.parse(raw) as string[];
+      setDismissedFailedJobIds(new Set(Array.isArray(parsed) ? parsed : []));
+    } catch {
+      setDismissedFailedJobIds(new Set());
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    if (!accountId) return;
+    if (typeof window === "undefined") return;
+    const failedJobIds = new Set(
+      bulkSyncJobs
+        .filter((job) => job.failedContacts > 0 && job.status !== "running")
+        .map((job) => job.jobId),
+    );
+    setDismissedFailedJobIds((prev) => {
+      const next = new Set([...prev].filter((jobId) => failedJobIds.has(jobId)));
+      if (next.size === prev.size) {
+        let same = true;
+        for (const value of prev) {
+          if (!next.has(value)) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [accountId, bulkSyncJobs]);
+
+  useEffect(() => {
+    if (!accountId) return;
+    if (typeof window === "undefined") return;
+    const values = [...dismissedFailedJobIds];
+    window.localStorage.setItem(dismissedRunsStorageKey(accountId), JSON.stringify(values));
+  }, [accountId, dismissedFailedJobIds]);
+
   useEffect(() => {
     const hasRunning = bulkSyncJobs.some((job) => job.status === "running");
     setSyncingContactIds((prev) => {
@@ -279,6 +354,7 @@ export const useBulkSyncMutations = ({
 
   return {
     bulkSyncJobs,
+    activeAndFailedBulkSyncJobs,
     activeBulkSyncJobId,
     latestBulkSyncJob,
     syncingContactIds,
@@ -287,5 +363,6 @@ export const useBulkSyncMutations = ({
     startBulkSyncJob,
     cancelBulkSyncJob,
     retryFailedBulkSyncJob,
+    dismissFailedBulkSyncJob,
   };
 };
