@@ -1,6 +1,17 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from "./_generated/server";
+import { workflow } from "./workflow";
+
+const workflowAny = workflow as any;
+const internalAny = internal as any;
 
 const bulkSyncStatusValidator = v.union(
   v.literal("running"),
@@ -17,10 +28,12 @@ const monthlyBoardMappingValidator = v.object({
 const bulkSyncJobSummaryValidator = v.object({
   jobId: v.id("mondayBulkSyncJobs"),
   status: bulkSyncStatusValidator,
+  workflowId: v.union(v.string(), v.null()),
   mondayAccountId: v.string(),
   requestedByMondayUserId: v.string(),
   requestedByMondayAppClientId: v.union(v.string(), v.null()),
   ownerId: v.string(),
+  monthlyBoardIdOverride: v.union(v.string(), v.null()),
   totalContacts: v.number(),
   nextIndex: v.number(),
   processedContacts: v.number(),
@@ -31,6 +44,20 @@ const bulkSyncJobSummaryValidator = v.object({
   updatedAt: v.number(),
   finishedAt: v.union(v.number(), v.null()),
   lastError: v.union(v.string(), v.null()),
+});
+
+const bulkSyncJobResultValidator = v.object({
+  contactItemId: v.string(),
+  status: v.union(v.literal("success"), v.literal("failed")),
+  linkedItemCount: v.number(),
+  createdParentUpdates: v.number(),
+  createdSubitems: v.number(),
+  createdSubitemUpdates: v.number(),
+  updatedProgressColumns: v.number(),
+  skippedSubitems: v.number(),
+  warnings: v.array(v.string()),
+  error: v.union(v.string(), v.null()),
+  attemptedAt: v.number(),
 });
 
 const normalizeContactIds = (values: string[]) => {
@@ -66,6 +93,8 @@ const toJobSummary = (
     requestedByMondayUserId: string;
     requestedByMondayAppClientId: string | null;
     ownerId: string;
+    workflowId?: string | null;
+    monthlyBoardIdOverride?: string | null;
     totalContacts: number;
     nextIndex: number;
     processedContacts: number;
@@ -85,6 +114,8 @@ const toJobSummary = (
     requestedByMondayUserId: job.requestedByMondayUserId,
     requestedByMondayAppClientId: job.requestedByMondayAppClientId ?? null,
     ownerId: job.ownerId,
+    workflowId: job.workflowId ?? null,
+    monthlyBoardIdOverride: job.monthlyBoardIdOverride ?? null,
     totalContacts: job.totalContacts,
     nextIndex: job.nextIndex,
     processedContacts: job.processedContacts,
@@ -104,6 +135,7 @@ export const createJob = mutation({
     requestedByMondayUserId: v.string(),
     requestedByMondayAppClientId: v.optional(v.string()),
     ownerId: v.string(),
+    monthlyBoardIdOverride: v.optional(v.string()),
     contactItemIds: v.array(v.string()),
     monthlyBoardMappings: v.array(monthlyBoardMappingValidator),
   },
@@ -112,6 +144,7 @@ export const createJob = mutation({
     const mondayAccountId = args.mondayAccountId.trim();
     const requestedByMondayUserId = args.requestedByMondayUserId.trim();
     const ownerId = args.ownerId.trim();
+    const monthlyBoardIdOverride = args.monthlyBoardIdOverride?.trim() || null;
     const requestedByMondayAppClientId =
       args.requestedByMondayAppClientId?.trim() || null;
     if (!mondayAccountId || !requestedByMondayUserId || !ownerId) {
@@ -121,16 +154,6 @@ export const createJob = mutation({
     if (normalizedContactIds.length === 0) {
       throw new Error("No contact IDs provided for bulk sync");
     }
-    const latestForAccount = await ctx.db
-      .query("mondayBulkSyncJobs")
-      .withIndex("by_account_and_startedAt", (q) =>
-        q.eq("mondayAccountId", mondayAccountId),
-      )
-      .order("desc")
-      .first();
-    if (latestForAccount?.status === "running") {
-      throw new Error("A bulk sync job is already running");
-    }
     const now = Date.now();
     const jobId = await ctx.db.insert("mondayBulkSyncJobs", {
       status: "running",
@@ -138,6 +161,8 @@ export const createJob = mutation({
       requestedByMondayUserId,
       requestedByMondayAppClientId,
       ownerId,
+      workflowId: null,
+      monthlyBoardIdOverride,
       contactItemIds: normalizedContactIds,
       monthlyBoardMappings: normalizeMonthlyBoardMappings(args.monthlyBoardMappings),
       totalContacts: normalizedContactIds.length,
@@ -150,6 +175,15 @@ export const createJob = mutation({
       updatedAt: now,
       finishedAt: null,
       lastError: null,
+    });
+    const workflowId = await workflowAny.start(
+      ctx,
+      internalAny.mondayBulkSync.runWorkflow,
+      { jobId },
+    );
+    await ctx.db.patch(jobId, {
+      workflowId,
+      updatedAt: Date.now(),
     });
     const created = await ctx.db.get(jobId);
     if (!created) {
@@ -192,6 +226,27 @@ export const getLatestJobForAccount = query({
   },
 });
 
+export const listJobsForAccount = query({
+  args: {
+    mondayAccountId: v.string(),
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(bulkSyncJobSummaryValidator),
+  handler: async (ctx, args) => {
+    const mondayAccountId = args.mondayAccountId.trim();
+    if (!mondayAccountId) return [];
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 20), 1), 100);
+    const jobs = await ctx.db
+      .query("mondayBulkSyncJobs")
+      .withIndex("by_account_and_startedAt", (q) =>
+        q.eq("mondayAccountId", mondayAccountId),
+      )
+      .order("desc")
+      .take(limit);
+    return jobs.map((job) => toJobSummary(job));
+  },
+});
+
 export const claimNextBatch = mutation({
   args: {
     jobId: v.id("mondayBulkSyncJobs"),
@@ -230,6 +285,7 @@ export const claimNextBatch = mutation({
 export const recordBatchResults = mutation({
   args: {
     jobId: v.id("mondayBulkSyncJobs"),
+    attemptedCount: v.optional(v.number()),
     results: v.array(
       v.object({
         contactItemId: v.string(),
@@ -247,67 +303,32 @@ export const recordBatchResults = mutation({
   },
   returns: v.union(v.null(), bulkSyncJobSummaryValidator),
   handler: async (ctx, args) => {
-    const job = await ctx.db.get(args.jobId);
-    if (!job) return null;
-    if (job.status !== "running") {
-      return toJobSummary(job);
-    }
-    let processedDelta = 0;
-    let successDelta = 0;
-    let failedDelta = 0;
-    let warningsDelta = 0;
-    const now = Date.now();
+    return await applyBatchResultsToJob(ctx, args.jobId, args.results, args.attemptedCount);
+  },
+});
 
-    for (const result of args.results) {
-      const contactItemId = result.contactItemId.trim();
-      if (!contactItemId) continue;
-      const existing = await ctx.db
-        .query("mondayBulkSyncJobResults")
-        .withIndex("by_jobId_and_contactItemId", (q) =>
-          q.eq("jobId", args.jobId).eq("contactItemId", contactItemId),
-        )
-        .first();
-      if (existing) continue;
-      await ctx.db.insert("mondayBulkSyncJobResults", {
-        jobId: args.jobId,
-        contactItemId,
-        status: result.status,
-        linkedItemCount: result.linkedItemCount,
-        createdParentUpdates: result.createdParentUpdates,
-        createdSubitems: result.createdSubitems,
-        createdSubitemUpdates: result.createdSubitemUpdates,
-        updatedProgressColumns: result.updatedProgressColumns,
-        skippedSubitems: result.skippedSubitems,
-        warnings: result.warnings,
-        error: result.error,
-        attemptedAt: now,
-      });
-      processedDelta += 1;
-      warningsDelta += result.warnings.length;
-      if (result.status === "success") successDelta += 1;
-      else failedDelta += 1;
-    }
-
-    const nextProcessed = job.processedContacts + processedDelta;
-    const nextSucceeded = job.succeededContacts + successDelta;
-    const nextFailed = job.failedContacts + failedDelta;
-    const nextWarnings = job.warningsCount + warningsDelta;
-    const nextIndex = Math.min(job.totalContacts, job.nextIndex + processedDelta);
-    const shouldFinish = nextProcessed >= job.totalContacts && job.status === "running";
-
-    await ctx.db.patch(args.jobId, {
-      nextIndex,
-      processedContacts: nextProcessed,
-      succeededContacts: nextSucceeded,
-      failedContacts: nextFailed,
-      warningsCount: nextWarnings,
-      status: shouldFinish ? "done" : job.status,
-      finishedAt: shouldFinish ? now : job.finishedAt ?? null,
-      updatedAt: now,
-    });
-    const updated = await ctx.db.get(args.jobId);
-    if (!updated) return null;
-    return toJobSummary(updated);
+export const recordBatchResultsInternal = internalMutation({
+  args: {
+    jobId: v.id("mondayBulkSyncJobs"),
+    attemptedCount: v.optional(v.number()),
+    results: v.array(
+      v.object({
+        contactItemId: v.string(),
+        status: v.union(v.literal("success"), v.literal("failed")),
+        linkedItemCount: v.number(),
+        createdParentUpdates: v.number(),
+        createdSubitems: v.number(),
+        createdSubitemUpdates: v.number(),
+        updatedProgressColumns: v.number(),
+        skippedSubitems: v.number(),
+        warnings: v.array(v.string()),
+        error: v.union(v.string(), v.null()),
+      }),
+    ),
+  },
+  returns: v.union(v.null(), bulkSyncJobSummaryValidator),
+  handler: async (ctx, args) => {
+    return await applyBatchResultsToJob(ctx, args.jobId, args.results, args.attemptedCount);
   },
 });
 
@@ -372,3 +393,242 @@ export const listFailedContactIds = query({
       .map((entry) => entry.contactItemId);
   },
 });
+
+export const listJobResults = query({
+  args: {
+    jobId: v.id("mondayBulkSyncJobs"),
+    limit: v.optional(v.number()),
+    status: v.optional(v.union(v.literal("success"), v.literal("failed"))),
+  },
+  returns: v.array(bulkSyncJobResultValidator),
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 200), 1), 2000);
+    const entries = await ctx.db
+      .query("mondayBulkSyncJobResults")
+      .withIndex("by_jobId", (q) => q.eq("jobId", args.jobId))
+      .order("desc")
+      .take(limit);
+    const filtered = args.status
+      ? entries.filter((entry) => entry.status === args.status)
+      : entries;
+    return filtered.map((entry) => ({
+      contactItemId: entry.contactItemId,
+      status: entry.status,
+      linkedItemCount: entry.linkedItemCount,
+      createdParentUpdates: entry.createdParentUpdates,
+      createdSubitems: entry.createdSubitems,
+      createdSubitemUpdates: entry.createdSubitemUpdates,
+      updatedProgressColumns: entry.updatedProgressColumns,
+      skippedSubitems: entry.skippedSubitems,
+      warnings: entry.warnings,
+      error: entry.error,
+      attemptedAt: entry.attemptedAt,
+    }));
+  },
+});
+
+export const getJobForWorkflow = internalQuery({
+  args: { jobId: v.id("mondayBulkSyncJobs") },
+  returns: v.union(
+    v.null(),
+    v.object({
+      _id: v.id("mondayBulkSyncJobs"),
+      status: bulkSyncStatusValidator,
+      ownerId: v.string(),
+      monthlyBoardIdOverride: v.union(v.string(), v.null()),
+      monthlyBoardMappings: v.array(monthlyBoardMappingValidator),
+      contactItemIds: v.array(v.string()),
+      totalContacts: v.number(),
+      nextIndex: v.number(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job) return null;
+    return {
+      _id: job._id,
+      status: job.status,
+      ownerId: job.ownerId,
+      monthlyBoardIdOverride: job.monthlyBoardIdOverride ?? null,
+      monthlyBoardMappings: job.monthlyBoardMappings,
+      contactItemIds: job.contactItemIds,
+      totalContacts: job.totalContacts,
+      nextIndex: job.nextIndex,
+    };
+  },
+});
+
+export const finishJobInternal = internalMutation({
+  args: {
+    jobId: v.id("mondayBulkSyncJobs"),
+    status: v.union(v.literal("done"), v.literal("failed"), v.literal("cancelled")),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.jobId, {
+      status: args.status,
+      finishedAt: Date.now(),
+      updatedAt: Date.now(),
+      lastError: args.lastError ?? null,
+    });
+    return null;
+  },
+});
+
+export const runWorkflow = workflowAny.define({
+  args: { jobId: v.id("mondayBulkSyncJobs") },
+  returns: v.null(),
+  handler: async (step: any, args: { jobId: Id<"mondayBulkSyncJobs"> }) => {
+    try {
+      while (true) {
+        const job = await step.runQuery(
+          internalAny.mondayBulkSync.getJobForWorkflow,
+          { jobId: args.jobId },
+        );
+        if (!job) break;
+        if (job.status !== "running") break;
+
+        const start = Math.max(0, Math.min(job.nextIndex, job.totalContacts));
+        const end = Math.min(start + 25, job.totalContacts);
+        const contactItemIds = job.contactItemIds.slice(start, end);
+        if (contactItemIds.length === 0) {
+          await step.runMutation(internalAny.mondayBulkSync.finishJobInternal, {
+            jobId: args.jobId,
+            status: "done",
+            lastError: null,
+          });
+          break;
+        }
+
+        const batch = await step.runAction(
+          internalAny.mondayBulkSyncNode.syncContactBatchAction,
+          {
+            jobId: String(args.jobId),
+            ownerId: job.ownerId,
+            monthlyBoardIdOverride: job.monthlyBoardIdOverride ?? undefined,
+            monthlyBoardMappings: job.monthlyBoardMappings,
+            contactItemIds,
+          },
+        );
+
+        const updated = await step.runMutation(
+          internalAny.mondayBulkSync.recordBatchResultsInternal,
+          {
+            jobId: args.jobId,
+            attemptedCount: contactItemIds.length,
+            results: batch.results,
+          },
+        );
+
+        if (!updated) {
+          await step.runMutation(internalAny.mondayBulkSync.finishJobInternal, {
+            jobId: args.jobId,
+            status: "failed",
+            lastError: "Bulk sync job disappeared while processing",
+          });
+          break;
+        }
+        if (updated.status !== "running" || updated.nextIndex >= updated.totalContacts) {
+          if (updated.status === "running") {
+            await step.runMutation(internalAny.mondayBulkSync.finishJobInternal, {
+              jobId: args.jobId,
+              status: "done",
+              lastError: null,
+            });
+          }
+          break;
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown workflow failure";
+      await step.runMutation(internalAny.mondayBulkSync.finishJobInternal, {
+        jobId: args.jobId,
+        status: "failed",
+        lastError: message,
+      });
+    }
+    return null;
+  },
+});
+
+const applyBatchResultsToJob = async (
+  ctx: any,
+  jobId: Id<"mondayBulkSyncJobs">,
+  results: Array<{
+    contactItemId: string;
+    status: "success" | "failed";
+    linkedItemCount: number;
+    createdParentUpdates: number;
+    createdSubitems: number;
+    createdSubitemUpdates: number;
+    updatedProgressColumns: number;
+    skippedSubitems: number;
+    warnings: string[];
+    error: string | null;
+  }>,
+  attemptedCount?: number,
+) => {
+  const job = await ctx.db.get(jobId);
+  if (!job) return null;
+  if (job.status !== "running") {
+    return toJobSummary(job);
+  }
+  let processedDelta = 0;
+  let successDelta = 0;
+  let failedDelta = 0;
+  let warningsDelta = 0;
+  const now = Date.now();
+
+  for (const result of results) {
+    const contactItemId = result.contactItemId.trim();
+    if (!contactItemId) continue;
+    const existing = await ctx.db
+      .query("mondayBulkSyncJobResults")
+      .withIndex("by_jobId_and_contactItemId", (q: any) =>
+        q.eq("jobId", jobId).eq("contactItemId", contactItemId),
+      )
+      .first();
+    if (existing) continue;
+    await ctx.db.insert("mondayBulkSyncJobResults", {
+      jobId,
+      contactItemId,
+      status: result.status,
+      linkedItemCount: result.linkedItemCount,
+      createdParentUpdates: result.createdParentUpdates,
+      createdSubitems: result.createdSubitems,
+      createdSubitemUpdates: result.createdSubitemUpdates,
+      updatedProgressColumns: result.updatedProgressColumns,
+      skippedSubitems: result.skippedSubitems,
+      warnings: result.warnings,
+      error: result.error,
+      attemptedAt: now,
+    });
+    processedDelta += 1;
+    warningsDelta += result.warnings.length;
+    if (result.status === "success") successDelta += 1;
+    else failedDelta += 1;
+  }
+
+  const nextProcessed = job.processedContacts + processedDelta;
+  const nextSucceeded = job.succeededContacts + successDelta;
+  const nextFailed = job.failedContacts + failedDelta;
+  const nextWarnings = job.warningsCount + warningsDelta;
+  const indexDelta = Math.max(0, attemptedCount ?? processedDelta);
+  const nextIndex = Math.min(job.totalContacts, job.nextIndex + indexDelta);
+  const shouldFinish = nextIndex >= job.totalContacts && job.status === "running";
+
+  await ctx.db.patch(jobId, {
+    nextIndex,
+    processedContacts: nextProcessed,
+    succeededContacts: nextSucceeded,
+    failedContacts: nextFailed,
+    warningsCount: nextWarnings,
+    status: shouldFinish ? "done" : job.status,
+    finishedAt: shouldFinish ? now : job.finishedAt ?? null,
+    updatedAt: now,
+  });
+  const updated = await ctx.db.get(jobId);
+  if (!updated) return null;
+  return toJobSummary(updated);
+};

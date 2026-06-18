@@ -1053,6 +1053,7 @@ export function MondayBoardView({
   const patchSubitemAction = useAction(api.mondaySubitemsNode.patchSubitem);
 
   const {
+    bulkSyncJobs,
     latestBulkSyncJob,
     syncingContactIds,
     setSyncingContactIds,
@@ -1063,7 +1064,6 @@ export function MondayBoardView({
   } = useBulkSyncMutations({
     sessionToken,
     staticMode,
-    isMondaySettingsAdmin,
     mondayAccountId: identity?.accountId,
     identityUserId: identity?.userId,
     mondayAppClientId: identity?.appClientId,
@@ -4192,52 +4192,11 @@ export function MondayBoardView({
         "";
       setSyncingContactIds((prev) => new Set(prev).add(syncKey));
       try {
-        const targetId = resolveContactUpdateTargetRecordId(record);
-        const data = await fetchMondayApi<
-          {
-            ok: boolean;
-            error?: string;
-            linkedItemCount?: number;
-            createdParentUpdates?: number;
-            createdSubitems?: number;
-            createdSubitemUpdates?: number;
-            updatedProgressColumns?: number;
-            skippedSubitems?: number;
-            warnings?: string[];
-          }
-        >(
-
-          `/api/monday/records/${encodeURIComponent(targetId)}/sync`,
-          {
-            sessionToken,
-            method: "POST",
-            body: {
-              ownerId: resolvedSyncOwnerId.length > 0 ? resolvedSyncOwnerId : undefined,
-              monthlyBoardId: options?.monthlyBoardId,
-            }
-          }
-        );
-        if (!data.ok) {
-          throw new Error(data.error ?? "Sync failed");
-        }
-        const [, refreshedRecordsResult] = await Promise.all([
-          contactUpdatesQuery.refetch(),
-          recordsQuery.refetch(),
-        ]);
-        const refreshedRecords = (refreshedRecordsResult.data?.pages ?? []).flatMap(
-          (page) => page.records ?? [],
-        );
-        syncContactHistoryDialogFromRecords(refreshedRecords);
-        const parts = [
-          data.createdParentUpdates && `${data.createdParentUpdates} updates`,
-          data.createdSubitems && `${data.createdSubitems} subitems`,
-          data.updatedProgressColumns && `${data.updatedProgressColumns} progress steps`,
-        ].filter(Boolean);
-        toast.success(
-          parts.length > 0
-            ? `Synced: ${parts.join(", ")}`
-            : `Sync complete (${data.linkedItemCount ?? 0} linked items)`,
-        );
+        const job = await startBulkSyncJob([record], {
+          ownerId: resolvedSyncOwnerId.length > 0 ? resolvedSyncOwnerId : undefined,
+          monthlyBoardIdOverride: options?.monthlyBoardId,
+        });
+        toast.success(`Sync queued (run ${job.jobId.slice(0, 8)})`);
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Sync failed");
       } finally {
@@ -4249,11 +4208,9 @@ export function MondayBoardView({
       }
     },
     [
-      contactUpdatesQuery,
       identity?.userId,
-      recordsQuery,
       sessionToken,
-      syncContactHistoryDialogFromRecords,
+      startBulkSyncJob,
     ],
   );
 
@@ -5354,9 +5311,9 @@ export function MondayBoardView({
         bulkQuickActionType={bulkQuickActionType}
         isCreatingBulkCommunicationUpdate={isCreatingBulkCommunicationUpdate}
         isMergingRecords={isMergingRecords}
-        isMondaySettingsAdmin={isMondaySettingsAdmin}
         syncingContactIds={syncingContactIds}
         latestBulkSyncJob={latestBulkSyncJob}
+        bulkSyncJobs={bulkSyncJobs}
         quickActionButtonSizeClass={quickActionButtonSizeClass}
         actionButtonClassName={boardThemeStyles.actionButtonClassName}
         actionButtonStyle={boardThemeInlineStyles.actionButtonStyle}

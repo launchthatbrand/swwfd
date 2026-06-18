@@ -321,6 +321,7 @@ export type DataModel = {
       finishedAt?: number | null;
       lastError?: string | null;
       mondayAccountId: string;
+      monthlyBoardIdOverride?: string | null;
       monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
       nextIndex: number;
       ownerId: string;
@@ -333,6 +334,7 @@ export type DataModel = {
       totalContacts: number;
       updatedAt: number;
       warningsCount: number;
+      workflowId?: string | null;
       _id: Id<"mondayBulkSyncJobs">;
       _creationTime: number;
     };
@@ -344,6 +346,7 @@ export type DataModel = {
       | "finishedAt"
       | "lastError"
       | "mondayAccountId"
+      | "monthlyBoardIdOverride"
       | "monthlyBoardMappings"
       | "nextIndex"
       | "ownerId"
@@ -355,7 +358,8 @@ export type DataModel = {
       | "succeededContacts"
       | "totalContacts"
       | "updatedAt"
-      | "warningsCount";
+      | "warningsCount"
+      | "workflowId";
     indexes: {
       by_id: ["_id"];
       by_creation_time: ["_creationTime"];
@@ -366,6 +370,7 @@ export type DataModel = {
       ];
       by_startedAt: ["startedAt", "_creationTime"];
       by_status: ["status", "_creationTime"];
+      by_workflowId: ["workflowId", "_creationTime"];
     };
     searchIndexes: {};
     vectorIndexes: {};

@@ -1206,19 +1206,19 @@ const listMondayBoardRecordsImpl = async (args: {
   for (const record of mappedRecords) {
     record.latestInternalNote = latestInternalNotesByItemId.get(record.id) ?? null;
   }
-  console.log("[monday.notes.debug] listMondayBoardRecordsImpl", {
-    cursorPresent: Boolean(cursorArg),
-    fetchedItems: firstItems.length,
-    mappedRecords: mappedRecords.length,
-    withLatestInternalNote: mappedRecords.filter(
-      (record) => typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
-    ).length,
-    sample: mappedRecords.slice(0, 5).map((record) => ({
-      id: record.id,
-      name: record.name,
-      latestInternalNote: record.latestInternalNote,
-    })),
-  });
+  // console.log("[monday.notes.debug] listMondayBoardRecordsImpl", {
+  //   cursorPresent: Boolean(cursorArg),
+  //   fetchedItems: firstItems.length,
+  //   mappedRecords: mappedRecords.length,
+  //   withLatestInternalNote: mappedRecords.filter(
+  //     (record) => typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
+  //   ).length,
+  //   sample: mappedRecords.slice(0, 5).map((record) => ({
+  //     id: record.id,
+  //     name: record.name,
+  //     latestInternalNote: record.latestInternalNote,
+  //   })),
+  // });
   if (SHOULD_DEBUG_PROGRESS) {
     const withProgress = mappedRecords.filter(
       (record) => typeof record.batteryProgress === "number",
@@ -3569,37 +3569,37 @@ export const listRecords = mondayAction({
             };
           })
         : filtered;
-    console.log("[monday.notes.debug] listRecords", {
-      recordSource,
-      incomingCursorPresent: Boolean(args.cursor?.trim()),
-      resultRecords: result.records.length,
-      clientFiltered: clientFiltered.length,
-      normalizedRecords: normalizedRecords.length,
-      withPhoneField: normalizedRecords.filter(
-        (record) => typeof record.phone === "string" && record.phone.trim().length > 0,
-      ).length,
-      withPhoneInDetails: normalizedRecords.filter((record) =>
-        record.contactDetails.some((detail) => detail.label.trim().toLowerCase().includes("phone")),
-      ).length,
-      withLatestInternalNote: normalizedRecords.filter(
-        (record) =>
-          typeof (record as { latestInternalNote?: string | null }).latestInternalNote ===
-            "string" &&
-          ((record as { latestInternalNote?: string | null }).latestInternalNote?.length ?? 0) > 0,
-      ).length,
-      sample: normalizedRecords.slice(0, 5).map((record) => ({
-        id: record.id,
-        name: record.name,
-        phone: record.phone ?? null,
-        phoneDetail:
-          record.contactDetails.find((detail) =>
-            detail.label.trim().toLowerCase().includes("phone"),
-          )?.value ?? null,
-        latestInternalNote:
-          (record as { latestInternalNote?: string | null }).latestInternalNote ?? null,
-        contactDetailsCount: record.contactDetails.length,
-      })),
-    });
+    // console.log("[monday.notes.debug] listRecords", {
+    //   recordSource,
+    //   incomingCursorPresent: Boolean(args.cursor?.trim()),
+    //   resultRecords: result.records.length,
+    //   clientFiltered: clientFiltered.length,
+    //   normalizedRecords: normalizedRecords.length,
+    //   withPhoneField: normalizedRecords.filter(
+    //     (record) => typeof record.phone === "string" && record.phone.trim().length > 0,
+    //   ).length,
+    //   withPhoneInDetails: normalizedRecords.filter((record) =>
+    //     record.contactDetails.some((detail) => detail.label.trim().toLowerCase().includes("phone")),
+    //   ).length,
+    //   withLatestInternalNote: normalizedRecords.filter(
+    //     (record) =>
+    //       typeof (record as { latestInternalNote?: string | null }).latestInternalNote ===
+    //         "string" &&
+    //       ((record as { latestInternalNote?: string | null }).latestInternalNote?.length ?? 0) > 0,
+    //   ).length,
+    //   sample: normalizedRecords.slice(0, 5).map((record) => ({
+    //     id: record.id,
+    //     name: record.name,
+    //     phone: record.phone ?? null,
+    //     phoneDetail:
+    //       record.contactDetails.find((detail) =>
+    //         detail.label.trim().toLowerCase().includes("phone"),
+    //       )?.value ?? null,
+    //     latestInternalNote:
+    //       (record as { latestInternalNote?: string | null }).latestInternalNote ?? null,
+    //     contactDetailsCount: record.contactDetails.length,
+    //   })),
+    // });
     if (recordSource === "touched_in_month") {
       console.log("[monday.touch.debug] listRecords", {
         incomingCursorPresent: Boolean(args.cursor?.trim()),

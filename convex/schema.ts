@@ -364,6 +364,8 @@ export default defineSchema({
     requestedByMondayUserId: v.string(),
     requestedByMondayAppClientId: v.union(v.string(), v.null()),
     ownerId: v.string(),
+    workflowId: v.optional(v.union(v.string(), v.null())),
+    monthlyBoardIdOverride: v.optional(v.union(v.string(), v.null())),
     contactItemIds: v.array(v.string()),
     monthlyBoardMappings: v.array(
       v.object({
@@ -384,7 +386,8 @@ export default defineSchema({
   })
     .index("by_startedAt", ["startedAt"])
     .index("by_status", ["status"])
-    .index("by_account_and_startedAt", ["mondayAccountId", "startedAt"]),
+    .index("by_account_and_startedAt", ["mondayAccountId", "startedAt"])
+    .index("by_workflowId", ["workflowId"]),
 
   mondayBulkSyncJobResults: defineTable({
     jobId: v.id("mondayBulkSyncJobs"),
