@@ -54,7 +54,6 @@ export const OnboardingStepper = ({
   onQuickAction,
   onQuestionnaireAction,
   onGenericStepAction,
-  isAdmin = false,
   isSyncing = false,
   onSyncUser,
   actionButtonClassName = "",
@@ -356,8 +355,8 @@ export const OnboardingStepper = ({
           </div>
         )}
 
-        {/* Admin: Sync User */}
-        {isAdmin && onSyncUser && (
+        {/* Sync User */}
+        {onSyncUser && (
           <Button
             type="button"
             size="sm"
