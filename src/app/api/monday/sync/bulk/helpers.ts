@@ -5,8 +5,6 @@ import { getConvexHttpClient } from "~/server/convexHttp";
 import { requireVerifiedMondaySession } from "~/server/monday/session";
 import type { MonthlyBoardMapping } from "~/server/monday/sync";
 
-const MASTER_ADMIN_USER_ID = "53441186";
-
 export const toJson = (body: unknown, status = 200) =>
   NextResponse.json(body, { status });
 
@@ -35,12 +33,6 @@ export const requireBulkSyncAdminSession = async (request: Request) => {
     apiGenerated.mondaySettings.getPlatformSettings,
     {},
   );
-  const isAdmin =
-    identity.userId === MASTER_ADMIN_USER_ID ||
-    platformSettings.adminUserIds.includes(identity.userId);
-  if (!isAdmin) {
-    throw new Error("Admin access required");
-  }
   return {
     identity,
     platformSettings,
