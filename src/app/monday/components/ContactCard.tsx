@@ -39,6 +39,11 @@ export const ContactCard = ({
   const hasResumeAttached = record.resumeFiles.length > 0;
   const lastTouchpointRecency = getLastTouchpointRecency(record.lastTouchpointAt ?? null);
   const lastTouchpointParts = formatDateTimeParts(lastTouchpointRecency.parsedAt);
+  const fallbackPhoneFromDetails =
+    record.contactDetails.find((detail) => detail.label.trim().toLowerCase().includes("phone"))
+      ?.value ?? null;
+  const normalizedPhone = record.phone?.trim() ?? "";
+  const displayPhone = normalizedPhone.length > 0 ? normalizedPhone : fallbackPhoneFromDetails;
   return (
     <div
       role="button"
@@ -81,6 +86,7 @@ export const ContactCard = ({
           {record.email ? (
             <p className="text-muted-foreground truncate text-xs">{record.email}</p>
           ) : null}
+          <p className="text-muted-foreground truncate text-xs">{displayPhone ?? "No phone"}</p>
           {!compact && addressDisplay.localityLine ? (
             <p className="truncate text-xs font-medium">{addressDisplay.localityLine}</p>
           ) : null}

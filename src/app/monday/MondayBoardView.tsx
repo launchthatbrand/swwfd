@@ -1613,6 +1613,12 @@ export function MondayBoardView({
     console.info("[MondayUI][notes.debug] records snapshot", {
       pages: recordsQuery.data?.pages?.length ?? 0,
       records: records.length,
+      withPhoneField: records.filter(
+        (record) => typeof record.phone === "string" && record.phone.trim().length > 0,
+      ).length,
+      withPhoneInDetails: records.filter((record) =>
+        record.contactDetails.some((detail) => detail.label.trim().toLowerCase().includes("phone")),
+      ).length,
       withLatestInternalNote: records.filter(
         (record) =>
           typeof record.latestInternalNote === "string" && record.latestInternalNote.length > 0,
@@ -1620,6 +1626,11 @@ export function MondayBoardView({
       sample: records.slice(0, 5).map((record) => ({
         id: record.id,
         name: record.name,
+        phone: record.phone ?? null,
+        phoneDetail:
+          record.contactDetails.find((detail) =>
+            detail.label.trim().toLowerCase().includes("phone"),
+          )?.value ?? null,
         latestInternalNote: record.latestInternalNote ?? null,
       })),
     });
