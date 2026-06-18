@@ -78,7 +78,7 @@ export const PdfResumePreview = (props: {
     return Array.from({ length: numPages }, (_, index) => index + 1);
   }, [numPages]);
   const documentFileSource = useMemo(() => {
-    const isInternalMondayAsset = props.fileUrl.startsWith(
+    const isInternalMondayAsset = props.fileUrl.includes(
       "/api/monday/email-templates/assets/",
     );
     if (

@@ -35,6 +35,7 @@ export interface MondayRecord extends Record<string, unknown> {
   touchedAt?: string | null;
   touchedBy?: string | null;
   touchSource?: string | null;
+  latestInternalNote?: string | null;
   name: string;
   url: string | null;
   groupTitle: string | null;
@@ -144,6 +145,7 @@ export interface MondaySubitemEntry {
   typeLabel: string | null;
   updateType: MondayUpdateType;
   intent: MondayUpdateIntent;
+  internalExternalStatus: "Internal" | "External" | null;
   methodOfCommunication: string | null;
   createdAt: string | null;
   creatorUserId: string | null;

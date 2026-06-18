@@ -51,8 +51,8 @@ export const ApprovalProgressIndicator = (props: {
               : step.state === "skipped"
                 ? "bg-amber-400"
                 : isCurrentStep
-                  ? "bg-primary/40"
-                  : "bg-muted/80";
+                  ? "bg-muted"
+                  : "bg-muted";
           return (
             <span
               key={step.step.id}

@@ -26,7 +26,7 @@ export const DocxResumePreview = (props: {
       try {
         const { renderAsync } = await import("docx-preview");
         const isInternalMondayAsset =
-          props.fileUrl.startsWith("/api/monday/email-templates/assets/");
+          props.fileUrl.includes("/api/monday/email-templates/assets/");
         const headers =
           isInternalMondayAsset &&
           typeof props.sessionToken === "string" &&
@@ -74,7 +74,7 @@ export const DocxResumePreview = (props: {
         container.innerHTML = "";
       }
     };
-  }, [props.fileUrl]);
+  }, [props.fileUrl, props.sessionToken]);
 
   if (errorMessage) {
     return (

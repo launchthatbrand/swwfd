@@ -860,6 +860,7 @@ export declare const api: {
         group?: string;
         limit?: number;
         owner?: string;
+        recordSource?: "created_in_month" | "touched_in_month";
         search?: string;
         sessionToken: string;
         status?: string;
@@ -874,6 +875,7 @@ export declare const api: {
           batteryProgress: number | null;
           batteryRawValue: string | null;
           contactDetails: Array<{ label: string; value: string }>;
+          contactId?: string | null;
           createdAt: string | null;
           email: string | null;
           groupTitle: string | null;
@@ -882,14 +884,30 @@ export declare const api: {
           id: string;
           interviewingWithContractors: string | null;
           lastTouchpointAt: string | null;
+          latestInternalNote?: string | null;
           name: string;
           ownerIds: Array<string>;
+          ownerProfiles?: Array<{
+            email?: string | null;
+            id: string;
+            name: string | null;
+            photoThumb: string | null;
+          }>;
           peopleText: string | null;
           phone: string | null;
           referredToContractors: string | null;
+          resumeFiles?: Array<{
+            assetId: string | null;
+            name: string;
+            url: string | null;
+          }>;
           retentionPeriod: string | null;
           statusText: string | null;
           tags: string | null;
+          touchItemId?: string | null;
+          touchSource?: string | null;
+          touchedAt?: string | null;
+          touchedBy?: string | null;
           updatedAt: string | null;
           url: string | null;
         }>;
@@ -912,6 +930,7 @@ export declare const api: {
           creatorUserId: string | null;
           id: string;
           intent: "internal_note" | "conversation" | "campaign";
+          internalExternalStatus: "Internal" | "External" | null;
           methodOfCommunication: string | null;
           name: string;
           typeLabel: string | null;

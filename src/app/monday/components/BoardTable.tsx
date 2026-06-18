@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
-import { Checkbox } from "@launchthatapp/ui/checkbox";
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, Minus } from "lucide-react";
 import { ScrollArea, ScrollBar } from "@launchthatapp/ui/scroll-area";
 import type { ColumnDefinition, EntityAction } from "@launchthatapp/ui/entity-list";
 import type { MondayRecord } from "../types";
@@ -11,6 +10,7 @@ interface BoardTableProps {
   data: MondayRecord[];
   columns: ColumnDefinition<MondayRecord>[];
   isLoading?: boolean;
+  placeholderRowCount?: number;
   entityActions?: EntityAction<MondayRecord>[];
   initialSort?: { id: string; direction: "asc" | "desc" };
   getRowId?: (item: MondayRecord) => string;
@@ -22,6 +22,8 @@ interface BoardTableProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   onLoadMore?: () => void;
+  fillHeight?: boolean;
+  scrollbarStyle?: React.CSSProperties;
 }
 
 const renderCell = (
@@ -48,6 +50,7 @@ export const BoardTable = ({
   data,
   columns,
   isLoading,
+  placeholderRowCount = 0,
   entityActions,
   initialSort,
   getRowId,
@@ -56,67 +59,20 @@ export const BoardTable = ({
   hasNextPage = false,
   isFetchingNextPage = false,
   onLoadMore,
+  fillHeight = false,
+  scrollbarStyle,
 }: BoardTableProps) => {
   const [sort, setSort] = React.useState(initialSort ?? null);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const tableViewportRef = React.useRef<HTMLDivElement | null>(null);
+  const tableRef = React.useRef<HTMLTableElement | null>(null);
   const scrollViewportRef = React.useRef<HTMLElement | null>(null);
-  const [scrollHeight, setScrollHeight] = React.useState("70vh");
 
   const rowId = React.useCallback(
     (item: MondayRecord) => (getRowId ? getRowId(item) : item.id),
     [getRowId],
   );
-
-  const measure = React.useCallback(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-    const rect = wrapper.getBoundingClientRect();
-    const available = window.innerHeight - rect.top - 16;
-    const nextHeight = `${Math.max(available, 200)}px`;
-    setScrollHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-  }, []);
-
-  // Measure available height: from the top of this component to the bottom of the viewport
-  React.useEffect(() => {
-    const scheduleMeasure = () => {
-      window.requestAnimationFrame(() => {
-        measure();
-      });
-    };
-
-    scheduleMeasure();
-    window.addEventListener("resize", measure);
-    const timer = window.setTimeout(measure, 120);
-
-    const wrapper = wrapperRef.current;
-    let resizeObserver: ResizeObserver | null = null;
-    if (wrapper && typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(() => {
-        scheduleMeasure();
-      });
-      resizeObserver.observe(wrapper);
-    }
-
-    let fontsCancelled = false;
-    const fontsReady = document.fonts?.ready;
-    if (fontsReady) {
-      void fontsReady
-        .then(() => {
-          if (!fontsCancelled) scheduleMeasure();
-        })
-        .catch(() => {
-          // ignore font readiness failures
-        });
-    }
-
-    return () => {
-      fontsCancelled = true;
-      window.removeEventListener("resize", measure);
-      window.clearTimeout(timer);
-      resizeObserver?.disconnect();
-    };
-  }, [data.length, isLoading, measure]);
 
   const maybeLoadMore = React.useCallback(() => {
     if (!enableInfiniteScroll || !hasNextPage || isFetchingNextPage || !onLoadMore) return;
@@ -129,12 +85,14 @@ export const BoardTable = ({
   }, [enableInfiniteScroll, hasNextPage, isFetchingNextPage, onLoadMore]);
 
   React.useEffect(() => {
-    const root = wrapperRef.current;
-    if (!root || !enableInfiniteScroll || !onLoadMore) return;
-    const viewport = root.querySelector(
-      "[data-radix-scroll-area-viewport]",
-    ) as HTMLElement | null;
-    if (!viewport) return;
+    const viewport =
+      tableViewportRef.current ??
+      ((wrapperRef.current?.querySelector(
+        "[data-radix-scroll-area-viewport]",
+      ) as HTMLDivElement | null) ??
+        null);
+    if (!viewport || !enableInfiniteScroll || !onLoadMore) return;
+    tableViewportRef.current = viewport;
     scrollViewportRef.current = viewport;
     const handleScroll = () => maybeLoadMore();
     viewport.addEventListener("scroll", handleScroll, { passive: true });
@@ -148,6 +106,7 @@ export const BoardTable = ({
       }
     };
   }, [enableInfiniteScroll, maybeLoadMore, onLoadMore, data.length]);
+
 
   const sortedData = React.useMemo(() => {
     if (!sort) return data;
@@ -239,9 +198,27 @@ export const BoardTable = ({
   };
 
   const totalCols = 1 + columns.length + (entityActions?.length ? 1 : 0);
+  const selectionCheckboxClassName =
+    "inline-flex appearance-none items-center justify-center rounded-[4px] border border-input bg-background p-0 text-foreground leading-none shadow-xs transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]";
+  const selectionCheckboxStyle: React.CSSProperties = {
+    width: 20,
+    height: 20,
+    minWidth: 20,
+    minHeight: 20,
+    maxWidth: 20,
+    maxHeight: 20,
+    aspectRatio: "1 / 1",
+    padding: 0,
+    lineHeight: 1,
+    flex: "0 0 20px",
+    boxSizing: "border-box",
+  };
 
   return (
-    <div ref={wrapperRef}>
+    <div
+      ref={wrapperRef}
+      className={`flex min-h-0 flex-col ${fillHeight ? "h-full" : ""}`}
+    >
       {isLoading ? (
         <div className="rounded-md border">
           <table className="w-full text-sm">
@@ -256,7 +233,7 @@ export const BoardTable = ({
               </tr>
             </thead>
             <tbody>
-              {Array.from({ length: 5 }).map((_, i) => (
+              {Array.from({ length: Math.max(5, placeholderRowCount) }).map((_, i) => (
                 <tr key={i} className="border-b">
                   <td className="px-2 py-3">
                     <div className="h-4 w-4 animate-pulse rounded bg-muted" />
@@ -279,23 +256,38 @@ export const BoardTable = ({
             </div>
           )}
 
-          <ScrollArea className="rounded-md border" style={{ height: scrollHeight }}>
-            <table className="w-full min-w-max border-collapse text-sm">
-              <thead className="bg-background sticky top-0 z-20">
+          <ScrollArea
+            type="always"
+            className="min-h-0 flex-1 rounded-md border [&_[data-slot=scroll-area-thumb]]:bg-[var(--table-scrollbar-color)] [&_[data-slot=scroll-area-scrollbar][data-orientation=vertical]]:w-3 [&_[data-slot=scroll-area-scrollbar][data-orientation=horizontal]]:h-3"
+            style={scrollbarStyle}
+          >
+            <div data-board-table-viewport className="min-h-0">
+              <table ref={tableRef} className="w-full min-w-max border-collapse text-sm">
+              <thead className="bg-muted sticky top-0 z-20">
                 <tr className="border-b">
-                  <th className="bg-background h-10 w-11 border-r border-border px-2 text-center shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)]">
-                    <Checkbox
-                      checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                      onCheckedChange={toggleAll}
+                  <th className="bg-muted h-10 w-11 border-r border-border px-2 text-center shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)]">
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={allSelected ? "true" : someSelected ? "mixed" : "false"}
                       aria-label="Select all"
-                    />
+                      className={selectionCheckboxClassName}
+                      style={selectionCheckboxStyle}
+                      onClick={toggleAll}
+                    >
+                      {allSelected ? (
+                        <Check className="size-3.5" />
+                      ) : someSelected ? (
+                        <Minus className="size-3.5" />
+                      ) : null}
+                    </button>
                   </th>
                   {columns.map((col, ci) => {
                     const isLast = ci === columns.length - 1;
                     return (
                       <th
                         key={col.id}
-                        className={`bg-background h-10 px-2 text-left align-middle font-medium whitespace-nowrap shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)] ${isLast ? "" : "border-r border-border"}`}
+                        className={`bg-muted h-10 px-2 text-left align-middle font-medium whitespace-nowrap shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)] ${isLast ? "" : "border-r border-border"}`}
                         style={col.minWidth ? { minWidth: col.minWidth } : undefined}
                       >
                         {col.sortable ? (
@@ -322,7 +314,7 @@ export const BoardTable = ({
                     );
                   })}
                   {entityActions && entityActions.length > 0 && (
-                    <th className="bg-background h-10 px-2 text-right font-medium shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)]">
+                    <th className="bg-muted h-10 px-2 text-right font-medium shadow-[0_1px_3px_-2px_rgba(0,0,0,0.12)]">
                       Actions
                     </th>
                   )}
@@ -339,74 +331,114 @@ export const BoardTable = ({
                     </td>
                   </tr>
                 ) : (
-                  sortedData.map((row) => {
-                    const id = rowId(row);
-                    const selected = selectedIds.has(id);
-                    return (
-                      <tr
-                        key={id}
-                        data-record-id={id}
-                        data-state={selected ? "selected" : undefined}
-                        className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
-                      >
-                        <td className="w-11 border-r border-border px-2 text-center">
-                          <Checkbox
-                            checked={selected}
-                            onCheckedChange={() => toggleRow(id)}
-                            aria-label={`Select row ${id}`}
-                            onClick={(e: React.MouseEvent) => e.stopPropagation()}
-                          />
-                        </td>
-                        {columns.map((col, ci) => {
-                          const isLast = ci === columns.length - 1;
-                          return (
-                            <td
-                              key={col.id}
-                              className={`p-0 align-middle ${isLast ? "" : "border-r border-border"}`}
-                              style={col.minWidth ? { minWidth: col.minWidth } : undefined}
+                  <>
+                    {sortedData.map((row) => {
+                      const id = rowId(row);
+                      const selected = selectedIds.has(id);
+                      return (
+                        <tr
+                          key={id}
+                          data-record-id={id}
+                          data-state={selected ? "selected" : undefined}
+                          className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted"
+                        >
+                          <td className="w-11 border-r border-border px-2 text-center">
+                            <button
+                              type="button"
+                              role="checkbox"
+                              aria-checked={selected ? "true" : "false"}
+                              aria-label={`Select row ${id}`}
+                              className={selectionCheckboxClassName}
+                              style={selectionCheckboxStyle}
+                              onClick={(e: React.MouseEvent) => {
+                                e.stopPropagation();
+                                toggleRow(id);
+                              }}
                             >
-                              {renderCell(col, row)}
-                            </td>
-                          );
-                        })}
-                        {entityActions && entityActions.length > 0 && (
-                          <td className="px-2 text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {entityActions.map((action) => {
-                                const disabled =
-                                  typeof action.isDisabled === "function"
-                                    ? action.isDisabled(row)
-                                    : action.isDisabled;
-                                return (
-                                  <button
-                                    key={action.id}
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      action.onClick(row);
-                                    }}
-                                    disabled={disabled}
-                                    className="rounded p-1 hover:bg-muted disabled:opacity-40"
-                                    title={
-                                      typeof action.label === "function"
-                                        ? action.label(row)
-                                        : action.label
-                                    }
-                                  >
-                                    {action.icon}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                              {selected ? <Check className="size-3.5" /> : null}
+                            </button>
                           </td>
-                        )}
-                      </tr>
-                    );
-                  })
+                          {columns.map((col, ci) => {
+                            const isLast = ci === columns.length - 1;
+                            return (
+                              <td
+                                key={col.id}
+                                className={`p-0 align-middle ${isLast ? "" : "border-r border-border"}`}
+                                style={col.minWidth ? { minWidth: col.minWidth } : undefined}
+                              >
+                                {renderCell(col, row)}
+                              </td>
+                            );
+                          })}
+                          {entityActions && entityActions.length > 0 && (
+                            <td className="px-2 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                {entityActions.map((action) => {
+                                  const disabled =
+                                    typeof action.isDisabled === "function"
+                                      ? action.isDisabled(row)
+                                      : action.isDisabled;
+                                  return (
+                                    <button
+                                      key={action.id}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        action.onClick(row);
+                                      }}
+                                      disabled={disabled}
+                                      className="rounded p-1 hover:bg-muted disabled:opacity-40"
+                                      title={
+                                        typeof action.label === "function"
+                                          ? action.label(row)
+                                          : action.label
+                                      }
+                                    >
+                                      {action.icon}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                    {placeholderRowCount > 0
+                      ? Array.from({ length: placeholderRowCount }).map((_, index) => (
+                          <tr key={`placeholder-${index}`} className="border-b" aria-hidden="true">
+                            <td className="w-11 border-r border-border px-2 py-3">
+                              <div className="h-4 w-4 animate-pulse rounded bg-muted" />
+                            </td>
+                            {columns.map((col, ci) => {
+                              const isLast = ci === columns.length - 1;
+                              return (
+                                <td
+                                  key={`${col.id}-placeholder-${index}`}
+                                  className={`px-2 py-3 align-middle ${isLast ? "" : "border-r border-border"}`}
+                                  style={col.minWidth ? { minWidth: col.minWidth } : undefined}
+                                >
+                                  <div className="h-5 w-full animate-pulse rounded bg-muted" />
+                                </td>
+                              );
+                            })}
+                            {entityActions && entityActions.length > 0 ? (
+                              <td className="px-2 py-3 text-right">
+                                <div className="ml-auto h-5 w-16 animate-pulse rounded bg-muted" />
+                              </td>
+                            ) : null}
+                          </tr>
+                        ))
+                      : null}
+                  </>
                 )}
               </tbody>
-            </table>
-            <ScrollBar orientation="horizontal" />
+              </table>
+            </div>
+            <ScrollBar
+              orientation="horizontal"
+              className="h-3 [--scrollbar-size:1rem]"
+            />
           </ScrollArea>
         </>
       )}
