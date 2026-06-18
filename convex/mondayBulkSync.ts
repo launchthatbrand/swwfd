@@ -247,6 +247,22 @@ export const listJobsForAccount = query({
   },
 });
 
+export const listRecentJobs = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(bulkSyncJobSummaryValidator),
+  handler: async (ctx, args) => {
+    const limit = Math.min(Math.max(Math.floor(args.limit ?? 100), 1), 500);
+    const jobs = await ctx.db
+      .query("mondayBulkSyncJobs")
+      .withIndex("by_startedAt", (q) => q)
+      .order("desc")
+      .take(limit);
+    return jobs.map((job) => toJobSummary(job));
+  },
+});
+
 export const claimNextBatch = mutation({
   args: {
     jobId: v.id("mondayBulkSyncJobs"),

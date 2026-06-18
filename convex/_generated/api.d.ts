@@ -336,6 +336,31 @@ export declare const api: {
         workflowId: string | null;
       }>
     >;
+    listRecentJobs: FunctionReference<
+      "query",
+      "public",
+      { limit?: number },
+      Array<{
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+        workflowId: string | null;
+      }>
+    >;
     markJobFailed: FunctionReference<
       "mutation",
       "public",
