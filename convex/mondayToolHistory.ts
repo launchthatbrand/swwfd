@@ -18,6 +18,7 @@ const unifiedToolHistoryRowValidator = createUnifiedMigrationJobRowValidator(
     v.literal("touch_range_backfill"),
     v.literal("touch_backfill"),
     v.literal("touch_csv_export"),
+    v.literal("bulk_sync"),
   ),
 );
 
@@ -27,7 +28,8 @@ type UnifiedToolHistoryRow = {
     | "hire_event_backfill"
     | "touch_range_backfill"
     | "touch_backfill"
-    | "touch_csv_export";
+    | "touch_csv_export"
+    | "bulk_sync";
   toolLabel: string;
   legacy: boolean;
   jobId: string;
@@ -354,6 +356,63 @@ const listTouchCsvExportJobs = async (
   });
 };
 
+const listBulkSyncJobs = async (
+  ctx: QueryCtx,
+  limit: number,
+): Promise<UnifiedToolHistoryRow[]> => {
+  const jobs = await ctx.db
+    .query("mondayBulkSyncJobs")
+    .withIndex("by_startedAt", (q) => q)
+    .order("desc")
+    .take(limit);
+
+  return jobs.map((job) => {
+    const searchText = [
+      "bulk sync",
+      "bulk_sync",
+      job._id,
+      job.workflowId ?? "",
+      job.mondayAccountId,
+      job.ownerId,
+      job.requestedByMondayUserId,
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return {
+      toolType: "bulk_sync" as const,
+      toolLabel: "Contact Sync",
+      legacy: false,
+      jobId: String(job._id),
+      status: job.status,
+      workflowId: job.workflowId ?? null,
+      startedAt: job.startedAt,
+      updatedAt: job.updatedAt,
+      finishedAt: job.finishedAt ?? null,
+      dryRun: false,
+      sourceBoardId: null,
+      sourceBoardName: null,
+      targetBoardId: job.monthlyBoardIdOverride ?? null,
+      sourceTag: null,
+      baselineDate: null,
+      monthTag: null,
+      monthKey: null,
+      dateFrom: null,
+      dateTo: null,
+      pageSize: 25,
+      processedCount: job.processedContacts,
+      mappedCount: job.succeededContacts,
+      skippedCount: 0,
+      createdCount: job.succeededContacts,
+      updatedCount: 0,
+      errorCount: job.failedContacts,
+      warningCount: job.warningsCount,
+      lastError: job.lastError ?? null,
+      searchText,
+    };
+  });
+};
+
 /** Aggregates recent jobs across all Monday tool tables, sorted by startedAt descending. */
 export const listRecentJobs = query({
   args: {
@@ -364,13 +423,14 @@ export const listRecentJobs = query({
     const limit = clampHistoryLimit(args.limit ?? DEFAULT_AGGREGATE_LIMIT);
     const perToolLimit = perToolFetchLimit(limit);
 
-    const [monthlyJobs, hireEventJobs, touchRangeJobs, touchBackfillJobs, touchCsvJobs] =
+    const [monthlyJobs, hireEventJobs, touchRangeJobs, touchBackfillJobs, touchCsvJobs, bulkSyncJobs] =
       await Promise.all([
         listMonthlyMigrationJobs(ctx, perToolLimit),
         listHireEventBackfillJobs(ctx, perToolLimit),
         listTouchRangeBackfillJobs(ctx, perToolLimit),
         listTouchBackfillJobs(ctx, perToolLimit),
         listTouchCsvExportJobs(ctx, perToolLimit),
+        listBulkSyncJobs(ctx, perToolLimit),
       ]);
 
     return [
@@ -379,6 +439,7 @@ export const listRecentJobs = query({
       ...touchRangeJobs,
       ...touchBackfillJobs,
       ...touchCsvJobs,
+      ...bulkSyncJobs,
     ]
       .sort((a, b) => {
         if (b.startedAt !== a.startedAt) return b.startedAt - a.startedAt;

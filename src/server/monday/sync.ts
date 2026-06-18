@@ -1,6 +1,3 @@
-import "server-only";
-
-import { env } from "~/env";
 import {
   callMondayGraphQL,
   upsertMondayHireEventSubitem,
@@ -723,7 +720,7 @@ export const syncContactFromConnectedBoards = async (
   },
 ): Promise<SyncResult> => {
   const syncStartedAt = Date.now();
-  const boardId = env.MONDAY_BOARD_ID?.trim() ?? "";
+  const boardId = process.env.MONDAY_BOARD_ID?.trim() ?? "";
   if (!boardId) throw new Error("Missing MONDAY_BOARD_ID");
 
   const warnings: string[] = [];

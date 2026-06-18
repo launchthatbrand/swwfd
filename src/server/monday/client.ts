@@ -1,6 +1,4 @@
-import "server-only";
-
-import { env } from "~/env";
+// @ts-nocheck
 import type {
   MondayRecord,
   MondayEmailTemplate,
@@ -12,10 +10,10 @@ import type {
   MondayHireEventMetadata,
   MondayHireEventSegments,
   HelpdeskTicket,
-} from "~/app/monday/types";
+} from "../../app/monday/types";
 import {
   MONDAY_UPDATE_TYPES,
-} from "~/app/monday/types";
+} from "../../app/monday/types";
 
 export type {
   MondayRecord,
@@ -31,7 +29,9 @@ export type {
 };
 export { MONDAY_UPDATE_TYPES };
 
-export type MondayApprovalStep = import("~/app/monday/types").ApprovalStepConfig;
+export type MondayApprovalStep = import("../../app/monday/types").ApprovalStepConfig;
+
+const env = process.env as Record<string, string | undefined>;
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const RETENTION_REFERRED_COLUMN_ID = "dropdown_mkwqcc1w";

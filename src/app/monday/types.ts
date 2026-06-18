@@ -248,10 +248,12 @@ export type MondayBulkSyncJobStatus = "running" | "done" | "failed" | "cancelled
 export interface MondayBulkSyncJob {
   jobId: string;
   status: MondayBulkSyncJobStatus;
+  workflowId?: string | null;
   mondayAccountId: string;
   requestedByMondayUserId: string;
   requestedByMondayAppClientId: string | null;
   ownerId: string;
+  monthlyBoardIdOverride?: string | null;
   totalContacts: number;
   nextIndex: number;
   processedContacts: number;

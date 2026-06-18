@@ -174,6 +174,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -185,6 +186,7 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
     claimNextBatch: FunctionReference<
@@ -204,6 +206,7 @@ export declare const api: {
       {
         contactItemIds: Array<string>;
         mondayAccountId: string;
+        monthlyBoardIdOverride?: string;
         monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
         ownerId: string;
         requestedByMondayAppClientId?: string;
@@ -215,6 +218,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -226,6 +230,7 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
     getJob: FunctionReference<
@@ -238,6 +243,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -249,6 +255,7 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
     getLatestJobForAccount: FunctionReference<
@@ -261,6 +268,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -272,6 +280,7 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
     listFailedContactIds: FunctionReference<
@@ -279,6 +288,53 @@ export declare const api: {
       "public",
       { jobId: Id<"mondayBulkSyncJobs"> },
       Array<string>
+    >;
+    listJobResults: FunctionReference<
+      "query",
+      "public",
+      {
+        jobId: Id<"mondayBulkSyncJobs">;
+        limit?: number;
+        status?: "success" | "failed";
+      },
+      Array<{
+        attemptedAt: number;
+        contactItemId: string;
+        createdParentUpdates: number;
+        createdSubitemUpdates: number;
+        createdSubitems: number;
+        error: string | null;
+        linkedItemCount: number;
+        skippedSubitems: number;
+        status: "success" | "failed";
+        updatedProgressColumns: number;
+        warnings: Array<string>;
+      }>
+    >;
+    listJobsForAccount: FunctionReference<
+      "query",
+      "public",
+      { limit?: number; mondayAccountId: string },
+      Array<{
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+        workflowId: string | null;
+      }>
     >;
     markJobFailed: FunctionReference<
       "mutation",
@@ -290,6 +346,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -301,12 +358,14 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
     recordBatchResults: FunctionReference<
       "mutation",
       "public",
       {
+        attemptedCount?: number;
         jobId: Id<"mondayBulkSyncJobs">;
         results: Array<{
           contactItemId: string;
@@ -327,6 +386,7 @@ export declare const api: {
         jobId: Id<"mondayBulkSyncJobs">;
         lastError: string | null;
         mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
         nextIndex: number;
         ownerId: string;
         processedContacts: number;
@@ -338,6 +398,7 @@ export declare const api: {
         totalContacts: number;
         updatedAt: number;
         warningsCount: number;
+        workflowId: string | null;
       }
     >;
   };
@@ -1162,7 +1223,8 @@ export declare const api: {
           | "hire_event_backfill"
           | "touch_range_backfill"
           | "touch_backfill"
-          | "touch_csv_export";
+          | "touch_csv_export"
+          | "bulk_sync";
         updatedAt: number;
         updatedCount: number;
         warningCount: number;
@@ -2681,6 +2743,102 @@ export declare const internal: {
         appClientId?: string;
         boardId?: string;
         userId: string;
+      }
+    >;
+  };
+  mondayBulkSync: {
+    finishJobInternal: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError?: string | null;
+        status: "done" | "failed" | "cancelled";
+      },
+      null
+    >;
+    getJobForWorkflow: FunctionReference<
+      "query",
+      "internal",
+      { jobId: Id<"mondayBulkSyncJobs"> },
+      null | {
+        _id: Id<"mondayBulkSyncJobs">;
+        contactItemIds: Array<string>;
+        monthlyBoardIdOverride: string | null;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        nextIndex: number;
+        ownerId: string;
+        status: "running" | "done" | "failed" | "cancelled";
+        totalContacts: number;
+      }
+    >;
+    recordBatchResultsInternal: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        attemptedCount?: number;
+        jobId: Id<"mondayBulkSyncJobs">;
+        results: Array<{
+          contactItemId: string;
+          createdParentUpdates: number;
+          createdSubitemUpdates: number;
+          createdSubitems: number;
+          error: string | null;
+          linkedItemCount: number;
+          skippedSubitems: number;
+          status: "success" | "failed";
+          updatedProgressColumns: number;
+          warnings: Array<string>;
+        }>;
+      },
+      null | {
+        failedContacts: number;
+        finishedAt: number | null;
+        jobId: Id<"mondayBulkSyncJobs">;
+        lastError: string | null;
+        mondayAccountId: string;
+        monthlyBoardIdOverride: string | null;
+        nextIndex: number;
+        ownerId: string;
+        processedContacts: number;
+        requestedByMondayAppClientId: string | null;
+        requestedByMondayUserId: string;
+        startedAt: number;
+        status: "running" | "done" | "failed" | "cancelled";
+        succeededContacts: number;
+        totalContacts: number;
+        updatedAt: number;
+        warningsCount: number;
+        workflowId: string | null;
+      }
+    >;
+    runWorkflow: FunctionReference<"mutation", "internal", any, any>;
+  };
+  mondayBulkSyncNode: {
+    syncContactBatchAction: FunctionReference<
+      "action",
+      "internal",
+      {
+        concurrency?: number;
+        contactItemIds: Array<string>;
+        jobId: string;
+        monthlyBoardIdOverride?: string;
+        monthlyBoardMappings: Array<{ boardId: string; monthKey: string }>;
+        ownerId: string;
+      },
+      {
+        results: Array<{
+          contactItemId: string;
+          createdParentUpdates: number;
+          createdSubitemUpdates: number;
+          createdSubitems: number;
+          error: string | null;
+          linkedItemCount: number;
+          skippedSubitems: number;
+          status: "success" | "failed";
+          updatedProgressColumns: number;
+          warnings: Array<string>;
+        }>;
       }
     >;
   };

@@ -1,16 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useConvex, useMutation as useConvexMutation } from "convex/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConvex, useMutation as useConvexMutation, useQuery } from "convex/react";
 import { toast } from "@launchthatapp/ui/toast";
 import type { Id } from "@convex-config/_generated/dataModel";
 import { api } from "@convex-config/_generated/api";
 
-import { fetchMondayApi } from "../services/monday-api";
-import type { MondayBulkSyncJob, MondayBulkSyncStatusResponse, MondayRecord } from "../types";
+import type { MondayBulkSyncJob, MondayRecord } from "../types";
 
 interface UseBulkSyncMutationsArgs {
   sessionToken: string | null;
   staticMode: boolean;
-  isMondaySettingsAdmin: boolean;
   mondayAccountId: string | undefined;
   identityUserId: string | undefined;
   mondayAppClientId?: string | undefined;
@@ -26,6 +24,8 @@ const toMondayBulkSyncJob = (job: {
   requestedByMondayUserId: string;
   requestedByMondayAppClientId: string | null;
   ownerId: string;
+  workflowId: string | null;
+  monthlyBoardIdOverride: string | null;
   totalContacts: number;
   nextIndex: number;
   processedContacts: number;
@@ -39,10 +39,12 @@ const toMondayBulkSyncJob = (job: {
 }): MondayBulkSyncJob => ({
   jobId: String(job.jobId),
   status: job.status,
+  workflowId: job.workflowId ?? null,
   mondayAccountId: job.mondayAccountId,
   requestedByMondayUserId: job.requestedByMondayUserId,
   requestedByMondayAppClientId: job.requestedByMondayAppClientId,
   ownerId: job.ownerId,
+  monthlyBoardIdOverride: job.monthlyBoardIdOverride ?? null,
   totalContacts: job.totalContacts,
   nextIndex: job.nextIndex,
   processedContacts: job.processedContacts,
@@ -73,7 +75,6 @@ const normalizeMonthlyBoardMappings = (
 export const useBulkSyncMutations = ({
   sessionToken,
   staticMode,
-  isMondaySettingsAdmin,
   mondayAccountId,
   identityUserId,
   mondayAppClientId,
@@ -84,19 +85,26 @@ export const useBulkSyncMutations = ({
   const convex = useConvex();
   const createBulkSyncJob = useConvexMutation(api.mondayBulkSync.createJob);
   const cancelBulkSyncJobMutation = useConvexMutation(api.mondayBulkSync.cancelJob);
+  const accountId = mondayAccountId?.trim();
+  const rawJobs = useQuery(
+    api.mondayBulkSync.listJobsForAccount,
+    sessionToken && !staticMode && accountId
+      ? {
+          mondayAccountId: accountId,
+          limit: 25,
+        }
+      : "skip",
+  );
 
-  const [activeBulkSyncJobId, setActiveBulkSyncJobId] = useState<string | null>(null);
-  const [latestBulkSyncJob, setLatestBulkSyncJob] = useState<MondayBulkSyncJob | null>(null);
   const [syncingContactIds, setSyncingContactIds] = useState<Set<string>>(new Set());
-  const finalizedBulkSyncJobIdRef = useRef<string | null>(null);
-
-  const applyBulkSyncJob = useCallback((job: MondayBulkSyncJob | null) => {
-    setLatestBulkSyncJob(job);
-    if (job?.status === "running") {
-      setActiveBulkSyncJobId(job.jobId);
-      setSyncingContactIds((prev) => new Set(prev).add("__bulk_sync__"));
-    }
-  }, []);
+  const finalizedBulkSyncJobIdsRef = useRef<Set<string>>(new Set());
+  const bulkSyncJobs = useMemo(
+    () => (rawJobs ?? []).map((job) => toMondayBulkSyncJob(job)),
+    [rawJobs],
+  );
+  const latestBulkSyncJob = bulkSyncJobs[0] ?? null;
+  const activeBulkSyncJobId =
+    bulkSyncJobs.find((job) => job.status === "running")?.jobId ?? null;
 
   const fetchBulkSyncStatus = useCallback(
     async (jobId?: string | null) => {
@@ -113,7 +121,6 @@ export const useBulkSyncMutations = ({
           });
 
       if (!rawJob) {
-        applyBulkSyncJob(null);
         return null;
       }
       if (rawJob.mondayAccountId !== accountId) {
@@ -121,14 +128,19 @@ export const useBulkSyncMutations = ({
       }
 
       const job = toMondayBulkSyncJob(rawJob);
-      applyBulkSyncJob(job);
       return job;
     },
-    [applyBulkSyncJob, convex, mondayAccountId, sessionToken],
+    [convex, mondayAccountId, sessionToken],
   );
 
   const startBulkSyncJob = useCallback(
-    async (records: MondayRecord[]) => {
+    async (
+      records: MondayRecord[],
+      options?: {
+        ownerId?: string;
+        monthlyBoardIdOverride?: string;
+      },
+    ) => {
       const accountId = mondayAccountId?.trim();
       const requestedByMondayUserId = identityUserId?.trim();
       if (!sessionToken) throw new Error("Missing monday session token");
@@ -145,23 +157,20 @@ export const useBulkSyncMutations = ({
       );
       if (dedupedTargetIds.length === 0) throw new Error("No valid contact records selected");
 
-      const ownerId = requestedByMondayUserId;
+      const ownerId = options?.ownerId?.trim() || requestedByMondayUserId;
       const rawJob = await createBulkSyncJob({
         mondayAccountId: accountId,
         requestedByMondayUserId,
         requestedByMondayAppClientId: mondayAppClientId?.trim() || undefined,
         ownerId,
+        monthlyBoardIdOverride: options?.monthlyBoardIdOverride?.trim() || undefined,
         contactItemIds: dedupedTargetIds,
         monthlyBoardMappings: normalizeMonthlyBoardMappings(monthlyBoardMappings),
       });
 
-      const job = toMondayBulkSyncJob(rawJob);
-      finalizedBulkSyncJobIdRef.current = null;
-      applyBulkSyncJob(job);
-      return job;
+      return toMondayBulkSyncJob(rawJob);
     },
     [
-      applyBulkSyncJob,
       createBulkSyncJob,
       identityUserId,
       mondayAccountId,
@@ -178,10 +187,7 @@ export const useBulkSyncMutations = ({
       const rawJob = await cancelBulkSyncJobMutation({
         jobId: jobId as Id<"mondayBulkSyncJobs">,
       });
-      if (rawJob) {
-        setLatestBulkSyncJob(toMondayBulkSyncJob(rawJob));
-      }
-      setActiveBulkSyncJobId(null);
+      if (!rawJob) return;
     },
     [cancelBulkSyncJobMutation, sessionToken],
   );
@@ -214,17 +220,18 @@ export const useBulkSyncMutations = ({
         requestedByMondayUserId,
         requestedByMondayAppClientId: mondayAppClientId?.trim() || undefined,
         ownerId: sourceJob.ownerId,
+        monthlyBoardIdOverride: sourceJob.monthlyBoardIdOverride ?? undefined,
         contactItemIds: failedContactIds,
         monthlyBoardMappings: normalizeMonthlyBoardMappings(monthlyBoardMappings),
       });
 
-      const job = toMondayBulkSyncJob(rawJob);
-      finalizedBulkSyncJobIdRef.current = null;
-      applyBulkSyncJob(job);
-      return { ok: true as const, job, retriedContacts: failedContactIds.length };
+      return {
+        ok: true as const,
+        job: toMondayBulkSyncJob(rawJob),
+        retriedContacts: failedContactIds.length,
+      };
     },
     [
-      applyBulkSyncJob,
       convex,
       createBulkSyncJob,
       identityUserId,
@@ -236,86 +243,42 @@ export const useBulkSyncMutations = ({
   );
 
   useEffect(() => {
-    if (!sessionToken || staticMode || !isMondaySettingsAdmin) return;
-    void fetchBulkSyncStatus(null)
-      .then((job) => {
-        if (job && job.status !== "running") {
-          finalizedBulkSyncJobIdRef.current = job.jobId;
-        }
-      })
-      .catch(() => null);
-  }, [fetchBulkSyncStatus, isMondaySettingsAdmin, sessionToken, staticMode]);
-
-  useEffect(() => {
-    if (!sessionToken || !activeBulkSyncJobId) return;
-    if (latestBulkSyncJob?.status !== "running") return;
-
-    let cancelled = false;
-    let inFlight = false;
-    const tick = async () => {
-      if (cancelled || inFlight) return;
-      inFlight = true;
-      try {
-        const data = await fetchMondayApi<MondayBulkSyncStatusResponse>(
-          "/api/monday/sync/bulk/tick",
-          {
-            sessionToken,
-            method: "POST",
-            body: { jobId: activeBulkSyncJobId, batchSize: 6, concurrency: 3 },
-          },
-        );
-        if (cancelled) return;
-        if (data.ok && data.job) {
-          setLatestBulkSyncJob(data.job);
-          return;
-        }
-        await fetchBulkSyncStatus(activeBulkSyncJobId);
-      } catch {
-        // tolerate polling failures
-      } finally {
-        inFlight = false;
-      }
-    };
-
-    void tick();
-    const timer = window.setInterval(() => void tick(), 2_500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [activeBulkSyncJobId, fetchBulkSyncStatus, latestBulkSyncJob?.status, sessionToken]);
-
-  useEffect(() => {
-    if (!latestBulkSyncJob) return;
-    if (latestBulkSyncJob.status === "running") return;
-    if (finalizedBulkSyncJobIdRef.current === latestBulkSyncJob.jobId) return;
-
-    finalizedBulkSyncJobIdRef.current = latestBulkSyncJob.jobId;
-    setActiveBulkSyncJobId(null);
+    const hasRunning = bulkSyncJobs.some((job) => job.status === "running");
     setSyncingContactIds((prev) => {
-      if (!prev.has("__bulk_sync__")) return prev;
+      if (hasRunning && prev.has("__bulk_sync__")) return prev;
+      if (!hasRunning && !prev.has("__bulk_sync__")) return prev;
       const next = new Set(prev);
-      next.delete("__bulk_sync__");
+      if (hasRunning) next.add("__bulk_sync__");
+      else next.delete("__bulk_sync__");
       return next;
     });
+  }, [bulkSyncJobs]);
 
-    onJobCompleted?.(latestBulkSyncJob);
+  useEffect(() => {
+    for (const job of bulkSyncJobs) {
+      if (job.status === "running") continue;
+      if (finalizedBulkSyncJobIdsRef.current.has(job.jobId)) continue;
+      finalizedBulkSyncJobIdsRef.current.add(job.jobId);
 
-    if (latestBulkSyncJob.status === "cancelled") {
-      toast.error("Bulk sync cancelled");
-    } else if (latestBulkSyncJob.status === "failed") {
-      toast.error(latestBulkSyncJob.lastError ?? "Bulk sync failed");
-    } else {
-      const summary = `${latestBulkSyncJob.succeededContacts}/${latestBulkSyncJob.totalContacts} synced`;
-      if (latestBulkSyncJob.failedContacts > 0) {
-        toast.error(`${summary} (${latestBulkSyncJob.failedContacts} failed)`);
+      onJobCompleted?.(job);
+
+      if (job.status === "cancelled") {
+        toast.error("Bulk sync cancelled");
+      } else if (job.status === "failed") {
+        toast.error(job.lastError ?? "Bulk sync failed");
       } else {
-        toast.success(summary);
+        const summary = `${job.succeededContacts}/${job.totalContacts} synced`;
+        if (job.failedContacts > 0) {
+          toast.error(`${summary} (${job.failedContacts} failed)`);
+        } else {
+          toast.success(summary);
+        }
       }
     }
-  }, [latestBulkSyncJob, onJobCompleted]);
+  }, [bulkSyncJobs, onJobCompleted]);
 
   return {
+    bulkSyncJobs,
     activeBulkSyncJobId,
     latestBulkSyncJob,
     syncingContactIds,
