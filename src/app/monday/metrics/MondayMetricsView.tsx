@@ -42,6 +42,7 @@ import { useAction, useConvex } from "convex/react";
 import { api } from "@convex-config/_generated/api";
 import type {
   MondayIdentity,
+  MondayJobMetricsSummary,
   MondayMetricsContractorReferralBreakdown,
   MondayMetricsHiredContact,
   MondayMetricsOwnerBreakdown,
@@ -129,6 +130,23 @@ const contractorReferralChartConfig = {
     label: "Referred Contacts",
     color: "var(--chart-4)",
   },
+} satisfies ChartConfig;
+
+const jobsPostedChartConfig = {
+  posted: { label: "Posted", color: "var(--chart-1)" },
+  available: { label: "Still Available", color: "var(--chart-3)" },
+} satisfies ChartConfig;
+
+const jobsByCategoryChartConfig = {
+  count: { label: "Jobs", color: "var(--chart-2)" },
+} satisfies ChartConfig;
+
+const jobsByContractorChartConfig = {
+  count: { label: "Jobs", color: "var(--chart-4)" },
+} satisfies ChartConfig;
+
+const jobsByDistrictChartConfig = {
+  count: { label: "Jobs", color: "var(--chart-5)" },
 } satisfies ChartConfig;
 
 const hiredContactsColumns: ColumnDefinition<HiredContactListRow>[] = [
@@ -338,6 +356,229 @@ const ContractorReferralsChart = ({
   );
 };
 
+const JobMetricsSummaryCards = ({ summary }: { summary: MondayJobMetricsSummary }) => (
+  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+          Live Available Jobs
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-3xl font-semibold tabular-nums">
+          {numberFormatter.format(summary.liveJobCount)}
+        </p>
+      </CardContent>
+    </Card>
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+          {summary.fiscalYear} - Jobs Posted
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-3xl font-semibold tabular-nums">
+          {numberFormatter.format(summary.postedThisFY)}
+        </p>
+      </CardContent>
+    </Card>
+    {summary.bySalaryType.slice(0, 2).map((entry) => (
+      <Card key={entry.salaryType}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+            {summary.fiscalYear} - {entry.salaryType}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-3xl font-semibold tabular-nums">
+            {numberFormatter.format(entry.count)}
+          </p>
+        </CardContent>
+      </Card>
+    ))}
+  </div>
+);
+
+const JobMetricsMonthlyChart = ({ summary }: { summary: MondayJobMetricsSummary }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle className="text-base">
+        {summary.fiscalYear} - Jobs Posted Per Month
+      </CardTitle>
+    </CardHeader>
+    <CardContent>
+      <ChartContainer config={jobsPostedChartConfig}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart
+            data={summary.monthly}
+            margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+          >
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis
+              dataKey="monthLabel"
+              tickLine={false}
+              axisLine={false}
+              tick={{ fontSize: 12 }}
+            />
+            <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+            <ChartTooltip
+              cursor={false}
+              content={
+                <ChartTooltipContent
+                  valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                />
+              }
+            />
+            <Bar dataKey="posted" fill="var(--color-posted)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="available" fill="var(--color-available)" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartContainer>
+      <p className="text-muted-foreground mt-2 text-xs">
+        "Still Available" counts jobs posted that month that remain open today.
+      </p>
+    </CardContent>
+  </Card>
+);
+
+const JobMetricsCategoryChart = ({ summary }: { summary: MondayJobMetricsSummary }) => {
+  const rows = summary.byCategory;
+  if (rows.length === 0) return null;
+  const chartHeight = Math.max(220, rows.length * 34);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {summary.fiscalYear} - Jobs by Category
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={jobsByCategoryChartConfig} className="w-full" style={{ height: `${chartHeight}px` }}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={rows}
+              layout="vertical"
+              margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="category"
+                width={160}
+                tickLine={false}
+                axisLine={false}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    hideLabel
+                    valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                  />
+                }
+              />
+              <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+};
+
+const JobMetricsContractorChart = ({ summary }: { summary: MondayJobMetricsSummary }) => {
+  const rows = summary.byContractor;
+  if (rows.length === 0) return null;
+  const chartHeight = Math.max(220, rows.length * 34);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {summary.fiscalYear} - Jobs by Contractor
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={jobsByContractorChartConfig} className="w-full" style={{ height: `${chartHeight}px` }}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={rows}
+              layout="vertical"
+              margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="contractor"
+                width={200}
+                tickLine={false}
+                axisLine={false}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    hideLabel
+                    valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                  />
+                }
+              />
+              <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+};
+
+const JobMetricsDistrictChart = ({ summary }: { summary: MondayJobMetricsSummary }) => {
+  const rows = summary.byDistrict.slice(0, 10);
+  if (rows.length === 0) return null;
+  const chartHeight = Math.max(220, rows.length * 34);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          {summary.fiscalYear} - Jobs by District
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ChartContainer config={jobsByDistrictChartConfig} className="w-full" style={{ height: `${chartHeight}px` }}>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart
+              data={rows}
+              layout="vertical"
+              margin={{ top: 8, right: 12, bottom: 8, left: 4 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="district"
+                width={160}
+                tickLine={false}
+                axisLine={false}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    hideLabel
+                    valueFormatter={(value) => numberFormatter.format(Number(value ?? 0))}
+                  />
+                }
+              />
+              <Bar dataKey="count" fill="var(--color-count)" radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartContainer>
+      </CardContent>
+    </Card>
+  );
+};
+
 export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const monday: MondayClientSdk = useMemo(() => mondaySdkInitialize(), []);
   const convex = useConvex();
@@ -345,7 +586,9 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const [identity, setIdentity] = useState<MondayIdentity | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const getMetricsAction = useAction(api.mondayMetricsNode.getMetrics);
+  const getJobMetricsAction = useAction(api.mondayJobMetricsNode.getJobMetrics);
   const [isHiredContactsExpanded, setIsHiredContactsExpanded] = useState(false);
+  const [isJobChartsExpanded, setIsJobChartsExpanded] = useState(false);
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
     ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
@@ -518,6 +761,18 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     },
     staleTime: 30_000,
   });
+  const jobMetricsQuery = useQuery({
+    queryKey: ["monday-job-metrics", sessionToken, selectedFiscalYear],
+    enabled: !!sessionToken,
+    queryFn: async () => {
+      const result = await getJobMetricsAction({
+        sessionToken: sessionToken!,
+        fiscalYear: selectedFiscalYear,
+      });
+      return result.summary;
+    },
+    staleTime: 30_000,
+  });
   const userBoardSettingsQuery = useQuery({
     queryKey: [
       "monday-user-board-settings",
@@ -550,6 +805,14 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         : "Failed to load Monday metrics";
     toast.error(message);
   }, [metricsQuery.error]);
+  useEffect(() => {
+    if (!jobMetricsQuery.error) return;
+    const message =
+      jobMetricsQuery.error instanceof Error
+        ? jobMetricsQuery.error.message
+        : "Failed to load job metrics";
+    toast.error(message);
+  }, [jobMetricsQuery.error]);
   useEffect(() => {
     if (!userBoardSettingsQuery.error) return;
     const message =
@@ -888,6 +1151,70 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
               </CollapsibleContent>
             </Card>
           </Collapsible>
+          {/* ---- Job Metrics Section ---- */}
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold">Job Listing Metrics</h2>
+              <span className="text-muted-foreground text-xs">— {selectedFiscalYear} · Job Listing Board</span>
+              {jobMetricsQuery.isFetching && (
+                <span className="text-muted-foreground text-xs">Refreshing...</span>
+              )}
+            </div>
+
+            {jobMetricsQuery.isLoading && !jobMetricsQuery.data ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <Card key={`job-skeleton-${idx}`}>
+                    <CardHeader><Skeleton className="h-4 w-40" /></CardHeader>
+                    <CardContent><Skeleton className="h-8 w-20" /></CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : jobMetricsQuery.data ? (
+              <>
+                <JobMetricsSummaryCards summary={jobMetricsQuery.data} />
+                <Collapsible open={isJobChartsExpanded} onOpenChange={setIsJobChartsExpanded}>
+                  <Card>
+                    <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+                      <div className="min-w-0">
+                        <CardTitle className="text-base">Job Trend Charts</CardTitle>
+                        <p className="text-muted-foreground mt-1 text-xs">
+                          Monthly posting trends, categories, contractors, and districts for {jobMetricsQuery.data.fiscalYear}.
+                        </p>
+                      </div>
+                      <CollapsibleTrigger asChild>
+                        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
+                          {isJobChartsExpanded ? "Collapse" : "Expand"}
+                          {isJobChartsExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                        </Button>
+                      </CollapsibleTrigger>
+                    </CardHeader>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-4">
+                        <JobMetricsMonthlyChart summary={jobMetricsQuery.data} />
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <JobMetricsCategoryChart summary={jobMetricsQuery.data} />
+                          <JobMetricsContractorChart summary={jobMetricsQuery.data} />
+                        </div>
+                        <JobMetricsDistrictChart summary={jobMetricsQuery.data} />
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              </>
+            ) : jobMetricsQuery.isError ? (
+              <Card>
+                <CardContent className="py-6 text-sm">
+                  <p className="text-destructive font-medium">Job metrics request failed.</p>
+                  <p className="text-muted-foreground mt-1">
+                    {jobMetricsQuery.error instanceof Error
+                      ? jobMetricsQuery.error.message
+                      : "Unable to load job metrics"}
+                  </p>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
         </>
       ) : metricsQuery.isError ? (
         <Card>

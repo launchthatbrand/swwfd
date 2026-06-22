@@ -18,8 +18,6 @@ const safeReturnTo = (raw: string | null): string => {
 export default function SignInPage() {
   const searchParams = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get("return_to"));
-  const accountCreationDisabled =
-    searchParams.get("account_creation_disabled") === "1";
   const { signIn } = useAuthActions();
 
   const [email, setEmail] = React.useState("");
@@ -55,12 +53,6 @@ export default function SignInPage() {
             Access saved jobs and submit applications.
           </p>
         </div>
-
-        {accountCreationDisabled ? (
-          <div className="rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
-            New account creation is currently disabled.
-          </div>
-        ) : null}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="space-y-2">

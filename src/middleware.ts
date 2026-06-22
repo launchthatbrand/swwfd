@@ -4,8 +4,7 @@ import {
 } from "@convex-dev/auth/nextjs/server";
 import { NextResponse } from "next/server";
 
-const isAuthPage = createRouteMatcher(["/sign-in"]);
-const isSignUpPage = createRouteMatcher(["/sign-up"]);
+const isAuthPage = createRouteMatcher(["/sign-in", "/sign-up"]);
 const isFormsPage = createRouteMatcher(["/forms(.*)"]);
 const isMondayPage = createRouteMatcher(["/monday(.*)"]);
 const mondayRefererPattern = /^https?:\/\/([^.]+\.)?monday\.com(\/|$)/i;
@@ -46,13 +45,6 @@ export default convexAuthNextjsMiddleware(
     }
 
     const isAuthed = await convexAuth.isAuthenticated();
-
-    if (isSignUpPage(request)) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/sign-in";
-      url.searchParams.set("account_creation_disabled", "1");
-      return NextResponse.redirect(url);
-    }
 
     if (isAuthPage(request) && isAuthed) {
       const url = request.nextUrl.clone();
