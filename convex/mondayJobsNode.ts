@@ -10,7 +10,6 @@ import type { MondaySessionIdentity } from "./lib/mondaySession";
 // Board column constants (mirrors src/server/monday/jobs.ts)
 // ---------------------------------------------------------------------------
 
-const DEFAULT_MONDAY_JOBS_BOARD_ID = "18151718786";
 const JOB_STATUS_COLUMN_ID = "color_mkwjtwdp";
 const JOB_DISTRICT_COLUMN_ID = "color_mkzece6n";
 const JOB_LOCATION_COLUMN_ID = "text_mkwjn5k4";
@@ -129,9 +128,8 @@ const listMondayJobsImpl = async (args?: {
   getMondayApiKey();
   const boardId =
     args?.boardId?.trim() ||
-    process.env.MONDAY_JOBS_BOARD_ID?.trim() ||
-    DEFAULT_MONDAY_JOBS_BOARD_ID;
-  if (!boardId) throw new Error("MONDAY_JOBS_BOARD_ID is missing");
+    process.env.MONDAY_JOBS_BOARD_ID?.trim();
+  if (!boardId) throw new Error("MONDAY_JOBS_BOARD_ID env var is not set");
 
   const limit = parseLimit(args?.limit);
   const search = args?.search?.trim().toLowerCase() ?? "";

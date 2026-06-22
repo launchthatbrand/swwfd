@@ -598,6 +598,30 @@ export declare const api: {
       { jobId: Id<"mondayHireEventBackfillJobs">; workflowId: string }
     >;
   };
+  mondayJobMetricsNode: {
+    getJobMetrics: FunctionReference<
+      "action",
+      "public",
+      { fiscalYear?: string; sessionToken: string },
+      {
+        summary: {
+          byCategory: Array<{ category: string; count: number }>;
+          byContractor: Array<{ contractor: string; count: number }>;
+          byDistrict: Array<{ count: number; district: string }>;
+          bySalaryType: Array<{ count: number; salaryType: string }>;
+          fiscalYear: string;
+          liveJobCount: number;
+          monthly: Array<{
+            available: number;
+            monthKey: string;
+            monthLabel: string;
+            posted: number;
+          }>;
+          postedThisFY: number;
+        };
+      }
+    >;
+  };
   mondayJobsNode: {
     listJobs: FunctionReference<
       "action",

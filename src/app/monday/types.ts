@@ -572,6 +572,32 @@ export type MondayUserFilterPresetsResponse = MondayApiResponse<{
   presets?: unknown[];
 }>;
 
+// ---------------------------------------------------------------------------
+// Job metrics
+// ---------------------------------------------------------------------------
+
+export interface MondayJobMetricsMonthlyPoint {
+  monthKey: string;
+  monthLabel: string;
+  posted: number;
+  available: number;
+}
+
+export interface MondayJobMetricsSummary {
+  fiscalYear: string;
+  liveJobCount: number;
+  postedThisFY: number;
+  monthly: MondayJobMetricsMonthlyPoint[];
+  byCategory: Array<{ category: string; count: number }>;
+  byContractor: Array<{ contractor: string; count: number }>;
+  bySalaryType: Array<{ salaryType: string; count: number }>;
+  byDistrict: Array<{ district: string; count: number }>;
+}
+
+export type MondayJobMetricsResponse = MondayApiResponse<{
+  summary?: MondayJobMetricsSummary;
+}>;
+
 export type MondayUserFilterPresetUpsertResponse = MondayApiResponse<{
   preset?: unknown;
 }>;
