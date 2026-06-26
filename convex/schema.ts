@@ -38,6 +38,20 @@ const mondayAdvancedFilterConditionValidator = v.object({
   target: v.optional(v.string()),
 });
 
+const mondayMetricsSnapshotStatusValidator = v.union(
+  v.literal("ready"),
+  v.literal("building"),
+  v.literal("failed"),
+);
+
+const mondayMetricsScanJobStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("running"),
+  v.literal("done"),
+  v.literal("failed"),
+  v.literal("cancelled"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -157,6 +171,39 @@ export default defineSchema({
   })
     .index("by_startedAt", ["startedAt"])
     .index("by_status", ["status"]),
+
+  mondayMetricsSnapshots: defineTable({
+    scopeKey: v.string(),
+    boardId: v.string(),
+    fiscalYear: v.string(),
+    ownerId: v.union(v.string(), v.null()),
+    status: mondayMetricsSnapshotStatusValidator,
+    summaryJson: v.optional(v.string()),
+    summaryGeneratedAt: v.optional(v.union(v.string(), v.null())),
+    activeJobId: v.optional(v.union(v.id("mondayMetricsScanJobs"), v.null())),
+    readyAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+    updatedAt: v.number(),
+  })
+    .index("by_scopeKey", ["scopeKey"])
+    .index("by_status_and_updatedAt", ["status", "updatedAt"])
+    .index("by_fiscalYear_and_owner", ["fiscalYear", "ownerId"]),
+
+  mondayMetricsScanJobs: defineTable({
+    scopeKey: v.string(),
+    boardId: v.string(),
+    fiscalYear: v.string(),
+    ownerId: v.union(v.string(), v.null()),
+    snapshotId: v.id("mondayMetricsSnapshots"),
+    status: mondayMetricsScanJobStatusValidator,
+    startedAt: v.number(),
+    updatedAt: v.number(),
+    finishedAt: v.optional(v.union(v.number(), v.null())),
+    lastError: v.optional(v.union(v.string(), v.null())),
+  })
+    .index("by_snapshotId", ["snapshotId"])
+    .index("by_scopeKey_and_startedAt", ["scopeKey", "startedAt"])
+    .index("by_status_and_updatedAt", ["status", "updatedAt"]),
 
   mondayTouchCsvExportJobs: defineTable({
     status: v.union(

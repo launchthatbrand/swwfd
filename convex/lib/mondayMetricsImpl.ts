@@ -104,12 +104,6 @@ export interface MondayMetricsSummary {
 }
 
 const MAX_SCAN_PAGES = 120;
-const MAX_SCAN_DURATION_MS = 45_000;
-const METRICS_CACHE_TTL_MS = 2 * 60 * 1000;
-const metricsSummaryCache = new Map<
-  string,
-  { expiresAt: number; summary: MondayMetricsSummary }
->();
 
 const createZeroTotals = (): MondayMetricsSummaryTotals => ({
   allContacts: 0,
@@ -816,12 +810,6 @@ export const buildMondayMetricsSummary = async (args?: {
   const fiscalYear = formatFiscalYear(fiscalYearEnd);
   const range = getFiscalYearRange(fiscalYearEnd);
   const ownerIdFilter = args?.ownerId?.trim() ?? "";
-  const cacheKey = `${boardId}::${fiscalYear}::${ownerIdFilter || "all"}`;
-  const cached = metricsSummaryCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.summary;
-  }
-  const startedAt = Date.now();
 
   const columnMeta = await resolveMetricsColumnIds(boardId);
   const metricColumnIds = Array.from(
@@ -862,13 +850,11 @@ export const buildMondayMetricsSummary = async (args?: {
             : null,
       });
     } catch (error) {
-      if (allContactRecords.length === 0) throw error;
-      console.warn("[MondayMetrics] continuing with partial contact result after page error", {
-        scannedPages,
-        collectedRecords: allContactRecords.length,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      break;
+      throw new Error(
+        `[MondayMetrics] failed to scan contacts page ${scannedPages + 1}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
     scannedPages += 1;
     if (
@@ -915,14 +901,6 @@ export const buildMondayMetricsSummary = async (args?: {
     }
     cursor = page.nextCursor ?? null;
     if (!cursor) break;
-    if (Date.now() - startedAt > MAX_SCAN_DURATION_MS) {
-      console.warn("[MondayMetrics] contact scan timed out", {
-        scannedPages,
-        collectedRecords: allContactRecords.length,
-        hasMore: !!cursor,
-      });
-      break;
-    }
   }
 
   const contactRecords = ownerIdFilter
@@ -1002,14 +980,11 @@ export const buildMondayMetricsSummary = async (args?: {
               : null,
         });
       } catch (error) {
-        if (allHireEvents.length === 0 && allCommunicationEvents.length === 0) throw error;
-        console.warn("[MondayMetrics] continuing with partial hire-event result after page error", {
-          scannedPages: hireScannedPages,
-          collectedRecords: allHireEvents.length,
-          collectedCommunicationRecords: allCommunicationEvents.length,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        break;
+        throw new Error(
+          `[MondayMetrics] failed to scan hire-event page ${hireScannedPages + 1}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
       hireScannedPages += 1;
       if (
@@ -1092,14 +1067,6 @@ export const buildMondayMetricsSummary = async (args?: {
       }
       hireCursor = page.nextCursor ?? null;
       if (!hireCursor) break;
-      if (Date.now() - startedAt > MAX_SCAN_DURATION_MS) {
-        console.warn("[MondayMetrics] hire-event scan timed out", {
-          scannedPages: hireScannedPages,
-          collectedRecords: allHireEvents.length,
-          hasMore: !!hireCursor,
-        });
-        break;
-      }
     }
   }
 
@@ -1266,9 +1233,5 @@ export const buildMondayMetricsSummary = async (args?: {
     contractorReferrals,
     generatedAt: new Date().toISOString(),
   };
-  metricsSummaryCache.set(cacheKey, {
-    expiresAt: Date.now() + METRICS_CACHE_TTL_MS,
-    summary,
-  });
   return summary;
 };

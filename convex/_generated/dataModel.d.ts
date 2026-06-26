@@ -472,6 +472,84 @@ export type DataModel = {
     searchIndexes: {};
     vectorIndexes: {};
   };
+  mondayMetricsScanJobs: {
+    document: {
+      boardId: string;
+      finishedAt?: number | null;
+      fiscalYear: string;
+      lastError?: string | null;
+      ownerId: string | null;
+      scopeKey: string;
+      snapshotId: Id<"mondayMetricsSnapshots">;
+      startedAt: number;
+      status: "queued" | "running" | "done" | "failed" | "cancelled";
+      updatedAt: number;
+      _id: Id<"mondayMetricsScanJobs">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "boardId"
+      | "finishedAt"
+      | "fiscalYear"
+      | "lastError"
+      | "ownerId"
+      | "scopeKey"
+      | "snapshotId"
+      | "startedAt"
+      | "status"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_scopeKey_and_startedAt: ["scopeKey", "startedAt", "_creationTime"];
+      by_snapshotId: ["snapshotId", "_creationTime"];
+      by_status_and_updatedAt: ["status", "updatedAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
+  mondayMetricsSnapshots: {
+    document: {
+      activeJobId?: Id<"mondayMetricsScanJobs"> | null;
+      boardId: string;
+      fiscalYear: string;
+      lastError?: string | null;
+      ownerId: string | null;
+      readyAt?: number | null;
+      scopeKey: string;
+      status: "ready" | "building" | "failed";
+      summaryGeneratedAt?: string | null;
+      summaryJson?: string;
+      updatedAt: number;
+      _id: Id<"mondayMetricsSnapshots">;
+      _creationTime: number;
+    };
+    fieldPaths:
+      | "_creationTime"
+      | "_id"
+      | "activeJobId"
+      | "boardId"
+      | "fiscalYear"
+      | "lastError"
+      | "ownerId"
+      | "readyAt"
+      | "scopeKey"
+      | "status"
+      | "summaryGeneratedAt"
+      | "summaryJson"
+      | "updatedAt";
+    indexes: {
+      by_id: ["_id"];
+      by_creation_time: ["_creationTime"];
+      by_fiscalYear_and_owner: ["fiscalYear", "ownerId", "_creationTime"];
+      by_scopeKey: ["scopeKey", "_creationTime"];
+      by_status_and_updatedAt: ["status", "updatedAt", "_creationTime"];
+    };
+    searchIndexes: {};
+    vectorIndexes: {};
+  };
   mondayMonthlyMigrationEntries: {
     document: {
       createdAt: number;

@@ -666,6 +666,9 @@ export declare const api: {
       "public",
       { fiscalYear?: string; ownerId?: string; sessionToken: string },
       {
+        error: string | null;
+        refreshAfterMs: number;
+        status: "ready" | "building" | "failed";
         summary: {
           boardName: string | null;
           communicationTotals: {
@@ -725,7 +728,57 @@ export declare const api: {
             reentry: number;
             veterans: number;
           };
+        } | null;
+      }
+    >;
+  };
+  mondayMetricsSnapshots: {
+    ensureSnapshotScan: FunctionReference<
+      "mutation",
+      "public",
+      {
+        boardId: string;
+        fiscalYear: string;
+        forceRefresh?: boolean;
+        ownerId?: string;
+        scopeKey: string;
+      },
+      {
+        queued: boolean;
+        refreshAfterMs: number;
+        snapshot: null | {
+          activeJobId: Id<"mondayMetricsScanJobs"> | null;
+          boardId: string;
+          fiscalYear: string;
+          lastError: string | null;
+          ownerId: string | null;
+          readyAt: number | null;
+          scopeKey: string;
+          snapshotId: Id<"mondayMetricsSnapshots">;
+          status: "ready" | "building" | "failed";
+          summaryGeneratedAt: string | null;
+          summaryJson: string | null;
+          updatedAt: number;
         };
+      }
+    >;
+    getSnapshotByScope: FunctionReference<
+      "query",
+      "public",
+      { scopeKey: string },
+      null | {
+        activeJobId: Id<"mondayMetricsScanJobs"> | null;
+        boardId: string;
+        fiscalYear: string;
+        lastError: string | null;
+        ownerId: string | null;
+        readyAt: number | null;
+        scopeKey: string;
+        snapshotId: Id<"mondayMetricsSnapshots">;
+        status: "ready" | "building" | "failed";
+        summaryGeneratedAt: string | null;
+        summaryJson: string | null;
+        updatedAt: number;
       }
     >;
   };
@@ -2956,6 +3009,65 @@ export declare const internal: {
         processedContacts: number;
         skippedEvents: number;
         subitemBoardId: string | null;
+      }
+    >;
+  };
+  mondayMetricsScanNode: {
+    runScanJob: FunctionReference<
+      "action",
+      "internal",
+      { jobId: Id<"mondayMetricsScanJobs"> },
+      null
+    >;
+  };
+  mondayMetricsSnapshots: {
+    getSnapshotByScopeInternal: FunctionReference<
+      "query",
+      "internal",
+      { scopeKey: string },
+      null | {
+        activeJobId: Id<"mondayMetricsScanJobs"> | null;
+        boardId: string;
+        fiscalYear: string;
+        lastError: string | null;
+        ownerId: string | null;
+        readyAt: number | null;
+        scopeKey: string;
+        snapshotId: Id<"mondayMetricsSnapshots">;
+        status: "ready" | "building" | "failed";
+        summaryGeneratedAt: string | null;
+        summaryJson: string | null;
+        updatedAt: number;
+      }
+    >;
+    markScanJobCompleted: FunctionReference<
+      "mutation",
+      "internal",
+      {
+        jobId: Id<"mondayMetricsScanJobs">;
+        summaryGeneratedAt: string;
+        summaryJson: string;
+      },
+      null
+    >;
+    markScanJobFailed: FunctionReference<
+      "mutation",
+      "internal",
+      { error: string; jobId: Id<"mondayMetricsScanJobs"> },
+      null
+    >;
+    markScanJobRunning: FunctionReference<
+      "mutation",
+      "internal",
+      { jobId: Id<"mondayMetricsScanJobs"> },
+      null | {
+        boardId: string;
+        fiscalYear: string;
+        jobId: Id<"mondayMetricsScanJobs">;
+        ownerId: string | null;
+        scopeKey: string;
+        snapshotId: Id<"mondayMetricsSnapshots">;
+        status: "queued" | "running" | "done" | "failed" | "cancelled";
       }
     >;
   };

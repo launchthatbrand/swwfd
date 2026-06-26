@@ -55,14 +55,26 @@ export const POST = async (request: Request) => {
 
   const { challenge, boardId, itemId } = extractWebhookPayload(body);
   if (challenge) {
+    console.info("[Webhook][routing] challenge handshake", { boardId, itemId });
     return toJson({ challenge });
   }
   if (!isAuthorizedMondayWebhookRequest(request)) {
+    console.warn("[Webhook][routing] unauthorized request", {
+      boardId,
+      itemId,
+      hasSecretHeader: !!request.headers.get("x-monday-webhook-secret"),
+      hasSecretQuery: !!new URL(request.url).searchParams.get("secret"),
+    });
     return toJson({ ok: false, error: "Unauthorized webhook request" }, 401);
   }
 
   const contactBoardId = normalizeValue(env.MONDAY_BOARD_ID);
   if (contactBoardId && boardId && boardId !== contactBoardId) {
+    console.info("[Webhook][routing] ignored board mismatch", {
+      boardId,
+      expectedBoardId: contactBoardId,
+      itemId,
+    });
     return toJson({
       ok: true,
       ignored: true,
@@ -84,6 +96,15 @@ export const POST = async (request: Request) => {
   const result = await assignMondayContactOwnerByDistrict({
     itemId,
     source: "webhook",
+  });
+  console.info("[Webhook][routing] assignment completed", {
+    itemId,
+    boardId,
+    ok: result.ok,
+    status: result.status,
+    districtCode: result.districtCode,
+    ownerId: result.ownerId,
+    message: result.message,
   });
   return toJson({
     ok: result.ok,

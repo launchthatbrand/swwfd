@@ -397,6 +397,49 @@ const parseDropdownLabelsFromSettings = (settingsStr: string | null | undefined)
   }
 };
 
+const normalizeDropdownLabelKey = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[()]/g, "");
+
+const stripParentheticalSuffix = (value: string) => value.replace(/\s*\([^)]*\)\s*/g, " ").trim();
+
+const canonicalizeDropdownLabel = (value: string, allowedLabels: string[]) => {
+  const trimmed = value.trim();
+  if (!trimmed || allowedLabels.length === 0) return trimmed;
+
+  const exactMatch = allowedLabels.find(
+    (label) => label.trim().toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (exactMatch) return exactMatch;
+
+  const normalizedInput = normalizeDropdownLabelKey(trimmed);
+  const normalizedMatch = allowedLabels.find(
+    (label) => normalizeDropdownLabelKey(label) === normalizedInput,
+  );
+  if (normalizedMatch) return normalizedMatch;
+
+  const strippedInput = stripParentheticalSuffix(trimmed);
+  if (strippedInput) {
+    const strippedMatch = allowedLabels.find((label) => {
+      const strippedLabel = stripParentheticalSuffix(label);
+      return strippedLabel.length > 0 && strippedLabel.toLowerCase() === strippedInput.toLowerCase();
+    });
+    if (strippedMatch) return strippedMatch;
+  }
+
+  return trimmed;
+};
+
+const canonicalizeDropdownLabels = (values: string[], allowedLabels: string[]) => {
+  const canonical = values
+    .map((entry) => canonicalizeDropdownLabel(entry, allowedLabels))
+    .filter((entry) => entry.length > 0);
+  return Array.from(new Set(canonical));
+};
+
 const parseOptionLabelMapFromSettings = (settingsStr: string | null | undefined) => {
   if (!settingsStr || settingsStr.trim().length === 0) return new Map<string, string>();
   try {
@@ -2682,13 +2725,46 @@ const updateMondayRecordFieldsImpl = async (args: {
   if (!itemId) throw new Error("Missing itemId");
 
   const boardColumnIds = await resolveBoardColumnIds(boardId);
+  interface BoardColumnsData {
+    boards?: Array<{
+      columns?: Array<{
+        id?: string | null;
+        settings_str?: string | null;
+      }>;
+    }>;
+  }
+  const boardColumnsData = await callMondayGraphQL<BoardColumnsData>(
+    `query ResolveDropdownSettings($boardId: ID!) {
+      boards(ids: [$boardId]) { columns { id settings_str } }
+    }`,
+    { boardId },
+  );
+  const columnSettingsById = new Map<string, string>();
+  for (const column of boardColumnsData.boards?.[0]?.columns ?? []) {
+    const columnId = column.id?.trim();
+    if (!columnId) continue;
+    if (typeof column.settings_str !== "string") continue;
+    columnSettingsById.set(columnId, column.settings_str);
+  }
+  const referredAllowedLabels = parseDropdownLabelsFromSettings(
+    columnSettingsById.get(RETENTION_REFERRED_COLUMN_ID),
+  );
+  const interviewingAllowedLabels = parseDropdownLabelsFromSettings(
+    columnSettingsById.get(RETENTION_INTERVIEWING_WITH_COLUMN_ID),
+  );
+  const hiredAllowedLabels = parseDropdownLabelsFromSettings(
+    columnSettingsById.get(RETENTION_HIRED_WITH_COLUMN_ID),
+  );
   const columnValues: Record<string, unknown> = {};
 
   if (args.referredToContractors !== undefined) {
     const valuesRaw = Array.isArray(args.referredToContractors)
       ? args.referredToContractors
       : splitCsvValues(args.referredToContractors);
-    const labels = valuesRaw.map((v) => v.trim()).filter((v) => v.length > 0);
+    const labels = canonicalizeDropdownLabels(
+      valuesRaw.map((v) => v.trim()).filter((v) => v.length > 0),
+      referredAllowedLabels,
+    );
     columnValues[RETENTION_REFERRED_COLUMN_ID] =
       labels.length > 0 ? { labels } : null;
   }
@@ -2696,14 +2772,18 @@ const updateMondayRecordFieldsImpl = async (args: {
     const valuesRaw = Array.isArray(args.interviewingWithContractors)
       ? args.interviewingWithContractors
       : splitCsvValues(args.interviewingWithContractors);
-    const labels = valuesRaw.map((v) => v.trim()).filter((v) => v.length > 0);
+    const labels = canonicalizeDropdownLabels(
+      valuesRaw.map((v) => v.trim()).filter((v) => v.length > 0),
+      interviewingAllowedLabels,
+    );
     columnValues[RETENTION_INTERVIEWING_WITH_COLUMN_ID] =
       labels.length > 0 ? { labels } : null;
   }
   if (args.hiredWithContractor !== undefined) {
     const value = args.hiredWithContractor?.trim() ?? "";
+    const canonicalValue = canonicalizeDropdownLabel(value, hiredAllowedLabels);
     columnValues[RETENTION_HIRED_WITH_COLUMN_ID] = value
-      ? { labels: [value] }
+      ? { labels: [canonicalValue] }
       : null;
   }
   if (args.hireDate !== undefined) {

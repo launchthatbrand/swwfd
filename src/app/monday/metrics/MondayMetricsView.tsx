@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import mondaySdkInitialize from "monday-sdk-js";
 import type { MondayClientSdk } from "monday-sdk-js";
-import { EntityList, type ColumnDefinition } from "@launchthatapp/ui/entity-list";
 
 import { Badge } from "@launchthatapp/ui/badge";
 import { Button } from "@launchthatapp/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@launchthatapp/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@launchthatapp/ui/dialog";
+import { Input } from "@launchthatapp/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@launchthatapp/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "~/components/ui/collapsible";
 import { Skeleton } from "~/components/ui/skeleton";
 import { toast } from "@launchthatapp/ui/toast";
@@ -46,10 +48,8 @@ import type {
   MondayMetricsContractorReferralBreakdown,
   MondayMetricsHiredContact,
   MondayMetricsOwnerBreakdown,
-  MondayMetricsResponse,
   MondayMetricsSummary,
   MondayMetricsSummaryTotals,
-  MondayUserBoardSettingsResponse,
   UserBoardGeneralSettings,
 } from "../types";
 
@@ -57,7 +57,7 @@ interface MondayMetricsViewProps {
   forcedOwnerId?: string;
 }
 
-type HiredContactListRow = MondayMetricsHiredContact & Record<string, unknown>;
+type HiredContactsSortKey = "name" | "email" | "hireCount";
 
 const getCurrentFiscalYear = () => {
   const now = new Date();
@@ -149,67 +149,46 @@ const jobsByDistrictChartConfig = {
   count: { label: "Jobs", color: "var(--chart-5)" },
 } satisfies ChartConfig;
 
-const hiredContactsColumns: ColumnDefinition<HiredContactListRow>[] = [
-  {
-    id: "name",
-    header: "Name",
-    accessorKey: "name",
-    sortable: true,
-    cell: (item: HiredContactListRow) =>
-      item.url ? (
-        <Link
-          href={item.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-primary hover:text-primary/80 block truncate px-2 py-2 font-medium underline underline-offset-2"
-        >
-          {item.name}
-        </Link>
-      ) : (
-        <span className="block truncate px-2 py-2 font-medium">{item.name}</span>
-      ),
-  },
-  {
-    id: "email",
-    header: "Email",
-    accessorKey: "email",
-    sortable: true,
-    cell: (item: HiredContactListRow) => (
-      <span className="block truncate px-2 py-2">
-        {item.email?.trim() ? item.email.trim() : "—"}
-      </span>
-    ),
-  },
-  {
-    id: "hireCount",
-    header: "Times Hired",
-    accessorKey: "hireCount",
-    sortable: true,
-    cell: (item: HiredContactListRow) => (
-      <span className="block px-2 py-2 text-right tabular-nums">
-        {numberFormatter.format(Number(item.hireCount ?? 0))}
-      </span>
-    ),
-  },
-];
-
-const MetricsCardGrid = ({ summary }: { summary: MondayMetricsSummary }) => {
+const MetricsCardGrid = ({
+  summary,
+  onOpenHiredContacts,
+}: {
+  summary: MondayMetricsSummary;
+  onOpenHiredContacts: () => void;
+}) => {
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      {totalsCards.map((card) => (
-        <Card key={card.key}>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-              {summary.fiscalYear} - {card.label}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-semibold tabular-nums">
-              {numberFormatter.format(summary.totals[card.key])}
-            </p>
-          </CardContent>
-        </Card>
-      ))}
+      {totalsCards.map((card) => {
+        const isHiredCard = card.key === "hiredTotal";
+        return (
+          <Card
+            key={card.key}
+            className={isHiredCard ? "border-primary/40 hover:border-primary/80 transition-colors" : undefined}
+          >
+            <CardHeader className="pb-2">
+              <CardTitle className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                {summary.fiscalYear} - {card.label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-semibold tabular-nums">
+                {numberFormatter.format(summary.totals[card.key])}
+              </p>
+              {isHiredCard ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 h-7 px-2.5 text-xs"
+                  onClick={onOpenHiredContacts}
+                >
+                  Click to view hired contacts
+                </Button>
+              ) : null}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 };
@@ -587,8 +566,15 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
   const [authLoading, setAuthLoading] = useState(true);
   const getMetricsAction = useAction(api.mondayMetricsNode.getMetrics);
   const getJobMetricsAction = useAction(api.mondayJobMetricsNode.getJobMetrics);
-  const [isHiredContactsExpanded, setIsHiredContactsExpanded] = useState(false);
-  const [isJobChartsExpanded, setIsJobChartsExpanded] = useState(false);
+  const [isHiredContactsDialogOpen, setIsHiredContactsDialogOpen] = useState(false);
+  const [hiredContactsSearch, setHiredContactsSearch] = useState("");
+  const [hiredContactsSort, setHiredContactsSort] = useState<{
+    key: HiredContactsSortKey;
+    direction: "asc" | "desc";
+  }>({
+    key: "hireCount",
+    direction: "desc",
+  });
   const [isMondayEmbeddedContext, setIsMondayEmbeddedContext] = useState(false);
   const [boardGeneralSettings, setBoardGeneralSettings] = useState<UserBoardGeneralSettings>({
     ...DEFAULT_USER_BOARD_GENERAL_SETTINGS,
@@ -757,9 +743,20 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
         fiscalYear: selectedFiscalYear,
         ownerId: effectiveOwnerId || undefined,
       });
-      return result.summary;
+      return {
+        status: result.status ?? "building",
+        summary: result.summary ?? null,
+        refreshAfterMs: result.refreshAfterMs ?? 30_000,
+        error: result.error ?? null,
+      };
     },
     staleTime: 30_000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      if (data.status === "building") return Math.max(data.refreshAfterMs ?? 15_000, 5_000);
+      return false;
+    },
   });
   const jobMetricsQuery = useQuery({
     queryKey: ["monday-job-metrics", sessionToken, selectedFiscalYear],
@@ -830,17 +827,53 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
     setBoardGeneralSettings(userBoardSettingsQuery.data);
   }, [settingsScopeOwnerId, userBoardSettingsQuery.data]);
 
-  const summary = metricsQuery.data;
-  const hiredContactRows = useMemo<HiredContactListRow[]>(
-    () => summary?.hiredContacts.map((row) => ({ ...row })) ?? [],
-    [summary?.hiredContacts],
+  const summary = metricsQuery.data?.summary ?? null;
+  const metricsStatus = metricsQuery.data?.status ?? (summary ? "ready" : "building");
+  const filteredHiredContacts = useMemo<MondayMetricsHiredContact[]>(
+    () => {
+      const rows = summary?.hiredContacts ?? [];
+      const search = hiredContactsSearch.trim().toLowerCase();
+      if (!search) return rows;
+      return rows.filter((row) => {
+        const name = row.name.toLowerCase();
+        const email = row.email?.toLowerCase() ?? "";
+        return name.includes(search) || email.includes(search);
+      });
+    },
+    [summary?.hiredContacts, hiredContactsSearch],
   );
+  const sortedHiredContacts = useMemo<MondayMetricsHiredContact[]>(() => {
+    const rows = [...filteredHiredContacts];
+    rows.sort((left, right) => {
+      if (hiredContactsSort.key === "hireCount") {
+        const leftValue = Number(left.hireCount ?? 0);
+        const rightValue = Number(right.hireCount ?? 0);
+        return hiredContactsSort.direction === "asc"
+          ? leftValue - rightValue
+          : rightValue - leftValue;
+      }
+
+      if (hiredContactsSort.key === "email") {
+        const leftValue = (left.email ?? "").toLowerCase();
+        const rightValue = (right.email ?? "").toLowerCase();
+        const compared = leftValue.localeCompare(rightValue);
+        return hiredContactsSort.direction === "asc" ? compared : -compared;
+      }
+
+      const leftValue = left.name.toLowerCase();
+      const rightValue = right.name.toLowerCase();
+      const compared = leftValue.localeCompare(rightValue);
+      return hiredContactsSort.direction === "asc" ? compared : -compared;
+    });
+    return rows;
+  }, [filteredHiredContacts, hiredContactsSort]);
   const isInitialMetricsLoading =
     !!sessionToken && (metricsQuery.isLoading || metricsQuery.isFetching) && !summary;
   const metricsErrorMessage =
     metricsQuery.error instanceof Error
       ? metricsQuery.error.message
       : "Unable to load metrics";
+  const metricsBackendError = metricsQuery.data?.error ?? null;
 
   return (
     <main className="monday-like-page mx-auto max-w-7xl space-y-4 pb-10 pt-6">
@@ -921,240 +954,382 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
             variant="ghost"
             className="h-8 shrink-0 px-2.5 text-xs"
             onClick={() => {
-              void metricsQuery.refetch();
+              void Promise.all([metricsQuery.refetch(), jobMetricsQuery.refetch()]);
             }}
-            disabled={authLoading || metricsQuery.isFetching}
+            disabled={authLoading || metricsQuery.isFetching || jobMetricsQuery.isFetching}
           >
-            {metricsQuery.isFetching ? "Refreshing..." : "Refresh"}
+            {metricsQuery.isFetching || jobMetricsQuery.isFetching ? "Refreshing..." : "Refresh"}
           </Button>
         </div>
       </div>
 
-      {authLoading || isInitialMetricsLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, idx) => (
-            <Card key={`metrics-skeleton-${idx}`}>
-              <CardHeader>
-                <Skeleton className="h-4 w-40" />
-              </CardHeader>
-              <CardContent>
-                <Skeleton className="h-8 w-20" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      ) : summary ? (
-        <>
-          <MetricsCardGrid summary={summary} />
+      <Tabs defaultValue="job-seeker" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="job-seeker">Job Seeker Metrics</TabsTrigger>
+          <TabsTrigger value="contractor">Contractor Metrics</TabsTrigger>
+        </TabsList>
+        <TabsContent value="job-seeker" className="space-y-4">
+          {authLoading || isInitialMetricsLoading ? (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 8 }).map((_, idx) => (
+                <Card key={`metrics-skeleton-${idx}`}>
+                  <CardHeader>
+                    <Skeleton className="h-4 w-40" />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="h-8 w-20" />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : summary ? (
+            <>
+              {metricsStatus !== "ready" ? (
+                <Card>
+                  <CardContent className="py-4 text-sm">
+                    <p className="font-medium">Metrics snapshot is updating.</p>
+                    <p className="text-muted-foreground mt-1">
+                      Showing the latest available dataset while a fresh scan runs in the background.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : null}
+              <MetricsCardGrid
+                summary={summary}
+                onOpenHiredContacts={() => setIsHiredContactsDialogOpen(true)}
+              />
 
-          <div className="grid gap-4 xl:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {summary.fiscalYear} - Contacts Per Month
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={contactsChartConfig}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={summary.monthly}
-                      margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="monthLabel"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                      <ChartTooltip
-                        cursor={false}
-                        content={
-                          <ChartTooltipContent
-                            valueFormatter={(value) =>
-                              numberFormatter.format(Number(value ?? 0))
+              <div className="grid gap-4 xl:grid-cols-3">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {summary.fiscalYear} - Contacts Per Month
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={contactsChartConfig}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={summary.monthly}
+                          margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis
+                            dataKey="monthLabel"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                          <ChartTooltip
+                            cursor={false}
+                            content={
+                              <ChartTooltipContent
+                                valueFormatter={(value) =>
+                                  numberFormatter.format(Number(value ?? 0))
+                                }
+                              />
                             }
                           />
-                        }
-                      />
-                      <Bar
-                        dataKey="allContacts"
-                        fill="var(--color-allContacts)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+                          <Bar
+                            dataKey="allContacts"
+                            fill="var(--color-allContacts)"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {summary.fiscalYear} - Hires Per Month
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={hiredChartConfig}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={summary.monthly}
-                      margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="monthLabel"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                      <ChartTooltip
-                        cursor={false}
-                        content={
-                          <ChartTooltipContent
-                            valueFormatter={(value) =>
-                              numberFormatter.format(Number(value ?? 0))
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {summary.fiscalYear} - Hires Per Month
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={hiredChartConfig}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={summary.monthly}
+                          margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis
+                            dataKey="monthLabel"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                          <ChartTooltip
+                            cursor={false}
+                            content={
+                              <ChartTooltipContent
+                                valueFormatter={(value) =>
+                                  numberFormatter.format(Number(value ?? 0))
+                                }
+                              />
                             }
                           />
-                        }
-                      />
-                      <Bar
-                        dataKey="hiredTotal"
-                        fill="var(--color-hiredTotal)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-              </CardContent>
-            </Card>
+                          <Bar
+                            dataKey="hiredTotal"
+                            fill="var(--color-hiredTotal)"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  {summary.fiscalYear} - Communications Per Month
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer config={communicationsChartConfig}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={summary.monthly}
-                      margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis
-                        dataKey="monthLabel"
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fontSize: 12 }}
-                      />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                      <ChartTooltip
-                        cursor={false}
-                        content={
-                          <ChartTooltipContent
-                            valueFormatter={(value) =>
-                              numberFormatter.format(Number(value ?? 0))
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">
+                      {summary.fiscalYear} - Communications Per Month
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ChartContainer config={communicationsChartConfig}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={summary.monthly}
+                          margin={{ top: 8, right: 12, bottom: 4, left: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis
+                            dataKey="monthLabel"
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fontSize: 12 }}
+                          />
+                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
+                          <ChartTooltip
+                            cursor={false}
+                            content={
+                              <ChartTooltipContent
+                                valueFormatter={(value) =>
+                                  numberFormatter.format(Number(value ?? 0))
+                                }
+                              />
                             }
                           />
-                        }
+                          <Bar
+                            dataKey="emailCommunications"
+                            fill="var(--color-emailCommunications)"
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="textCommunications"
+                            fill="var(--color-textCommunications)"
+                            radius={[4, 4, 0, 0]}
+                          />
+                          <Bar
+                            dataKey="phoneCallCommunications"
+                            fill="var(--color-phoneCallCommunications)"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      Emails: {numberFormatter.format(summary.communicationTotals.emailCommunications)} |{" "}
+                      Texts: {numberFormatter.format(summary.communicationTotals.textCommunications)} |{" "}
+                      Phone Calls: {numberFormatter.format(summary.communicationTotals.phoneCallCommunications)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <ContractorReferralsChart
+                fiscalYear={summary.fiscalYear}
+                rows={summary.contractorReferrals}
+              />
+
+              {!effectiveOwnerId ? (
+                <OwnerBreakdownChart rows={summary.ownerBreakdown} />
+              ) : null}
+
+              <Dialog
+                open={isHiredContactsDialogOpen}
+                onOpenChange={(open) => {
+                  setIsHiredContactsDialogOpen(open);
+                  if (!open) {
+                    setHiredContactsSearch("");
+                    setHiredContactsSort({ key: "hireCount", direction: "desc" });
+                  }
+                }}
+              >
+                <DialogContent className="max-h-[85vh] max-w-5xl overflow-hidden p-0">
+                  <DialogHeader>
+                    <DialogTitle className="px-6 pt-6">
+                      {summary.fiscalYear} - Hired Contacts (
+                      {numberFormatter.format(summary.hiredContacts.length)})
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-3 px-6 pb-6">
+                    <p className="text-muted-foreground text-xs">
+                      {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
+                      {numberFormatter.format(summary.totals.hiredTotal)} individual hires
+                    </p>
+                    <div className="space-y-2">
+                      <Input
+                        value={hiredContactsSearch}
+                        onChange={(event) => setHiredContactsSearch(event.target.value)}
+                        placeholder="Search hired contacts..."
                       />
-                      <Bar
-                        dataKey="emailCommunications"
-                        fill="var(--color-emailCommunications)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="textCommunications"
-                        fill="var(--color-textCommunications)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="phoneCallCommunications"
-                        fill="var(--color-phoneCallCommunications)"
-                        radius={[4, 4, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartContainer>
-                <p className="text-muted-foreground mt-2 text-xs">
-                  Emails: {numberFormatter.format(summary.communicationTotals.emailCommunications)} |{" "}
-                  Texts: {numberFormatter.format(summary.communicationTotals.textCommunications)} |{" "}
-                  Phone Calls: {numberFormatter.format(summary.communicationTotals.phoneCallCommunications)}
+                      <p className="text-muted-foreground text-xs">
+                        Showing {numberFormatter.format(filteredHiredContacts.length)} of{" "}
+                        {numberFormatter.format(summary.hiredContacts.length)} contacts
+                      </p>
+                    </div>
+                    <div className="max-h-[58vh] overflow-auto rounded-md border">
+                      <table className="w-full border-separate border-spacing-0 caption-bottom text-sm">
+                        <thead>
+                          <tr>
+                            <th className="bg-background sticky top-0 z-20 h-10 border-b px-3 text-left align-middle text-xs font-medium shadow-[0_1px_0_0_hsl(var(--border))]">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1"
+                                onClick={() =>
+                                  setHiredContactsSort((current) =>
+                                    current.key === "name"
+                                      ? { key: "name", direction: current.direction === "asc" ? "desc" : "asc" }
+                                      : { key: "name", direction: "asc" },
+                                  )
+                                }
+                              >
+                                Name
+                                {hiredContactsSort.key === "name" ? (
+                                  hiredContactsSort.direction === "asc" ? (
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  )
+                                ) : (
+                                  <ArrowUpDown className="text-muted-foreground h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </th>
+                            <th className="bg-background sticky top-0 z-20 h-10 border-b px-3 text-left align-middle text-xs font-medium shadow-[0_1px_0_0_hsl(var(--border))]">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1"
+                                onClick={() =>
+                                  setHiredContactsSort((current) =>
+                                    current.key === "email"
+                                      ? { key: "email", direction: current.direction === "asc" ? "desc" : "asc" }
+                                      : { key: "email", direction: "asc" },
+                                  )
+                                }
+                              >
+                                Email
+                                {hiredContactsSort.key === "email" ? (
+                                  hiredContactsSort.direction === "asc" ? (
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  )
+                                ) : (
+                                  <ArrowUpDown className="text-muted-foreground h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </th>
+                            <th className="bg-background sticky top-0 z-20 h-10 border-b px-3 text-right align-middle text-xs font-medium shadow-[0_1px_0_0_hsl(var(--border))]">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-1"
+                                onClick={() =>
+                                  setHiredContactsSort((current) =>
+                                    current.key === "hireCount"
+                                      ? { key: "hireCount", direction: current.direction === "asc" ? "desc" : "asc" }
+                                      : { key: "hireCount", direction: "desc" },
+                                  )
+                                }
+                              >
+                                Times Hired
+                                {hiredContactsSort.key === "hireCount" ? (
+                                  hiredContactsSort.direction === "asc" ? (
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  ) : (
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  )
+                                ) : (
+                                  <ArrowUpDown className="text-muted-foreground h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sortedHiredContacts.length > 0 ? (
+                            sortedHiredContacts.map((row) => (
+                              <tr key={row.contactId} className="border-b last:border-b-0">
+                                <td className="max-w-[320px] px-3 py-2 align-middle">
+                                  {row.url ? (
+                                    <Link
+                                      href={row.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-primary hover:text-primary/80 block truncate font-medium underline underline-offset-2"
+                                    >
+                                      {row.name}
+                                    </Link>
+                                  ) : (
+                                    <span className="block truncate font-medium">{row.name}</span>
+                                  )}
+                                </td>
+                                <td className="max-w-[320px] px-3 py-2 align-middle">
+                                  <span className="block truncate">{row.email?.trim() || "—"}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right align-middle tabular-nums">
+                                  {numberFormatter.format(Number(row.hireCount ?? 0))}
+                                </td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td colSpan={3} className="text-muted-foreground py-8 text-center text-sm">
+                                No hired contacts found.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
+          ) : metricsQuery.isError ? (
+            <Card>
+              <CardContent className="py-8 text-sm">
+                <p className="text-destructive font-medium">Metrics request failed.</p>
+                <p className="text-muted-foreground mt-1">{metricsErrorMessage}</p>
+              </CardContent>
+            </Card>
+          ) : metricsStatus === "failed" || metricsBackendError ? (
+            <Card>
+              <CardContent className="py-8 text-sm">
+                <p className="text-destructive font-medium">Metrics snapshot failed.</p>
+                <p className="text-muted-foreground mt-1">
+                  {metricsBackendError || "A background metrics scan failed. Try refreshing."}
                 </p>
               </CardContent>
             </Card>
-          </div>
-
-          <ContractorReferralsChart
-            fiscalYear={summary.fiscalYear}
-            rows={summary.contractorReferrals}
-          />
-
-          {!effectiveOwnerId ? (
-            <OwnerBreakdownChart rows={summary.ownerBreakdown} />
-          ) : null}
-
-          <Collapsible open={isHiredContactsExpanded} onOpenChange={setIsHiredContactsExpanded}>
+          ) : (
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                <div className="min-w-0">
-                  <CardTitle className="text-base">
-                    {summary.fiscalYear} - Hired Contacts ({numberFormatter.format(summary.hiredContacts.length)})
-                  </CardTitle>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    Expand to view the hired contacts table.
-                  </p>
-                </div>
-                <CollapsibleTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
-                    {isHiredContactsExpanded ? "Collapse" : "Expand"}
-                    {isHiredContactsExpanded ? (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent>
-                  <p className="text-muted-foreground mb-2 text-xs">
-                    {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
-                    {numberFormatter.format(summary.totals.hiredTotal)} individual hires
-                  </p>
-                  <EntityList
-                    data={hiredContactRows}
-                    columns={hiredContactsColumns}
-                    viewModes={["list"]}
-                    defaultViewMode="list"
-                    enableSearch
-                    enableFooter={false}
-                    showRowCount={false}
-                    hideFilters
-                    getRowId={(item) => String(item.contactId)}
-                    emptyState={
-                      <div className="text-muted-foreground py-6 text-sm">
-                        No hired contacts found for this period.
-                      </div>
-                    }
-                  />
-                  <p className="text-muted-foreground mt-2 text-xs">
-                    {numberFormatter.format(summary.hiredContacts.length)} records /{" "}
-                    {numberFormatter.format(summary.totals.hiredTotal)} individual hires
-                  </p>
-                </CardContent>
-              </CollapsibleContent>
+              <CardContent className="text-muted-foreground py-8 text-sm">
+                Building a fresh metrics snapshot. This view updates automatically when data is ready.
+              </CardContent>
             </Card>
-          </Collapsible>
-          {/* ---- Job Metrics Section ---- */}
+          )}
+        </TabsContent>
+        <TabsContent value="contractor" className="space-y-4">
           <div className="space-y-4 pt-2">
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold">Job Listing Metrics</h2>
+              <h2 className="text-base font-semibold">Contractor Metrics</h2>
               <span className="text-muted-foreground text-xs">— {selectedFiscalYear} · Job Listing Board</span>
               {jobMetricsQuery.isFetching && (
                 <span className="text-muted-foreground text-xs">Refreshing...</span>
@@ -1173,34 +1348,22 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
             ) : jobMetricsQuery.data ? (
               <>
                 <JobMetricsSummaryCards summary={jobMetricsQuery.data} />
-                <Collapsible open={isJobChartsExpanded} onOpenChange={setIsJobChartsExpanded}>
-                  <Card>
-                    <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-                      <div className="min-w-0">
-                        <CardTitle className="text-base">Job Trend Charts</CardTitle>
-                        <p className="text-muted-foreground mt-1 text-xs">
-                          Monthly posting trends, categories, contractors, and districts for {jobMetricsQuery.data.fiscalYear}.
-                        </p>
-                      </div>
-                      <CollapsibleTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
-                          {isJobChartsExpanded ? "Collapse" : "Expand"}
-                          {isJobChartsExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        </Button>
-                      </CollapsibleTrigger>
-                    </CardHeader>
-                    <CollapsibleContent>
-                      <CardContent className="space-y-4">
-                        <JobMetricsMonthlyChart summary={jobMetricsQuery.data} />
-                        <div className="grid gap-4 xl:grid-cols-2">
-                          <JobMetricsCategoryChart summary={jobMetricsQuery.data} />
-                          <JobMetricsContractorChart summary={jobMetricsQuery.data} />
-                        </div>
-                        <JobMetricsDistrictChart summary={jobMetricsQuery.data} />
-                      </CardContent>
-                    </CollapsibleContent>
-                  </Card>
-                </Collapsible>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Job Trend Charts</CardTitle>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Monthly posting trends, categories, contractors, and districts for {jobMetricsQuery.data.fiscalYear}.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <JobMetricsMonthlyChart summary={jobMetricsQuery.data} />
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      <JobMetricsCategoryChart summary={jobMetricsQuery.data} />
+                      <JobMetricsContractorChart summary={jobMetricsQuery.data} />
+                    </div>
+                    <JobMetricsDistrictChart summary={jobMetricsQuery.data} />
+                  </CardContent>
+                </Card>
               </>
             ) : jobMetricsQuery.isError ? (
               <Card>
@@ -1215,21 +1378,8 @@ export function MondayMetricsView({ forcedOwnerId }: MondayMetricsViewProps) {
               </Card>
             ) : null}
           </div>
-        </>
-      ) : metricsQuery.isError ? (
-        <Card>
-          <CardContent className="py-8 text-sm">
-            <p className="text-destructive font-medium">Metrics request failed.</p>
-            <p className="text-muted-foreground mt-1">{metricsErrorMessage}</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card>
-          <CardContent className="text-muted-foreground py-8 text-sm">
-            Metrics are unavailable for this session.
-          </CardContent>
-        </Card>
-      )}
+        </TabsContent>
+      </Tabs>
     </main>
   );
 }

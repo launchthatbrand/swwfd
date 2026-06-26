@@ -454,6 +454,8 @@ export interface MondayMetricsSummary {
   generatedAt: string;
 }
 
+export type MondayMetricsSnapshotStatus = "ready" | "building" | "failed";
+
 // ---------------------------------------------------------------------------
 // API response types — use MondayApiResponse<T> for typed envelopes
 // ---------------------------------------------------------------------------
@@ -615,7 +617,10 @@ export type MondayRoutingAssignResponse = MondayApiResponse<{
 }>;
 
 export type MondayMetricsResponse = MondayApiResponse<{
-  summary?: MondayMetricsSummary;
+  status?: MondayMetricsSnapshotStatus;
+  summary?: MondayMetricsSummary | null;
+  refreshAfterMs?: number;
+  error?: string | null;
 }>;
 
 
